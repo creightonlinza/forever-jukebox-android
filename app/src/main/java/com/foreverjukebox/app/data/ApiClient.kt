@@ -54,6 +54,12 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         return json.decodeFromString(response)
     }
 
+    suspend fun getJobByTrack(baseUrl: String, title: String, artist: String): AnalysisResponse {
+        val url = "${normalizeBaseUrl(baseUrl)}/api/jobs/by-track?title=${encode(title)}&artist=${encode(artist)}"
+        val response = get(url)
+        return json.decodeFromString(response)
+    }
+
     suspend fun fetchTopSongs(baseUrl: String, limit: Int = 20): List<TopSongItem> {
         val url = "${normalizeBaseUrl(baseUrl)}/api/top?limit=$limit"
         val response = get(url)

@@ -125,7 +125,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                 TabId.Search -> SearchPanel(
                     state = state,
                     onSearch = viewModel::runSpotifySearch,
-                    onSpotifySelect = viewModel::fetchYoutubeMatches,
+                    onSpotifySelect = viewModel::selectSpotifyTrack,
                     onYoutubeSelect = viewModel::startYoutubeAnalysis
                 )
                 TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
@@ -404,7 +404,7 @@ private fun TopSongsPanel(items: List<TopSongItem>, loading: Boolean, onSelect: 
 private fun SearchPanel(
     state: UiState,
     onSearch: (String) -> Unit,
-    onSpotifySelect: (String, String, Double) -> Unit,
+    onSpotifySelect: (SpotifySearchItem) -> Unit,
     onYoutubeSelect: (String) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
@@ -499,18 +499,17 @@ private fun SearchPanel(
 }
 
 @Composable
-private fun SpotifyRow(item: SpotifySearchItem, onSelect: (String, String, Double) -> Unit) {
+private fun SpotifyRow(item: SpotifySearchItem, onSelect: (SpotifySearchItem) -> Unit) {
     val name = item.name ?: "Untitled"
     val artist = item.artist ?: ""
     val duration = item.duration
+    val hasSpotifyId = !item.id.isNullOrBlank()
     val label = if (artist.isNotBlank()) "$name — $artist" else name
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = duration != null) {
-                if (duration != null) {
-                    onSelect(name, artist, duration)
-                }
+            .clickable(enabled = duration != null || hasSpotifyId) {
+                onSelect(item)
             },
         horizontalArrangement = Arrangement.SpaceBetween
     ) {

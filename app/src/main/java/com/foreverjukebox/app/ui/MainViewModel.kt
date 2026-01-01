@@ -217,6 +217,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun selectSpotifyTrack(item: SpotifySearchItem) {
+        val baseUrl = state.value.baseUrl
+        if (baseUrl.isBlank()) return
+        val name = item.name ?: "Untitled"
+        val artist = item.artist ?: ""
+        val duration = item.duration ?: return
+        viewModelScope.launch {
+            if (artist.isNotBlank()) {
+                try {
+                    val response = api.getJobByTrack(baseUrl, name, artist)
+                    val jobId = response.id
+                    val youtubeId = response.youtubeId
+                    if (jobId != null && youtubeId != null && response.status != "failed") {
+                        loadExistingJob(jobId, youtubeId, response)
+                        return@launch
+                    }
+                } catch (_: Exception) {
+                    // Fall back to YouTube matches.
+                }
+            }
+            fetchYoutubeMatches(name, artist, duration)
+        }
+    }
+
     fun fetchYoutubeMatches(name: String, artist: String, duration: Double) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
@@ -260,7 +284,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             try {
-                val response = api.startYoutubeAnalysis(baseUrl, youtubeId, resolvedTitle, resolvedArtist)
+                val response = api.startYoutubeAnalysis(
+                    baseUrl,
+                    youtubeId,
+                    resolvedTitle,
+                    resolvedArtist
+                )
                 if (response.id == null) {
                     throw IllegalStateException("Invalid job response")
                 }
@@ -305,6 +334,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (err: Exception) {
                 _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
             }
+        }
+    }
+
+    private suspend fun loadExistingJob(
+        jobId: String,
+        youtubeId: String,
+        response: com.foreverjukebox.app.data.AnalysisResponse
+    ) {
+        resetForNewTrack()
+        _state.update {
+            it.copy(
+                analysisProgress = 0,
+                analysisInFlight = true,
+                searchResults = emptyList(),
+                youtubeMatches = emptyList(),
+                activeTab = TabId.Play,
+                lastYouTubeId = youtubeId
+            )
+        }
+        lastJobId = jobId
+        try {
+            if (response.status == "complete" && response.result != null) {
+                if (!state.value.audioLoaded) {
+                    loadAudioFromJob(jobId)
+                }
+                if (applyAnalysisResult(response)) {
+                    return
+                }
+                return
+            }
+            pollAnalysis(jobId)
+        } catch (_: Exception) {
+            _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
         }
     }
 
