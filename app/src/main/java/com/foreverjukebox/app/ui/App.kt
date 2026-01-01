@@ -619,6 +619,13 @@ private fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     }
                 }
                 when {
+                    progress != null && progress > 0 -> {
+                        Text(
+                            text = "Fetching and analyzing audio…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     state.audioLoading -> {
                         Text(
                             text = "Loading audio…",
