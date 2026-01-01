@@ -25,9 +25,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 import kotlin.math.roundToInt
 
 enum class TabId {
@@ -50,6 +53,8 @@ data class UiState(
     val youtubeLoading: Boolean = false,
     val analysisProgress: Int? = null,
     val analysisInFlight: Boolean = false,
+    val analysisCalculating: Boolean = false,
+    val audioLoading: Boolean = false,
     val playTitle: String = "",
     val audioLoaded: Boolean = false,
     val analysisLoaded: Boolean = false,
@@ -82,6 +87,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val controller = PlaybackControllerHolder.get(application)
     private val engine = controller.engine
     private val defaultConfig = engine.getConfig()
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
@@ -274,8 +280,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         resetForNewTrack()
         _state.update {
             it.copy(
-                analysisProgress = 0,
-                analysisInFlight = true,
+                analysisProgress = null,
+                analysisInFlight = false,
+                analysisCalculating = true,
+                audioLoading = false,
                 searchResults = emptyList(),
                 youtubeMatches = emptyList(),
                 activeTab = TabId.Play,
@@ -283,6 +291,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         viewModelScope.launch {
+            if (tryLoadCachedTrack(youtubeId)) {
+                return@launch
+            }
+            _state.update {
+                it.copy(
+                    analysisProgress = 0,
+                    analysisInFlight = true,
+                    analysisCalculating = false,
+                    audioLoading = false
+                )
+            }
             try {
                 val response = api.startYoutubeAnalysis(
                     baseUrl,
@@ -296,7 +315,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastJobId = response.id
                 pollAnalysis(response.id)
             } catch (err: Exception) {
-                _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
+                _state.update {
+                    it.copy(
+                        analysisProgress = null,
+                        analysisInFlight = false,
+                        analysisCalculating = false
+                    )
+                }
             }
         }
     }
@@ -307,17 +332,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         resetForNewTrack()
         _state.update {
             it.copy(
-                analysisProgress = 0,
-                analysisInFlight = true,
+                analysisProgress = null,
+                analysisInFlight = false,
+                analysisCalculating = true,
+                audioLoading = false,
                 activeTab = TabId.Play,
                 lastYouTubeId = youtubeId
             )
         }
         viewModelScope.launch {
+            if (tryLoadCachedTrack(youtubeId)) {
+                return@launch
+            }
+            _state.update {
+                it.copy(
+                    analysisProgress = 0,
+                    analysisInFlight = true,
+                    analysisCalculating = false,
+                    audioLoading = false
+                )
+            }
             try {
                 val response = api.getJobByYoutube(baseUrl, youtubeId)
                 if (response.id == null) {
-                    _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
+                    _state.update {
+                        it.copy(
+                            analysisProgress = null,
+                            analysisInFlight = false,
+                            analysisCalculating = false
+                        )
+                    }
                     return@launch
                 }
                 lastJobId = response.id
@@ -332,7 +376,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 pollAnalysis(response.id)
             } catch (err: Exception) {
-                _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
+                _state.update {
+                    it.copy(
+                        analysisProgress = null,
+                        analysisInFlight = false,
+                        analysisCalculating = false
+                    )
+                }
             }
         }
     }
@@ -366,7 +416,93 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             pollAnalysis(jobId)
         } catch (_: Exception) {
-            _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
+            _state.update {
+                it.copy(
+                    analysisProgress = null,
+                    analysisInFlight = false,
+                    analysisCalculating = false
+                )
+            }
+        }
+    }
+
+    private fun cacheDir(): File {
+        val dir = File(getApplication<Application>().cacheDir, "jukebox-cache")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    private fun analysisFile(youtubeId: String): File =
+        File(cacheDir(), "$youtubeId.analysis.json")
+
+    private fun audioFile(youtubeId: String): File = File(cacheDir(), "$youtubeId.audio")
+
+    private fun jobFile(youtubeId: String): File = File(cacheDir(), "$youtubeId.job")
+
+    private suspend fun tryLoadCachedTrack(youtubeId: String): Boolean {
+        _state.update {
+            it.copy(
+                analysisProgress = null,
+                analysisCalculating = true,
+                audioLoading = true
+            )
+        }
+        return withContext(Dispatchers.IO) {
+            val analysisPath = analysisFile(youtubeId)
+            val audioPath = audioFile(youtubeId)
+            if (!analysisPath.exists() || !audioPath.exists()) {
+                return@withContext false
+            }
+            val analysisText = analysisPath.readText()
+            val analysis = json.parseToJsonElement(analysisText)
+            val audioBytes = audioPath.readBytes()
+            val cachedJobId = jobFile(youtubeId).takeIf { it.exists() }?.readText()
+            try {
+                withContext(Dispatchers.Default) {
+                    controller.player.loadBytes(audioBytes, cachedJobId ?: youtubeId)
+                }
+            } catch (err: OutOfMemoryError) {
+                audioPath.delete()
+                return@withContext false
+            }
+            audioLoadInFlight = false
+            _state.update { it.copy(audioLoaded = true, audioLoading = false) }
+            lastJobId = cachedJobId
+            val response = com.foreverjukebox.app.data.AnalysisResponse(
+                id = cachedJobId,
+                status = "complete",
+                result = analysis
+            )
+            applyAnalysisResult(response)
+        }
+    }
+
+    private fun cacheAudio(youtubeId: String, jobId: String?, bytes: ByteArray) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                audioFile(youtubeId).writeBytes(bytes)
+                if (!jobId.isNullOrBlank()) {
+                    jobFile(youtubeId).writeText(jobId)
+                }
+            } catch (_: Exception) {
+                // Ignore cache failures.
+            }
+        }
+    }
+
+    private fun cacheAnalysis(youtubeId: String, jobId: String?, analysis: JsonElement) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val payload = json.encodeToString(JsonElement.serializer(), analysis)
+                analysisFile(youtubeId).writeText(payload)
+                if (!jobId.isNullOrBlank()) {
+                    jobFile(youtubeId).writeText(jobId)
+                }
+            } catch (_: Exception) {
+                // Ignore cache failures.
+            }
         }
     }
 
@@ -389,7 +525,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ForegroundPlaybackService.start(getApplication())
                 }
             } catch (err: Exception) {
-                _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
+                _state.update {
+                    it.copy(
+                        analysisProgress = null,
+                        analysisInFlight = false,
+                        analysisCalculating = false
+                    )
+                }
             }
         } else {
             controller.stopPlayback()
@@ -473,12 +615,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         while (true) {
             val response = api.getAnalysis(baseUrl, jobId)
             if (response.status == "failed") {
-                _state.update { it.copy(analysisProgress = null, analysisInFlight = false) }
+                _state.update {
+                    it.copy(
+                        analysisProgress = null,
+                        analysisInFlight = false,
+                        analysisCalculating = false
+                    )
+                }
                 throw IllegalStateException(response.error ?: "Analysis failed")
             }
             if (response.status == "downloading" || response.status == "queued" || response.status == "processing") {
                 val progress = response.progress?.roundToInt()
-                _state.update { it.copy(analysisProgress = progress) }
+                _state.update { it.copy(analysisProgress = progress, analysisCalculating = false) }
                 if (response.status != "downloading" && !state.value.audioLoaded && !audioLoadInFlight) {
                     audioLoadInFlight = true
                     try {
@@ -501,16 +649,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun loadAudioFromJob(jobId: String) {
         val baseUrl = state.value.baseUrl
+        _state.update { it.copy(audioLoading = true) }
         val bytes = api.fetchAudioBytes(baseUrl, jobId)
         withContext(Dispatchers.Default) {
             controller.player.loadBytes(bytes, jobId)
         }
         audioLoadInFlight = false
-        _state.update { it.copy(audioLoaded = true) }
+        _state.update { it.copy(audioLoaded = true, audioLoading = false) }
+        val youtubeId = state.value.lastYouTubeId
+        if (youtubeId != null) {
+            cacheAudio(youtubeId, jobId, bytes)
+        }
     }
 
     private suspend fun applyAnalysisResult(response: com.foreverjukebox.app.data.AnalysisResponse): Boolean {
         val result = response.result ?: return false
+        _state.update { it.copy(analysisProgress = null, analysisCalculating = true) }
         val vizData = withContext(Dispatchers.Default) {
             engine.loadAnalysis(result)
             engine.getVisualizationData()
@@ -539,12 +693,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 trackDurationSeconds = durationSeconds,
                 analysisProgress = null,
                 analysisInFlight = false,
+                analysisCalculating = false,
+                audioLoading = false,
                 activeTab = TabId.Play
             )
         }
         val jobId = response.id ?: lastJobId
         if (jobId != null) {
             recordPlay(jobId)
+        }
+        val youtubeId = state.value.lastYouTubeId
+        if (youtubeId != null) {
+            cacheAnalysis(youtubeId, jobId, result)
         }
         ForegroundPlaybackService.update(getApplication())
         return true
@@ -556,7 +716,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 api.postPlay(state.value.baseUrl, jobId)
-                refreshTopSongs()
             } catch (_: Exception) {
                 lastPlayCountedJobId = null
             }
@@ -590,7 +749,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 searchLoading = false,
                 youtubeLoading = false,
                 analysisProgress = 0,
-                analysisInFlight = false
+                analysisInFlight = false,
+                analysisCalculating = false,
+                audioLoading = false
             )
         }
         engine.stopJukebox()

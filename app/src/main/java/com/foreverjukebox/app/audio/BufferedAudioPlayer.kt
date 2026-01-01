@@ -25,6 +25,8 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     private var baseOffsetSeconds = 0.0
 
     suspend fun loadBytes(bytes: ByteArray, jobId: String) {
+        pcmData = null
+        releaseAudioTrack()
         withContext(Dispatchers.IO) {
             val file = File(context.cacheDir, "fj-audio-$jobId")
             file.writeBytes(bytes)
@@ -36,7 +38,6 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         sampleRate = decoded.sampleRate
         channelCount = decoded.channelCount
         bytesPerFrame = 2 * channelCount
-        releaseAudioTrack()
         audioTrack = createAudioTrack(decoded)
         baseFrame = 0
         baseOffsetSeconds = 0.0

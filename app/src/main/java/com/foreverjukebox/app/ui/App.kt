@@ -594,13 +594,13 @@ private fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (state.analysisProgress != null || state.analysisInFlight) {
+        if (state.analysisInFlight || state.analysisCalculating || state.audioLoading) {
             val progress = state.analysisProgress
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
                     modifier = Modifier.size(72.dp),
@@ -610,11 +610,29 @@ private fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         modifier = Modifier.size(24.dp),
                         strokeWidth = 2.dp
                     )
-                    Text(
-                        text = progress?.let { "${it}%" } ?: "…",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    if (progress != null && progress > 0) {
+                        Text(
+                            text = "${progress}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+                when {
+                    state.audioLoading -> {
+                        Text(
+                            text = "Loading audio…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    state.analysisCalculating -> {
+                        Text(
+                            text = "Calculating pathways…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

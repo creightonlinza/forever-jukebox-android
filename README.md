@@ -27,4 +27,6 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
 
 - The native engine/visualization port mirrors the web logic in `web/src/engine` and `web/src/visualization`.
 - The header font is bundled locally in `android/app/src/main/res/font/tilt_neon_regular.ttf`.
+- Audio/analysis results are cached in the app `cacheDir`; the OS may evict cached
+  data under storage pressure.
  
