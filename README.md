@@ -20,7 +20,6 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
 
 ## TODO (running list)
 
-- Branding: replace stub app name, launcher icon, and splash assets with official branding.
 - Edge deletion UI (web lets you delete selected branches; Android has no control to trigger deleteSelectedEdge()).
 - Force-branch control (web has Shift to force branching; Android has no equivalent).
 
