@@ -23,6 +23,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     private var bytesPerFrame = 4
     private var baseFrame = 0
     private var baseOffsetSeconds = 0.0
+    private val seekLock = Any()
 
     suspend fun loadBytes(bytes: ByteArray, jobId: String) {
         pcmData = null
@@ -74,16 +75,23 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     override fun seek(time: Double) {
         val track = audioTrack ?: return
         val frame = (time * sampleRate).toInt().coerceAtLeast(0)
-        val wasPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
-        if (wasPlaying) {
-            track.pause()
-        }
-        track.playbackHeadPosition = frame
-        // playbackHeadPosition may reset to 0 after seeking; treat it as relative.
-        baseFrame = track.playbackHeadPosition
-        baseOffsetSeconds = frame.toDouble() / sampleRate.toDouble()
-        if (wasPlaying) {
-            track.play()
+        synchronized(seekLock) {
+            val wasPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
+            if (wasPlaying) {
+                track.pause()
+                try {
+                    track.flush()
+                } catch (_: IllegalStateException) {
+                    // Ignore if the track is already stopped.
+                }
+            }
+            track.playbackHeadPosition = frame
+            // playbackHeadPosition may reset to 0 after seeking; treat it as relative.
+            baseFrame = track.playbackHeadPosition
+            baseOffsetSeconds = frame.toDouble() / sampleRate.toDouble()
+            if (wasPlaying) {
+                track.play()
+            }
         }
     }
 
