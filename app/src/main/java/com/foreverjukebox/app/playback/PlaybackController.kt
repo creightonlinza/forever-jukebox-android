@@ -43,7 +43,6 @@ class PlaybackController(context: Context) {
                 lastPlayStamp = null
             }
             isRunning = false
-            engine.resetStats()
         }
         return isRunning
     }
@@ -57,7 +56,6 @@ class PlaybackController(context: Context) {
             }
             isRunning = false
         }
-        engine.resetStats()
     }
 
     fun resetTimers() {

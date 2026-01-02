@@ -771,6 +771,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun updateListenTimeDisplay() {
+        val durationSeconds = controller.player.getDurationSeconds()
+        if (durationSeconds != null && controller.player.getCurrentTime() >= durationSeconds - END_EPSILON_SECONDS) {
+            controller.stopPlayback()
+            stopListenTimer()
+            updatePlaybackState { it.copy(isRunning = false) }
+            return
+        }
         val totalSeconds = controller.getListenTimeSeconds()
         updatePlaybackState {
             it.copy(
@@ -839,3 +846,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 }
+
+private const val END_EPSILON_SECONDS = 0.02
