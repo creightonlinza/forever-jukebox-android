@@ -37,11 +37,9 @@ private const val BEAT_SELECT_THRESHOLD = 8f
 private val DarkBeatFill = Color(0x8CFFD782)
 private val DarkBeatHighlight = Color(0xFFFFD46A)
 private val DarkEdgeStroke = Color(0x1F4AC7FF)
-private val DarkEdgeSelected = Color(0xFFFF5B5B)
 private val LightBeatFill = Color(0x730A4C7D)
 private val LightBeatHighlight = Color(0xFF0A4C7D)
 private val LightEdgeStroke = Color(0x4D0A4C7D)
-private val LightEdgeSelected = Color(0xFFC43838)
 
 class JumpLine(val from: Int, val to: Int, val startedAt: Long)
 
@@ -49,11 +47,9 @@ class JumpLine(val from: Int, val to: Int, val startedAt: Long)
 fun JukeboxVisualization(
     data: VisualizationData?,
     currentIndex: Int,
-    selectedEdge: Edge?,
     jumpLine: JumpLine?,
     positioner: Positioner,
     onSelectBeat: (Int) -> Unit,
-    onSelectEdge: (Edge?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var layoutSize by remember { mutableStateOf(IntSize.Zero) }
@@ -80,7 +76,6 @@ fun JukeboxVisualization(
     val beatFill = if (isLight) LightBeatFill else DarkBeatFill
     val beatHighlight = if (isLight) LightBeatHighlight else DarkBeatHighlight
     val edgeStroke = if (isLight) LightEdgeStroke else DarkEdgeStroke
-    val edgeSelected = if (isLight) LightEdgeSelected else DarkEdgeSelected
 
     Box(
         modifier = modifier
@@ -94,11 +89,7 @@ fun JukeboxVisualization(
                         onSelectBeat(beatIndex)
                         return@detectTapGestures
                     }
-                    val edge = findNearestEdge(tap, positions, data.edges, center)
-                    if (edge != null) {
-                        val nextEdge = if (selectedEdge == edge) null else edge
-                        onSelectEdge(nextEdge)
-                    }
+                    // Branch selection disabled.
                 }
             }
     ) {
@@ -121,10 +112,6 @@ fun JukeboxVisualization(
 
             for (p in positions) {
                 drawCircle(beatFill, radius = 2f, center = Offset(p.x, p.y))
-            }
-
-            if (selectedEdge != null && !selectedEdge.deleted) {
-                drawEdge(selectedEdge, positions, center, edgeSelected, 2.5f)
             }
 
             if (currentIndex >= 0 && currentIndex < positions.size) {

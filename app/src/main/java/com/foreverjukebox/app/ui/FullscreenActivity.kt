@@ -48,7 +48,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.ThemeMode
-import com.foreverjukebox.app.engine.Edge
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.JumpLine
@@ -111,7 +110,6 @@ private fun FullscreenScreen(
     var activeVizIndex by rememberSaveable { mutableStateOf(initialVizIndex) }
     var vizData by remember { mutableStateOf(engine.getVisualizationData()) }
     var currentBeatIndex by remember { mutableStateOf(-1) }
-    var selectedEdge by remember { mutableStateOf<Edge?>(null) }
     var jumpLine by remember { mutableStateOf<JumpLine?>(null) }
     var showVizMenu by remember { mutableStateOf(false) }
 
@@ -153,7 +151,6 @@ private fun FullscreenScreen(
             JukeboxVisualization(
                 data = vizData,
                 currentIndex = currentBeatIndex,
-                selectedEdge = selectedEdge,
                 jumpLine = jumpLine,
                 positioner = positioners.getOrNull(activeVizIndex) ?: positioners.first(),
                 onSelectBeat = { index ->
@@ -162,9 +159,6 @@ private fun FullscreenScreen(
                     val beat = data.beats[index]
                     controller.player.seek(beat.start)
                     currentBeatIndex = index
-                },
-                onSelectEdge = { edge ->
-                    selectedEdge = edge
                 },
                 modifier = Modifier.size(squareSize)
             )

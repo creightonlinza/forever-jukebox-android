@@ -4,7 +4,6 @@ import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
-import com.foreverjukebox.app.engine.Edge
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.visualization.JumpLine
 import kotlinx.serialization.Serializable
@@ -50,7 +49,6 @@ data class PlaybackState(
     val listenTime: String = "00:00:00",
     val trackDurationSeconds: Double? = null,
     val vizData: VisualizationData? = null,
-    val selectedEdge: Edge? = null,
     val activeVizIndex: Int = 0,
     val currentBeatIndex: Int = -1,
     val lastJumpFromIndex: Int? = null,

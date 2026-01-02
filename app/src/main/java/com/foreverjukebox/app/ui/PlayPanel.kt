@@ -156,11 +156,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     JukeboxVisualization(
                         data = playback.vizData,
                         currentIndex = playback.currentBeatIndex,
-                        selectedEdge = playback.selectedEdge,
                         jumpLine = jumpLine,
                         positioner = positioners.getOrNull(playback.activeVizIndex) ?: positioners.first(),
-                        onSelectBeat = viewModel::selectBeat,
-                        onSelectEdge = viewModel::selectEdge
+                        onSelectBeat = viewModel::selectBeat
                     )
                     Box(
                         modifier = Modifier

@@ -9,8 +9,6 @@ import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
-import com.foreverjukebox.app.engine.Edge
-import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
@@ -118,7 +116,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             scheduleTopSongsRefresh()
         }
         if (tabId != TabId.Play) {
-            _state.update { it.copy(playback = it.playback.copy(selectedEdge = null)) }
+            _state.update { it.copy(playback = it.playback.copy()) }
         }
     }
 
@@ -519,7 +517,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playback = it.playback.copy(
                             beatsPlayed = 0,
                             currentBeatIndex = -1,
-                            selectedEdge = null,
                             isRunning = running
                         )
                     )
@@ -540,20 +537,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun deleteSelectedEdge() {
-        val edge = state.value.playback.selectedEdge ?: return
-        if (edge.deleted) return
-        viewModelScope.launch {
-            val vizData = withContext(Dispatchers.Default) {
-                engine.deleteEdge(edge)
-                engine.rebuildGraph()
-                engine.getVisualizationData()
-            }
-            _state.update {
-                it.copy(playback = it.playback.copy(vizData = vizData, selectedEdge = null))
-            }
-        }
-    }
+    fun deleteSelectedEdge() = Unit
 
     fun selectBeat(index: Int) {
         val data = state.value.playback.vizData ?: return
@@ -561,10 +545,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val beat = data.beats[index]
         controller.player.seek(beat.start)
         _state.update { it.copy(playback = it.playback.copy(currentBeatIndex = index)) }
-    }
-
-    fun selectEdge(edge: Edge?) {
-        _state.update { it.copy(playback = it.playback.copy(selectedEdge = edge)) }
     }
 
     fun setActiveVisualization(index: Int) {
@@ -740,7 +720,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     beatsPlayed = 0,
                     listenTime = "00:00:00",
                     trackDurationSeconds = null,
-                    selectedEdge = null,
                     isRunning = false,
                     vizData = null,
                     currentBeatIndex = -1,
