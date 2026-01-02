@@ -9,20 +9,55 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat.MediaStyle
+import androidx.media.session.MediaButtonReceiver
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import com.foreverjukebox.app.MainActivity
 import com.foreverjukebox.app.R
 
+private object PlaybackServiceConstants {
+    const val CHANNEL_ID = "fj_playback"
+    const val NOTIFICATION_ID = 2001
+    const val ACTION_START = "com.foreverjukebox.app.playback.START"
+    const val ACTION_UPDATE = "com.foreverjukebox.app.playback.UPDATE"
+    const val ACTION_TOGGLE = "com.foreverjukebox.app.playback.TOGGLE"
+}
+
 class ForegroundPlaybackService : Service() {
+    private lateinit var mediaSession: MediaSessionCompat
+
     override fun onBind(intent: Intent?) = null
 
+    override fun onCreate() {
+        super.onCreate()
+        mediaSession = MediaSessionCompat(this, "ForeverJukeboxPlayback").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() {
+                    handlePlayPause(shouldPlay = true)
+                }
+
+                override fun onPause() {
+                    handlePlayPause(shouldPlay = false)
+                }
+
+                override fun onStop() {
+                    handlePlayPause(shouldPlay = false)
+                }
+            })
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        MediaButtonReceiver.handleIntent(mediaSession, intent)
         when (intent?.action) {
-            ACTION_TOGGLE -> {
+            PlaybackServiceConstants.ACTION_TOGGLE -> {
                 val controller = PlaybackControllerHolder.get(this)
                 val isPlaying = controller.togglePlayback()
                 updateNotification(isPlaying)
             }
-            ACTION_START, ACTION_UPDATE -> {
+            PlaybackServiceConstants.ACTION_START, PlaybackServiceConstants.ACTION_UPDATE -> {
                 val controller = PlaybackControllerHolder.get(this)
                 val isPlaying = controller.isPlaying()
                 updateNotification(isPlaying)
@@ -41,9 +76,10 @@ class ForegroundPlaybackService : Service() {
         val controller = PlaybackControllerHolder.get(this)
         val title = controller.getTrackTitle().orEmpty().ifBlank { "The Forever Jukebox" }
         val artist = controller.getTrackArtist().orEmpty()
+        updateMediaSession(title, artist, isPlaying)
 
         val toggleIntent = Intent(this, ForegroundPlaybackService::class.java).apply {
-            action = ACTION_TOGGLE
+            action = PlaybackServiceConstants.ACTION_TOGGLE
         }
         val togglePendingIntent = PendingIntent.getService(
             this,
@@ -68,25 +104,66 @@ class ForegroundPlaybackService : Service() {
         else android.R.drawable.ic_media_play
         val actionLabel = if (isPlaying) "Stop" else "Play"
 
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification: Notification = NotificationCompat.Builder(this, PlaybackServiceConstants.CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentIntent(activityPendingIntent)
             .setOngoing(isPlaying)
             .addAction(actionIcon, actionLabel, togglePendingIntent)
+            .setStyle(
+                MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(0)
+            )
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
+    }
+
+    private fun updateMediaSession(title: String, artist: String, isPlaying: Boolean) {
+        val state = PlaybackStateCompat.Builder()
+            .setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE)
+            .setState(
+                if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
+                PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                1f
+            )
+            .build()
+        val metadata = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+            .build()
+        mediaSession.setPlaybackState(state)
+        mediaSession.setMetadata(metadata)
+        mediaSession.isActive = isPlaying
+    }
+
+    private fun handlePlayPause(shouldPlay: Boolean) {
+        val controller = PlaybackControllerHolder.get(this)
+        val isPlaying = controller.isPlaying()
+        if (shouldPlay && !isPlaying) {
+            updateNotification(controller.togglePlayback())
+        } else if (!shouldPlay && isPlaying) {
+            controller.stopPlayback()
+            updateNotification(false)
+        } else {
+            updateNotification(isPlaying)
+        }
+    }
+
+    override fun onDestroy() {
+        mediaSession.release()
+        super.onDestroy()
     }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val existing = manager.getNotificationChannel(CHANNEL_ID)
+        val existing = manager.getNotificationChannel(PlaybackServiceConstants.CHANNEL_ID)
         if (existing != null) return
         val channel = NotificationChannel(
-            CHANNEL_ID,
+            PlaybackServiceConstants.CHANNEL_ID,
             "Playback",
             NotificationManager.IMPORTANCE_LOW
         )
@@ -102,15 +179,9 @@ class ForegroundPlaybackService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "fj_playback"
-        private const val NOTIFICATION_ID = 2001
-        private const val ACTION_START = "com.foreverjukebox.app.playback.START"
-        private const val ACTION_UPDATE = "com.foreverjukebox.app.playback.UPDATE"
-        private const val ACTION_TOGGLE = "com.foreverjukebox.app.playback.TOGGLE"
-
         fun start(context: Context) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
-                action = ACTION_START
+                action = PlaybackServiceConstants.ACTION_START
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -121,7 +192,7 @@ class ForegroundPlaybackService : Service() {
 
         fun update(context: Context) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
-                action = ACTION_UPDATE
+                action = PlaybackServiceConstants.ACTION_UPDATE
             }
             context.startService(intent)
         }

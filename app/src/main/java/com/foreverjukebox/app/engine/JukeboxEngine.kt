@@ -93,9 +93,7 @@ class JukeboxEngine(
             for (edge in beat.neighbors) {
                 if (edge.deleted) continue
                 val key = "${edge.src.which}-${edge.dest.which}"
-                if (!edgeMap.containsKey(key)) {
-                    edgeMap[key] = edge
-                }
+                edgeMap.putIfAbsent(key, edge)
             }
         }
         return VisualizationData(current.beats, edgeMap.values.toMutableList())
@@ -115,7 +113,7 @@ class JukeboxEngine(
         tickJob = scope.launch {
             while (ticking) {
                 tick()
-                delay(50)
+                delay(TICK_INTERVAL_MS)
             }
         }
     }
@@ -178,7 +176,7 @@ class JukeboxEngine(
             if (
                 currentBeatIndex < 0 ||
                 currentTime < beats[currentBeatIndex].start ||
-                currentTime > beats[currentBeatIndex].start + beats[currentBeatIndex].duration + 0.2
+                currentTime > beats[currentBeatIndex].start + beats[currentBeatIndex].duration + RESYNC_WINDOW_SECONDS
             ) {
                 currentBeatIndex = findBeatIndexByTime(currentTime)
                 if (currentBeatIndex >= 0) {
@@ -187,7 +185,7 @@ class JukeboxEngine(
             }
         }
 
-        if (currentBeatIndex >= 0 && currentTime >= nextTransitionTime - 0.02) {
+        if (currentBeatIndex >= 0 && currentTime >= nextTransitionTime - RESYNC_EPSILON_SECONDS) {
             advanceBeat()
         }
 
@@ -217,7 +215,9 @@ class JukeboxEngine(
             lastJumped = true
             lastJumpTime = targetTime
             lastJumpFromIndex = wrappedIndex
-            val holdMs = (beats[chosenIndex].duration * 1000.0).toLong().coerceAtLeast(200L)
+            val holdMs = (beats[chosenIndex].duration * 1000.0)
+                .toLong()
+                .coerceAtLeast(MIN_JUMP_HOLD_MS)
             ignoreResyncUntilMs = SystemClock.elapsedRealtime() + holdMs
         } else {
             lastJumpFromIndex = null
@@ -242,7 +242,7 @@ class JukeboxEngine(
                 return mid
             }
         }
-        return kotlin.math.max(0, kotlin.math.min(beats.size - 1, low - 1))
+        return (low - 1).coerceIn(0, beats.size - 1)
     }
 
     private fun applyDeletedEdges() {
@@ -285,3 +285,8 @@ data class VisualizationData(
     val beats: List<QuantumBase>,
     val edges: MutableList<Edge>
 )
+
+private const val TICK_INTERVAL_MS = 50L
+private const val RESYNC_WINDOW_SECONDS = 0.2
+private const val RESYNC_EPSILON_SECONDS = 0.02
+private const val MIN_JUMP_HOLD_MS = 200L

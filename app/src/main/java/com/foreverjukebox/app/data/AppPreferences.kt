@@ -27,12 +27,7 @@ class AppPreferences(private val context: Context) {
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
-        when (prefs[KEY_THEME]) {
-            ThemeMode.System.name -> ThemeMode.System
-            ThemeMode.Light.name -> ThemeMode.Light
-            ThemeMode.Dark.name -> ThemeMode.Dark
-            else -> ThemeMode.System
-        }
+        themeFromString(prefs[KEY_THEME])
     }
 
     suspend fun setBaseUrl(url: String) {
@@ -46,5 +41,12 @@ class AppPreferences(private val context: Context) {
             prefs[KEY_THEME] = mode.name
         }
     }
-
+    private fun themeFromString(raw: String?): ThemeMode {
+        return when (raw) {
+            ThemeMode.System.name -> ThemeMode.System
+            ThemeMode.Light.name -> ThemeMode.Light
+            ThemeMode.Dark.name -> ThemeMode.Dark
+            else -> ThemeMode.System
+        }
+    }
 }

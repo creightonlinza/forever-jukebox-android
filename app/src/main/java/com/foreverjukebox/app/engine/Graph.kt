@@ -6,6 +6,15 @@ private const val LOUD_START_WEIGHT = 1.0
 private const val LOUD_MAX_WEIGHT = 1.0
 private const val DURATION_WEIGHT = 100.0
 private const val CONFIDENCE_WEIGHT = 1.0
+private const val MAX_DISTANCE = 100.0
+private const val FULL_MATCH_DISTANCE = 0.0
+private const val TARGET_BRANCH_DIVISOR = 6
+private const val THRESHOLD_START = 10
+private const val THRESHOLD_STEP = 5
+private const val LONGEST_BACKWARD_THRESHOLD = 50
+private const val ADD_LAST_EDGE_HIGH_THRESHOLD = 65
+private const val ADD_LAST_EDGE_LOW_THRESHOLD = 55
+private const val REACH_THRESHOLD = 50
 
 private fun euclideanDistance(v1: List<Double>, v2: List<Double>): Double {
     var sum = 0.0
@@ -52,18 +61,21 @@ private fun calculateNearestNeighborsForQuantum(
             val seg1 = q1.overlappingSegments[j]
             val distance = if (j < q2.overlappingSegments.size) {
                 val seg2 = q2.overlappingSegments[j]
-                if (seg1.which == seg2.which) 100.0 else segmentDistance(seg1, seg2)
+                if (seg1.which == seg2.which) MAX_DISTANCE else segmentDistance(seg1, seg2)
             } else {
-                100.0
+                MAX_DISTANCE
             }
             sum += distance
         }
 
-        val pdistance = if (q1.indexInParent != null && q2.indexInParent != null &&
-            q1.indexInParent == q2.indexInParent) {
-            0.0
+        val pdistance = if (
+            q1.indexInParent != null &&
+            q2.indexInParent != null &&
+            q1.indexInParent == q2.indexInParent
+        ) {
+            FULL_MATCH_DISTANCE
         } else {
-            100.0
+            MAX_DISTANCE
         }
 
         val totalDistance = sum / q1.overlappingSegments.size + pdistance
@@ -220,7 +232,6 @@ private fun calculateReachability(quanta: List<QuantumBase>) {
 }
 
 private fun findBestLastBeat(quanta: List<QuantumBase>): Pair<Int, Double> {
-    val reachThreshold = 50
     var longest = 0
     var longestReach = 0.0
     for (i in quanta.size - 1 downTo 0) {
@@ -230,7 +241,7 @@ private fun findBestLastBeat(quanta: List<QuantumBase>): Pair<Int, Double> {
         if (reach > longestReach && q.neighbors.isNotEmpty()) {
             longestReach = reach
             longest = i
-            if (reach >= reachThreshold) break
+            if (reach >= REACH_THRESHOLD) break
         }
     }
     return longest to longestReach
@@ -269,15 +280,15 @@ fun buildJumpGraph(analysis: TrackAnalysis, config: JukeboxConfig): JukeboxGraph
 
     var threshold = config.currentThreshold
     if (threshold == 0) {
-        val targetBranchCount = quanta.size / 6
-        var t = 10
+        val targetBranchCount = quanta.size / TARGET_BRANCH_DIVISOR
+        var t = THRESHOLD_START
         while (t < config.maxBranchThreshold) {
             val count = collectNearestNeighbors(quanta, t, config)
             if (count >= targetBranchCount) {
                 threshold = t
                 break
             }
-            t += 5
+            t += THRESHOLD_STEP
         }
     }
 
@@ -286,10 +297,10 @@ fun buildJumpGraph(analysis: TrackAnalysis, config: JukeboxConfig): JukeboxGraph
     collectNearestNeighbors(quanta, threshold, config)
 
     if (config.addLastEdge) {
-        if (longestBackwardBranch(quanta) < 50) {
-            insertBestBackwardBranch(quanta, threshold, 65)
+        if (longestBackwardBranch(quanta) < LONGEST_BACKWARD_THRESHOLD) {
+            insertBestBackwardBranch(quanta, threshold, ADD_LAST_EDGE_HIGH_THRESHOLD)
         } else {
-            insertBestBackwardBranch(quanta, threshold, 55)
+            insertBestBackwardBranch(quanta, threshold, ADD_LAST_EDGE_LOW_THRESHOLD)
         }
     }
 

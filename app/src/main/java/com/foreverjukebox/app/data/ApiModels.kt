@@ -1,5 +1,3 @@
-@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
-
 package com.foreverjukebox.app.data
 
 import kotlinx.serialization.SerialName

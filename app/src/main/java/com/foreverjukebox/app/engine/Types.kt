@@ -6,6 +6,41 @@ data class TrackMeta(
     val timeSignature: Double? = null
 )
 
+data class JukeboxConfig(
+    val maxBranches: Int = 4,
+    val maxBranchThreshold: Int = 80,
+    val currentThreshold: Int = 0,
+    val addLastEdge: Boolean = true,
+    val justBackwards: Boolean = false,
+    val justLongBranches: Boolean = false,
+    val removeSequentialBranches: Boolean = false,
+    val minRandomBranchChance: Double = 0.18,
+    val maxRandomBranchChance: Double = 0.5,
+    val randomBranchChanceDelta: Double = 0.1,
+    val minLongBranch: Int = 0
+)
+
+data class JukeboxGraphState(
+    val computedThreshold: Int,
+    val currentThreshold: Int,
+    val lastBranchPoint: Int,
+    val totalBeats: Int,
+    val longestReach: Double,
+    val allEdges: MutableList<Edge>
+)
+
+data class JukeboxState(
+    val currentBeatIndex: Int,
+    val beatsPlayed: Int,
+    val currentTime: Double,
+    val lastJumped: Boolean,
+    val lastJumpTime: Double?,
+    val lastJumpFromIndex: Int?,
+    val currentThreshold: Int,
+    val lastBranchPoint: Int,
+    val curRandomBranchChance: Double
+)
+
 data class Segment(
     val start: Double,
     val duration: Double,
@@ -50,39 +85,4 @@ data class TrackAnalysis(
     val tatums: MutableList<QuantumBase>,
     val segments: MutableList<Segment>,
     val track: TrackMeta? = null
-)
-
-data class JukeboxConfig(
-    val maxBranches: Int = 4,
-    val maxBranchThreshold: Int = 80,
-    val currentThreshold: Int = 0,
-    val addLastEdge: Boolean = true,
-    val justBackwards: Boolean = false,
-    val justLongBranches: Boolean = false,
-    val removeSequentialBranches: Boolean = false,
-    val minRandomBranchChance: Double = 0.18,
-    val maxRandomBranchChance: Double = 0.5,
-    val randomBranchChanceDelta: Double = 0.1,
-    val minLongBranch: Int = 0
-)
-
-data class JukeboxGraphState(
-    val computedThreshold: Int,
-    val currentThreshold: Int,
-    val lastBranchPoint: Int,
-    val totalBeats: Int,
-    val longestReach: Double,
-    val allEdges: MutableList<Edge>
-)
-
-data class JukeboxState(
-    val currentBeatIndex: Int,
-    val beatsPlayed: Int,
-    val currentTime: Double,
-    val lastJumped: Boolean,
-    val lastJumpTime: Double?,
-    val lastJumpFromIndex: Int?,
-    val currentThreshold: Int,
-    val lastBranchPoint: Int,
-    val curRandomBranchChance: Double
 )

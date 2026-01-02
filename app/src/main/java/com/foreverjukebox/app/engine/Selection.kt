@@ -12,10 +12,8 @@ fun shouldRandomBranch(
     if (q.which == graph.lastBranchPoint) {
         return true
     }
-    state.curRandomBranchChance += config.randomBranchChanceDelta
-    if (state.curRandomBranchChance > config.maxRandomBranchChance) {
-        state.curRandomBranchChance = config.maxRandomBranchChance
-    }
+    state.curRandomBranchChance = (state.curRandomBranchChance + config.randomBranchChanceDelta)
+        .coerceAtMost(config.maxRandomBranchChance)
     val shouldBranch = rng() < state.curRandomBranchChance
     if (shouldBranch) {
         state.curRandomBranchChance = config.minRandomBranchChance

@@ -74,11 +74,7 @@ private fun parseTrackMeta(root: JsonObject): TrackMeta? {
 
 private fun resolveAnalysisRoot(data: JsonObject): JsonObject {
     val analysis = data["analysis"] as? JsonObject
-    return if (analysis != null && analysis.containsKey("beats")) {
-        analysis
-    } else {
-        data
-    }
+    return if (analysis != null && analysis.containsKey("beats")) analysis else data
 }
 
 fun parseAnalysis(input: JsonElement): TrackAnalysis {
@@ -102,8 +98,8 @@ fun parseAnalysis(input: JsonElement): TrackAnalysis {
 private fun linkNeighbors(list: MutableList<QuantumBase>) {
     list.forEachIndexed { index, q ->
         q.which = index
-        q.prev = if (index > 0) list[index - 1] else null
-        q.next = if (index < list.size - 1) list[index + 1] else null
+        q.prev = list.getOrNull(index - 1)
+        q.next = list.getOrNull(index + 1)
     }
 }
 
@@ -145,9 +141,7 @@ private fun connectAllOverlappingSegments(quanta: MutableList<QuantumBase>, segm
         q.overlappingSegments = mutableListOf()
         for (j in last until segments.size) {
             val seg = segments[j]
-            if (seg.start + seg.duration < q.start) {
-                continue
-            }
+            if (seg.start + seg.duration < q.start) continue
             if (seg.start > q.start + q.duration) {
                 break
             }
