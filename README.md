@@ -18,10 +18,11 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
 2. Ensure the API and worker are running (see repo `AGENTS.md`).
 3. Set the API base URL in the app when prompted (e.g. `http://10.0.2.2:8000` for the emulator).
 
-## TODO (running list)
+## Debug APK build
 
-- Edge deletion UI (web lets you delete selected branches; Android has no control to trigger deleteSelectedEdge()).
-- Force-branch control (web has Shift to force branching; Android has no equivalent).
+- Build a debug APK and copy it to `android/releases/`:
+  - `android/scripts/build-debug-release.sh`
+- The latest debug build is at `android/releases/forever-jukebox-debug.apk`.
 
 ## Notes
 
