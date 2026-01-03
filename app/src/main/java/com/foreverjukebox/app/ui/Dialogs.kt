@@ -75,6 +75,9 @@ fun TuningDialog(
                     )
                     onDismiss()
                 },
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
@@ -84,6 +87,9 @@ fun TuningDialog(
         dismissButton = {
             OutlinedButton(
                 onClick = onDismiss,
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
@@ -134,6 +140,9 @@ fun BaseUrlDialog(initialValue: String, onSave: (String) -> Unit) {
         confirmButton = {
             Button(
                 onClick = { onSave(urlInput) },
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
@@ -167,6 +176,9 @@ fun TrackInfoDialog(
         confirmButton = {
             Button(
                 onClick = onClose,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {

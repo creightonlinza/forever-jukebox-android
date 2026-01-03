@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,16 +47,13 @@ fun TabBar(state: UiState, onTabSelected: (TabId) -> Unit) {
 
 @Composable
 private fun TabButton(text: String, active: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
-    val colors = if (active) {
-        ButtonDefaults.buttonColors()
-    } else {
-        ButtonDefaults.outlinedButtonColors()
-    }
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        colors = colors,
+        colors = pillOutlinedButtonColors(active),
+        border = pillButtonBorder(),
         contentPadding = SmallButtonPadding,
+        shape = PillShape,
         modifier = Modifier.height(SmallButtonHeight)
     ) {
         Text(text)

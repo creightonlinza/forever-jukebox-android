@@ -76,6 +76,9 @@ fun SearchPanel(
                 )
                 Button(
                     onClick = { onSearch(query) },
+                    colors = pillButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
                     contentPadding = SmallButtonPadding,
                     modifier = Modifier.heightIn(min = SmallFieldMinHeight)
                 ) {

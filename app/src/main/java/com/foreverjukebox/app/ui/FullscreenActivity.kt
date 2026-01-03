@@ -27,6 +27,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.foreverjukebox.app.ui.LocalThemeTokens
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -141,7 +142,7 @@ private fun FullscreenScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(LocalThemeTokens.current.vizBackground)
     ) {
         val squareSize = minOf(this.maxWidth, this.maxHeight)
         Box(
@@ -172,6 +173,9 @@ private fun FullscreenScreen(
         ) {
             OutlinedButton(
                 onClick = { showVizMenu = true },
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
                 modifier = Modifier.height(36.dp)
             ) {
                 Text(vizLabels.getOrNull(activeVizIndex) ?: "Select")

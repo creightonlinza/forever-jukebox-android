@@ -30,11 +30,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
             HeaderBar(
                 state = state,
                 onEditBaseUrl = { viewModel.setBaseUrl(it) },
-                onThemeChange = viewModel::setThemeMode
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            TabBar(
-                state = state,
+                onThemeChange = viewModel::setThemeMode,
                 onTabSelected = viewModel::setActiveTab
             )
             Spacer(modifier = Modifier.height(12.dp))

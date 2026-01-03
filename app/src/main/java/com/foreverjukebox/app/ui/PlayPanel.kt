@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.foreverjukebox.app.ui.LocalThemeTokens
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -103,6 +104,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { viewModel.togglePlayback() },
+                    colors = pillButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
                     contentPadding = SmallButtonPadding,
                     modifier = Modifier.height(SmallButtonHeight)
                 ) {
@@ -110,6 +114,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 }
                 OutlinedButton(
                     onClick = { showTuning = true },
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
                     contentPadding = SmallButtonPadding,
                     modifier = Modifier.height(SmallButtonHeight)
                 ) {
@@ -146,12 +153,13 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             }
 
             Column(modifier = Modifier.fillMaxWidth()) {
+                val themeTokens = LocalThemeTokens.current
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(360.dp)
                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(themeTokens.vizBackground)
                 ) {
                     JukeboxVisualization(
                         data = playback.vizData,
@@ -167,6 +175,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     ) {
                         OutlinedButton(
                             onClick = { showVizMenu = true },
+                            colors = pillOutlinedButtonColors(),
+                            border = pillButtonBorder(),
+                            shape = PillShape,
                             contentPadding = SmallButtonPadding,
                             modifier = Modifier.height(SmallButtonHeight)
                         ) {
@@ -256,8 +267,11 @@ private fun LoadingStatus(progress: Int?, label: String?) {
             modifier = Modifier.size(72.dp),
             contentAlignment = Alignment.Center
         ) {
+            val themeTokens = LocalThemeTokens.current
             CircularProgressIndicator(
                 modifier = Modifier.size(24.dp),
+                color = themeTokens.onBackground,
+                trackColor = themeTokens.onBackground.copy(alpha = 0.2f),
                 strokeWidth = 2.dp
             )
         }

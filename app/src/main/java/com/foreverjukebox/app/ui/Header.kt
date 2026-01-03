@@ -44,7 +44,8 @@ import com.foreverjukebox.app.data.ThemeMode
 fun HeaderBar(
     state: UiState,
     onEditBaseUrl: (String) -> Unit,
-    onThemeChange: (ThemeMode) -> Unit
+    onThemeChange: (ThemeMode) -> Unit,
+    onTabSelected: (TabId) -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
 
@@ -114,6 +115,11 @@ fun HeaderBar(
                 )
             }
         }
+        Spacer(modifier = Modifier.height(10.dp))
+        TabBar(
+            state = state,
+            onTabSelected = onTabSelected
+        )
     }
 
     if (showSettings) {
@@ -142,6 +148,9 @@ private fun SettingsDialog(
                     onEditBaseUrl(urlInput)
                     onDismiss()
                 },
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
@@ -151,6 +160,9 @@ private fun SettingsDialog(
         dismissButton = {
             OutlinedButton(
                 onClick = onDismiss,
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
@@ -164,6 +176,9 @@ private fun SettingsDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { onThemeChange(ThemeMode.System) },
+                        colors = pillOutlinedButtonColors(),
+                        border = pillButtonBorder(),
+                        shape = PillShape,
                         contentPadding = SmallButtonPadding,
                         modifier = Modifier.height(SmallButtonHeight)
                     ) {
@@ -171,6 +186,9 @@ private fun SettingsDialog(
                     }
                     OutlinedButton(
                         onClick = { onThemeChange(ThemeMode.Light) },
+                        colors = pillOutlinedButtonColors(),
+                        border = pillButtonBorder(),
+                        shape = PillShape,
                         contentPadding = SmallButtonPadding,
                         modifier = Modifier.height(SmallButtonHeight)
                     ) {
@@ -178,6 +196,9 @@ private fun SettingsDialog(
                     }
                     OutlinedButton(
                         onClick = { onThemeChange(ThemeMode.Dark) },
+                        colors = pillOutlinedButtonColors(),
+                        border = pillButtonBorder(),
+                        shape = PillShape,
                         contentPadding = SmallButtonPadding,
                         modifier = Modifier.height(SmallButtonHeight)
                     ) {
