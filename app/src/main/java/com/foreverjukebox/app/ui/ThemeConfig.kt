@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 data class ThemeTokens(
@@ -17,7 +18,10 @@ data class ThemeTokens(
     val controlBorder: Color,
     val accent: Color,
     val titleAccent: Color,
-    val muted: Color
+    val muted: Color,
+    val edgeStroke: Color,
+    val beatFill: Color,
+    val beatHighlight: Color
 )
 
 private val DarkTokens = ThemeTokens(
@@ -32,7 +36,10 @@ private val DarkTokens = ThemeTokens(
     controlBorder = Color(0xFF3B465B),
     accent = Color(0xFF4AC7FF),
     titleAccent = Color(0xFFF1C47A),
-    muted = Color(0xFFB9C0CC)
+    muted = Color(0xFFB9C0CC),
+    edgeStroke = Color(0x1F4AC7FF),
+    beatFill = Color(0x8CFFD782),
+    beatHighlight = Color(0xFFFFD46A)
 )
 
 private val LightTokens = ThemeTokens(
@@ -47,8 +54,13 @@ private val LightTokens = ThemeTokens(
     controlBorder = Color(0xFF88B2DA),
     accent = Color(0xFF0A4C7D),
     titleAccent = Color(0xFFD68A3C),
-    muted = Color(0xFF35526C)
+    muted = Color(0xFF35526C),
+    edgeStroke = Color(0x4D0A4C7D),
+    beatFill = Color(0x730A4C7D),
+    beatHighlight = Color(0xFF0A4C7D)
 )
+
+val LocalThemeTokens = staticCompositionLocalOf { DarkTokens }
 
 fun themeTokens(isDark: Boolean): ThemeTokens = if (isDark) DarkTokens else LightTokens
 

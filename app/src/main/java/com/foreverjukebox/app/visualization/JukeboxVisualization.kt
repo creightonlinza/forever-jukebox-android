@@ -16,13 +16,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.material3.MaterialTheme
 import com.foreverjukebox.app.engine.Edge
 import com.foreverjukebox.app.engine.VisualizationData
+import com.foreverjukebox.app.ui.LocalThemeTokens
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -33,13 +32,6 @@ private const val EDGE_SAMPLE_LIMIT = 300
 private const val EDGE_AVOID_RADIUS = 6f
 private const val EDGE_SELECT_THRESHOLD = 8f
 private const val BEAT_SELECT_THRESHOLD = 8f
-
-private val DarkBeatFill = Color(0x8CFFD782)
-private val DarkBeatHighlight = Color(0xFFFFD46A)
-private val DarkEdgeStroke = Color(0x1F4AC7FF)
-private val LightBeatFill = Color(0x730A4C7D)
-private val LightBeatHighlight = Color(0xFF0A4C7D)
-private val LightEdgeStroke = Color(0x4D0A4C7D)
 
 class JumpLine(val from: Int, val to: Int, val startedAt: Long)
 
@@ -72,10 +64,10 @@ fun JukeboxVisualization(
     }
 
     val center = Offset(layoutSize.width / 2f, layoutSize.height / 2f)
-    val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val beatFill = if (isLight) LightBeatFill else DarkBeatFill
-    val beatHighlight = if (isLight) LightBeatHighlight else DarkBeatHighlight
-    val edgeStroke = if (isLight) LightEdgeStroke else DarkEdgeStroke
+    val themeTokens = LocalThemeTokens.current
+    val beatFill = themeTokens.beatFill
+    val beatHighlight = themeTokens.beatHighlight
+    val edgeStroke = themeTokens.edgeStroke
 
     Box(
         modifier = modifier
