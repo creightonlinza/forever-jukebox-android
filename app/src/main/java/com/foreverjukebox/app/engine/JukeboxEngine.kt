@@ -13,6 +13,7 @@ interface JukeboxPlayer {
     fun pause()
     fun stop()
     fun seek(time: Double)
+    fun scheduleJump(targetTime: Double, transitionTime: Double)
     fun getCurrentTime(): Double
     fun isPlaying(): Boolean
 }
@@ -211,7 +212,7 @@ class JukeboxEngine(
         val chosenIndex = selection.first
         if (chosenIndex != wrappedIndex) {
             val targetTime = beats[chosenIndex].start
-            player.seek(targetTime)
+            player.scheduleJump(targetTime, nextTransitionTime)
             lastJumped = true
             lastJumpTime = targetTime
             lastJumpFromIndex = wrappedIndex

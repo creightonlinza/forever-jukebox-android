@@ -7,6 +7,8 @@ import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.os.Handler
+import android.os.Looper
 import com.foreverjukebox.app.engine.JukeboxPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,10 +26,13 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     private var baseFrame = 0
     private var baseOffsetSeconds = 0.0
     private val seekLock = Any()
+    private val handler = Handler(Looper.getMainLooper())
+    private var pendingJumpToken = 0
 
     suspend fun loadBytes(bytes: ByteArray, jobId: String) {
         pcmData = null
         releaseAudioTrack()
+        cancelScheduledJump()
         withContext(Dispatchers.IO) {
             val file = File(context.cacheDir, "fj-audio-$jobId")
             file.writeBytes(bytes)
@@ -45,6 +50,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     }
 
     fun release() {
+        cancelScheduledJump()
         releaseAudioTrack()
     }
 
@@ -58,6 +64,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
 
     override fun stop() {
         val track = audioTrack ?: return
+        cancelScheduledJump()
         if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
             track.pause()
         }
@@ -75,6 +82,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     override fun seek(time: Double) {
         val track = audioTrack ?: return
         val frame = (time * sampleRate).toInt().coerceAtLeast(0)
+        cancelScheduledJump()
         synchronized(seekLock) {
             val wasPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
             if (wasPlaying) {
@@ -93,6 +101,22 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
                 track.play()
             }
         }
+    }
+
+    override fun scheduleJump(targetTime: Double, transitionTime: Double) {
+        val track = audioTrack ?: return
+        if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
+            return
+        }
+        val currentTime = getCurrentTime()
+        val delayMs = ((transitionTime - currentTime).coerceAtLeast(0.0) * 1000.0).toLong()
+        val token = ++pendingJumpToken
+        handler.postDelayed({
+            if (token != pendingJumpToken) return@postDelayed
+            if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                seek(targetTime)
+            }
+        }, delayMs)
     }
 
     override fun getCurrentTime(): Double {
@@ -114,6 +138,11 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     private fun releaseAudioTrack() {
         audioTrack?.release()
         audioTrack = null
+    }
+
+    private fun cancelScheduledJump() {
+        pendingJumpToken += 1
+        handler.removeCallbacksAndMessages(null)
     }
 
     private fun createAudioTrack(decoded: DecodedAudio): AudioTrack {
