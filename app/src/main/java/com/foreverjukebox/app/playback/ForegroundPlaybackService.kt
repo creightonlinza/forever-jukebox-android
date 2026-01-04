@@ -7,8 +7,16 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.graphics.drawable.IconCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.media.session.MediaButtonReceiver
 import android.support.v4.media.MediaMetadataCompat
@@ -24,6 +32,8 @@ private object PlaybackServiceConstants {
     const val ACTION_UPDATE = "com.foreverjukebox.app.playback.UPDATE"
     const val ACTION_TOGGLE = "com.foreverjukebox.app.playback.TOGGLE"
 }
+
+private const val NOTIFICATION_ACCENT = "#4AC7FF"
 
 class ForegroundPlaybackService : Service() {
     private lateinit var mediaSession: MediaSessionCompat
@@ -92,6 +102,7 @@ class ForegroundPlaybackService : Service() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.EXTRA_OPEN_LISTEN_TAB, true)
         }
         val activityPendingIntent = PendingIntent.getActivity(
             this,
@@ -100,17 +111,28 @@ class ForegroundPlaybackService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or pendingIntentImmutableFlag()
         )
 
-        val actionIcon = if (isPlaying) android.R.drawable.ic_media_pause
+        val actionIconRes = if (isPlaying) android.R.drawable.ic_media_pause
         else android.R.drawable.ic_media_play
         val actionLabel = if (isPlaying) "Stop" else "Play"
+        val actionIcon = tintedIcon(actionIconRes, Color.parseColor(NOTIFICATION_ACCENT))
 
         val notification: Notification = NotificationCompat.Builder(this, PlaybackServiceConstants.CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(Color.parseColor(NOTIFICATION_ACCENT))
+            .setColorized(true)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setOnlyAlertOnce(true)
             .setContentIntent(activityPendingIntent)
             .setOngoing(isPlaying)
-            .addAction(actionIcon, actionLabel, togglePendingIntent)
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    actionIcon,
+                    actionLabel,
+                    togglePendingIntent
+                ).build()
+            )
             .setStyle(
                 MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
@@ -119,6 +141,17 @@ class ForegroundPlaybackService : Service() {
             .build()
 
         startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
+    }
+
+    private fun tintedIcon(resId: Int, color: Int): IconCompat {
+        val source = BitmapFactory.decodeResource(resources, resId)
+        val bitmap = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+        }
+        canvas.drawBitmap(source, 0f, 0f, paint)
+        return IconCompat.createWithBitmap(bitmap)
     }
 
     private fun updateMediaSession(title: String, artist: String, isPlaying: Boolean) {

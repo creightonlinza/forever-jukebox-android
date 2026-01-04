@@ -82,6 +82,11 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         return getBytes(url)
     }
 
+    suspend fun repairJob(baseUrl: String, jobId: String): AnalysisResponse {
+        val url = buildUrl(baseUrl, ApiPaths.repair(jobId))
+        return postEmptyJson(url).let { json.decodeFromString(it) }
+    }
+
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
@@ -123,6 +128,17 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         }
     }
 
+    private suspend fun postEmptyJson(url: String): String = withContext(Dispatchers.IO) {
+        val body = ByteArray(0).toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url(url).post(body).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
+            }
+            response.body?.string() ?: ""
+        }
+    }
+
     private fun buildUrl(
         baseUrl: String,
         pathSegments: List<String>,
@@ -153,6 +169,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         fun jobByYoutube(youtubeId: String) = listOf("api", "jobs", "by-youtube", youtubeId)
         fun play(jobId: String) = listOf("api", "plays", jobId)
         fun audio(jobId: String) = listOf("api", "audio", jobId)
+        fun repair(jobId: String) = listOf("api", "repair", jobId)
     }
 
     companion object {

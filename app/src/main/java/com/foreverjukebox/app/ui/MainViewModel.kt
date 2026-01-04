@@ -26,6 +26,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import java.io.File
+import java.io.IOException
 import kotlin.math.roundToInt
 import kotlin.coroutines.coroutineContext
 
@@ -220,7 +221,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startPoll(jobId: String) {
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
-            pollAnalysis(jobId)
+            try {
+                pollAnalysis(jobId)
+            } catch (_: Exception) {
+                setAnalysisIdle()
+            }
         }
     }
 
@@ -386,7 +391,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastJobId = response.id
                 if (response.status == "complete" && response.result != null) {
                     if (!state.value.playback.audioLoaded) {
-                        loadAudioFromJob(response.id)
+                        val loaded = loadAudioFromJob(response.id)
+                        if (!loaded) {
+                            startPoll(response.id)
+                            return@launch
+                        }
                     }
                     if (applyAnalysisResult(response)) {
                         return@launch
@@ -421,7 +430,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try {
             if (response.status == "complete" && response.result != null) {
                 if (!state.value.playback.audioLoaded) {
-                    loadAudioFromJob(jobId)
+                    val loaded = loadAudioFromJob(jobId)
+                    if (!loaded) {
+                        startPoll(jobId)
+                        return
+                    }
                 }
                 if (applyAnalysisResult(response)) {
                     return
@@ -591,6 +604,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun openListenTab() {
+        _state.update { it.copy(activeTab = TabId.Play) }
+    }
+
     private suspend fun pollAnalysis(jobId: String) {
         val baseUrl = state.value.baseUrl
         val intervalMs = 2000L
@@ -598,8 +615,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val response = api.getAnalysis(baseUrl, jobId)
             when (response.status) {
                 "failed" -> {
+                    if (response.error == "Analysis missing") {
+                        try {
+                            api.repairJob(baseUrl, jobId)
+                            delay(intervalMs)
+                            continue
+                        } catch (_: Exception) {
+                            // Fall through to error handling.
+                        }
+                    }
                     setAnalysisIdle()
-                    throw IllegalStateException(response.error ?: "Analysis failed")
+                    return
                 }
                 "downloading", "queued", "processing" -> {
                     val progress = response.progress?.roundToInt()
@@ -618,7 +644,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 "complete" -> {
                     if (!state.value.playback.audioLoaded) {
-                        loadAudioFromJob(jobId)
+                        val loaded = loadAudioFromJob(jobId)
+                        if (!loaded) {
+                            delay(intervalMs)
+                            continue
+                        }
                     }
                     if (applyAnalysisResult(response)) {
                         return
@@ -629,18 +659,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun loadAudioFromJob(jobId: String) {
+    private suspend fun loadAudioFromJob(jobId: String): Boolean {
         val baseUrl = state.value.baseUrl
         setAudioLoading(true)
-        val bytes = api.fetchAudioBytes(baseUrl, jobId)
-        withContext(Dispatchers.Default) {
-            controller.player.loadBytes(bytes, jobId)
-        }
-        audioLoadInFlight = false
-        updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-        val youtubeId = state.value.playback.lastYouTubeId
-        if (youtubeId != null) {
-            cacheAudio(youtubeId, jobId, bytes)
+        try {
+            val bytes = api.fetchAudioBytes(baseUrl, jobId)
+            withContext(Dispatchers.Default) {
+                controller.player.loadBytes(bytes, jobId)
+            }
+            audioLoadInFlight = false
+            updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
+            val youtubeId = state.value.playback.lastYouTubeId
+            if (youtubeId != null) {
+                cacheAudio(youtubeId, jobId, bytes)
+            }
+            return true
+        } catch (err: IOException) {
+            audioLoadInFlight = false
+            updatePlaybackState { it.copy(audioLoading = false) }
+            if (err.message?.contains("HTTP 404") == true) {
+                try {
+                    api.repairJob(baseUrl, jobId)
+                } catch (_: Exception) {
+                    // Ignore repair failures; poll loop will surface errors.
+                }
+                return false
+            }
+            throw err
         }
     }
 

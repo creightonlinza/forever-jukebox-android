@@ -19,6 +19,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         viewModel.handleDeepLink(intent?.data)
+        if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
+            viewModel.openListenTab()
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -30,5 +33,12 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         viewModel.handleDeepLink(intent.data)
+        if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
+            viewModel.openListenTab()
+        }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_LISTEN_TAB = "com.foreverjukebox.app.open_listen_tab"
     }
 }
