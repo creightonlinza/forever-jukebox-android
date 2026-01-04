@@ -13,6 +13,7 @@ import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.JumpLine
+import com.foreverjukebox.app.visualization.visualizationCount
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -65,6 +66,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             preferences.themeMode.collect { mode ->
                 _state.update { it.copy(themeMode = mode) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.activeVizIndex.collect { index ->
+                val resolvedIndex = if (index in 0 until visualizationCount) index else 0
+                _state.update {
+                    it.copy(playback = it.playback.copy(activeVizIndex = resolvedIndex))
+                }
             }
         }
         engine.onUpdate { engineState ->
@@ -562,6 +571,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setActiveVisualization(index: Int) {
         _state.update { it.copy(playback = it.playback.copy(activeVizIndex = index)) }
+        viewModelScope.launch {
+            preferences.setActiveVizIndex(index)
+        }
     }
 
     fun applyTuning(

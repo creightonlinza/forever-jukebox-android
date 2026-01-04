@@ -7,7 +7,7 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
 - Native engine + visualization (ported from the TypeScript web engine).
 - Spotify search, YouTube match selection, analysis polling, and playback.
 - Visualization layouts, edge selection, fullscreen, and tuning controls.
-- Theme toggle (light/dark).
+- Theme toggle (system/light/dark).
 - Deep links: `foreverjukebox://listen/{youtubeId}`.
 - API base URL configuration stored in DataStore.
 - PCM AudioTrack playback for beat-accurate jumping.

@@ -99,3 +99,14 @@ val positioners: List<Positioner> = listOf(
         }
     }
 )
+
+val visualizationCount: Int = positioners.size
+
+val visualizationLabels: List<String> = listOf(
+    "Orbit",
+    "Spiral",
+    "Grid",
+    "Wave",
+    "Infinity",
+    "Bloom"
+)

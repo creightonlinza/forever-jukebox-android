@@ -58,6 +58,7 @@ import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.positioners
+import com.foreverjukebox.app.visualization.visualizationLabels
 
 class FullscreenActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,7 +113,7 @@ private fun FullscreenScreen(
     val controller = remember { PlaybackControllerHolder.get(context) }
     val engine = controller.engine
     val view = LocalView.current
-    val vizLabels = listOf("Orbit", "Spiral", "Grid", "Wave", "Infinity", "Bloom")
+    val vizLabels = visualizationLabels
     var activeVizIndex by rememberSaveable { mutableStateOf(initialVizIndex) }
     var vizData by remember { mutableStateOf(engine.getVisualizationData()) }
     var currentBeatIndex by remember { mutableStateOf(-1) }

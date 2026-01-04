@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.positioners
+import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 
 @Composable
@@ -49,7 +50,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     var showVizMenu by remember { mutableStateOf(false) }
-    val vizLabels = listOf("Orbit", "Spiral", "Grid", "Wave", "Infinity", "Bloom")
+    val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
     val fullscreenLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()

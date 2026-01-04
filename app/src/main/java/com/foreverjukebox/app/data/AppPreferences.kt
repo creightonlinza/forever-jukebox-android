@@ -3,6 +3,7 @@ package com.foreverjukebox.app.data
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,7 @@ class AppPreferences(private val context: Context) {
     companion object {
         private val KEY_BASE_URL = stringPreferencesKey("base_url")
         private val KEY_THEME = stringPreferencesKey("theme")
+        private val KEY_VIZ_INDEX = intPreferencesKey("viz_index")
     }
 
     val baseUrl: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -28,6 +30,10 @@ class AppPreferences(private val context: Context) {
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
         themeFromString(prefs[KEY_THEME])
+    }
+
+    val activeVizIndex: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[KEY_VIZ_INDEX] ?: 0
     }
 
     suspend fun setBaseUrl(url: String) {
@@ -39,6 +45,12 @@ class AppPreferences(private val context: Context) {
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { prefs ->
             prefs[KEY_THEME] = mode.name
+        }
+    }
+
+    suspend fun setActiveVizIndex(index: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_VIZ_INDEX] = index
         }
     }
     private fun themeFromString(raw: String?): ThemeMode {
