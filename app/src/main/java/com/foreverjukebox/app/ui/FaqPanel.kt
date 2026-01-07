@@ -45,7 +45,7 @@ fun FaqPanel() {
             Text("What the what?", fontWeight = FontWeight.Bold)
             Text("This app lets you search a song on Spotify, match it to YouTube audio, and generate a forever-changing version of the song.")
             Text("How does it work?", fontWeight = FontWeight.Bold)
-            Text("The engine on the other end of the API base you provide at app start or in the Settings menu analyzes audio into beats and segments, then plays it beat by beat. At each beat there is a chance to jump to a different part of the song that sounds similar. Similarity uses features like timbre, loudness, duration, and beat position. The visualization shows the possible jump paths for each beat.")
+            Text("The engine on the other side of the API base analyzes audio into beats and segments, then plays it beat by beat. At each beat there is a chance to jump to a different part of the song that sounds similar. Similarity uses features like timbre, loudness, duration, and beat position. The visualization shows the possible jump paths for each beat.")
             Text("How can I tune the Jukebox?", fontWeight = FontWeight.Bold)
             Text("Use the Tune button to open the tuning panel. Lower the threshold for higher audio continuity; raise it for more branches. Adjust branch probability min/max and ramp speed to shape how often jumps happen. Use the toggles to allow or restrict certain branch types.")
             Text("Credits", fontWeight = FontWeight.Bold)
