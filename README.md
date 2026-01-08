@@ -15,14 +15,14 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
 ## Running
 
 1. Open `android/` in Android Studio.
-2. Ensure the API and worker are running (see repo `AGENTS.md`).
+2. Ensure the API and worker are running.
 3. Set the API base URL in the app when prompted (e.g. `http://10.0.2.2:8000` for the emulator).
 
 ## Debug APK build
 
-- Build a debug APK and copy it to `android/releases/`:
-  - `android/scripts/build-debug-release.sh`
-- The latest debug build is at `android/releases/forever-jukebox-debug.apk`.
+```bash
+./gradlew assembleDebug
+```
 
 ## Notes
 
@@ -30,4 +30,3 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
 - The header font is bundled locally in `android/app/src/main/res/font/tilt_neon_regular.ttf`.
 - Audio/analysis results are cached in the app `cacheDir`; the OS may evict cached
   data under storage pressure.
- 
