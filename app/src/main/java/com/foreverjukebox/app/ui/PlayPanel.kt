@@ -80,14 +80,15 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading) {
+        if (!playback.analysisErrorMessage.isNullOrBlank()) {
+            ErrorStatus(message = playback.analysisErrorMessage)
+        } else if (playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading) {
             LoadingStatus(
                 progress = playback.analysisProgress,
                 label = when {
-                    playback.analysisProgress != null && playback.analysisProgress > 0 ->
-                        "Fetching and analyzing audio…"
-                    playback.audioLoading -> "Loading audio…"
-                    playback.analysisCalculating -> "Calculating pathways…"
+                    playback.analysisCalculating -> "Calculating pathways..."
+                    playback.analysisInFlight -> playback.analysisMessage ?: "Fetching audio..."
+                    playback.audioLoading -> "Loading audio..."
                     else -> null
                 }
             )
@@ -294,5 +295,21 @@ private fun LoadingStatus(progress: Int?, label: String?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+@Composable
+private fun ErrorStatus(message: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

@@ -20,6 +20,7 @@ data class UiState(
     val showBaseUrlPrompt: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.System,
     val activeTab: TabId = TabId.Top,
+    val cacheSizeBytes: Long = 0,
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
     val tuning: TuningState = TuningState()
@@ -38,6 +39,8 @@ data class SearchState(
 
 data class PlaybackState(
     val analysisProgress: Int? = null,
+    val analysisMessage: String? = null,
+    val analysisErrorMessage: String? = null,
     val analysisInFlight: Boolean = false,
     val analysisCalculating: Boolean = false,
     val audioLoading: Boolean = false,

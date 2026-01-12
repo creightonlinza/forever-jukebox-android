@@ -150,9 +150,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private sealed class LoadingEvent {
         data object Reset : LoadingEvent()
-        data class AnalysisQueued(val progress: Int?) : LoadingEvent()
-        data class AnalysisProgress(val progress: Int?) : LoadingEvent()
+        data class AnalysisQueued(val progress: Int?, val message: String?) : LoadingEvent()
+        data class AnalysisProgress(val progress: Int?, val message: String?) : LoadingEvent()
         data object AnalysisCalculating : LoadingEvent()
+        data class AnalysisError(val message: String) : LoadingEvent()
         data class AudioLoading(val loading: Boolean) : LoadingEvent()
     }
 
@@ -161,23 +162,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (event) {
                 LoadingEvent.Reset -> current.copy(
                     analysisProgress = null,
+                    analysisMessage = null,
+                    analysisErrorMessage = null,
                     analysisInFlight = false,
                     analysisCalculating = false
                 )
                 is LoadingEvent.AnalysisQueued -> current.copy(
                     analysisProgress = event.progress,
+                    analysisMessage = event.message,
+                    analysisErrorMessage = null,
                     analysisInFlight = true,
                     analysisCalculating = false
                 )
                 is LoadingEvent.AnalysisProgress -> current.copy(
                     analysisProgress = event.progress,
+                    analysisMessage = event.message,
+                    analysisErrorMessage = null,
                     analysisInFlight = true,
                     analysisCalculating = false
                 )
                 LoadingEvent.AnalysisCalculating -> current.copy(
                     analysisProgress = null,
+                    analysisMessage = null,
+                    analysisErrorMessage = null,
                     analysisInFlight = false,
                     analysisCalculating = true
+                )
+                is LoadingEvent.AnalysisError -> current.copy(
+                    analysisProgress = null,
+                    analysisMessage = null,
+                    analysisErrorMessage = event.message,
+                    analysisInFlight = false,
+                    analysisCalculating = false,
+                    audioLoading = false
                 )
                 is LoadingEvent.AudioLoading -> current.copy(audioLoading = event.loading)
             }
@@ -188,16 +205,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         applyLoadingEvent(LoadingEvent.Reset)
     }
 
-    private fun setAnalysisQueued(progress: Int?) {
-        applyLoadingEvent(LoadingEvent.AnalysisQueued(progress))
+    private fun setAnalysisQueued(progress: Int?, message: String? = null) {
+        applyLoadingEvent(LoadingEvent.AnalysisQueued(progress, message))
     }
 
-    private fun setAnalysisProgress(progress: Int?) {
-        applyLoadingEvent(LoadingEvent.AnalysisProgress(progress))
+    private fun setAnalysisProgress(progress: Int?, message: String? = null) {
+        applyLoadingEvent(LoadingEvent.AnalysisProgress(progress, message))
     }
 
     private fun setAnalysisCalculating() {
         applyLoadingEvent(LoadingEvent.AnalysisCalculating)
+    }
+
+    private fun setAnalysisError(message: String) {
+        applyLoadingEvent(LoadingEvent.AnalysisError(message))
     }
 
     private fun setAudioLoading(loading: Boolean) {
@@ -233,7 +254,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 pollAnalysis(jobId)
             } catch (_: Exception) {
-                setAnalysisIdle()
+                setAnalysisError("Loading failed.")
             }
         }
     }
@@ -348,12 +369,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeTab = TabId.Play
             )
         }
-        setAnalysisCalculating()
         viewModelScope.launch {
             if (tryLoadCachedTrack(youtubeId)) {
                 return@launch
             }
-            setAnalysisQueued(0)
+            setAnalysisQueued(null, "Fetching audio...")
             try {
                 val response = api.startYoutubeAnalysis(
                     baseUrl,
@@ -364,10 +384,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (response.id == null) {
                     throw IllegalStateException("Invalid job response")
                 }
+                setAnalysisQueued(response.progress?.roundToInt(), response.message)
                 lastJobId = response.id
                 startPoll(response.id)
             } catch (err: Exception) {
-                setAnalysisIdle()
+                setAnalysisError("Loading failed.")
             }
         }
     }
@@ -385,16 +406,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeTab = TabId.Play
             )
         }
-        setAnalysisCalculating()
         viewModelScope.launch {
             if (tryLoadCachedTrack(youtubeId)) {
                 return@launch
             }
-            setAnalysisQueued(0)
+            setAnalysisQueued(null, "Fetching audio...")
             try {
                 val response = api.getJobByYoutube(baseUrl, youtubeId)
                 if (response.id == null) {
-                    setAnalysisIdle()
+                    setAnalysisError("Loading failed.")
                     return@launch
                 }
                 lastJobId = response.id
@@ -413,7 +433,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 startPoll(response.id)
             } catch (err: Exception) {
-                setAnalysisIdle()
+                setAnalysisError("Loading failed.")
             }
         }
     }
@@ -434,7 +454,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeTab = TabId.Play
             )
         }
-        setAnalysisQueued(0)
+        setAnalysisQueued(null, response.message)
         lastJobId = jobId
         try {
             if (response.status == "complete" && response.result != null) {
@@ -452,7 +472,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             startPoll(jobId)
         } catch (_: Exception) {
-            setAnalysisIdle()
+            setAnalysisError("Loading failed.")
         }
     }
 
@@ -548,7 +568,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ForegroundPlaybackService.start(getApplication())
                 }
             } catch (err: Exception) {
-                setAnalysisIdle()
+                setAnalysisError("Loading failed.")
             }
         } else {
             controller.stopPlayback()
@@ -616,6 +636,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshCacheSize() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sizeBytes = cacheDir().walkTopDown()
+                .filter { it.isFile }
+                .sumOf { it.length() }
+            _state.update { it.copy(cacheSizeBytes = sizeBytes) }
+        }
+    }
+
+    fun clearCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val dir = cacheDir()
+            dir.listFiles()?.forEach { it.deleteRecursively() }
+            val sizeBytes = cacheDir().walkTopDown()
+                .filter { it.isFile }
+                .sumOf { it.length() }
+            _state.update { it.copy(cacheSizeBytes = sizeBytes) }
+        }
+    }
+
     fun openListenTab() {
         _state.update { it.copy(activeTab = TabId.Play) }
     }
@@ -636,12 +676,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             // Fall through to error handling.
                         }
                     }
-                    setAnalysisIdle()
+                    setAnalysisError(response.error ?: "Loading failed.")
                     return
                 }
                 "downloading", "queued", "processing" -> {
                     val progress = response.progress?.roundToInt()
-                    setAnalysisProgress(progress)
+                    setAnalysisProgress(progress, response.message)
                     if (response.status != "downloading" &&
                         !state.value.playback.audioLoaded &&
                         !audioLoadInFlight
@@ -729,6 +769,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     playTitle = playTitle,
                     trackDurationSeconds = durationSeconds,
                     analysisProgress = null,
+                    analysisMessage = null,
+                    analysisErrorMessage = null,
                     analysisInFlight = false,
                     analysisCalculating = false,
                     audioLoading = false
@@ -783,7 +825,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     jumpLine = null,
                     playTitle = "",
                     lastYouTubeId = null,
-                    analysisProgress = 0,
+                    analysisProgress = null,
+                    analysisMessage = null,
+                    analysisErrorMessage = null,
                     analysisInFlight = false,
                     analysisCalculating = false,
                     audioLoading = false

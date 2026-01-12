@@ -35,7 +35,8 @@ data class AnalysisStartRequest(
 data class AnalysisStartResponse(
     val id: String? = null,
     val status: String? = null,
-    val progress: Double? = null
+    val progress: Double? = null,
+    val message: String? = null
 )
 
 @Serializable
@@ -43,6 +44,7 @@ data class AnalysisResponse(
     val id: String? = null,
     val status: String? = null,
     val progress: Double? = null,
+    val message: String? = null,
     @SerialName("youtube_id") val youtubeId: String? = null,
     val result: JsonElement? = null,
     val error: String? = null
