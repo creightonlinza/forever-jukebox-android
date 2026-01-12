@@ -687,10 +687,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         !audioLoadInFlight
                     ) {
                         audioLoadInFlight = true
-                        try {
-                            loadAudioFromJob(jobId)
-                        } catch (_: Exception) {
-                            audioLoadInFlight = false
+                        viewModelScope.launch {
+                            try {
+                                loadAudioFromJob(jobId)
+                            } catch (_: Exception) {
+                                audioLoadInFlight = false
+                            }
                         }
                     }
                 }

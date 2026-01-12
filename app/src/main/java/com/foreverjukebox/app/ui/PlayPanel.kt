@@ -86,9 +86,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             LoadingStatus(
                 progress = playback.analysisProgress,
                 label = when {
-                    playback.analysisCalculating -> "Calculating pathways..."
-                    playback.analysisInFlight -> playback.analysisMessage ?: "Fetching audio..."
-                    playback.audioLoading -> "Loading audio..."
+                    playback.analysisCalculating -> "Calculating pathways"
+                    playback.analysisInFlight -> playback.analysisMessage ?: "Fetching audio"
+                    playback.audioLoading -> "Fetching audio"
                     else -> null
                 }
             )
