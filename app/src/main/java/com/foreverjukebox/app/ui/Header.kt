@@ -39,12 +39,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.foreverjukebox.app.data.ThemeMode
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun HeaderBar(
     state: UiState,
     onEditBaseUrl: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    onRefreshCacheSize: () -> Unit,
+    onClearCache: () -> Unit,
     onTabSelected: (TabId) -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
@@ -105,7 +109,10 @@ fun HeaderBar(
             )
             Spacer(modifier = Modifier.weight(1f))
             IconButton(
-                onClick = { showSettings = true },
+                onClick = {
+                    onRefreshCacheSize()
+                    showSettings = true
+                },
                 modifier = Modifier.size(SmallButtonHeight)
             ) {
                 Icon(
@@ -127,7 +134,8 @@ fun HeaderBar(
             state = state,
             onDismiss = { showSettings = false },
             onThemeChange = onThemeChange,
-            onEditBaseUrl = onEditBaseUrl
+            onEditBaseUrl = onEditBaseUrl,
+            onClearCache = onClearCache
         )
     }
 }
@@ -137,9 +145,12 @@ private fun SettingsDialog(
     state: UiState,
     onDismiss: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
-    onEditBaseUrl: (String) -> Unit
+    onEditBaseUrl: (String) -> Unit,
+    onClearCache: () -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
+    val cacheLabel = formatCacheSize(state.cacheSizeBytes)
+    val cacheEnabled = state.cacheSizeBytes > 0
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -172,6 +183,15 @@ private fun SettingsDialog(
         title = { Text("Settings") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("API Base URL")
+                androidx.compose.material3.OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = { urlInput = it },
+                    label = { Text("Example: http://10.0.2.2:8000") },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    singleLine = true,
+                    modifier = Modifier.heightIn(min = SmallFieldMinHeight)
+                )
                 Text("Theme")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
@@ -205,16 +225,32 @@ private fun SettingsDialog(
                         Text("Dark", style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                Text("API Base URL")
-                androidx.compose.material3.OutlinedTextField(
-                    value = urlInput,
-                    onValueChange = { urlInput = it },
-                    label = { Text("Example: http://10.0.2.2:8000") },
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    singleLine = true,
-                    modifier = Modifier.heightIn(min = SmallFieldMinHeight)
-                )
+                Text("Cache")
+                OutlinedButton(
+                    onClick = onClearCache,
+                    enabled = cacheEnabled,
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Clear $cacheLabel cache", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     )
+}
+
+private fun formatCacheSize(bytes: Long): String {
+    if (bytes <= 0) {
+        return "0MB"
+    }
+    val mb = bytes / (1024.0 * 1024.0)
+    val rounded = (mb * 10).roundToInt() / 10.0
+    return if (rounded % 1.0 == 0.0) {
+        "${rounded.toInt()}MB"
+    } else {
+        String.format(Locale.US, "%.1fMB", rounded)
+    }
 }
