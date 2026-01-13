@@ -36,6 +36,7 @@ class JukeboxEngine(
     private var lastJumped = false
     private var lastJumpTime: Double? = null
     private var lastJumpFromIndex: Int? = null
+    private var lastTickTime: Double? = null
     private var forceBranch = false
     private var ignoreResyncUntilMs: Long = 0
     private val deletedEdgeKeys = mutableSetOf<String>()
@@ -161,6 +162,7 @@ class JukeboxEngine(
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
+        lastTickTime = null
         ignoreResyncUntilMs = 0
     }
 
@@ -168,16 +170,19 @@ class JukeboxEngine(
         if (!ticking || analysis == null) return
         if (!player.isPlaying()) {
             emitState(false)
+            lastTickTime = null
             return
         }
 
         val currentTime = player.getCurrentTime()
+        val previousTickTime = lastTickTime
+        lastTickTime = currentTime
         val nowMs = SystemClock.elapsedRealtime()
         if (nowMs >= ignoreResyncUntilMs) {
             if (
                 currentBeatIndex < 0 ||
-                currentTime < beats[currentBeatIndex].start ||
-                currentTime > beats[currentBeatIndex].start + beats[currentBeatIndex].duration + RESYNC_WINDOW_SECONDS
+                currentTime < beats[currentBeatIndex].start - RESYNC_TOLERANCE_SECONDS ||
+                currentTime > beats[currentBeatIndex].start + beats[currentBeatIndex].duration + RESYNC_TOLERANCE_SECONDS
             ) {
                 currentBeatIndex = findBeatIndexByTime(currentTime)
                 if (currentBeatIndex >= 0) {
@@ -186,7 +191,12 @@ class JukeboxEngine(
             }
         }
 
-        if (currentBeatIndex >= 0 && currentTime >= nextTransitionTime - RESYNC_EPSILON_SECONDS) {
+        if (
+            currentBeatIndex >= 0 &&
+            previousTickTime != null &&
+            previousTickTime < nextTransitionTime &&
+            currentTime >= nextTransitionTime
+        ) {
             advanceBeat()
         }
 
@@ -288,6 +298,5 @@ data class VisualizationData(
 )
 
 private const val TICK_INTERVAL_MS = 50L
-private const val RESYNC_WINDOW_SECONDS = 0.2
-private const val RESYNC_EPSILON_SECONDS = 0.02
+private const val RESYNC_TOLERANCE_SECONDS = 0.05
 private const val MIN_JUMP_HOLD_MS = 200L
