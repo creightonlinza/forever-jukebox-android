@@ -149,14 +149,14 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     }
                     IconButton(
                         onClick = {
+                            if (playback.lastYouTubeId == null) return@IconButton
                             val limitReached = viewModel.toggleFavoriteForCurrent()
-                            if (limitReached) {
-                                Toast.makeText(
-                                    context,
-                                    "Maximum favorites reached (100).",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            val message = when {
+                                limitReached -> "Maximum favorites reached (100)."
+                                isFavorite -> "Removed from Favorites"
+                                else -> "Added to Favorites"
                             }
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.size(SmallButtonHeight)
                     ) {
