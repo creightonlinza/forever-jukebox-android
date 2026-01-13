@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -22,7 +24,10 @@ class AppPreferences(private val context: Context) {
         private val KEY_BASE_URL = stringPreferencesKey("base_url")
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_VIZ_INDEX = intPreferencesKey("viz_index")
+        private val KEY_FAVORITES = stringPreferencesKey("favorites")
     }
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     val baseUrl: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_BASE_URL]
@@ -34,6 +39,10 @@ class AppPreferences(private val context: Context) {
 
     val activeVizIndex: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[KEY_VIZ_INDEX] ?: 0
+    }
+
+    val favorites: Flow<List<FavoriteTrack>> = context.dataStore.data.map { prefs ->
+        decodeFavorites(prefs[KEY_FAVORITES])
     }
 
     suspend fun setBaseUrl(url: String) {
@@ -53,6 +62,23 @@ class AppPreferences(private val context: Context) {
             prefs[KEY_VIZ_INDEX] = index
         }
     }
+
+    suspend fun setFavorites(items: List<FavoriteTrack>) {
+        context.dataStore.edit { prefs ->
+            val payload = json.encodeToString(ListSerializer(FavoriteTrack.serializer()), items)
+            prefs[KEY_FAVORITES] = payload
+        }
+    }
+
+    private fun decodeFavorites(raw: String?): List<FavoriteTrack> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return try {
+            json.decodeFromString(ListSerializer(FavoriteTrack.serializer()), raw)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     private fun themeFromString(raw: String?): ThemeMode {
         return when (raw) {
             ThemeMode.System.name -> ThemeMode.System

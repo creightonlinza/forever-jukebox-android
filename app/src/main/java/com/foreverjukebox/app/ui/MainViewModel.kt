@@ -7,6 +7,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AppPreferences
+import com.foreverjukebox.app.data.FavoriteSourceType
+import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.engine.VisualizationData
@@ -60,6 +62,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (!url.isNullOrBlank() && state.value.activeTab == TabId.Top) {
                     refreshTopSongs()
+                }
+            }
+        }
+        viewModelScope.launch {
+            preferences.favorites.collect { favorites ->
+                val sorted = sortFavorites(favorites).take(MAX_FAVORITES)
+                if (sorted.size != favorites.size) {
+                    updateFavorites(sorted)
+                } else {
+                    _state.update { it.copy(favorites = sorted) }
                 }
             }
         }
@@ -130,6 +142,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setTopSongsTab(tab: TopSongsTab) {
+        _state.update { it.copy(topSongsTab = tab) }
+    }
+
     private fun scheduleTopSongsRefresh() {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
@@ -146,6 +162,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun updatePlaybackState(transform: (PlaybackState) -> PlaybackState) {
         _state.update { it.copy(playback = transform(it.playback)) }
+    }
+
+    fun toggleFavoriteForCurrent(): Boolean {
+        val currentId = state.value.playback.lastYouTubeId ?: return false
+        val favorites = state.value.favorites
+        val existing = favorites.any { it.uniqueSongId == currentId }
+        return if (existing) {
+            updateFavorites(favorites.filterNot { it.uniqueSongId == currentId })
+            false
+        } else {
+            if (favorites.size >= MAX_FAVORITES) {
+                true
+            } else {
+                val playback = state.value.playback
+                val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
+                val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "Unknown"
+                val newFavorite = FavoriteTrack(
+                    uniqueSongId = currentId,
+                    title = title,
+                    artist = artist,
+                    duration = playback.trackDurationSeconds,
+                    artworkUrl = null,
+                    sourceType = FavoriteSourceType.Youtube
+                )
+                updateFavorites(favorites + newFavorite)
+                false
+            }
+        }
+    }
+
+    fun removeFavorite(uniqueSongId: String) {
+        val favorites = state.value.favorites
+        if (favorites.none { it.uniqueSongId == uniqueSongId }) return
+        updateFavorites(favorites.filterNot { it.uniqueSongId == uniqueSongId })
     }
 
     private sealed class LoadingEvent {
@@ -770,6 +820,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     vizData = vizData,
                     playTitle = playTitle,
                     trackDurationSeconds = durationSeconds,
+                    trackTitle = title,
+                    trackArtist = artist,
                     analysisProgress = null,
                     analysisMessage = null,
                     analysisErrorMessage = null,
@@ -821,6 +873,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     beatsPlayed = 0,
                     listenTime = "00:00:00",
                     trackDurationSeconds = null,
+                    trackTitle = null,
+                    trackArtist = null,
                     isRunning = false,
                     vizData = null,
                     currentBeatIndex = -1,
@@ -892,6 +946,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     vizData = vizData,
                     playTitle = playTitle,
                     trackDurationSeconds = audioDuration,
+                    trackTitle = title,
+                    trackArtist = artist,
                     currentBeatIndex = beatIndex,
                     isRunning = controller.isPlaying()
                 ),
@@ -926,6 +982,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
+    }
+
+    private fun updateFavorites(favorites: List<FavoriteTrack>) {
+        val sorted = sortFavorites(favorites).take(MAX_FAVORITES)
+        _state.update { it.copy(favorites = sorted) }
+        viewModelScope.launch {
+            preferences.setFavorites(sorted)
+        }
+    }
+
+    private fun sortFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
+        val deduped = items.distinctBy { it.uniqueSongId }
+        return deduped.sortedWith(
+            compareBy<FavoriteTrack, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.artist }
+        )
+    }
+
+    companion object {
+        private const val MAX_FAVORITES = 100
     }
 }
 

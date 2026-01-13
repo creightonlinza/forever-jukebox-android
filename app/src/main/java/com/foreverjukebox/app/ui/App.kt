@@ -40,8 +40,12 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
             when (state.activeTab) {
                 TabId.Top -> TopSongsPanel(
                     items = state.search.topSongs,
+                    favorites = state.favorites,
                     loading = state.search.topSongsLoading,
-                    onSelect = viewModel::loadTrackByYoutubeId
+                    activeTab = state.topSongsTab,
+                    onTabSelected = viewModel::setTopSongsTab,
+                    onSelect = viewModel::loadTrackByYoutubeId,
+                    onRemoveFavorite = viewModel::removeFavorite
                 )
                 TabId.Search -> SearchPanel(
                     state = state,

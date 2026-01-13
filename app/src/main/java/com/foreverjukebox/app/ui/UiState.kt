@@ -4,6 +4,7 @@ import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
+import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.visualization.JumpLine
 import kotlinx.serialization.Serializable
@@ -15,12 +16,19 @@ enum class TabId {
     Faq
 }
 
+enum class TopSongsTab {
+    TopSongs,
+    Favorites
+}
+
 data class UiState(
     val baseUrl: String = "",
     val showBaseUrlPrompt: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.System,
     val activeTab: TabId = TabId.Top,
+    val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,
     val cacheSizeBytes: Long = 0,
+    val favorites: List<FavoriteTrack> = emptyList(),
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
     val tuning: TuningState = TuningState()
@@ -51,6 +59,8 @@ data class PlaybackState(
     val beatsPlayed: Int = 0,
     val listenTime: String = "00:00:00",
     val trackDurationSeconds: Double? = null,
+    val trackTitle: String? = null,
+    val trackArtist: String? = null,
     val vizData: VisualizationData? = null,
     val activeVizIndex: Int = 0,
     val currentBeatIndex: Int = -1,

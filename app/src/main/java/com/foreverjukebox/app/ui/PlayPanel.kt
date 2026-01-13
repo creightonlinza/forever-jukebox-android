@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -18,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -110,6 +113,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         color = MaterialTheme.colorScheme.onBackground
                     )
                 }
+                val isFavorite = playback.lastYouTubeId?.let { id ->
+                    state.favorites.any { it.uniqueSongId == id }
+                } == true
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = { viewModel.togglePlayback() },
@@ -138,6 +144,25 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         Icon(
                             Icons.Default.Info,
                             contentDescription = "Info",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            val limitReached = viewModel.toggleFavoriteForCurrent()
+                            if (limitReached) {
+                                Toast.makeText(
+                                    context,
+                                    "Maximum favorites reached (100).",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.size(SmallButtonHeight)
+                    ) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
