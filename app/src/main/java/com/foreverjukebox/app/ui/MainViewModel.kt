@@ -50,6 +50,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var audioLoadInFlight = false
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
+    private val tabHistory = ArrayDeque<TabId>()
 
     init {
         viewModelScope.launch {
@@ -133,6 +134,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setActiveTab(tabId: TabId) {
+        applyActiveTab(tabId, recordHistory = true)
+    }
+
+    fun canNavigateBack(): Boolean = tabHistory.isNotEmpty()
+
+    fun navigateBack(): Boolean {
+        if (tabHistory.isEmpty()) return false
+        val previous = tabHistory.removeLast()
+        applyActiveTab(previous, recordHistory = false)
+        return true
+    }
+
+    fun setTopSongsTab(tab: TopSongsTab) {
+        _state.update { it.copy(topSongsTab = tab) }
+    }
+
+    private fun applyActiveTab(tabId: TabId, recordHistory: Boolean) {
+        val current = state.value.activeTab
+        if (tabId == current) return
+        if (recordHistory && tabHistory.lastOrNull() != current) {
+            tabHistory.addLast(current)
+        }
         _state.update { it.copy(activeTab = tabId) }
         if (tabId == TabId.Top) {
             scheduleTopSongsRefresh()
@@ -140,10 +163,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (tabId != TabId.Play) {
             _state.update { it.copy(playback = it.playback.copy()) }
         }
-    }
-
-    fun setTopSongsTab(tab: TopSongsTab) {
-        _state.update { it.copy(topSongsTab = tab) }
     }
 
     private fun scheduleTopSongsRefresh() {
@@ -415,10 +434,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playback = it.playback.copy(
                     audioLoading = false,
                     lastYouTubeId = youtubeId
-                ),
-                activeTab = TabId.Play
+                )
             )
         }
+        applyActiveTab(TabId.Play, recordHistory = true)
         viewModelScope.launch {
             if (tryLoadCachedTrack(youtubeId)) {
                 return@launch
@@ -452,10 +471,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playback = it.playback.copy(
                     audioLoading = false,
                     lastYouTubeId = youtubeId
-                ),
-                activeTab = TabId.Play
+                )
             )
         }
+        applyActiveTab(TabId.Play, recordHistory = true)
         viewModelScope.launch {
             if (tryLoadCachedTrack(youtubeId)) {
                 return@launch
@@ -500,10 +519,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     spotifyResults = emptyList(),
                     youtubeMatches = emptyList()
                 ),
-                playback = it.playback.copy(lastYouTubeId = youtubeId),
-                activeTab = TabId.Play
+                playback = it.playback.copy(lastYouTubeId = youtubeId)
             )
         }
+        applyActiveTab(TabId.Play, recordHistory = true)
         setAnalysisQueued(null, response.message)
         lastJobId = jobId
         try {
@@ -631,6 +650,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteSelectedEdge() = Unit
 
+    fun prepareForExit() {
+        resetForNewTrack()
+        engine.clearAnalysis()
+        controller.player.clear()
+        controller.setTrackMeta(null, null)
+        _state.update { it.copy(activeTab = TabId.Top, topSongsTab = TopSongsTab.TopSongs) }
+    }
+
     fun selectBeat(index: Int) {
         val data = state.value.playback.vizData ?: return
         if (index < 0 || index >= data.beats.size) return
@@ -680,8 +707,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun handleDeepLink(uri: Uri?) {
         if (uri == null) return
-        if (uri.scheme == "foreverjukebox" && uri.host == "listen") {
-            val id = uri.pathSegments.firstOrNull() ?: return
+        if (uri.scheme != "https" || uri.host != "foreverjukebox.com") return
+        val segments = uri.pathSegments
+        if (segments.size >= 2 && segments.firstOrNull() == "listen") {
+            val id = segments[1]
             loadTrackByYoutubeId(id)
         }
     }
@@ -707,7 +736,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openListenTab() {
-        _state.update { it.copy(activeTab = TabId.Play) }
+        applyActiveTab(TabId.Play, recordHistory = true)
     }
 
     private suspend fun pollAnalysis(jobId: String) {
@@ -828,10 +857,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     analysisInFlight = false,
                     analysisCalculating = false,
                     audioLoading = false
-                ),
-                activeTab = TabId.Play
+                )
             )
         }
+        applyActiveTab(TabId.Play, recordHistory = true)
         val jobId = response.id ?: lastJobId
         if (jobId != null) {
             recordPlay(jobId)

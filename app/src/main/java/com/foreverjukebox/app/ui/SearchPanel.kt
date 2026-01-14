@@ -3,11 +3,12 @@ package com.foreverjukebox.app.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.Alignment
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
 
@@ -56,10 +58,13 @@ fun SearchPanel(
         ) {
             Text("Search", style = MaterialTheme.typography.labelLarge)
             var query by remember { mutableStateOf("") }
+            val trimmedQuery = query.trim()
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = query,
@@ -69,20 +74,26 @@ fun SearchPanel(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { onSearch(query) }),
-                    shape = RoundedCornerShape(999.dp),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = SmallFieldMinHeight)
                 )
                 Button(
-                    onClick = { onSearch(query) },
+                    onClick = {
+                        if (trimmedQuery.isBlank()) return@Button
+                        onSearch(trimmedQuery)
+                    },
+                    enabled = trimmedQuery.isNotBlank(),
                     colors = pillButtonColors(),
                     border = pillButtonBorder(),
-                    shape = PillShape,
+                    shape = RoundedCornerShape(12.dp),
                     contentPadding = SmallButtonPadding,
-                    modifier = Modifier.heightIn(min = SmallFieldMinHeight)
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxHeight()
+//                        .height(SmallButtonHeight)
                 ) {
-                    Text("Search", style = MaterialTheme.typography.bodySmall)
+                    Text("Search")
                 }
             }
 

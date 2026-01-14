@@ -54,6 +54,15 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         releaseAudioTrack()
     }
 
+    fun clear() {
+        cancelScheduledJump()
+        releaseAudioTrack()
+        pcmData = null
+        sourceFile = null
+        baseFrame = 0
+        baseOffsetSeconds = 0.0
+    }
+
     override fun play() {
         audioTrack?.play()
     }

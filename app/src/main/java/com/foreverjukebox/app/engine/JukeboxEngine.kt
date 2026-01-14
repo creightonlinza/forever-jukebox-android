@@ -71,6 +71,14 @@ class JukeboxEngine(
         resetState()
     }
 
+    fun clearAnalysis() {
+        deletedEdgeKeys.clear()
+        analysis = null
+        graph = null
+        beats = mutableListOf()
+        resetState()
+    }
+
     fun getGraphState(): JukeboxGraphState? = graph
 
     fun getConfig(): JukeboxConfig = config.copy()
