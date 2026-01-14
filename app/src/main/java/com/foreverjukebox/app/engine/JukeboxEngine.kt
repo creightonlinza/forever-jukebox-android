@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import android.os.SystemClock
+import kotlin.math.min
 
 interface JukeboxPlayer {
     fun play()
@@ -229,7 +230,11 @@ class JukeboxEngine(
         curRandomBranchChance = branchState.curRandomBranchChance
         val chosenIndex = selection.first
         if (chosenIndex != wrappedIndex) {
-            val targetTime = beats[chosenIndex].start
+            val targetBeat = beats[chosenIndex]
+            val unclampedOffset = targetBeat.duration * JUMP_OFFSET_FRACTION
+            val offset = unclampedOffset.coerceIn(MIN_JUMP_OFFSET_SECONDS, MAX_JUMP_OFFSET_SECONDS)
+            val maxOffset = (targetBeat.duration - JUMP_OFFSET_EPSILON).coerceAtLeast(0.0)
+            val targetTime = targetBeat.start + min(offset, maxOffset)
             player.scheduleJump(targetTime, nextTransitionTime)
             lastJumped = true
             lastJumpTime = targetTime
@@ -308,3 +313,7 @@ data class VisualizationData(
 private const val TICK_INTERVAL_MS = 50L
 private const val RESYNC_TOLERANCE_SECONDS = 0.05
 private const val MIN_JUMP_HOLD_MS = 200L
+private const val JUMP_OFFSET_FRACTION = 0.06
+private const val MIN_JUMP_OFFSET_SECONDS = 0.015
+private const val MAX_JUMP_OFFSET_SECONDS = 0.05
+private const val JUMP_OFFSET_EPSILON = 0.001
