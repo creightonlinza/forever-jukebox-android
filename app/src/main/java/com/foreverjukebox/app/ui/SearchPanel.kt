@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,6 +61,7 @@ fun SearchPanel(
             var query by remember { mutableStateOf("") }
             val trimmedQuery = query.trim()
             val keyboardController = LocalSoftwareKeyboardController.current
+            val focusManager = LocalFocusManager.current
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -71,12 +73,14 @@ fun SearchPanel(
                     if (trimmedQuery.isBlank()) return@KeyboardActions
                     onSearch(trimmedQuery)
                     keyboardController?.hide()
+                    focusManager.clearFocus()
                 }),
                 trailingIcon = {
                     IconButton(
                         onClick = {
                             onSearch(trimmedQuery)
                             keyboardController?.hide()
+                            focusManager.clearFocus()
                         },
                         enabled = trimmedQuery.isNotBlank()
                     ) {
