@@ -43,9 +43,9 @@ fun FaqPanel() {
         ) {
             Text("FAQ", style = MaterialTheme.typography.labelLarge)
             Text("What the what?", fontWeight = FontWeight.Bold)
-            Text("This app lets you search a song on Spotify, match it to YouTube audio, and generate a forever-changing version of the song.")
+            Text("The Forever Jukebox is a fully open source, end-to-end modernization and reimagining of the Infinite Jukebox, a web app created by Paul Lamere in 2012 that lets you search a song on Spotify, match it to YouTube audio, and generate a forever-changing version of the song.")
             Text("How does it work?", fontWeight = FontWeight.Bold)
-            Text("The engine on the other side of the API base analyzes audio into beats and segments, then plays it beat by beat. At each beat there is a chance to jump to a different part of the song that sounds similar. Similarity uses features like timbre, loudness, duration, and beat position. The visualization shows the possible jump paths for each beat.")
+            Text("The app uses the Spotify API for searching track data, and YouTube for the audio. The audio gets analyzed by the Forever Jukebox Analysis Engine, an attempt to approximate Spotify's legacy analysis, which has since been deprecated. The engine determines beats, segments, and other features and passes them to the frontend, which then plays the audio beat by beat. At each beat there is a chance to jump to a different part of the song that sounds similar. Similarity uses features like timbre, loudness, duration, and beat position. The visualization shows the possible jump paths for each beat.")
             Text("How can I tune the Jukebox?", fontWeight = FontWeight.Bold)
             Text("Use the Tune button to open the tuning panel. Lower the threshold for higher audio continuity; raise it for more branches. Adjust branch probability min/max and ramp speed to shape how often jumps happen. Use the toggles to allow or restrict certain branch types.")
             Text("Credits", fontWeight = FontWeight.Bold)

@@ -108,7 +108,7 @@ fun JukeboxVisualization(
 
             if (currentIndex >= 0 && currentIndex < positions.size) {
                 val p = positions[currentIndex]
-                drawCircle(beatHighlight, radius = 6f, center = Offset(p.x, p.y))
+                drawCircle(beatHighlight, radius = 10f, center = Offset(p.x, p.y))
             }
 
             if (jumpLine != null) {

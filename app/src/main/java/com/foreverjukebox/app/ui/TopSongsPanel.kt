@@ -118,12 +118,12 @@ fun TopSongsPanel(
                                     onClick = { onRemoveFavorite(item.uniqueSongId) },
                                     modifier = Modifier.size(24.dp)
                                 ) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = "Remove favorite",
-                                        tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Remove favorite",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(12.dp)
+                                        )
                                 }
                             }
                         }

@@ -9,24 +9,33 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.StopCircle
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.foreverjukebox.app.ui.LocalThemeTokens
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -101,7 +110,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -116,76 +125,98 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 val isFavorite = playback.lastYouTubeId?.let { id ->
                     state.favorites.any { it.uniqueSongId == id }
                 } == true
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val themeTokens = LocalThemeTokens.current
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Button(
                         onClick = { viewModel.togglePlayback() },
                         colors = pillButtonColors(),
                         border = pillButtonBorder(),
-                        shape = PillShape,
-                        contentPadding = SmallButtonPadding,
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                         modifier = Modifier.height(SmallButtonHeight)
                     ) {
-                        Text(if (playback.isRunning) "Stop" else "Play", style = MaterialTheme.typography.labelSmall)
-                    }
-                    OutlinedButton(
-                        onClick = { showTuning = true },
-                        colors = pillOutlinedButtonColors(),
-                        border = pillButtonBorder(),
-                        shape = PillShape,
-                        contentPadding = SmallButtonPadding,
-                        modifier = Modifier.height(SmallButtonHeight)
-                    ) {
-                        Text("Tune", style = MaterialTheme.typography.labelSmall)
-                    }
-                    IconButton(
-                        onClick = { showInfo = true },
-                        modifier = Modifier.size(SmallButtonHeight)
-                    ) {
                         Icon(
-                            Icons.Default.Info,
-                            contentDescription = "Info",
-                            tint = MaterialTheme.colorScheme.onBackground
+                            imageVector = if (playback.isRunning) {
+                                Icons.Outlined.Stop
+                            } else {
+                                Icons.Outlined.PlayArrow
+                            },
+                            contentDescription = if (playback.isRunning) "Stop" else "Play",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.size(30.dp)
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (playback.isRunning) "Stop" else "Play")
+                        Spacer(modifier = Modifier.width(8.dp))
                     }
-                    IconButton(
-                        onClick = {
-                            if (playback.lastYouTubeId == null) return@IconButton
-                            val limitReached = viewModel.toggleFavoriteForCurrent()
-                            val message = when {
-                                limitReached -> "Maximum favorites reached (100)."
-                                isFavorite -> "Removed from Favorites"
-                                else -> "Added to Favorites"
-                            }
-                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(SmallButtonHeight)
-                    ) {
-                        Icon(
-                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                            contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            val id = playback.lastYouTubeId ?: return@IconButton
-                            val url = "foreverjukebox://listen/$id"
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, url)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Forever Jukebox link"))
-                        },
-                        modifier = Modifier.size(SmallButtonHeight)
-                    ) {
-                        Icon(
-                            Icons.Default.Share,
-                            contentDescription = "Share",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = { showTuning = true },
+                            modifier = Modifier.size(SmallButtonHeight)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Tune,
+                                contentDescription = "Tune",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { showInfo = true },
+                            modifier = Modifier.size(SmallButtonHeight)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Info,
+                                contentDescription = "Info",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                val id = playback.lastYouTubeId ?: return@IconButton
+                                val url = "https://foreverjukebox.com/listen/$id"
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, url)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Forever Jukebox link"))
+                            },
+                            modifier = Modifier.size(SmallButtonHeight)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Share,
+                                contentDescription = "Share",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (playback.lastYouTubeId == null) return@IconButton
+                                val limitReached = viewModel.toggleFavoriteForCurrent()
+                                val message = when {
+                                    limitReached -> "Maximum favorites reached (100)."
+                                    isFavorite -> "Removed from Favorites"
+                                    else -> "Added to Favorites"
+                                }
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(SmallButtonHeight)
+                        ) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
+                                tint = themeTokens.beatFill,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
-                val themeTokens = LocalThemeTokens.current
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -218,12 +249,12 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
-                        androidx.compose.material3.DropdownMenu(
+                        DropdownMenu(
                             expanded = showVizMenu,
                             onDismissRequest = { showVizMenu = false }
                         ) {
                             vizLabels.forEachIndexed { index, label ->
-                                androidx.compose.material3.DropdownMenuItem(
+                                DropdownMenuItem(
                                     text = { Text(label) },
                                     onClick = {
                                         viewModel.setActiveVisualization(index)
