@@ -15,6 +15,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.os.Build
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.media.app.NotificationCompat.MediaStyle
@@ -86,7 +87,8 @@ class ForegroundPlaybackService : Service() {
         val controller = PlaybackControllerHolder.get(this)
         val title = controller.getTrackTitle().orEmpty().ifBlank { "The Forever Jukebox" }
         val artist = controller.getTrackArtist().orEmpty()
-        updateMediaSession(title, artist, isPlaying)
+        val artwork = loadNotificationArtwork()
+        updateMediaSession(title, artist, isPlaying, artwork)
 
         val toggleIntent = Intent(this, ForegroundPlaybackService::class.java).apply {
             action = PlaybackServiceConstants.ACTION_TOGGLE
@@ -119,7 +121,8 @@ class ForegroundPlaybackService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, PlaybackServiceConstants.CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_all_inclusive)
+            .setLargeIcon(artwork)
             .setColor(Color.parseColor(NOTIFICATION_ACCENT))
             .setColorized(true)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
@@ -154,7 +157,12 @@ class ForegroundPlaybackService : Service() {
         return IconCompat.createWithBitmap(bitmap)
     }
 
-    private fun updateMediaSession(title: String, artist: String, isPlaying: Boolean) {
+    private fun updateMediaSession(
+        title: String,
+        artist: String,
+        isPlaying: Boolean,
+        artwork: Bitmap?
+    ) {
         val state = PlaybackStateCompat.Builder()
             .setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE)
             .setState(
@@ -166,9 +174,13 @@ class ForegroundPlaybackService : Service() {
         val metadata = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-            .build()
+        if (artwork != null) {
+            metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
+            metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artwork)
+            metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, artwork)
+        }
         mediaSession.setPlaybackState(state)
-        mediaSession.setMetadata(metadata)
+        mediaSession.setMetadata(metadata.build())
         mediaSession.isActive = isPlaying
     }
 
@@ -201,6 +213,17 @@ class ForegroundPlaybackService : Service() {
             NotificationManager.IMPORTANCE_LOW
         )
         manager.createNotificationChannel(channel)
+    }
+
+    private fun loadNotificationArtwork(): Bitmap? {
+        val drawable = AppCompatResources.getDrawable(this, R.drawable.notification_background) ?: return null
+        val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 512
+        val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 512
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
     }
 
     private fun pendingIntentImmutableFlag(): Int {

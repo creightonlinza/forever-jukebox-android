@@ -22,13 +22,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -141,9 +141,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     ) {
                         Icon(
                             imageVector = if (playback.isRunning) {
-                                Icons.Outlined.Stop
+                                Icons.Filled.Stop
                             } else {
-                                Icons.Outlined.PlayArrow
+                                Icons.Filled.PlayArrow
                             },
                             contentDescription = if (playback.isRunning) "Stop" else "Play",
                             tint = MaterialTheme.colorScheme.onBackground,

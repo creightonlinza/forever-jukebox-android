@@ -1,5 +1,10 @@
 package com.foreverjukebox.app.ui
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,13 +13,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun TabBar(state: UiState, onTabSelected: (TabId) -> Unit) {
+    val shouldPulseListen = state.playback.isRunning && state.activeTab != TabId.Play
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -35,6 +43,7 @@ fun TabBar(state: UiState, onTabSelected: (TabId) -> Unit) {
             text = "Listen",
             active = state.activeTab == TabId.Play,
             enabled = state.playback.lastYouTubeId != null,
+            pulse = shouldPulseListen,
             onClick = { onTabSelected(TabId.Play) }
         )
         TabButton(
@@ -46,11 +55,45 @@ fun TabBar(state: UiState, onTabSelected: (TabId) -> Unit) {
 }
 
 @Composable
-private fun TabButton(text: String, active: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+private fun TabButton(
+    text: String,
+    active: Boolean,
+    enabled: Boolean = true,
+    pulse: Boolean = false,
+    onClick: () -> Unit
+) {
+    val tokens = LocalThemeTokens.current
+    val pulseAmount = if (pulse) {
+        val transition = rememberInfiniteTransition(label = "listenPulse")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 2400),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "listenPulseAmount"
+        ).value
+    } else {
+        0f
+    }
+    val baseColor = if (active) tokens.controlSurface else tokens.panelSurface
+    val targetColor = tokens.onBackground.copy(alpha = 0.12f)
+    val containerColor = if (pulse) lerp(baseColor, targetColor, pulseAmount) else baseColor
+    val colors = if (pulse) {
+        ButtonDefaults.outlinedButtonColors(
+            containerColor = containerColor,
+            contentColor = tokens.onBackground,
+            disabledContainerColor = containerColor.copy(alpha = 0.4f),
+            disabledContentColor = tokens.onBackground.copy(alpha = 0.4f)
+        )
+    } else {
+        pillOutlinedButtonColors(active)
+    }
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        colors = pillOutlinedButtonColors(active),
+        colors = colors,
         border = pillButtonBorder(),
         contentPadding = SmallButtonPadding,
         shape = PillShape,
