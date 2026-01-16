@@ -72,6 +72,11 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         return getJson<TopSongsResponse>(url).items
     }
 
+    suspend fun getAppConfig(baseUrl: String): AppConfigResponse {
+        val url = buildUrl(baseUrl, ApiPaths.APP_CONFIG)
+        return getJson(url)
+    }
+
     suspend fun postPlay(baseUrl: String, jobId: String) {
         val url = buildUrl(baseUrl, ApiPaths.play(jobId))
         postEmpty(url)
@@ -178,6 +183,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val ANALYSIS_YOUTUBE = listOf("api", "analysis", "youtube")
         val JOB_BY_TRACK = listOf("api", "jobs", "by-track")
         val TOP = listOf("api", "top")
+        val APP_CONFIG = listOf("app-config")
 
         fun analysisJob(jobId: String) = listOf("api", "analysis", jobId)
         fun jobByYoutube(youtubeId: String) = listOf("api", "jobs", "by-youtube", youtubeId)

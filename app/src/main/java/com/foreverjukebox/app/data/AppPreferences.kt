@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,6 +27,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_VIZ_INDEX = intPreferencesKey("viz_index")
         private val KEY_FAVORITES = stringPreferencesKey("favorites")
+        private val KEY_APP_CONFIG = stringPreferencesKey("app_config")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -43,6 +46,11 @@ class AppPreferences(private val context: Context) {
 
     val favorites: Flow<List<FavoriteTrack>> = context.dataStore.data.map { prefs ->
         decodeFavorites(prefs[KEY_FAVORITES])
+    }
+
+    val appConfig: Flow<AppConfigResponse?> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_APP_CONFIG] ?: return@map null
+        runCatching { json.decodeFromString<AppConfigResponse>(raw) }.getOrNull()
     }
 
     suspend fun setBaseUrl(url: String) {
@@ -67,6 +75,12 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             val payload = json.encodeToString(ListSerializer(FavoriteTrack.serializer()), items)
             prefs[KEY_FAVORITES] = payload
+        }
+    }
+
+    suspend fun setAppConfig(config: AppConfigResponse) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_APP_CONFIG] = json.encodeToString(config)
         }
     }
 

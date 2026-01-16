@@ -54,6 +54,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
     private var deleteEligibilityJobId: String? = null
+    private var topSongsLoaded = false
+    private var appConfigLoaded = false
     private val tabHistory = ArrayDeque<TabId>()
 
     init {
@@ -65,8 +67,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         showBaseUrlPrompt = url.isNullOrBlank()
                     )
                 }
-                if (!url.isNullOrBlank() && state.value.activeTab == TabId.Top) {
-                    refreshTopSongs()
+                if (!url.isNullOrBlank()) {
+                    if (!appConfigLoaded) {
+                        appConfigLoaded = true
+                        viewModelScope.launch {
+                            runCatching { api.getAppConfig(url).also { preferences.setAppConfig(it) } }
+                        }
+                    }
+                    if (state.value.activeTab == TabId.Top && !topSongsLoaded) {
+                        refreshTopSongs()
+                    }
                 }
             }
         }
@@ -171,7 +181,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun scheduleTopSongsRefresh() {
         val baseUrl = state.value.baseUrl
-        if (baseUrl.isBlank()) return
+        if (baseUrl.isBlank() || topSongsLoaded) return
         refreshTopSongsJob?.cancel()
         refreshTopSongsJob = viewModelScope.launch {
             delay(250)
@@ -335,6 +345,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshTopSongs() {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
+        topSongsLoaded = true
         viewModelScope.launch {
             updateSearchState { it.copy(topSongsLoading = true) }
             try {
