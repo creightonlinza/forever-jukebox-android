@@ -148,6 +148,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setActiveTab(tabId: TabId) {
+        if (tabId == TabId.Top && state.value.activeTab == TabId.Top) {
+            setTopSongsTab(TopSongsTab.TopSongs)
+            return
+        }
         applyActiveTab(tabId, recordHistory = true)
     }
 
@@ -170,7 +174,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (recordHistory && tabHistory.lastOrNull() != current) {
             tabHistory.addLast(current)
         }
-        _state.update { it.copy(activeTab = tabId) }
+        _state.update {
+            val nextTopTab = if (tabId == TabId.Top) TopSongsTab.TopSongs else it.topSongsTab
+            it.copy(activeTab = tabId, topSongsTab = nextTopTab)
+        }
         if (tabId == TabId.Top) {
             scheduleTopSongsRefresh()
         }

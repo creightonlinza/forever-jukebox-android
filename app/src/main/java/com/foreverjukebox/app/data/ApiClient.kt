@@ -183,7 +183,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val ANALYSIS_YOUTUBE = listOf("api", "analysis", "youtube")
         val JOB_BY_TRACK = listOf("api", "jobs", "by-track")
         val TOP = listOf("api", "top")
-        val APP_CONFIG = listOf("app-config")
+        val APP_CONFIG = listOf("api", "app-config")
 
         fun analysisJob(jobId: String) = listOf("api", "analysis", jobId)
         fun jobByYoutube(youtubeId: String) = listOf("api", "jobs", "by-youtube", youtubeId)
