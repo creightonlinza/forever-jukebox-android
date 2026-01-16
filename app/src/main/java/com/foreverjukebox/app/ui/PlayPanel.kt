@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Info
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -43,15 +45,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.positioners
 import com.foreverjukebox.app.visualization.visualizationLabels
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
 @Composable
@@ -62,6 +68,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     var showVizMenu by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
     val fullscreenLauncher = rememberLauncherForActivityResult(
@@ -153,7 +160,30 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         Text(if (playback.isRunning) "Stop" else "Play")
                         Spacer(modifier = Modifier.width(8.dp))
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (playback.deleteEligible) {
+                            IconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val deleted = viewModel.deleteCurrentJob()
+                                        val deletedText = if (!deleted) "Song can no longer be deleted" else "Song deleted"
+                                        Toast.makeText(
+                                            context,
+                                            deletedText,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                modifier = Modifier.size(SmallButtonHeight)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Delete,
+                                    contentDescription = "Delete within 30 minutes of creation",
+                                    tint = Color(0xFFE35A5A),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = { showTuning = true },
                             modifier = Modifier.size(SmallButtonHeight)

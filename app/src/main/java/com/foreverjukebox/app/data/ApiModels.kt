@@ -46,6 +46,7 @@ data class AnalysisResponse(
     val progress: Double? = null,
     val message: String? = null,
     @SerialName("youtube_id") val youtubeId: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
     val result: JsonElement? = null,
     val error: String? = null
 )

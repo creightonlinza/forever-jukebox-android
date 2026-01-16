@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AppPreferences
+import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
@@ -25,11 +26,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import java.io.File
 import java.io.IOException
+import java.time.Duration
+import java.time.OffsetDateTime
 import kotlin.math.roundToInt
 import kotlin.coroutines.coroutineContext
 
@@ -50,6 +53,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var audioLoadInFlight = false
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
+    private var deleteEligibilityJobId: String? = null
     private val tabHistory = ArrayDeque<TabId>()
 
     init {
@@ -486,6 +490,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     setAnalysisError("Loading failed.")
                     return@launch
                 }
+                updateDeleteEligibility(response)
                 lastJobId = response.id
                 if (response.status == "complete" && response.result != null) {
                     if (!state.value.playback.audioLoaded) {
@@ -510,7 +515,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadExistingJob(
         jobId: String,
         youtubeId: String,
-        response: com.foreverjukebox.app.data.AnalysisResponse
+        response: AnalysisResponse
     ) {
         resetForNewTrack()
         _state.update {
@@ -525,6 +530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         applyActiveTab(TabId.Play, recordHistory = true)
         setAnalysisQueued(null, response.message)
         lastJobId = jobId
+        updateDeleteEligibility(response)
         try {
             if (response.status == "complete" && response.result != null) {
                 if (!state.value.playback.audioLoaded) {
@@ -558,8 +564,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun audioFile(youtubeId: String): File = File(cacheDir(), "$youtubeId.audio")
 
-    private fun jobFile(youtubeId: String): File = File(cacheDir(), "$youtubeId.job")
-
     private suspend fun tryLoadCachedTrack(youtubeId: String): Boolean {
         setAnalysisCalculating()
         setAudioLoading(true)
@@ -570,12 +574,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@withContext false
             }
             val analysisText = analysisPath.readText()
-            val analysis = json.parseToJsonElement(analysisText)
+            val response = json.decodeFromString<AnalysisResponse>(analysisText)
             val audioBytes = audioPath.readBytes()
-            val cachedJobId = jobFile(youtubeId).takeIf { it.exists() }?.readText()
             try {
                 withContext(Dispatchers.Default) {
-                    controller.player.loadBytes(audioBytes, cachedJobId ?: youtubeId)
+                    controller.player.loadBytes(audioBytes, response.id ?: youtubeId)
                 }
             } catch (err: OutOfMemoryError) {
                 audioPath.delete()
@@ -583,37 +586,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             audioLoadInFlight = false
             updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-            lastJobId = cachedJobId
-            val response = com.foreverjukebox.app.data.AnalysisResponse(
-                id = cachedJobId,
-                status = "complete",
-                result = analysis
-            )
+            lastJobId = response.id
             applyAnalysisResult(response)
         }
     }
 
-    private fun cacheAudio(youtubeId: String, jobId: String?, bytes: ByteArray) {
+    private fun cacheAudio(youtubeId: String, bytes: ByteArray) {
         viewModelScope.launch(Dispatchers.IO) {
             ignoreFailures {
                 audioFile(youtubeId).writeBytes(bytes)
-                if (!jobId.isNullOrBlank()) {
-                    jobFile(youtubeId).writeText(jobId)
-                }
             }
         }
     }
 
-    private fun cacheAnalysis(youtubeId: String, jobId: String?, analysis: JsonElement) {
+    private fun cacheAnalysis(
+        youtubeId: String,
+        response: AnalysisResponse
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             ignoreFailures {
-                val payload = json.encodeToString(JsonElement.serializer(), analysis)
+                val payload = json.encodeToString(response)
                 analysisFile(youtubeId).writeText(payload)
-                if (!jobId.isNullOrBlank()) {
-                    jobFile(youtubeId).writeText(jobId)
-                }
             }
         }
+    }
+
+    private suspend fun clearCachedTrack(youtubeId: String) {
+        withContext(Dispatchers.IO) {
+            ignoreFailures { analysisFile(youtubeId).delete() }
+            ignoreFailures { audioFile(youtubeId).delete() }
+        }
+    }
+
+    private fun updateDeleteEligibility(response: AnalysisResponse) {
+        val jobId = response.id ?: lastJobId ?: return
+        if (deleteEligibilityJobId == jobId) {
+            return
+        }
+        val createdAt = response.createdAt
+        if (createdAt.isNullOrBlank()) {
+            updatePlaybackState { it.copy(deleteEligible = false) }
+            deleteEligibilityJobId = null
+            return
+        }
+        deleteEligibilityJobId = jobId
+        val parsed = runCatching { OffsetDateTime.parse(createdAt).toInstant() }.getOrNull()
+        val eligible = if (parsed == null) {
+            false
+        } else {
+            Duration.between(parsed, OffsetDateTime.now().toInstant()).seconds <= 1800
+        }
+        updatePlaybackState { it.copy(deleteEligible = eligible) }
     }
 
     fun togglePlayback() {
@@ -645,6 +668,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             updateListenTimeDisplay()
             _state.update { it.copy(playback = it.playback.copy(isRunning = false)) }
             ForegroundPlaybackService.stop(getApplication())
+        }
+    }
+
+    suspend fun deleteCurrentJob(): Boolean {
+        val jobId = lastJobId ?: return false
+        val baseUrl = state.value.baseUrl
+        val youtubeId = state.value.playback.lastYouTubeId
+        if (baseUrl.isBlank()) return false
+        return try {
+            api.deleteJob(baseUrl, jobId)
+            if (youtubeId != null) {
+                clearCachedTrack(youtubeId)
+                updateFavorites(state.value.favorites.filterNot { it.uniqueSongId == youtubeId })
+            }
+            resetForNewTrack()
+            _state.update { it.copy(activeTab = TabId.Top, topSongsTab = TopSongsTab.TopSongs) }
+            tabHistory.removeLastOrNull()?.let { last ->
+                if (last != TabId.Play) {
+                    tabHistory.addLast(last)
+                }
+            }
+            true
+        } catch (_: Exception) {
+            updatePlaybackState { it.copy(deleteEligible = false) }
+            deleteEligibilityJobId = jobId
+            false
         }
     }
 
@@ -744,6 +793,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val intervalMs = 2000L
         while (coroutineContext.isActive) {
             val response = api.getAnalysis(baseUrl, jobId)
+            updateDeleteEligibility(response)
             when (response.status) {
                 "failed" -> {
                     if (response.error == "Analysis missing") {
@@ -804,7 +854,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
             val youtubeId = state.value.playback.lastYouTubeId
             if (youtubeId != null) {
-                cacheAudio(youtubeId, jobId, bytes)
+                cacheAudio(youtubeId, bytes)
             }
             return true
         } catch (err: IOException) {
@@ -822,8 +872,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun applyAnalysisResult(response: com.foreverjukebox.app.data.AnalysisResponse): Boolean {
+    private suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
         val result = response.result ?: return false
+        updateDeleteEligibility(response)
         setAnalysisCalculating()
         val vizData = withContext(Dispatchers.Default) {
             engine.loadAnalysis(result)
@@ -867,7 +918,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val youtubeId = state.value.playback.lastYouTubeId
         if (youtubeId != null) {
-            cacheAnalysis(youtubeId, jobId, result)
+            cacheAnalysis(youtubeId, response)
         }
         ForegroundPlaybackService.update(getApplication())
         return true
@@ -910,6 +961,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     jumpLine = null,
                     playTitle = "",
                     lastYouTubeId = null,
+                    deleteEligible = false,
                     analysisProgress = null,
                     analysisMessage = null,
                     analysisErrorMessage = null,
@@ -930,6 +982,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(playback = it.playback.copy(vizData = emptyViz)) }
         lastJobId = null
         lastPlayCountedJobId = null
+        deleteEligibilityJobId = null
         pollJob?.cancel()
         pollJob = null
         syncTuningState()

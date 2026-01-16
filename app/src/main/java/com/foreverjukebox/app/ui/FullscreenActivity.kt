@@ -54,6 +54,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.ThemeMode
+import com.foreverjukebox.app.engine.JukeboxState
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.JumpLine
@@ -132,7 +133,7 @@ private fun FullscreenScreen(
     }
 
     DisposableEffect(engine) {
-        val listener: (com.foreverjukebox.app.engine.JukeboxState) -> Unit = { state ->
+        val listener: (JukeboxState) -> Unit = { state ->
             currentBeatIndex = state.currentBeatIndex
             beatsPlayed = state.beatsPlayed
             val lastJumpFrom = state.lastJumpFromIndex
