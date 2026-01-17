@@ -66,6 +66,7 @@ data class PlaybackState(
     val currentBeatIndex: Int = -1,
     val lastJumpFromIndex: Int? = null,
     val jumpLine: JumpLine? = null,
+    val lastJobId: String? = null,
     val lastYouTubeId: String? = null,
     val deleteEligible: Boolean = false
 )

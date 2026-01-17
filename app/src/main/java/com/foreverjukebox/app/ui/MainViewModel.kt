@@ -204,6 +204,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(playback = transform(it.playback)) }
     }
 
+    private fun setLastJobId(jobId: String?) {
+        lastJobId = jobId
+        updatePlaybackState { it.copy(lastJobId = jobId) }
+    }
+
     fun toggleFavoriteForCurrent(): Boolean {
         val currentId = state.value.playback.lastYouTubeId ?: return false
         val favorites = state.value.favorites
@@ -476,7 +481,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     throw IllegalStateException("Invalid job response")
                 }
                 setAnalysisQueued(response.progress?.roundToInt(), response.message)
-                lastJobId = response.id
+                setLastJobId(response.id)
                 startPoll(response.id)
             } catch (err: Exception) {
                 setAnalysisError("Loading failed.")
@@ -509,7 +514,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 updateDeleteEligibility(response)
-                lastJobId = response.id
+                setLastJobId(response.id)
                 if (response.status == "complete" && response.result != null) {
                     if (!state.value.playback.audioLoaded) {
                         val loaded = loadAudioFromJob(response.id)
@@ -547,7 +552,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         applyActiveTab(TabId.Play, recordHistory = true)
         setAnalysisQueued(null, response.message)
-        lastJobId = jobId
+        setLastJobId(jobId)
         updateDeleteEligibility(response)
         try {
             if (response.status == "complete" && response.result != null) {
@@ -604,7 +609,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             audioLoadInFlight = false
             updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-            lastJobId = response.id
+            setLastJobId(response.id)
             applyAnalysisResult(response)
         }
     }
@@ -979,6 +984,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     jumpLine = null,
                     playTitle = "",
                     lastYouTubeId = null,
+                    lastJobId = null,
                     deleteEligible = false,
                     analysisProgress = null,
                     analysisMessage = null,
@@ -998,7 +1004,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         engine.stopJukebox()
         val emptyViz = VisualizationData(beats = emptyList(), edges = mutableListOf())
         _state.update { it.copy(playback = it.playback.copy(vizData = emptyViz)) }
-        lastJobId = null
+        setLastJobId(null)
         lastPlayCountedJobId = null
         deleteEligibilityJobId = null
         pollJob?.cancel()
