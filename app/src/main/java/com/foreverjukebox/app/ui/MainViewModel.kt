@@ -209,6 +209,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updatePlaybackState { it.copy(lastJobId = jobId) }
     }
 
+    private suspend fun maybeRepairMissing(
+        baseUrl: String,
+        response: AnalysisResponse
+    ): AnalysisResponse {
+        if (response.status != "failed") {
+            return response
+        }
+        if (response.error != "Analysis missing" || response.id == null) {
+            return response
+        }
+        return try {
+            api.repairJob(baseUrl, response.id)
+        } catch (_: Exception) {
+            response
+        }
+    }
+
     fun toggleFavoriteForCurrent(): Boolean {
         val currentId = state.value.playback.lastYouTubeId ?: return false
         val favorites = state.value.favorites
@@ -404,7 +421,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             if (artist.isNotBlank()) {
                 try {
-                    val response = api.getJobByTrack(baseUrl, name, artist)
+                    val response = maybeRepairMissing(
+                        baseUrl,
+                        api.getJobByTrack(baseUrl, name, artist)
+                    )
                     val jobId = response.id
                     val youtubeId = response.youtubeId
                     if (jobId != null && youtubeId != null && response.status != "failed") {
@@ -508,7 +528,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             setAnalysisQueued(null, "Fetching audio...")
             try {
-                val response = api.getJobByYoutube(baseUrl, youtubeId)
+                val response = maybeRepairMissing(baseUrl, api.getJobByYoutube(baseUrl, youtubeId))
                 if (response.id == null) {
                     setAnalysisError("Loading failed.")
                     return@launch
