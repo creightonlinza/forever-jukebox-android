@@ -215,9 +215,11 @@ class JukeboxEngine(
 
     private fun advanceBeat() {
         val currentGraph = graph ?: return
-        val nextIndex = currentBeatIndex + 1
+        val currentIndex = currentBeatIndex
+        val nextIndex = currentIndex + 1
         val wrappedIndex = if (nextIndex >= beats.size) 0 else nextIndex
-        val seed = beats[wrappedIndex]
+        val enforceLastBranch = currentIndex == currentGraph.lastBranchPoint
+        val seed = if (enforceLastBranch) beats[currentIndex] else beats[wrappedIndex]
         val branchState = BranchState(curRandomBranchChance)
         val selection = selectNextBeatIndex(
             seed,
@@ -225,11 +227,12 @@ class JukeboxEngine(
             config,
             rng,
             branchState,
-            forceBranch
+            forceBranch || enforceLastBranch
         )
         curRandomBranchChance = branchState.curRandomBranchChance
-        val chosenIndex = selection.first
-        if (chosenIndex != wrappedIndex) {
+        val chosenIndex = if (selection.second) selection.first else wrappedIndex
+        val wrappedToStart = wrappedIndex == 0 && currentIndex == beats.lastIndex
+        if (selection.second || wrappedToStart) {
             val targetBeat = beats[chosenIndex]
             val unclampedOffset = targetBeat.duration * JUMP_OFFSET_FRACTION
             val offset = unclampedOffset.coerceIn(MIN_JUMP_OFFSET_SECONDS, MAX_JUMP_OFFSET_SECONDS)
@@ -238,7 +241,7 @@ class JukeboxEngine(
             player.scheduleJump(targetTime, nextTransitionTime)
             lastJumped = true
             lastJumpTime = targetTime
-            lastJumpFromIndex = wrappedIndex
+            lastJumpFromIndex = currentIndex
             val holdMs = (beats[chosenIndex].duration * 1000.0)
                 .toLong()
                 .coerceAtLeast(MIN_JUMP_HOLD_MS)
