@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.ThemeMode
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -156,33 +157,44 @@ private fun SettingsDialog(
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
     val cacheLabel = formatCacheSize(state.cacheSizeBytes)
     val cacheEnabled = state.cacheSizeBytes > 0
+    val versionLabel = "v${BuildConfig.VERSION_NAME}"
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            Button(
-                onClick = {
-                    onEditBaseUrl(urlInput)
-                    onDismiss()
-                },
-                colors = pillButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Save", style = MaterialTheme.typography.labelSmall)
-            }
-        },
-        dismissButton = {
-            OutlinedButton(
-                onClick = onDismiss,
-                colors = pillOutlinedButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
-            ) {
-                Text("Close", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    versionLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                OutlinedButton(
+                    onClick = onDismiss,
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Close", style = MaterialTheme.typography.labelSmall)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        onEditBaseUrl(urlInput)
+                        onDismiss()
+                    },
+                    colors = pillButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Save", style = MaterialTheme.typography.labelSmall)
+                }
             }
         },
         title = { Text("Settings") },
