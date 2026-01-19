@@ -99,7 +99,12 @@ fun TopSongsPanel(
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(favorites) { item ->
                             val title = item.title.ifBlank { "Untitled" }
-                            val artist = item.artist.ifBlank { "Unknown" }
+                            val artist = item.artist.ifBlank { "" }
+                            val display = if (artist.isNotBlank() && artist != "Unknown") {
+                                "$title — $artist"
+                            } else {
+                                title
+                            }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -107,7 +112,7 @@ fun TopSongsPanel(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "$title — $artist",
+                                    text = display,
                                     modifier = Modifier
                                         .weight(1f)
                                         .alignByBaseline(),
