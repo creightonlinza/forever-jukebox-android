@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.engine
 
+import kotlin.math.max
+
 private const val TIMBRE_WEIGHT = 1.0
 private const val PITCH_WEIGHT = 10.0
 private const val LOUD_START_WEIGHT = 1.0
