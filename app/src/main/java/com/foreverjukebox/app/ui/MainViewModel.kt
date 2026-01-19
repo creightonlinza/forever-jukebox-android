@@ -200,6 +200,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(search = transform(it.search)) }
     }
 
+    private fun setSearchQuery(value: String) {
+        updateSearchState { it.copy(query = value) }
+    }
+
     private fun updatePlaybackState(transform: (PlaybackState) -> PlaybackState) {
         _state.update { it.copy(playback = transform(it.playback)) }
     }
@@ -391,6 +395,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun runSpotifySearch(query: String) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
+        setSearchQuery(query)
         _state.update {
             it.copy(
                 search = it.search.copy(
@@ -475,8 +480,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 search = it.search.copy(
+                    query = "",
                     spotifyResults = emptyList(),
-                    youtubeMatches = emptyList()
+                    youtubeMatches = emptyList(),
+                    youtubeLoading = false,
+                    pendingTrackName = null,
+                    pendingTrackArtist = null
                 ),
                 playback = it.playback.copy(
                     audioLoading = false,
@@ -564,8 +573,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 search = it.search.copy(
+                    query = "",
                     spotifyResults = emptyList(),
-                    youtubeMatches = emptyList()
+                    youtubeMatches = emptyList(),
+                    youtubeLoading = false,
+                    pendingTrackName = null,
+                    pendingTrackArtist = null
                 ),
                 playback = it.playback.copy(lastYouTubeId = youtubeId)
             )

@@ -44,6 +44,7 @@ fun SearchPanel(
     onYoutubeSelect: (String) -> Unit
 ) {
     val searchState = state.search
+    var query by remember(searchState.query) { mutableStateOf(searchState.query) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -58,7 +59,6 @@ fun SearchPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Search", style = MaterialTheme.typography.labelLarge)
-            var query by remember { mutableStateOf("") }
             val trimmedQuery = query.trim()
             val keyboardController = LocalSoftwareKeyboardController.current
             val focusManager = LocalFocusManager.current

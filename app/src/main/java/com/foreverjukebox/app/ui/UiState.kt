@@ -35,6 +35,7 @@ data class UiState(
 )
 
 data class SearchState(
+    val query: String = "",
     val topSongs: List<TopSongItem> = emptyList(),
     val topSongsLoading: Boolean = false,
     val spotifyResults: List<SpotifySearchItem> = emptyList(),
