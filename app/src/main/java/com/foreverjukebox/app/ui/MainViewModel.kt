@@ -326,7 +326,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun setAnalysisProgress(progress: Int?, message: String? = null) {
-        applyLoadingEvent(LoadingEvent.AnalysisProgress(progress, message))
+        val normalized = if (progress == 0 && message != "Loading audio") null else progress
+        applyLoadingEvent(LoadingEvent.AnalysisProgress(normalized, message))
+    }
+
+    private fun setDecodeProgress(percent: Int) {
+        val current = state.value.playback
+        if (
+            current.analysisInFlight &&
+            !current.analysisMessage.isNullOrBlank() &&
+            current.analysisMessage != "Loading audio"
+        ) {
+            return
+        }
+        setAnalysisProgress(percent, "Loading audio")
     }
 
     private fun setAnalysisCalculating() {
@@ -621,30 +634,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun audioFile(youtubeId: String): File = File(cacheDir(), "$youtubeId.audio")
 
     private suspend fun tryLoadCachedTrack(youtubeId: String): Boolean {
-        setAnalysisCalculating()
-        setAudioLoading(true)
-        return withContext(Dispatchers.IO) {
+        val cached = withContext(Dispatchers.IO) {
             val analysisPath = analysisFile(youtubeId)
             val audioPath = audioFile(youtubeId)
             if (!analysisPath.exists() || !audioPath.exists()) {
-                return@withContext false
+                return@withContext null
             }
             val analysisText = analysisPath.readText()
             val response = json.decodeFromString<AnalysisResponse>(analysisText)
             val audioBytes = audioPath.readBytes()
-            try {
-                withContext(Dispatchers.Default) {
-                    controller.player.loadBytes(audioBytes, response.id ?: youtubeId)
-                }
-            } catch (err: OutOfMemoryError) {
-                audioPath.delete()
-                return@withContext false
-            }
-            audioLoadInFlight = false
-            updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-            setLastJobId(response.id)
-            applyAnalysisResult(response)
+            response to audioBytes
         }
+        if (cached == null) {
+            return false
+        }
+        val (response, audioBytes) = cached
+        setAnalysisProgress(0, "Loading audio")
+        try {
+            withContext(Dispatchers.Default) {
+                controller.player.loadBytes(
+                    audioBytes,
+                    response.id ?: youtubeId
+                ) { percent ->
+                    viewModelScope.launch(Dispatchers.Main) {
+                        setAnalysisProgress(percent, "Loading audio")
+                    }
+                }
+            }
+        } catch (err: OutOfMemoryError) {
+            withContext(Dispatchers.IO) {
+                audioFile(youtubeId).delete()
+            }
+            return false
+        }
+        audioLoadInFlight = false
+        updatePlaybackState {
+            it.copy(
+                audioLoaded = true,
+                audioLoading = false,
+                analysisProgress = null,
+                analysisMessage = null,
+                analysisInFlight = false,
+                analysisCalculating = false
+            )
+        }
+        setLastJobId(response.id)
+        applyAnalysisResult(response)
+        return true
     }
 
     private fun cacheAudio(youtubeId: String, bytes: ByteArray) {
@@ -901,14 +937,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadAudioFromJob(jobId: String): Boolean {
         val baseUrl = state.value.baseUrl
         setAudioLoading(true)
+        setAnalysisProgress(0, "Loading audio")
         try {
             val bytes = api.fetchAudioBytes(baseUrl, jobId)
             withContext(Dispatchers.Default) {
-                controller.player.loadBytes(bytes, jobId)
+                controller.player.loadBytes(bytes, jobId) { percent ->
+                    viewModelScope.launch(Dispatchers.Main) {
+                        setDecodeProgress(percent)
+                    }
+                }
             }
-            audioLoadInFlight = false
-            updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-            val youtubeId = state.value.playback.lastYouTubeId
+        audioLoadInFlight = false
+        updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
+        val youtubeId = state.value.playback.lastYouTubeId
             if (youtubeId != null) {
                 cacheAudio(youtubeId, bytes)
             }

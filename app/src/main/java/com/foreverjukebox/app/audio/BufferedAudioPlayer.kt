@@ -29,7 +29,11 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     private val handler = Handler(Looper.getMainLooper())
     private var pendingJumpToken = 0
 
-    suspend fun loadBytes(bytes: ByteArray, jobId: String) {
+    suspend fun loadBytes(
+        bytes: ByteArray,
+        jobId: String,
+        onProgress: ((Int) -> Unit)? = null
+    ) {
         pcmData = null
         releaseAudioTrack()
         cancelScheduledJump()
@@ -39,7 +43,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
             sourceFile = file
         }
         val file = sourceFile ?: return
-        val decoded = decodeToPcm(file)
+        val decoded = decodeToPcm(file, onProgress)
         pcmData = decoded.data
         sampleRate = decoded.sampleRate
         channelCount = decoded.channelCount
@@ -180,7 +184,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         return track
     }
 
-    private fun decodeToPcm(file: File): DecodedAudio {
+    private fun decodeToPcm(file: File, onProgress: ((Int) -> Unit)?): DecodedAudio {
         val extractor = MediaExtractor()
         extractor.setDataSource(file.absolutePath)
         var audioTrackIndex = -1
@@ -210,7 +214,35 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         var outputDone = false
         var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
         var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+        val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
+            format.getLong(MediaFormat.KEY_DURATION)
+        } else {
+            -1L
+        }
+        var expectedPcmBytes = if (durationUs > 0) {
+            (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
+        } else {
+            -1L
+        }
+        var outputBytesWritten = 0L
+        var lastProgress = -1
 
+        fun reportProgress(sampleTimeUs: Long) {
+            val ratio = if (expectedPcmBytes > 0) {
+                outputBytesWritten.toDouble() / expectedPcmBytes.toDouble()
+            } else if (durationUs > 0) {
+                sampleTimeUs.toDouble() / durationUs.toDouble()
+            } else {
+                return
+            }
+            val percent = (ratio * 100.0).toInt().coerceIn(0, 99)
+            if (percent > lastProgress) {
+                lastProgress = percent
+                onProgress?.invoke(percent)
+            }
+        }
+
+        onProgress?.invoke(0)
         while (!outputDone) {
             if (!inputDone) {
                 val inputIndex = decoder.dequeueInputBuffer(10_000)
@@ -229,6 +261,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
                     } else {
                         val presentationTimeUs = extractor.sampleTime
                         decoder.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
+                        reportProgress(presentationTimeUs)
                         extractor.advance()
                     }
                 }
@@ -243,6 +276,8 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
                         outBuffer.get(chunk)
                         outBuffer.clear()
                         output.write(chunk)
+                        outputBytesWritten += info.size.toLong().coerceAtLeast(0L)
+                        reportProgress(info.presentationTimeUs)
                     }
                     decoder.releaseOutputBuffer(outputIndex, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
@@ -253,6 +288,9 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
                     val newFormat = decoder.outputFormat
                     sampleRate = newFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                     channels = newFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    if (durationUs > 0) {
+                        expectedPcmBytes = (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
+                    }
                 }
             }
         }
@@ -260,6 +298,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         decoder.stop()
         decoder.release()
         extractor.release()
+        onProgress?.invoke(100)
         return DecodedAudio(output.toByteArray(), sampleRate, channels)
     }
 

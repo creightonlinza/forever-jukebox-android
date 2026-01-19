@@ -367,7 +367,7 @@ private fun LoadingStatus(progress: Int?, label: String?) {
                 strokeWidth = 2.dp
             )
         }
-        if (progress != null && progress > 0) {
+        if (progress != null) {
             Text(
                 text = "${progress}%",
                 style = MaterialTheme.typography.labelMedium,
