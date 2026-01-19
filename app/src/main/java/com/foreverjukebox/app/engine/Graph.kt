@@ -330,10 +330,22 @@ fun buildJumpGraph(analysis: TrackAnalysis, config: JukeboxConfig): JukeboxGraph
     collectNearestNeighbors(quanta, threshold, config)
 
     if (config.addLastEdge) {
-        if (longestBackwardBranch(quanta) < LONGEST_BACKWARD_THRESHOLD) {
-            insertBestBackwardBranch(quanta, threshold, ADD_LAST_EDGE_HIGH_THRESHOLD)
-        } else {
-            insertBestBackwardBranch(quanta, threshold, ADD_LAST_EDGE_LOW_THRESHOLD)
+        val minGap = max(1, config.minLongBranch)
+        val windowStart = max(0, quanta.size - minGap)
+        var hasLongBackNearEnd = false
+        for (i in quanta.size - 1 downTo windowStart) {
+            val q = quanta[i]
+            if (q.neighbors.any { i - it.dest.which >= minGap }) {
+                hasLongBackNearEnd = true
+                break
+            }
+        }
+        if (!hasLongBackNearEnd) {
+            if (longestBackwardBranch(quanta) < LONGEST_BACKWARD_THRESHOLD) {
+                insertBestBackwardBranch(quanta, threshold, ADD_LAST_EDGE_HIGH_THRESHOLD)
+            } else {
+                insertBestBackwardBranch(quanta, threshold, ADD_LAST_EDGE_LOW_THRESHOLD)
+            }
         }
     }
 
