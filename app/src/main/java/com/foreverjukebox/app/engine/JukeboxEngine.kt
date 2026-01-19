@@ -241,7 +241,7 @@ class JukeboxEngine(
             player.scheduleJump(targetTime, nextTransitionTime)
             lastJumped = true
             lastJumpTime = targetTime
-            lastJumpFromIndex = currentIndex
+            lastJumpFromIndex = if (selection.second) seed.which else currentIndex
             val holdMs = (beats[chosenIndex].duration * 1000.0)
                 .toLong()
                 .coerceAtLeast(MIN_JUMP_HOLD_MS)
