@@ -72,3 +72,19 @@ data class TopSongItem(
 data class TopSongsResponse(
     val items: List<TopSongItem> = emptyList()
 )
+
+@Serializable
+data class FavoritesSyncRequest(
+    val favorites: List<FavoriteTrack> = emptyList()
+)
+
+@Serializable
+data class FavoritesSyncResponse(
+    val code: String? = null,
+    val count: Int? = null
+)
+
+@Serializable
+data class FavoritesSyncPayload(
+    val favorites: List<FavoriteTrack> = emptyList()
+)
