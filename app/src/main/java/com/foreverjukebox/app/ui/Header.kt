@@ -168,7 +168,8 @@ private fun SettingsDialog(
                 Text(
                     versionLabel,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    maxLines = 1
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 OutlinedButton(
