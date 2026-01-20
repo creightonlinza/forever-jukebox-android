@@ -56,6 +56,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var deleteEligibilityJobId: String? = null
     private var topSongsLoaded = false
     private var appConfigLoaded = false
+    private var favoritesSyncHydratedFor: String? = null
+    private var syncUpdateInFlight = false
+    private var pendingSyncDelta: FavoritesDelta? = null
     private val tabHistory = ArrayDeque<TabId>()
 
     init {
@@ -77,6 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (state.value.activeTab == TabId.Top && !topSongsLoaded) {
                         refreshTopSongs()
                     }
+                    maybeHydrateFavoritesFromSync()
                 }
             }
         }
@@ -84,10 +88,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferences.favorites.collect { favorites ->
                 val sorted = sortFavorites(favorites).take(MAX_FAVORITES)
                 if (sorted.size != favorites.size) {
-                    updateFavorites(sorted)
+                    updateFavorites(sorted, sync = false)
                 } else {
                     _state.update { it.copy(favorites = sorted) }
                 }
+            }
+        }
+        viewModelScope.launch {
+            preferences.favoritesSyncCode.collect { code ->
+                _state.update { it.copy(favoritesSyncCode = code) }
+                maybeHydrateFavoritesFromSync()
             }
         }
         viewModelScope.launch {
@@ -166,6 +176,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setTopSongsTab(tab: TopSongsTab) {
         _state.update { it.copy(topSongsTab = tab) }
+    }
+
+    fun refreshFavoritesFromSync() {
+        viewModelScope.launch {
+            val result = fetchFavoritesFromSync()
+            if (result == null) {
+                showToast("Favorites sync failed.")
+            } else {
+                updateFavorites(result, sync = false)
+                favoritesSyncHydratedFor = state.value.favoritesSyncCode
+                showToast("Favorites refreshed.")
+            }
+        }
+    }
+
+    fun createFavoritesSyncCode() {
+        viewModelScope.launch {
+            val baseUrl = state.value.baseUrl
+            if (baseUrl.isBlank()) {
+                showToast("API base URL is required.")
+                return@launch
+            }
+            val favorites = state.value.favorites
+            try {
+                val response = api.createFavoritesSync(baseUrl, favorites)
+                val code = response.code?.trim()?.lowercase()
+                if (code.isNullOrBlank()) {
+                    throw IOException("Missing sync code")
+                }
+                preferences.setFavoritesSyncCode(code)
+                favoritesSyncHydratedFor = code
+                val normalized = normalizeFavorites(response.favorites)
+                if (normalized.isNotEmpty()) {
+                    updateFavorites(normalized, sync = false)
+                }
+            } catch (_: Exception) {
+                showToast("Unable to create sync code.")
+            }
+        }
+    }
+
+    suspend fun fetchFavoritesPreview(code: String): List<FavoriteTrack>? {
+        return fetchFavoritesFromSync(code)
+    }
+
+    fun applyFavoritesSync(code: String, favorites: List<FavoriteTrack>) {
+        viewModelScope.launch {
+            preferences.setFavoritesSyncCode(code)
+            favoritesSyncHydratedFor = code
+            updateFavorites(normalizeFavorites(favorites), sync = false)
+        }
     }
 
     private fun applyActiveTab(tabId: TabId, recordHistory: Boolean) {
@@ -1163,11 +1224,143 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun updateFavorites(favorites: List<FavoriteTrack>) {
+    private fun updateFavorites(favorites: List<FavoriteTrack>, sync: Boolean = true) {
+        val previous = state.value.favorites
         val sorted = sortFavorites(favorites).take(MAX_FAVORITES)
         _state.update { it.copy(favorites = sorted) }
         viewModelScope.launch {
             preferences.setFavorites(sorted)
+        }
+        if (!sync) {
+            return
+        }
+        val delta = computeFavoritesDelta(previous, sorted)
+        if (delta.added.isEmpty() && delta.removedIds.isEmpty()) {
+            return
+        }
+        scheduleFavoritesSync(delta)
+    }
+
+    private fun scheduleFavoritesSync(delta: FavoritesDelta) {
+        val code = state.value.favoritesSyncCode
+        if (code.isNullOrBlank()) {
+            return
+        }
+        if (syncUpdateInFlight) {
+            pendingSyncDelta = delta
+            return
+        }
+        viewModelScope.launch {
+            syncFavoritesToBackend(delta)
+        }
+    }
+
+    private suspend fun syncFavoritesToBackend(delta: FavoritesDelta) {
+        syncUpdateInFlight = true
+        try {
+            val baseUrl = state.value.baseUrl
+            val code = state.value.favoritesSyncCode
+            if (baseUrl.isBlank() || code.isNullOrBlank()) {
+                return
+            }
+            val serverFavorites = fetchFavoritesFromSync(code) ?: return
+            val merged = applyFavoritesDelta(serverFavorites, delta)
+            val response = api.updateFavoritesSync(baseUrl, code, merged)
+            val normalized = normalizeFavorites(response.favorites)
+            if (normalized.isNotEmpty()) {
+                updateFavorites(normalized, sync = false)
+            }
+        } catch (_: Exception) {
+            showToast("Favorites sync failed.")
+        } finally {
+            syncUpdateInFlight = false
+            pendingSyncDelta?.let {
+                pendingSyncDelta = null
+                scheduleFavoritesSync(it)
+            }
+        }
+    }
+
+    private fun computeFavoritesDelta(
+        previous: List<FavoriteTrack>,
+        next: List<FavoriteTrack>
+    ): FavoritesDelta {
+        val prevMap = previous.associateBy { it.uniqueSongId }
+        val nextMap = next.associateBy { it.uniqueSongId }
+        val added = nextMap.filterKeys { it !in prevMap }.values.toList()
+        val removedIds = prevMap.keys.filter { it !in nextMap }.toSet()
+        return FavoritesDelta(added = added, removedIds = removedIds)
+    }
+
+    private fun applyFavoritesDelta(
+        serverFavorites: List<FavoriteTrack>,
+        delta: FavoritesDelta
+    ): List<FavoriteTrack> {
+        val filtered = serverFavorites.filter { it.uniqueSongId !in delta.removedIds }
+        val existing = filtered.map { it.uniqueSongId }.toHashSet()
+        val merged = filtered.toMutableList()
+        delta.added.forEach { favorite ->
+            if (existing.add(favorite.uniqueSongId)) {
+                merged.add(favorite)
+            }
+        }
+        return sortFavorites(merged).take(MAX_FAVORITES)
+    }
+
+    private fun normalizeFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
+        val normalized = items.mapNotNull { item ->
+            val id = item.uniqueSongId
+            if (id.isBlank()) return@mapNotNull null
+            val title = item.title.ifBlank { "Untitled" }
+            val artist = item.artist
+            FavoriteTrack(
+                uniqueSongId = id,
+                title = title,
+                artist = artist,
+                duration = item.duration,
+                sourceType = item.sourceType
+            )
+        }
+        return sortFavorites(normalized).take(MAX_FAVORITES)
+    }
+
+    private suspend fun fetchFavoritesFromSync(codeOverride: String? = null): List<FavoriteTrack>? {
+        val baseUrl = state.value.baseUrl
+        val code = codeOverride ?: state.value.favoritesSyncCode
+        if (baseUrl.isBlank() || code.isNullOrBlank()) {
+            return null
+        }
+        return try {
+            api.fetchFavoritesSync(baseUrl, code.trim())
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun maybeHydrateFavoritesFromSync() {
+        val code = state.value.favoritesSyncCode
+        val baseUrl = state.value.baseUrl
+        if (code.isNullOrBlank() || baseUrl.isBlank()) {
+            return
+        }
+        if (favoritesSyncHydratedFor == code) {
+            return
+        }
+        favoritesSyncHydratedFor = code
+        viewModelScope.launch {
+            val favorites = fetchFavoritesFromSync(code)
+            if (favorites == null) {
+                favoritesSyncHydratedFor = null
+                showToast("Favorites sync failed.")
+                return@launch
+            }
+            updateFavorites(favorites, sync = false)
+        }
+    }
+
+    private suspend fun showToast(message: String) {
+        withContext(Dispatchers.Main) {
+            android.widget.Toast.makeText(getApplication(), message, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1183,5 +1376,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val MAX_FAVORITES = 100
     }
 }
+
+private data class FavoritesDelta(
+    val added: List<FavoriteTrack>,
+    val removedIds: Set<String>
+)
 
 private const val END_EPSILON_SECONDS = 0.02

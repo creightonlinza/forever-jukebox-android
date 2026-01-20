@@ -27,6 +27,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_VIZ_INDEX = intPreferencesKey("viz_index")
         private val KEY_FAVORITES = stringPreferencesKey("favorites")
+        private val KEY_FAVORITES_SYNC_CODE = stringPreferencesKey("favorites_sync_code")
         private val KEY_APP_CONFIG = stringPreferencesKey("app_config")
     }
 
@@ -46,6 +47,10 @@ class AppPreferences(private val context: Context) {
 
     val favorites: Flow<List<FavoriteTrack>> = context.dataStore.data.map { prefs ->
         decodeFavorites(prefs[KEY_FAVORITES])
+    }
+
+    val favoritesSyncCode: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FAVORITES_SYNC_CODE]
     }
 
     val appConfig: Flow<AppConfigResponse?> = context.dataStore.data.map { prefs ->
@@ -75,6 +80,16 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             val payload = json.encodeToString(ListSerializer(FavoriteTrack.serializer()), items)
             prefs[KEY_FAVORITES] = payload
+        }
+    }
+
+    suspend fun setFavoritesSyncCode(code: String?) {
+        context.dataStore.edit { prefs ->
+            if (code.isNullOrBlank()) {
+                prefs.remove(KEY_FAVORITES_SYNC_CODE)
+            } else {
+                prefs[KEY_FAVORITES_SYNC_CODE] = code.trim().lowercase()
+            }
         }
     }
 

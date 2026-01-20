@@ -45,7 +45,12 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     activeTab = state.topSongsTab,
                     onTabSelected = viewModel::setTopSongsTab,
                     onSelect = viewModel::loadTrackByYoutubeId,
-                    onRemoveFavorite = viewModel::removeFavorite
+                    onRemoveFavorite = viewModel::removeFavorite,
+                    favoritesSyncCode = state.favoritesSyncCode,
+                    onRefreshSync = viewModel::refreshFavoritesFromSync,
+                    onCreateSync = viewModel::createFavoritesSyncCode,
+                    onFetchSync = viewModel::fetchFavoritesPreview,
+                    onApplySync = viewModel::applyFavoritesSync
                 )
                 TabId.Search -> SearchPanel(
                     state = state,

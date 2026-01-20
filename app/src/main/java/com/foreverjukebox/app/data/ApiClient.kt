@@ -14,6 +14,10 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
+    private val jsonWithDefaults = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
     private val client = sharedClient
 
     suspend fun searchSpotify(baseUrl: String, query: String): List<SpotifySearchItem> {
@@ -78,8 +82,19 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
     ): FavoritesSyncResponse {
         val url = buildUrl(baseUrl, ApiPaths.FAVORITES_SYNC)
         val trimmed = favorites.take(MAX_FAVORITES)
-        val payload = json.encodeToString(FavoritesSyncRequest(trimmed))
+        val payload = jsonWithDefaults.encodeToString(FavoritesSyncRequest(trimmed))
         return postJson(url, payload).let { json.decodeFromString(it) }
+    }
+
+    suspend fun updateFavoritesSync(
+        baseUrl: String,
+        code: String,
+        favorites: List<FavoriteTrack>
+    ): FavoritesSyncResponse {
+        val url = buildUrl(baseUrl, ApiPaths.favoritesSync(code))
+        val trimmed = favorites.take(MAX_FAVORITES)
+        val payload = jsonWithDefaults.encodeToString(FavoritesSyncRequest(trimmed))
+        return putJson(url, payload).let { json.decodeFromString(it) }
     }
 
     suspend fun fetchFavoritesSync(baseUrl: String, code: String): List<FavoriteTrack> {
@@ -135,6 +150,17 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
     private suspend fun postJson(url: String, payload: String): String = withContext(Dispatchers.IO) {
         val body = payload.toRequestBody("application/json".toMediaType())
         val request = Request.Builder().url(url).post(body).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
+            }
+            response.body?.string() ?: ""
+        }
+    }
+
+    private suspend fun putJson(url: String, payload: String): String = withContext(Dispatchers.IO) {
+        val body = payload.toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url(url).put(body).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw IOException("HTTP ${response.code}")

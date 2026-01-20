@@ -81,7 +81,8 @@ data class FavoritesSyncRequest(
 @Serializable
 data class FavoritesSyncResponse(
     val code: String? = null,
-    val count: Int? = null
+    val count: Int? = null,
+    val favorites: List<FavoriteTrack> = emptyList()
 )
 
 @Serializable

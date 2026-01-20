@@ -1,10 +1,14 @@
 package com.foreverjukebox.app.data
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
 enum class FavoriteSourceType {
-    Youtube
+    @SerialName("youtube")
+    Youtube,
+    @SerialName("upload")
+    Upload
 }
 
 @Serializable
