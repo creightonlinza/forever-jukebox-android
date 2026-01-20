@@ -249,7 +249,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     title = title,
                     artist = artist,
                     duration = playback.trackDurationSeconds,
-                    artworkUrl = null,
                     sourceType = FavoriteSourceType.Youtube
                 )
                 updateFavorites(favorites + newFavorite)
