@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -75,6 +76,21 @@ fun TopSongsPanel(
     var syncInput by remember { mutableStateOf("") }
     var pendingFavorites by remember { mutableStateOf<List<FavoriteTrack>>(emptyList()) }
     var pendingCode by remember { mutableStateOf("") }
+    var showCreateButton by remember { mutableStateOf(true) }
+    var createHint by remember {
+        mutableStateOf("Create a sync code to share your favorites between devices.")
+    }
+
+    LaunchedEffect(showCreateDialog) {
+        if (showCreateDialog) {
+            showCreateButton = true
+            createHint = if (hasSyncCode) {
+                "Enter this code on another device to sync."
+            } else {
+                "Create a sync code to share your favorites between devices."
+            }
+        }
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -222,14 +238,14 @@ fun TopSongsPanel(
                 showEnterDialog = false
                 syncInput = ""
             },
-            title = { Text("Sync Favorites") },
+            title = { Text("Favorites Sync") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Enter a 3-word sync code to replace your local favorites.")
+                    Text("Enter the 3-word sync code to pull down your favorites.")
                     OutlinedTextField(
                         value = syncInput,
                         onValueChange = { syncInput = it },
-                        placeholder = { Text("bison-laser-sunset") },
+                        placeholder = { Text("the-forever-jukebox") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
@@ -260,7 +276,7 @@ fun TopSongsPanel(
                         }
                     }
                 ) {
-                    Text("Fetch favorites")
+                    Text("Sync favorites")
                 }
             },
             dismissButton = {
@@ -280,10 +296,10 @@ fun TopSongsPanel(
                 showCreateDialog = false
                 syncInput = ""
             },
-            title = { Text("Sync Favorites") },
+            title = { Text("Favorites Sync") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Create a short sync code to pull these favorites on another device.")
+                    Text(createHint)
                     if (hasSyncCode) {
                         OutlinedTextField(
                             value = favoritesSyncCode ?: "",
@@ -299,8 +315,16 @@ fun TopSongsPanel(
                 }
             },
             confirmButton = {
-                Button(onClick = onCreateSync) {
-                    Text(if (hasSyncCode) "Create new sync code" else "Create sync code")
+                if (showCreateButton) {
+                    Button(
+                        onClick = {
+                            showCreateButton = false
+                            createHint = "Enter this code on another device to sync."
+                            onCreateSync()
+                        }
+                    ) {
+                        Text(if (hasSyncCode) "Create new sync code" else "Create sync code")
+                    }
                 }
             },
             dismissButton = {
