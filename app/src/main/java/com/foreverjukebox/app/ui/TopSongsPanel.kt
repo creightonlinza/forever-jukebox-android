@@ -15,9 +15,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -134,38 +133,37 @@ fun TopSongsPanel(
                     Text("Favorites", style = MaterialTheme.typography.labelLarge)
                     IconButton(onClick = { showSyncMenu = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
-                            imageVector = if (hasSyncCode) Icons.Filled.Cloud else Icons.Filled.CloudOff,
+                            imageVector = if (hasSyncCode) Icons.Outlined.Cloud else Icons.Outlined.CloudOff,
                             contentDescription = "Favorites sync",
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(18.dp)
                         )
                     }
-                    if (hasSyncCode) {
-                        IconButton(onClick = onRefreshSync, modifier = Modifier.size(24.dp)) {
-                            Icon(
-                                imageVector = Icons.Filled.Sync,
-                                contentDescription = "Refresh favorites",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
                     DropdownMenu(
                         expanded = showSyncMenu,
                         onDismissRequest = { showSyncMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Enter sync code") },
-                            onClick = {
-                                showSyncMenu = false
-                                showEnterDialog = true
-                            }
-                        )
+                        if (hasSyncCode) {
+                            DropdownMenuItem(
+                                text = { Text("Refresh favorites") },
+                                onClick = {
+                                    showSyncMenu = false
+                                    onRefreshSync()
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(if (hasSyncCode) "View sync code" else "Create sync code") },
                             onClick = {
                                 showSyncMenu = false
                                 showCreateDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Enter sync code") },
+                            onClick = {
+                                showSyncMenu = false
+                                showEnterDialog = true
                             }
                         )
                     }
