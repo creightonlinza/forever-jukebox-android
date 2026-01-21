@@ -284,7 +284,16 @@ fun TopSongsPanel(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Create a short sync code to pull these favorites on another device.")
                     if (hasSyncCode) {
-                        Text(favoritesSyncCode ?: "")
+                        OutlinedTextField(
+                            value = favoritesSyncCode ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Done
+                            )
+                        )
                     }
                 }
             },
