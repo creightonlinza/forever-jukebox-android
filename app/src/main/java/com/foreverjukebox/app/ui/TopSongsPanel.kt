@@ -58,6 +58,7 @@ fun TopSongsPanel(
     onSelect: (String) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     favoritesSyncCode: String?,
+    allowFavoritesSync: Boolean,
     onRefreshSync: () -> Unit,
     onCreateSync: () -> Unit,
     onFetchSync: suspend (String) -> List<FavoriteTrack>?,
@@ -66,7 +67,7 @@ fun TopSongsPanel(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
-    val hasSyncCode = !favoritesSyncCode.isNullOrBlank()
+    val hasSyncCode = allowFavoritesSync && !favoritesSyncCode.isNullOrBlank()
     var showSyncMenu by remember { mutableStateOf(false) }
     var showEnterDialog by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -131,41 +132,43 @@ fun TopSongsPanel(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text("Favorites", style = MaterialTheme.typography.labelLarge)
-                    IconButton(onClick = { showSyncMenu = true }, modifier = Modifier.size(24.dp)) {
-                        Icon(
-                            imageVector = if (hasSyncCode) Icons.Outlined.Cloud else Icons.Outlined.CloudOff,
-                            contentDescription = "Favorites sync",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showSyncMenu,
-                        onDismissRequest = { showSyncMenu = false }
-                    ) {
-                        if (hasSyncCode) {
+                    if (allowFavoritesSync) {
+                        IconButton(onClick = { showSyncMenu = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = if (hasSyncCode) Icons.Outlined.Cloud else Icons.Outlined.CloudOff,
+                                contentDescription = "Favorites sync",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showSyncMenu,
+                            onDismissRequest = { showSyncMenu = false }
+                        ) {
+                            if (hasSyncCode) {
+                                DropdownMenuItem(
+                                    text = { Text("Refresh favorites") },
+                                    onClick = {
+                                        showSyncMenu = false
+                                        onRefreshSync()
+                                    }
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text("Refresh favorites") },
+                                text = { Text(if (hasSyncCode) "View sync code" else "Create sync code") },
                                 onClick = {
                                     showSyncMenu = false
-                                    onRefreshSync()
+                                    showCreateDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Enter sync code") },
+                                onClick = {
+                                    showSyncMenu = false
+                                    showEnterDialog = true
                                 }
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text(if (hasSyncCode) "View sync code" else "Create sync code") },
-                            onClick = {
-                                showSyncMenu = false
-                                showCreateDialog = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Enter sync code") },
-                            onClick = {
-                                showSyncMenu = false
-                                showEnterDialog = true
-                            }
-                        )
                     }
                 }
                 if (favorites.isEmpty()) {

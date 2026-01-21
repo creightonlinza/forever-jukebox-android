@@ -47,6 +47,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     onSelect = viewModel::loadTrackByYoutubeId,
                     onRemoveFavorite = viewModel::removeFavorite,
                     favoritesSyncCode = state.favoritesSyncCode,
+                    allowFavoritesSync = state.allowFavoritesSync,
                     onRefreshSync = viewModel::refreshFavoritesFromSync,
                     onCreateSync = viewModel::createFavoritesSyncCode,
                     onFetchSync = viewModel::fetchFavoritesPreview,

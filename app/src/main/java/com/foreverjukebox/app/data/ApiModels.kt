@@ -55,6 +55,7 @@ data class AnalysisResponse(
 data class AppConfigResponse(
     @SerialName("allow_user_upload") val allowUserUpload: Boolean = false,
     @SerialName("allow_user_youtube") val allowUserYoutube: Boolean = false,
+    @SerialName("allow_favorites_sync") val allowFavoritesSync: Boolean = false,
     @SerialName("max_upload_size") val maxUploadSize: Int? = null,
     @SerialName("allowed_upload_exts") val allowedUploadExts: List<String>? = null
 )

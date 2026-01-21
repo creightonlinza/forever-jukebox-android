@@ -101,6 +101,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            preferences.appConfig.collect { config ->
+                if (config != null) {
+                    _state.update { it.copy(allowFavoritesSync = config.allowFavoritesSync) }
+                    maybeHydrateFavoritesFromSync()
+                }
+            }
+        }
+        viewModelScope.launch {
             preferences.themeMode.collect { mode ->
                 _state.update { it.copy(themeMode = mode) }
             }
@@ -180,6 +188,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshFavoritesFromSync() {
         viewModelScope.launch {
+            if (!state.value.allowFavoritesSync) {
+                return@launch
+            }
             val result = fetchFavoritesFromSync()
             if (result == null) {
                 showToast("Favorites sync failed.")
@@ -193,6 +204,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createFavoritesSyncCode() {
         viewModelScope.launch {
+            if (!state.value.allowFavoritesSync) {
+                return@launch
+            }
             val baseUrl = state.value.baseUrl
             if (baseUrl.isBlank()) {
                 showToast("API base URL is required.")
@@ -223,6 +237,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun applyFavoritesSync(code: String, favorites: List<FavoriteTrack>) {
         viewModelScope.launch {
+            if (!state.value.allowFavoritesSync) {
+                return@launch
+            }
             preferences.setFavoritesSyncCode(code)
             favoritesSyncHydratedFor = code
             updateFavorites(normalizeFavorites(favorites), sync = false)
@@ -1242,6 +1259,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun scheduleFavoritesSync(delta: FavoritesDelta) {
+        if (!state.value.allowFavoritesSync) {
+            return
+        }
         val code = state.value.favoritesSyncCode
         if (code.isNullOrBlank()) {
             return
@@ -1258,6 +1278,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun syncFavoritesToBackend(delta: FavoritesDelta) {
         syncUpdateInFlight = true
         try {
+            if (!state.value.allowFavoritesSync) {
+                return
+            }
             val baseUrl = state.value.baseUrl
             val code = state.value.favoritesSyncCode
             if (baseUrl.isBlank() || code.isNullOrBlank()) {
@@ -1325,6 +1348,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun fetchFavoritesFromSync(codeOverride: String? = null): List<FavoriteTrack>? {
+        if (!state.value.allowFavoritesSync) {
+            return null
+        }
         val baseUrl = state.value.baseUrl
         val code = codeOverride ?: state.value.favoritesSyncCode
         if (baseUrl.isBlank() || code.isNullOrBlank()) {
@@ -1340,7 +1366,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun maybeHydrateFavoritesFromSync() {
         val code = state.value.favoritesSyncCode
         val baseUrl = state.value.baseUrl
-        if (code.isNullOrBlank() || baseUrl.isBlank()) {
+        if (code.isNullOrBlank() || baseUrl.isBlank() || !state.value.allowFavoritesSync) {
             return
         }
         if (favoritesSyncHydratedFor == code) {

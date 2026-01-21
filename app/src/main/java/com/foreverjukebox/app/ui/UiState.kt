@@ -30,6 +30,7 @@ data class UiState(
     val cacheSizeBytes: Long = 0,
     val favorites: List<FavoriteTrack> = emptyList(),
     val favoritesSyncCode: String? = null,
+    val allowFavoritesSync: Boolean = false,
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
     val tuning: TuningState = TuningState()
