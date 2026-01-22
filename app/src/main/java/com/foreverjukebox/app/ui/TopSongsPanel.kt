@@ -115,7 +115,7 @@ fun TopSongsPanel(
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         itemsIndexed(items) { index, item ->
                             val title = item.title ?: "Untitled"
-                            val artist = item.artist ?: "Unknown"
+                            val artist = item.artist ?: ""
                             val youtubeId = item.youtubeId ?: return@itemsIndexed
                             Row(
                                 modifier = Modifier
@@ -131,7 +131,7 @@ fun TopSongsPanel(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "$title — $artist",
+                                    text = if (artist.isNotBlank()) "$title — $artist" else title,
                                     modifier = Modifier
                                         .weight(1f)
                                         .alignByBaseline(),
