@@ -8,7 +8,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import com.foreverjukebox.app.engine.JukeboxPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,8 +25,8 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     private var bytesPerFrame = 4
     private var baseFrame = 0
     private var baseOffsetSeconds = 0.0
-    private val seekLock = Any()
-    private val handler = Handler(Looper.getMainLooper())
+    private val jumpThread = HandlerThread("fj-audio-jump").apply { start() }
+    private val jumpHandler = Handler(jumpThread.looper)
     private var pendingJumpToken = 0
 
     suspend fun loadBytes(
@@ -53,9 +53,31 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         baseOffsetSeconds = 0.0
     }
 
+    suspend fun loadFile(
+        file: File,
+        jobId: String,
+        onProgress: ((Int) -> Unit)? = null
+    ) {
+        pcmData = null
+        releaseAudioTrack()
+        cancelScheduledJump()
+        withContext(Dispatchers.IO) {
+            sourceFile = file
+        }
+        val decoded = decodeToPcm(file, onProgress)
+        pcmData = decoded.data
+        sampleRate = decoded.sampleRate
+        channelCount = decoded.channelCount
+        bytesPerFrame = 2 * channelCount
+        audioTrack = createAudioTrack(decoded)
+        baseFrame = 0
+        baseOffsetSeconds = 0.0
+    }
+
     fun release() {
         cancelScheduledJump()
         releaseAudioTrack()
+        jumpThread.quitSafely()
     }
 
     fun clear() {
@@ -87,7 +109,6 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
             // Ignore if already stopped or not initialized.
         }
         track.flush()
-        track.playbackHeadPosition = 0
         baseFrame = 0
         baseOffsetSeconds = 0.0
     }
@@ -96,23 +117,20 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         val track = audioTrack ?: return
         val frame = (time * sampleRate).toInt().coerceAtLeast(0)
         cancelScheduledJump()
-        synchronized(seekLock) {
-            val wasPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
-            if (wasPlaying) {
-                track.pause()
-                try {
-                    track.flush()
-                } catch (_: IllegalStateException) {
-                    // Ignore if the track is already stopped.
-                }
-            }
-            track.playbackHeadPosition = frame
-            // playbackHeadPosition may reset to 0 after seeking; treat it as relative.
-            baseFrame = track.playbackHeadPosition
-            baseOffsetSeconds = frame.toDouble() / sampleRate.toDouble()
-            if (wasPlaying) {
-                track.play()
-            }
+        val wasPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
+        if (wasPlaying) {
+            track.pause()
+        }
+        try {
+            track.flush()
+        } catch (_: IllegalStateException) {
+            // Ignore if the track is already stopped.
+        }
+        track.playbackHeadPosition = frame
+        baseFrame = track.playbackHeadPosition
+        baseOffsetSeconds = frame.toDouble() / sampleRate.toDouble()
+        if (wasPlaying) {
+            track.play()
         }
     }
 
@@ -124,7 +142,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         val currentTime = getCurrentTime()
         val delayMs = ((transitionTime - currentTime).coerceAtLeast(0.0) * 1000.0).toLong()
         val token = ++pendingJumpToken
-        handler.postDelayed({
+        jumpHandler.postDelayed({
             if (token != pendingJumpToken) return@postDelayed
             if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
                 seek(targetTime)
@@ -155,7 +173,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
 
     private fun cancelScheduledJump() {
         pendingJumpToken += 1
-        handler.removeCallbacksAndMessages(null)
+        jumpHandler.removeCallbacksAndMessages(null)
     }
 
     private fun createAudioTrack(decoded: DecodedAudio): AudioTrack {
@@ -184,7 +202,10 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         return track
     }
 
-    private fun decodeToPcm(file: File, onProgress: ((Int) -> Unit)?): DecodedAudio {
+    private fun decodeToPcm(
+        file: File,
+        onProgress: ((Int) -> Unit)?
+    ): DecodedAudio {
         val extractor = MediaExtractor()
         extractor.setDataSource(file.absolutePath)
         var audioTrackIndex = -1
@@ -208,7 +229,6 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         decoder.configure(format, null, null, 0)
         decoder.start()
 
-        val output = ByteArrayOutputStream()
         val info = MediaCodec.BufferInfo()
         var inputDone = false
         var outputDone = false
@@ -219,6 +239,12 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         } else {
             -1L
         }
+        val output = if (durationUs > 0) {
+            val expectedBytes = (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
+            ByteArrayOutputStream(expectedBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        } else {
+            ByteArrayOutputStream()
+        }
         var expectedPcmBytes = if (durationUs > 0) {
             (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
         } else {
@@ -226,6 +252,7 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         }
         var outputBytesWritten = 0L
         var lastProgress = -1
+        var chunkBuffer = ByteArray(8192)
 
         fun reportProgress(sampleTimeUs: Long) {
             val ratio = if (expectedPcmBytes > 0) {
@@ -243,61 +270,71 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
         }
 
         onProgress?.invoke(0)
-        while (!outputDone) {
-            if (!inputDone) {
-                val inputIndex = decoder.dequeueInputBuffer(10_000)
-                if (inputIndex >= 0) {
-                    val inputBuffer = decoder.getInputBuffer(inputIndex) ?: ByteBuffer.allocate(0)
-                    val sampleSize = extractor.readSampleData(inputBuffer, 0)
-                    if (sampleSize < 0) {
-                        decoder.queueInputBuffer(
-                            inputIndex,
-                            0,
-                            0,
-                            0L,
-                            MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                        )
-                        inputDone = true
-                    } else {
-                        val presentationTimeUs = extractor.sampleTime
-                        decoder.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
-                        reportProgress(presentationTimeUs)
-                        extractor.advance()
+        try {
+            while (!outputDone) {
+                if (!inputDone) {
+                    val inputIndex = decoder.dequeueInputBuffer(10_000)
+                    if (inputIndex >= 0) {
+                        val inputBuffer = decoder.getInputBuffer(inputIndex) ?: ByteBuffer.allocate(0)
+                        val sampleSize = extractor.readSampleData(inputBuffer, 0)
+                        if (sampleSize < 0) {
+                            decoder.queueInputBuffer(
+                                inputIndex,
+                                0,
+                                0,
+                                0L,
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                            )
+                            inputDone = true
+                        } else {
+                            val presentationTimeUs = extractor.sampleTime
+                            decoder.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
+                            reportProgress(presentationTimeUs)
+                            extractor.advance()
+                        }
                     }
                 }
-            }
 
-            val outputIndex = decoder.dequeueOutputBuffer(info, 10_000)
-            when {
-                outputIndex >= 0 -> {
-                    val outBuffer = decoder.getOutputBuffer(outputIndex)
-                    if (outBuffer != null && info.size > 0) {
-                        val chunk = ByteArray(info.size)
-                        outBuffer.get(chunk)
-                        outBuffer.clear()
-                        output.write(chunk)
-                        outputBytesWritten += info.size.toLong().coerceAtLeast(0L)
-                        reportProgress(info.presentationTimeUs)
+                val outputIndex = decoder.dequeueOutputBuffer(info, 10_000)
+                when {
+                    outputIndex >= 0 -> {
+                        val outBuffer = decoder.getOutputBuffer(outputIndex)
+                        if (outBuffer != null && info.size > 0) {
+                            if (info.size > chunkBuffer.size) {
+                                var nextSize = chunkBuffer.size
+                                while (nextSize < info.size) {
+                                    nextSize *= 2
+                                }
+                                chunkBuffer = ByteArray(nextSize)
+                            }
+                            outBuffer.get(chunkBuffer, 0, info.size)
+                            outBuffer.clear()
+                            output.write(chunkBuffer, 0, info.size)
+                            outputBytesWritten += info.size.toLong().coerceAtLeast(0L)
+                            reportProgress(info.presentationTimeUs)
+                        }
+                        decoder.releaseOutputBuffer(outputIndex, false)
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                            outputDone = true
+                        }
                     }
-                    decoder.releaseOutputBuffer(outputIndex, false)
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                        outputDone = true
-                    }
-                }
-                outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    val newFormat = decoder.outputFormat
-                    sampleRate = newFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                    channels = newFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                    if (durationUs > 0) {
-                        expectedPcmBytes = (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
+                    outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        val newFormat = decoder.outputFormat
+                        sampleRate = newFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        channels = newFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        if (durationUs > 0) {
+                            expectedPcmBytes = (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
+                        }
                     }
                 }
             }
+        } finally {
+            decoder.stop()
+            decoder.release()
+            extractor.release()
+            output.flush()
+            output.close()
         }
-
-        decoder.stop()
-        decoder.release()
-        extractor.release()
         onProgress?.invoke(100)
         return DecodedAudio(output.toByteArray(), sampleRate, channels)
     }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import android.os.SystemClock
+import java.util.concurrent.CopyOnWriteArraySet
 import kotlin.math.min
 
 interface JukeboxPlayer {
@@ -23,7 +24,7 @@ class JukeboxEngine(
     private val player: JukeboxPlayer,
     options: JukeboxEngineOptions = JukeboxEngineOptions()
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope = CoroutineScope(Dispatchers.Default)
     private var tickJob: Job? = null
     private var analysis: TrackAnalysis? = null
     private var graph: JukeboxGraphState? = null
@@ -42,7 +43,7 @@ class JukeboxEngine(
     private var ignoreResyncUntilMs: Long = 0
     private val deletedEdgeKeys = mutableSetOf<String>()
     private val rng = createRng(options.randomMode, options.seed)
-    private val listeners = mutableSetOf<(JukeboxState) -> Unit>()
+    private val listeners = CopyOnWriteArraySet<(JukeboxState) -> Unit>()
 
     init {
         config = config.copy(
