@@ -48,7 +48,8 @@ data class AnalysisResponse(
     @SerialName("youtube_id") val youtubeId: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     val result: JsonElement? = null,
-    val error: String? = null
+    val error: String? = null,
+    @SerialName("error_code") val errorCode: String? = null
 )
 
 @Serializable
