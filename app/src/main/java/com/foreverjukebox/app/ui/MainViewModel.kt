@@ -506,7 +506,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (artist.isNotBlank()) {
                 try {
                     val response = maybeRepairMissing(
-                        baseUrl,
                         api.getJobByTrack(baseUrl, name, artist)
                     )
                     val jobId = response.id
