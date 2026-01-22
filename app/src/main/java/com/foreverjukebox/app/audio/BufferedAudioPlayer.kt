@@ -29,33 +29,8 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
     private val jumpHandler = Handler(jumpThread.looper)
     private var pendingJumpToken = 0
 
-    suspend fun loadBytes(
-        bytes: ByteArray,
-        jobId: String,
-        onProgress: ((Int) -> Unit)? = null
-    ) {
-        pcmData = null
-        releaseAudioTrack()
-        cancelScheduledJump()
-        withContext(Dispatchers.IO) {
-            val file = File(context.cacheDir, "fj-audio-$jobId")
-            file.writeBytes(bytes)
-            sourceFile = file
-        }
-        val file = sourceFile ?: return
-        val decoded = decodeToPcm(file, onProgress)
-        pcmData = decoded.data
-        sampleRate = decoded.sampleRate
-        channelCount = decoded.channelCount
-        bytesPerFrame = 2 * channelCount
-        audioTrack = createAudioTrack(decoded)
-        baseFrame = 0
-        baseOffsetSeconds = 0.0
-    }
-
     suspend fun loadFile(
         file: File,
-        jobId: String,
         onProgress: ((Int) -> Unit)? = null
     ) {
         pcmData = null

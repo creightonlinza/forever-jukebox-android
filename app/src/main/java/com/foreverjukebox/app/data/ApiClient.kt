@@ -113,11 +113,6 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         postEmpty(url)
     }
 
-    suspend fun fetchAudioBytes(baseUrl: String, jobId: String): ByteArray {
-        val url = buildUrl(baseUrl, ApiPaths.audio(jobId))
-        return getBytes(url)
-    }
-
     suspend fun fetchAudioToFile(baseUrl: String, jobId: String, target: File): File {
         val url = buildUrl(baseUrl, ApiPaths.audio(jobId))
         return getToFile(url, target)
@@ -140,16 +135,6 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
                 throw IOException("HTTP ${response.code}")
             }
             response.body?.string() ?: ""
-        }
-    }
-
-    private suspend fun getBytes(url: String): ByteArray = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).get().build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
-            }
-            response.body?.bytes() ?: ByteArray(0)
         }
     }
 

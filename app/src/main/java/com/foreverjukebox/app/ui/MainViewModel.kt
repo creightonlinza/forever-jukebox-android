@@ -728,10 +728,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         setAnalysisProgress(0, "Loading audio")
         try {
             withContext(Dispatchers.Default) {
-                controller.player.loadFile(
-                    audioPath,
-                    response.id ?: youtubeId
-                ) { percent ->
+                controller.player.loadFile(audioPath) { percent ->
                     viewModelScope.launch(Dispatchers.Main) {
                         setAnalysisProgress(percent, "Loading audio")
                     }
@@ -1011,7 +1008,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val target = audioFile(youtubeId ?: jobId)
             api.fetchAudioToFile(baseUrl, jobId, target)
             withContext(Dispatchers.Default) {
-                controller.player.loadFile(target, jobId) { percent ->
+                controller.player.loadFile(target) { percent ->
                     viewModelScope.launch(Dispatchers.Main) {
                         setDecodeProgress(percent)
                     }
