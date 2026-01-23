@@ -7,8 +7,8 @@ import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.JukeboxEngineOptions
 import com.foreverjukebox.app.engine.RandomMode
 
-class PlaybackController(context: Context) {
-    val player = BufferedAudioPlayer(context)
+class PlaybackController {
+    val player = BufferedAudioPlayer()
     val engine = JukeboxEngine(player, JukeboxEngineOptions(randomMode = RandomMode.Random))
 
     private var playTimerMs = 0L
@@ -76,9 +76,10 @@ object PlaybackControllerHolder {
     @Volatile
     private var controller: PlaybackController? = null
 
+    @Suppress("UNUSED_PARAMETER")
     fun get(context: Context): PlaybackController {
         return controller ?: synchronized(this) {
-            controller ?: PlaybackController(context.applicationContext).also { controller = it }
+            controller ?: PlaybackController().also { controller = it }
         }
     }
 }

@@ -1,14 +1,8 @@
 package com.foreverjukebox.app.audio
 
-import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
-import android.os.Handler
-import android.os.HandlerThread
 import com.foreverjukebox.app.engine.JukeboxPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,165 +10,89 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 
-class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
-    private var sourceFile: File? = null
-    private var audioTrack: AudioTrack? = null
-    private var pcmData: ByteArray? = null
+class BufferedAudioPlayer : JukeboxPlayer {
     private var sampleRate = 44100
     private var channelCount = 2
-    private var bytesPerFrame = 4
-    private var baseFrame = 0
-    private var baseOffsetSeconds = 0.0
-    private val jumpThread = HandlerThread("fj-audio-jump").apply { start() }
-    private val jumpHandler = Handler(jumpThread.looper)
-    private var pendingJumpToken = 0
+    private var nativeHandle: Long = 0
+    private var durationSeconds: Double? = null
 
     suspend fun loadFile(
         file: File,
         onProgress: ((Int) -> Unit)? = null
     ) {
-        pcmData = null
-        releaseAudioTrack()
-        cancelScheduledJump()
-        withContext(Dispatchers.IO) {
-            sourceFile = file
+        durationSeconds = null
+        releaseNativePlayer()
+        val decoded = withContext(Dispatchers.IO) {
+            decodeToPcm(file, onProgress)
         }
-        val decoded = decodeToPcm(file, onProgress)
-        pcmData = decoded.data
         sampleRate = decoded.sampleRate
         channelCount = decoded.channelCount
-        bytesPerFrame = 2 * channelCount
-        audioTrack = createAudioTrack(decoded)
-        baseFrame = 0
-        baseOffsetSeconds = 0.0
+        durationSeconds = decoded.durationSeconds
+        ensureNativePlayer()
+        nativeLoadPcm(nativeHandle, decoded.data)
     }
 
     fun release() {
-        cancelScheduledJump()
-        releaseAudioTrack()
-        jumpThread.quitSafely()
+        releaseNativePlayer()
     }
 
     fun clear() {
-        cancelScheduledJump()
-        releaseAudioTrack()
-        pcmData = null
-        sourceFile = null
-        baseFrame = 0
-        baseOffsetSeconds = 0.0
+        releaseNativePlayer()
+        durationSeconds = null
     }
 
     override fun play() {
-        audioTrack?.play()
+        if (nativeHandle != 0L) {
+            nativePlay(nativeHandle)
+        }
     }
 
     override fun pause() {
-        audioTrack?.pause()
+        if (nativeHandle != 0L) {
+            nativePause(nativeHandle)
+        }
     }
 
     override fun stop() {
-        val track = audioTrack ?: return
-        cancelScheduledJump()
-        if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-            track.pause()
+        if (nativeHandle != 0L) {
+            nativeStop(nativeHandle)
         }
-        try {
-            track.stop()
-        } catch (_: IllegalStateException) {
-            // Ignore if already stopped or not initialized.
-        }
-        track.flush()
-        baseFrame = 0
-        baseOffsetSeconds = 0.0
     }
 
     override fun seek(time: Double) {
-        val track = audioTrack ?: return
-        val frame = (time * sampleRate).toInt().coerceAtLeast(0)
-        cancelScheduledJump()
-        val wasPlaying = track.playState == AudioTrack.PLAYSTATE_PLAYING
-        if (wasPlaying) {
-            track.pause()
-        }
-        try {
-            track.flush()
-        } catch (_: IllegalStateException) {
-            // Ignore if the track is already stopped.
-        }
-        track.playbackHeadPosition = frame
-        baseFrame = track.playbackHeadPosition
-        baseOffsetSeconds = frame.toDouble() / sampleRate.toDouble()
-        if (wasPlaying) {
-            track.play()
+        if (nativeHandle != 0L) {
+            nativeSeek(nativeHandle, time)
         }
     }
 
     override fun scheduleJump(targetTime: Double, transitionTime: Double) {
-        val track = audioTrack ?: return
-        if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
-            return
+        if (nativeHandle != 0L) {
+            nativeScheduleJump(nativeHandle, targetTime, transitionTime)
         }
-        val currentTime = getCurrentTime()
-        val delayMs = ((transitionTime - currentTime).coerceAtLeast(0.0) * 1000.0).toLong()
-        val token = ++pendingJumpToken
-        jumpHandler.postDelayed({
-            if (token != pendingJumpToken) return@postDelayed
-            if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                seek(targetTime)
-            }
-        }, delayMs)
     }
 
     override fun getCurrentTime(): Double {
-        val position = audioTrack?.playbackHeadPosition ?: 0
-        val deltaFrames = (position - baseFrame).coerceAtLeast(0)
-        return baseOffsetSeconds + deltaFrames.toDouble() / sampleRate.toDouble()
+        if (nativeHandle == 0L) return 0.0
+        return nativeGetCurrentTime(nativeHandle)
     }
 
     override fun isPlaying(): Boolean {
-        return audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING
+        return nativeHandle != 0L && nativeIsPlaying(nativeHandle)
     }
 
     fun getDurationSeconds(): Double? {
-        val data = pcmData ?: return null
-        val totalFrames = data.size / bytesPerFrame
-        return totalFrames.toDouble() / sampleRate.toDouble()
+        return durationSeconds
     }
 
-    private fun releaseAudioTrack() {
-        audioTrack?.release()
-        audioTrack = null
+    private fun ensureNativePlayer() {
+        if (nativeHandle != 0L) return
+        nativeHandle = nativeCreatePlayer(sampleRate, channelCount)
     }
 
-    private fun cancelScheduledJump() {
-        pendingJumpToken += 1
-        jumpHandler.removeCallbacksAndMessages(null)
-    }
-
-    private fun createAudioTrack(decoded: DecodedAudio): AudioTrack {
-        val channelConfig = when (decoded.channelCount) {
-            1 -> AudioFormat.CHANNEL_OUT_MONO
-            2 -> AudioFormat.CHANNEL_OUT_STEREO
-            else -> AudioFormat.CHANNEL_OUT_DEFAULT
-        }
-        val audioFormat = AudioFormat.Builder()
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setSampleRate(decoded.sampleRate)
-            .setChannelMask(channelConfig)
-            .build()
-        val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-            .build()
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(attributes)
-            .setAudioFormat(audioFormat)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setBufferSizeInBytes(decoded.data.size)
-            .build()
-        track.write(decoded.data, 0, decoded.data.size)
-        track.playbackHeadPosition = 0
-        return track
+    private fun releaseNativePlayer() {
+        if (nativeHandle == 0L) return
+        nativeRelease(nativeHandle)
+        nativeHandle = 0L
     }
 
     private fun decodeToPcm(
@@ -311,12 +229,38 @@ class BufferedAudioPlayer(private val context: Context) : JukeboxPlayer {
             output.close()
         }
         onProgress?.invoke(100)
-        return DecodedAudio(output.toByteArray(), sampleRate, channels)
+        val data = output.toByteArray()
+        val bytesPerFrame = channels * 2
+        val totalFrames = if (bytesPerFrame > 0) data.size / bytesPerFrame else 0
+        val durationSeconds = if (sampleRate > 0) {
+            totalFrames.toDouble() / sampleRate.toDouble()
+        } else {
+            0.0
+        }
+        return DecodedAudio(data, sampleRate, channels, durationSeconds)
     }
 
     private data class DecodedAudio(
         val data: ByteArray,
         val sampleRate: Int,
-        val channelCount: Int
+        val channelCount: Int,
+        val durationSeconds: Double
     )
+
+    private external fun nativeCreatePlayer(sampleRate: Int, channelCount: Int): Long
+    private external fun nativeLoadPcm(handle: Long, data: ByteArray)
+    private external fun nativePlay(handle: Long)
+    private external fun nativePause(handle: Long)
+    private external fun nativeStop(handle: Long)
+    private external fun nativeSeek(handle: Long, timeSeconds: Double)
+    private external fun nativeScheduleJump(handle: Long, targetTime: Double, transitionTime: Double)
+    private external fun nativeGetCurrentTime(handle: Long): Double
+    private external fun nativeIsPlaying(handle: Long): Boolean
+    private external fun nativeRelease(handle: Long)
+
+    companion object {
+        init {
+            System.loadLibrary("fj_oboe")
+        }
+    }
 }
