@@ -53,7 +53,7 @@ fun FaqPanel() {
                 append("The Forever Jukebox & Analysis Engine by ")
                 pushStringAnnotation(tag = "URL", annotation = "https://creighton.dev")
                 withStyle(linkStyle) {
-                    append("Creighton Linza")
+                    append("Creighton")
                 }
                 pop()
                 append(".")
