@@ -33,7 +33,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                 onThemeChange = viewModel::setThemeMode,
                 onRefreshCacheSize = viewModel::refreshCacheSize,
                 onClearCache = viewModel::clearCache,
-                onTabSelected = viewModel::setActiveTab
+                onTabSelected = viewModel::setActiveTab,
+                onCastSessionStarted = {}
             )
             Spacer(modifier = Modifier.height(12.dp))
 

@@ -6,14 +6,16 @@ import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
+import androidx.fragment.app.FragmentActivity
 import com.foreverjukebox.app.ui.ForeverJukeboxApp
 import com.foreverjukebox.app.ui.MainViewModel
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastState
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private var lastBackPressMs: Long = 0
     private val requestNotifications = registerForActivityResult(
@@ -22,6 +24,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            val castContext = CastContext.getSharedInstance(this)
+            castContext.addCastStateListener { state ->
+                if (state == CastState.CONNECTED) {
+                    val session = castContext.sessionManager.currentCastSession
+                    val name = session?.castDevice?.friendlyName
+                    viewModel.setCastingConnected(true, name)
+                } else {
+                    viewModel.setCastingConnected(false)
+                }
+            }
+        } catch (_: Exception) {
+            // Ignore cast init failures; app still works without it.
+        }
         viewModel.handleDeepLink(intent?.data)
         if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
             viewModel.openListenTab()

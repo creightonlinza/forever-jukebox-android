@@ -71,7 +71,9 @@ data class PlaybackState(
     val jumpLine: JumpLine? = null,
     val lastJobId: String? = null,
     val lastYouTubeId: String? = null,
-    val deleteEligible: Boolean = false
+    val deleteEligible: Boolean = false,
+    val isCasting: Boolean = false,
+    val castDeviceName: String? = null
 )
 
 data class TuningState(

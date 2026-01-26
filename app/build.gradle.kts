@@ -90,6 +90,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
     implementation("androidx.media:media:1.7.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
@@ -97,6 +98,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.3")
     implementation("com.google.oboe:oboe:1.10.0")
+    implementation("com.google.android.gms:play-services-cast-framework:21.4.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.8")
 }

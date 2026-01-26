@@ -65,6 +65,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val context = LocalContext.current
     val playback = state.playback
     val tuning = state.tuning
+    if (playback.isCasting) {
+        CastingPanel(playback, onStopCasting = { viewModel.stopCasting() })
+        return
+    }
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     var showVizMenu by remember { mutableStateOf(false) }
@@ -344,6 +348,52 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             onDismiss = { showTuning = false },
             onApply = viewModel::applyTuning
         )
+    }
+}
+
+@Composable
+private fun CastingPanel(playback: PlaybackState, onStopCasting: () -> Unit) {
+    val deviceLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to Cast device"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Casting",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            text = deviceLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        )
+        Text(
+            text = "Select a track to play on your Cast device.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        )
+        if (playback.playTitle.isNotBlank()) {
+            Text(
+                text = "Now casting: ${playback.playTitle}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+            )
+        }
+        OutlinedButton(
+            onClick = onStopCasting,
+            colors = pillOutlinedButtonColors(),
+            border = pillButtonBorder(),
+            shape = PillShape,
+            contentPadding = SmallButtonPadding,
+            modifier = Modifier.height(SmallButtonHeight)
+        ) {
+            Text("Stop casting", style = MaterialTheme.typography.labelSmall)
+        }
     }
 }
 

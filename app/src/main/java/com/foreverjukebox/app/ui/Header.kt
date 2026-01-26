@@ -55,7 +55,8 @@ fun HeaderBar(
     onThemeChange: (ThemeMode) -> Unit,
     onRefreshCacheSize: () -> Unit,
     onClearCache: () -> Unit,
-    onTabSelected: (TabId) -> Unit
+    onTabSelected: (TabId) -> Unit,
+    onCastSessionStarted: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
 
@@ -141,7 +142,8 @@ fun HeaderBar(
             onDismiss = { showSettings = false },
             onThemeChange = onThemeChange,
             onEditBaseUrl = onEditBaseUrl,
-            onClearCache = onClearCache
+            onClearCache = onClearCache,
+            onCastSessionStarted = onCastSessionStarted
         )
     }
 }
@@ -152,7 +154,8 @@ private fun SettingsDialog(
     onDismiss: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
-    onClearCache: () -> Unit
+    onClearCache: () -> Unit,
+    onCastSessionStarted: () -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
     val cacheLabel = formatCacheSize(state.cacheSizeBytes)
@@ -198,7 +201,20 @@ private fun SettingsDialog(
                 }
             }
         },
-        title = { Text("Settings") },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Settings")
+                Spacer(modifier = Modifier.weight(1f))
+                CastRouteButton(
+                    modifier = Modifier.size(SmallButtonHeight),
+                    enabled = state.baseUrl.isNotBlank(),
+                    onSessionStarted = onCastSessionStarted
+                )
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("API Base URL")

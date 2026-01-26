@@ -12,6 +12,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ForeverJukebox"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.foreverjukebox.app.cast.ForeverJukeboxCastOptionsProvider" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
