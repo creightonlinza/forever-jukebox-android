@@ -66,6 +66,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var pendingSyncDelta: FavoritesDelta? = null
     private val tabHistory = ArrayDeque<TabId>()
     private var castStateLogged = false
+    private var lastNotificationUpdateMs = 0L
 
     init {
         viewModelScope.launch {
@@ -145,6 +146,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
+            maybeUpdateNotification()
         }
 
         restorePlaybackState()
@@ -1218,6 +1220,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastPlayCountedJobId = null
             }
         }
+    }
+
+    private fun maybeUpdateNotification() {
+        if (!controller.isPlaying()) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastNotificationUpdateMs < 500L) return
+        lastNotificationUpdateMs = now
+        ForegroundPlaybackService.update(getApplication())
     }
 
     private fun resetForNewTrack() {

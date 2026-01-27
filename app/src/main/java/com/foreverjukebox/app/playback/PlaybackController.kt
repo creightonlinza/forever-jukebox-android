@@ -70,6 +70,14 @@ class PlaybackController {
         val totalMs = playTimerMs + (lastPlayStamp?.let { now - it } ?: 0L)
         return totalMs / 1000.0
     }
+
+    fun getPlaybackPositionMs(): Long {
+        return (player.getCurrentTime() * 1000.0).toLong()
+    }
+
+    fun getTrackDurationMs(): Long? {
+        return player.getDurationSeconds()?.let { (it * 1000.0).toLong() }
+    }
 }
 
 object PlaybackControllerHolder {
