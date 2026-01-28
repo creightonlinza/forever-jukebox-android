@@ -880,6 +880,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setCastingConnected(isConnected: Boolean, deviceName: String? = null) {
         if (isConnected) {
+            if (state.value.playback.isCasting) {
+                _state.update {
+                    it.copy(
+                        playback = it.playback.copy(
+                            castDeviceName = deviceName
+                        )
+                    )
+                }
+                return
+            }
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
@@ -890,6 +900,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             resetForNewTrack()
         } else {
+            if (!state.value.playback.isCasting) {
+                return
+            }
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
