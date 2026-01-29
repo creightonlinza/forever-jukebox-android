@@ -213,7 +213,7 @@ private fun SettingsDialog(
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = { urlInput = it },
-                    label = { Text("Example: http://10.0.2.2:8000") },
+                    label = { Text("Example: http://192.168.1.100") },
                     textStyle = MaterialTheme.typography.bodySmall,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(

@@ -920,7 +920,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ForegroundPlaybackService.start(getApplication())
                 }
             } catch (err: Exception) {
-                setAnalysisError("Loading failed.")
+                setAnalysisError("Playback failed.")
             }
         } else {
             controller.stopPlayback()
@@ -1144,6 +1144,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun retryFailedLoad() {
+        val baseUrl = state.value.baseUrl.trim()
+        if (baseUrl.isBlank()) {
+            viewModelScope.launch { showToast("Set a base URL first.") }
+            return
+        }
+        val youtubeId = state.value.playback.lastYouTubeId
+        if (youtubeId.isNullOrBlank()) {
+            viewModelScope.launch { showToast("Nothing to retry.") }
+            return
+        }
+        val title = state.value.playback.trackTitle
+        val artist = state.value.playback.trackArtist
+        resetForNewTrack()
+        loadTrackByYoutubeId(youtubeId, title, artist)
+    }
+
     suspend fun deleteCurrentJob(): Boolean {
         val jobId = lastJobId ?: return false
         val baseUrl = state.value.baseUrl
@@ -1229,7 +1246,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun handleDeepLink(uri: Uri?) {
         if (uri == null) return
-        if (uri.scheme != "https" || uri.host != "foreverjukebox.com") return
+        val base = state.value.baseUrl.trim().trimEnd('/')
+        if (base.isBlank()) return
+        val baseUri = runCatching { Uri.parse(base) }.getOrNull() ?: return
+        if (uri.scheme != baseUri.scheme || uri.host != baseUri.host) return
+        if (baseUri.port != -1 && uri.port != baseUri.port) return
         val segments = uri.pathSegments
         if (segments.size >= 2 && segments.firstOrNull() == "listen") {
             val id = segments[1]

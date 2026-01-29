@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.CircularProgressIndicator
@@ -96,7 +97,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (!playback.isCasting && !playback.analysisErrorMessage.isNullOrBlank()) {
-            ErrorStatus(message = playback.analysisErrorMessage)
+            ErrorStatus(
+                message = playback.analysisErrorMessage,
+                onRetry = { viewModel.retryFailedLoad() }
+            )
         } else if (!playback.isCasting && (playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading)) {
             LoadingStatus(
                 progress = playback.analysisProgress,
@@ -207,7 +211,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         IconButton(
                             onClick = {
                                 val id = playback.lastYouTubeId ?: return@IconButton
-                                val url = "https://foreverjukebox.com/listen/$id"
+                                val baseUrl = state.baseUrl.trim().trimEnd('/')
+                                val url = "$baseUrl/listen/$id"
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, url)
@@ -422,7 +427,7 @@ private fun LoadingStatus(progress: Int?, label: String?) {
 }
 
 @Composable
-private fun ErrorStatus(message: String) {
+private fun ErrorStatus(message: String, onRetry: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -434,5 +439,17 @@ private fun ErrorStatus(message: String) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        IconButton(
+            onClick = onRetry,
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .size(SmallButtonHeight)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Refresh,
+                contentDescription = "Retry",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
