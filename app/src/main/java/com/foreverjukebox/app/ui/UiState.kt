@@ -23,6 +23,7 @@ enum class TopSongsTab {
 
 data class UiState(
     val baseUrl: String = "",
+    val castEnabled: Boolean = false,
     val showBaseUrlPrompt: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.System,
     val activeTab: TabId = TabId.Top,

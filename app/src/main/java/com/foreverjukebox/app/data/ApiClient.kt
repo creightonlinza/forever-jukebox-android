@@ -70,7 +70,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         return getJson(url)
     }
 
-    suspend fun fetchTopSongs(baseUrl: String, limit: Int = 20): List<TopSongItem> {
+    suspend fun fetchTopSongs(baseUrl: String, limit: Int = 25): List<TopSongItem> {
         val url = buildUrl(baseUrl, ApiPaths.TOP) {
             addQueryParameter("limit", limit.toString())
         }

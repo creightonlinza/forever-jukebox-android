@@ -7,6 +7,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cast
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.mediarouter.app.MediaRouteButton
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
@@ -17,10 +21,24 @@ import com.google.android.gms.cast.framework.SessionManagerListener
 fun CastRouteButton(
     modifier: Modifier = Modifier,
     enabled: Boolean,
-    onSessionStarted: () -> Unit
+    onSessionStarted: () -> Unit,
+    onDisabledClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val onSessionStartedState = rememberUpdatedState(onSessionStarted)
+    if (!enabled) {
+        IconButton(
+            onClick = { onDisabledClick?.invoke() },
+            modifier = modifier
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Cast,
+                contentDescription = "Cast unavailable",
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            )
+        }
+        return
+    }
     val castContext = remember {
         runCatching { CastContext.getSharedInstance(context) }.getOrNull()
     }

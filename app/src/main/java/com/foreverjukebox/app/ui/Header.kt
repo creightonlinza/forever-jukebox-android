@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -35,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.ThemeMode
 import java.util.Locale
@@ -58,11 +59,11 @@ fun HeaderBar(
     onTabSelected: (TabId) -> Unit,
     onCastSessionStarted: () -> Unit
 ) {
+    val context = LocalContext.current
     var showSettings by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(12.dp)
@@ -115,6 +116,19 @@ fun HeaderBar(
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.weight(1f))
+            CastRouteButton(
+                modifier = Modifier.size(SmallButtonHeight),
+                enabled = state.castEnabled,
+                onSessionStarted = onCastSessionStarted,
+                onDisabledClick = {
+                    Toast.makeText(
+                        context,
+                        "Casting is not available for this API base URL.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+            Spacer(modifier = Modifier.width(6.dp))
             IconButton(
                 onClick = {
                     onRefreshCacheSize()
@@ -142,8 +156,7 @@ fun HeaderBar(
             onDismiss = { showSettings = false },
             onThemeChange = onThemeChange,
             onEditBaseUrl = onEditBaseUrl,
-            onClearCache = onClearCache,
-            onCastSessionStarted = onCastSessionStarted
+            onClearCache = onClearCache
         )
     }
 }
@@ -154,8 +167,7 @@ private fun SettingsDialog(
     onDismiss: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
-    onClearCache: () -> Unit,
-    onCastSessionStarted: () -> Unit
+    onClearCache: () -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
     val cacheLabel = formatCacheSize(state.cacheSizeBytes)
@@ -165,27 +177,9 @@ private fun SettingsDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    versionLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    maxLines = 1
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                OutlinedButton(
-                    onClick = onDismiss,
-                    colors = pillOutlinedButtonColors(),
-                    border = pillButtonBorder(),
-                    shape = PillShape,
-                    contentPadding = SmallButtonPadding,
-                    modifier = Modifier.height(SmallButtonHeight)
-                ) {
-                    Text("Close", style = MaterialTheme.typography.labelSmall)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
                         onEditBaseUrl(urlInput)
@@ -202,17 +196,15 @@ private fun SettingsDialog(
             }
         },
         title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Column(modifier = Modifier) {
                 Text("Settings")
-                Spacer(modifier = Modifier.weight(1f))
-                CastRouteButton(
-                    modifier = Modifier.size(SmallButtonHeight),
-                    enabled = state.baseUrl.isNotBlank(),
-                    onSessionStarted = onCastSessionStarted
+                Text(
+                    versionLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    maxLines = 1
                 )
+                Spacer(modifier = Modifier.height(8.dp))
             }
         },
         text = {

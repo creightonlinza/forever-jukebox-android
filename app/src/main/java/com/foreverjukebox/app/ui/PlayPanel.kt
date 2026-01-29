@@ -246,7 +246,17 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     }
                 }
                 if (playback.isCasting) {
-                    CastingPanel(playback)
+                    CastingPanel(
+                        playback,
+                        castEnabled = state.castEnabled,
+                        onCastDisabled = {
+                            Toast.makeText(
+                                context,
+                                "Casting is not available for this API base URL.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
                 } else {
                     Box(
                         modifier = Modifier
@@ -351,7 +361,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
 
 @Composable
 private fun CastingPanel(
-    playback: PlaybackState
+    playback: PlaybackState,
+    castEnabled: Boolean,
+    onCastDisabled: () -> Unit
 ) {
     val deviceLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to Cast device"
     Column(
@@ -371,8 +383,9 @@ private fun CastingPanel(
             Spacer(modifier = Modifier.width(6.dp))
             CastRouteButton(
                 modifier = Modifier.size(SmallButtonHeight),
-                enabled = true,
-                onSessionStarted = {}
+                enabled = castEnabled,
+                onSessionStarted = {},
+                onDisabledClick = onCastDisabled
             )
         }
         Text(

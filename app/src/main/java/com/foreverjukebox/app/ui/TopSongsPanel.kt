@@ -106,7 +106,7 @@ fun TopSongsPanel(
         ) {
             TopSongsTabs(activeTab = activeTab, onTabSelected = onTabSelected)
             if (activeTab == TopSongsTab.TopSongs) {
-                Text("Top 20", style = MaterialTheme.typography.labelLarge)
+                Text("Top 25", style = MaterialTheme.typography.labelLarge)
                 if (loading) {
                     Text("Loading top songs…", style = MaterialTheme.typography.bodySmall)
                 } else if (items.isEmpty()) {

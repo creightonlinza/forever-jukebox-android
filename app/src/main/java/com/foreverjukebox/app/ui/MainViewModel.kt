@@ -17,6 +17,7 @@ import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.visualizationCount
+import com.foreverjukebox.app.cast.CastAppIdResolver
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
@@ -71,10 +72,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             preferences.baseUrl.collect { url ->
+                val resolvedAppId = CastAppIdResolver.resolve(getApplication(), url)
                 _state.update { current ->
                     current.copy(
                         baseUrl = url.orEmpty(),
-                        showBaseUrlPrompt = url.isNullOrBlank()
+                        showBaseUrlPrompt = url.isNullOrBlank(),
+                        castEnabled = !resolvedAppId.isNullOrBlank()
                     )
                 }
                 if (!url.isNullOrBlank()) {
@@ -875,6 +878,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePlayback() {
         val current = state.value.playback
         if (current.isCasting) {
+            if (!state.value.castEnabled) {
+                notifyCastUnavailable()
+                return
+            }
             val trackId = current.lastYouTubeId ?: current.lastJobId
             if (trackId.isNullOrBlank()) {
                 viewModelScope.launch { showToast("Select a track before playing.") }
@@ -922,6 +929,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun castCurrentTrack() {
+        if (!state.value.castEnabled) {
+            notifyCastUnavailable()
+            return
+        }
         val baseUrl = state.value.baseUrl.trim()
         if (baseUrl.isBlank()) {
             viewModelScope.launch { showToast("Set a base URL before casting.") }
@@ -996,6 +1007,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun castTrackId(trackId: String, title: String? = null, artist: String? = null) {
+        if (!state.value.castEnabled) {
+            notifyCastUnavailable()
+            return
+        }
         val baseUrl = state.value.baseUrl.trim()
         if (baseUrl.isBlank()) return
         val castContext = try {
@@ -1044,6 +1059,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun sendCastCommand(command: String): Boolean {
+        if (!state.value.castEnabled) {
+            notifyCastUnavailable()
+            return false
+        }
         val castContext = try {
             CastContext.getSharedInstance(getApplication())
         } catch (_: Exception) {
@@ -1058,6 +1077,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun notifyCastUnavailable() {
+        viewModelScope.launch {
+            showToast("Casting is not available for this API base URL.")
         }
     }
 
