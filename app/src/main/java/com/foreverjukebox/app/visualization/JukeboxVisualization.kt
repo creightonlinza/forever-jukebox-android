@@ -22,15 +22,12 @@ import androidx.compose.ui.unit.IntSize
 import com.foreverjukebox.app.engine.Edge
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.ui.LocalThemeTokens
-import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
 
 private const val EDGE_SAMPLE_LIMIT = 300
 private const val EDGE_AVOID_RADIUS = 6f
-private const val EDGE_SELECT_THRESHOLD = 8f
 private const val BEAT_SELECT_THRESHOLD = 16f
 
 class JumpLine(val from: Int, val to: Int, val startedAt: Long)
@@ -141,40 +138,6 @@ private fun findNearestBeat(tap: Offset, positions: List<VizPoint>): Int? {
     return if (bestIndex >= 0 && bestDist <= BEAT_SELECT_THRESHOLD) bestIndex else null
 }
 
-private fun findNearestEdge(
-    tap: Offset,
-    positions: List<VizPoint>,
-    edges: List<Edge>,
-    center: Offset
-): Edge? {
-    var bestEdge: Edge? = null
-    var bestDist = Float.MAX_VALUE
-    for (edge in edges) {
-        if (edge.deleted) continue
-        val from = positions.getOrNull(edge.src.which) ?: continue
-        val to = positions.getOrNull(edge.dest.which) ?: continue
-        val dist = if (shouldBendEdge(from, to, positions)) {
-            distanceToQuadratic(
-                tap.x,
-                tap.y,
-                from.x,
-                from.y,
-                bendControlPoint(from, to, center).first,
-                bendControlPoint(from, to, center).second,
-                to.x,
-                to.y
-            )
-        } else {
-            distanceToSegment(tap.x, tap.y, from.x, from.y, to.x, to.y)
-        }
-        if (dist < bestDist) {
-            bestDist = dist
-            bestEdge = edge
-        }
-    }
-    return if (bestDist <= EDGE_SELECT_THRESHOLD) bestEdge else null
-}
-
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEdge(
     edge: Edge,
     positions: List<VizPoint>,
@@ -257,33 +220,4 @@ private fun distanceToSegment(px: Float, py: Float, x1: Float, y1: Float, x2: Fl
     val cx = x1 + clamped * dx
     val cy = y1 + clamped * dy
     return hypot(px - cx, py - cy)
-}
-
-private fun distanceToQuadratic(
-    px: Float,
-    py: Float,
-    x1: Float,
-    y1: Float,
-    cx: Float,
-    cy: Float,
-    x2: Float,
-    y2: Float
-): Float {
-    val samples = 24
-    var best = Float.MAX_VALUE
-    var prevX = x1
-    var prevY = y1
-    for (i in 1..samples) {
-        val t = i / samples.toFloat()
-        val mt = 1 - t
-        val qx = mt * mt * x1 + 2 * mt * t * cx + t * t * x2
-        val qy = mt * mt * y1 + 2 * mt * t * cy + t * t * y2
-        val dist = distanceToSegment(px, py, prevX, prevY, qx, qy)
-        if (dist < best) {
-            best = dist
-        }
-        prevX = qx
-        prevY = qy
-    }
-    return best
 }

@@ -68,7 +68,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var syncUpdateInFlight = false
     private var pendingSyncDelta: FavoritesDelta? = null
     private val tabHistory = ArrayDeque<TabId>()
-    private var castStateLogged = false
     private var lastNotificationUpdateMs = 0L
     private var castStatusListenerRegistered = false
 
@@ -407,10 +406,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is LoadingEvent.AudioLoading -> current.copy(audioLoading = event.loading)
             }
         }
-    }
-
-    private fun setAnalysisIdle() {
-        applyLoadingEvent(LoadingEvent.Reset)
     }
 
     private fun setAnalysisQueued(progress: Int?, message: String? = null) {

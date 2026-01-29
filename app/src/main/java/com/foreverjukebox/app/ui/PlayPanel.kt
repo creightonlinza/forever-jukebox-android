@@ -68,6 +68,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
+    val hasCastTrack = playback.lastYouTubeId != null || playback.lastJobId != null
     val fullscreenLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -122,6 +123,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                if (playback.isCasting && !hasCastTrack) {
+                    CastingPanel(playback)
+                    return@Column
+                }
                 if (playback.playTitle.isNotBlank()) {
                     Text(
                         text = playback.playTitle,
@@ -251,17 +256,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     }
                 }
                 if (playback.isCasting) {
-                    CastingPanel(
-                        playback,
-                        castEnabled = state.castEnabled,
-                        onCastDisabled = {
-                            Toast.makeText(
-                                context,
-                                "Casting is not available for this API base URL.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    )
+                    CastingPanel(playback)
                 } else {
                     Box(
                         modifier = Modifier
@@ -366,11 +361,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
 
 @Composable
 private fun CastingPanel(
-    playback: PlaybackState,
-    castEnabled: Boolean,
-    onCastDisabled: () -> Unit
+    playback: PlaybackState
 ) {
-    val castLabel = playback.castDeviceName?.let { "Casting to $it" } ?: "Casting to connected device"
+    val castLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to cast device"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -384,6 +377,14 @@ private fun CastingPanel(
                 text = castLabel,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        val hasCastTrack = playback.lastYouTubeId != null || playback.lastJobId != null
+        if (!hasCastTrack) {
+            Text(
+                text = "Choose a song to start casting.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
         }
     }
