@@ -11,6 +11,7 @@ class ForeverJukeboxCastOptionsProvider : OptionsProvider {
         val appId = context.getString(R.string.cast_receiver_app_id)
         return CastOptions.Builder()
             .setReceiverApplicationId(appId)
+            .setResumeSavedSession(true)
             .build()
     }
 

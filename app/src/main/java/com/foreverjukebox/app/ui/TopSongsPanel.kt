@@ -56,7 +56,7 @@ fun TopSongsPanel(
     loading: Boolean,
     activeTab: TopSongsTab,
     onTabSelected: (TopSongsTab) -> Unit,
-    onSelect: (String) -> Unit,
+    onSelect: (String, String?, String?) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     favoritesSyncCode: String?,
     allowFavoritesSync: Boolean,
@@ -114,13 +114,15 @@ fun TopSongsPanel(
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         itemsIndexed(items) { index, item ->
-                            val title = item.title ?: "Untitled"
-                            val artist = item.artist ?: ""
+                            val title = item.title
+                            val artist = item.artist
+                            val displayTitle = title ?: "Untitled"
+                            val displayArtist = artist ?: ""
                             val youtubeId = item.youtubeId ?: return@itemsIndexed
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onSelect(youtubeId) },
+                                    .clickable { onSelect(youtubeId, title, artist) },
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
@@ -131,7 +133,11 @@ fun TopSongsPanel(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (artist.isNotBlank()) "$title — $artist" else title,
+                                    text = if (displayArtist.isNotBlank()) {
+                                        "$displayTitle — $displayArtist"
+                                    } else {
+                                        displayTitle
+                                    },
                                     modifier = Modifier
                                         .weight(1f)
                                         .alignByBaseline(),
@@ -192,17 +198,19 @@ fun TopSongsPanel(
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(favorites) { item ->
-                            val title = item.title.ifBlank { "Untitled" }
-                            val artist = item.artist.ifBlank { "" }
-                            val display = if (artist.isNotBlank() && artist != "Unknown") {
-                                "$title — $artist"
+                            val title = item.title
+                            val artist = item.artist
+                            val displayTitle = title.ifBlank { "Untitled" }
+                            val displayArtist = artist.ifBlank { "" }
+                            val display = if (displayArtist.isNotBlank() && displayArtist != "Unknown") {
+                                "$displayTitle — $displayArtist"
                             } else {
-                                title
+                                displayTitle
                             }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onSelect(item.uniqueSongId) },
+                                    .clickable { onSelect(item.uniqueSongId, title, artist) },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(

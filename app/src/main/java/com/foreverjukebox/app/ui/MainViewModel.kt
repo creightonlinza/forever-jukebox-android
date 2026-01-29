@@ -23,6 +23,7 @@ import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +39,6 @@ import java.io.IOException
 import java.time.Duration
 import java.time.OffsetDateTime
 import kotlin.math.roundToInt
-import kotlin.coroutines.coroutineContext
 import org.json.JSONObject
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -299,6 +299,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updatePlaybackState { it.copy(lastJobId = jobId) }
     }
 
+    private fun resolveTrackMeta(youtubeId: String): Pair<String?, String?> {
+        val topMatch = state.value.search.topSongs.firstOrNull { it.youtubeId == youtubeId }
+        if (topMatch != null) {
+            return topMatch.title to topMatch.artist
+        }
+        val favoriteMatch = state.value.favorites.firstOrNull { it.uniqueSongId == youtubeId }
+        if (favoriteMatch != null) {
+            return favoriteMatch.title to favoriteMatch.artist
+        }
+        return null to null
+    }
+
     private suspend fun maybeRepairMissing(
         response: AnalysisResponse
     ): AnalysisResponse {
@@ -524,7 +536,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             applyActiveTab(TabId.Play, recordHistory = true)
                             return@launch
                         }
-                        loadExistingJob(jobId, youtubeId, response)
+                        loadExistingJob(
+                            jobId,
+                            youtubeId,
+                            response,
+                            name,
+                            artist
+                        )
                         return@launch
                     }
                 } catch (_: Exception) {
@@ -577,6 +595,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val resolvedArtist = artist ?: state.value.search.pendingTrackArtist.orEmpty()
         if (state.value.playback.isCasting) {
             castTrackId(youtubeId, resolvedTitle, resolvedArtist)
+            _state.update {
+                it.copy(playback = it.playback.copy(lastYouTubeId = youtubeId))
+            }
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
@@ -622,11 +643,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadTrackByYoutubeId(youtubeId: String) {
+    fun loadTrackByYoutubeId(youtubeId: String, title: String? = null, artist: String? = null) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
+        val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
+            resolveTrackMeta(youtubeId)
+        } else {
+            title to artist
+        }
         if (state.value.playback.isCasting) {
-            castTrackId(youtubeId)
+            castTrackId(youtubeId, resolvedTitle, resolvedArtist)
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        lastYouTubeId = youtubeId,
+                        trackTitle = resolvedTitle,
+                        trackArtist = resolvedArtist
+                    )
+                )
+            }
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
@@ -635,7 +670,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 playback = it.playback.copy(
                     audioLoading = false,
-                    lastYouTubeId = youtubeId
+                    lastYouTubeId = youtubeId,
+                    trackTitle = resolvedTitle,
+                    trackArtist = resolvedArtist
                 )
             )
         }
@@ -676,10 +713,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadExistingJob(
         jobId: String,
         youtubeId: String,
-        response: AnalysisResponse
+        response: AnalysisResponse,
+        title: String? = null,
+        artist: String? = null
     ) {
         if (state.value.playback.isCasting) {
-            castTrackId(youtubeId)
+            castTrackId(youtubeId, title, artist)
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        lastYouTubeId = youtubeId,
+                        trackTitle = title,
+                        trackArtist = artist
+                    )
+                )
+            }
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
@@ -694,7 +742,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     pendingTrackName = null,
                     pendingTrackArtist = null
                 ),
-                playback = it.playback.copy(lastYouTubeId = youtubeId)
+                playback = it.playback.copy(
+                    lastYouTubeId = youtubeId,
+                    trackTitle = title,
+                    trackArtist = artist
+                )
             )
         }
         applyActiveTab(TabId.Play, recordHistory = true)
@@ -822,6 +874,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun togglePlayback() {
         val current = state.value.playback
+        if (current.isCasting) {
+            val trackId = current.lastYouTubeId ?: current.lastJobId
+            if (trackId.isNullOrBlank()) {
+                viewModelScope.launch { showToast("Select a track before playing.") }
+                return
+            }
+            val command = if (current.isRunning) "stop" else "play"
+            val sent = sendCastCommand(command)
+            if (!sent) {
+                viewModelScope.launch { showToast("Connect to a Cast device first.") }
+                return
+            }
+            _state.update {
+                it.copy(playback = it.playback.copy(isRunning = !current.isRunning))
+            }
+            return
+        }
         if (!current.audioLoaded || !current.analysisLoaded) return
         if (!current.isRunning) {
             try {
@@ -911,6 +980,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
+            resetForNewTrack()
+            applyActiveTab(TabId.Top, recordHistory = true)
         }
     }
 
@@ -922,8 +993,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         castContext?.sessionManager?.endCurrentSession(true)
         setCastingConnected(false)
-        resetForNewTrack()
-        applyActiveTab(TabId.Top, recordHistory = true)
     }
 
     private fun castTrackId(trackId: String, title: String? = null, artist: String? = null) {
@@ -944,15 +1013,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             title?.let { putString(MediaMetadata.KEY_TITLE, it) }
             artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
         }
-        if (title != null || artist != null) {
-            val displayTitle = if (artist.isNullOrBlank()) {
-                title ?: ""
-            } else {
-                "${title ?: "Unknown"} — $artist"
-            }
-            _state.update {
-                it.copy(playback = it.playback.copy(playTitle = displayTitle))
-            }
+        val displayTitle = if (artist.isNullOrBlank()) {
+            title?.takeIf { it.isNotBlank() } ?: "Unknown"
+        } else {
+            "${title?.takeIf { it.isNotBlank() } ?: "Unknown"} — $artist"
+        }
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(
+                    playTitle = displayTitle,
+                    trackTitle = title,
+                    trackArtist = artist,
+                    isRunning = true,
+                    listenTime = "00:00:00",
+                    beatsPlayed = 0
+                )
+            )
         }
         val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/$trackId")
             .setStreamType(MediaInfo.STREAM_TYPE_NONE)
@@ -965,6 +1041,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .setCustomData(customData)
             .build()
         session.remoteMediaClient?.load(request)
+    }
+
+    private fun sendCastCommand(command: String): Boolean {
+        val castContext = try {
+            CastContext.getSharedInstance(getApplication())
+        } catch (_: Exception) {
+            return false
+        }
+        val session = castContext.sessionManager.currentCastSession ?: return false
+        val payload = JSONObject().apply {
+            put("type", command)
+        }
+        return try {
+            session.sendMessage(CAST_COMMAND_NAMESPACE, payload.toString())
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     suspend fun deleteCurrentJob(): Boolean {
@@ -1087,7 +1181,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun pollAnalysis(jobId: String) {
         val baseUrl = state.value.baseUrl
         val intervalMs = 2000L
-        while (coroutineContext.isActive) {
+        while (currentCoroutineContext().isActive) {
             val response = api.getAnalysis(baseUrl, jobId)
             updateDeleteEligibility(response)
             when (response.status) {
@@ -1535,6 +1629,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val MAX_FAVORITES = 100
+        private const val CAST_COMMAND_NAMESPACE = "urn:x-cast:com.foreverjukebox.app"
     }
 }
 
