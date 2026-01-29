@@ -365,7 +365,7 @@ private fun CastingPanel(
     castEnabled: Boolean,
     onCastDisabled: () -> Unit
 ) {
-    val deviceLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to Cast device"
+    val castLabel = playback.castDeviceName?.let { "Casting to $it" } ?: "Casting to connected device"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -376,23 +376,11 @@ private fun CastingPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Casting",
+                text = castLabel,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            CastRouteButton(
-                modifier = Modifier.size(SmallButtonHeight),
-                enabled = castEnabled,
-                onSessionStarted = {},
-                onDisabledClick = onCastDisabled
-            )
         }
-        Text(
-            text = deviceLabel,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-        )
     }
 }
 

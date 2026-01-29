@@ -18,10 +18,12 @@ import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.visualizationCount
 import com.foreverjukebox.app.cast.CastAppIdResolver
+import com.google.android.gms.cast.Cast
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastSession
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -68,6 +70,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val tabHistory = ArrayDeque<TabId>()
     private var castStateLogged = false
     private var lastNotificationUpdateMs = 0L
+    private var castStatusListenerRegistered = false
 
     init {
         viewModelScope.launch {
@@ -978,7 +981,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
+            castStatusListenerRegistered = false
             resetForNewTrack()
+            requestCastStatus()
         } else {
             if (!state.value.playback.isCasting) {
                 return
@@ -991,6 +996,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
+            castStatusListenerRegistered = false
             resetForNewTrack()
             applyActiveTab(TabId.Top, recordHistory = true)
         }
@@ -1004,6 +1010,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         castContext?.sessionManager?.endCurrentSession(true)
         setCastingConnected(false)
+    }
+
+    fun requestCastStatus() {
+        if (!state.value.castEnabled) {
+            return
+        }
+        val castContext = runCatching {
+            CastContext.getSharedInstance(getApplication())
+        }.getOrNull() ?: return
+        val session = castContext.sessionManager.currentCastSession ?: return
+        ensureCastStatusListener(session)
+        val payload = JSONObject().apply {
+            put("type", "getStatus")
+        }
+        runCatching { session.sendMessage(CAST_COMMAND_NAMESPACE, payload.toString()) }
+    }
+
+    private fun ensureCastStatusListener(session: CastSession) {
+        if (castStatusListenerRegistered) {
+            return
+        }
+        session.setMessageReceivedCallbacks(CAST_COMMAND_NAMESPACE, Cast.MessageReceivedCallback { _, _, message ->
+            handleCastStatusMessage(message)
+        })
+        castStatusListenerRegistered = true
+    }
+
+    private fun handleCastStatusMessage(message: String) {
+        val json = runCatching { JSONObject(message) }.getOrNull() ?: return
+        if (json.optString("type") != "status") {
+            return
+        }
+        val songId = json.optString("songId", "")
+        val title = json.optString("title", "")
+        val artist = json.optString("artist", "")
+        val isPlaying = json.optBoolean("isPlaying", false)
+        val displayTitle = if (artist.isBlank()) {
+            if (title.isBlank()) "" else title
+        } else {
+            "${if (title.isBlank()) "Unknown" else title} — $artist"
+        }
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(
+                    isRunning = isPlaying,
+                    playTitle = displayTitle,
+                    trackTitle = if (title.isBlank()) null else title,
+                    trackArtist = if (artist.isBlank()) null else artist,
+                    lastYouTubeId = if (songId.isBlank()) it.playback.lastYouTubeId else songId
+                )
+            )
+        }
     }
 
     private fun castTrackId(trackId: String, title: String? = null, artist: String? = null) {

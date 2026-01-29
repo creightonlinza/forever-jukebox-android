@@ -31,10 +31,12 @@ class MainActivity : FragmentActivity() {
             val listener = object : SessionManagerListener<CastSession> {
                 override fun onSessionStarted(session: CastSession, sessionId: String) {
                     viewModel.setCastingConnected(true, session.castDevice?.friendlyName)
+                    viewModel.requestCastStatus()
                 }
 
                 override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
                     viewModel.setCastingConnected(true, session.castDevice?.friendlyName)
+                    viewModel.requestCastStatus()
                 }
 
                 override fun onSessionEnded(session: CastSession, error: Int) {
