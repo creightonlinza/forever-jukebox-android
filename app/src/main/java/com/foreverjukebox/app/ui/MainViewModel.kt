@@ -891,9 +891,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch { showToast("Connect to a Cast device first.") }
                 return
             }
-            _state.update {
-                it.copy(playback = it.playback.copy(isRunning = !current.isRunning))
-            }
             return
         }
         if (!current.audioLoaded || !current.analysisLoaded) return
@@ -1066,6 +1063,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val title = json.optString("title", "").takeUnless { it == "null" } ?: ""
         val artist = json.optString("artist", "").takeUnless { it == "null" } ?: ""
         val isPlaying = json.optBoolean("isPlaying", false)
+        val isLoading = json.optBoolean("isLoading", false)
+        val playbackState = json.optString("playbackState", "").takeUnless { it == "null" } ?: ""
+        val error = json.optString("error", "").takeUnless { it == "null" } ?: ""
         val hasTitle = title.isNotBlank()
         val hasArtist = artist.isNotBlank()
         val displayTitle = if (hasArtist) {
@@ -1076,13 +1076,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             null
         }
         _state.update {
+            val resolvedIsLoading = when (playbackState) {
+                "loading" -> true
+                "playing", "paused", "idle", "error" -> false
+                else -> isLoading
+            }
+            val resolvedIsRunning = when (playbackState) {
+                "playing" -> true
+                "paused", "idle", "error" -> false
+                "loading" -> it.playback.isRunning
+                else -> if (resolvedIsLoading) it.playback.isRunning else isPlaying
+            }
             it.copy(
                 playback = it.playback.copy(
-                    isRunning = isPlaying,
+                    isRunning = resolvedIsRunning,
                     playTitle = displayTitle ?: it.playback.playTitle,
                     trackTitle = if (hasTitle) title else it.playback.trackTitle,
                     trackArtist = if (hasArtist) artist else it.playback.trackArtist,
-                    lastYouTubeId = if (songId.isBlank()) it.playback.lastYouTubeId else songId
+                    lastYouTubeId = if (songId.isBlank()) it.playback.lastYouTubeId else songId,
+                    analysisErrorMessage = if (error.isNotBlank()) error else it.playback.analysisErrorMessage,
+                    analysisInFlight = resolvedIsLoading
                 )
             )
         }
