@@ -56,7 +56,7 @@ fun JukeboxVisualization(
         if (data == null || layoutSize.width == 0 || layoutSize.height == 0) {
             emptyList()
         } else {
-            positioner(data.beats.size, layoutSize.width.toFloat(), layoutSize.height.toFloat())
+            positioner(data, layoutSize.width.toFloat(), layoutSize.height.toFloat())
         }
     }
 
