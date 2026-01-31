@@ -38,7 +38,7 @@
         <activity
             android:name=".ui.FullscreenActivity"
             android:exported="false"
-            android:theme="@style/Theme.ForeverJukebox" />
+            android:theme="@style/Theme.ForeverJukebox.Fullscreen" />
 
         <service
             android:name=".playback.ForegroundPlaybackService"

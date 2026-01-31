@@ -958,7 +958,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setCastingConnected(isConnected: Boolean, deviceName: String? = null) {
         if (isConnected) {
-            if (state.value.playback.isCasting) {
+            val currentState = state.value
+            val playback = currentState.playback
+            if (playback.isCasting) {
                 _state.update {
                     it.copy(
                         playback = it.playback.copy(
@@ -968,6 +970,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 return
             }
+            val trackId = playback.lastYouTubeId ?: playback.lastJobId
+            val shouldAutoCast = !trackId.isNullOrBlank() &&
+                playback.audioLoaded &&
+                playback.analysisLoaded
+            val preservedYouTubeId = playback.lastYouTubeId
+            val preservedJobId = playback.lastJobId
+            val preservedTitle = playback.trackTitle
+            val preservedArtist = playback.trackArtist
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
@@ -978,6 +988,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             castStatusListenerRegistered = false
             resetForNewTrack()
+            if (shouldAutoCast) {
+                _state.update {
+                    it.copy(
+                        playback = it.playback.copy(
+                            lastYouTubeId = preservedYouTubeId,
+                            lastJobId = preservedJobId,
+                            trackTitle = preservedTitle,
+                            trackArtist = preservedArtist
+                        )
+                    )
+                }
+                if (!trackId.isNullOrBlank()) {
+                    castTrackId(trackId, preservedTitle, preservedArtist)
+                }
+            }
             requestCastStatus()
         } else {
             if (!state.value.playback.isCasting) {
@@ -1037,22 +1062,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (json.optString("type") != "status") {
             return
         }
-        val songId = json.optString("songId", "")
-        val title = json.optString("title", "")
-        val artist = json.optString("artist", "")
+        val songId = json.optString("songId", "").takeUnless { it == "null" } ?: ""
+        val title = json.optString("title", "").takeUnless { it == "null" } ?: ""
+        val artist = json.optString("artist", "").takeUnless { it == "null" } ?: ""
         val isPlaying = json.optBoolean("isPlaying", false)
-        val displayTitle = if (artist.isBlank()) {
-            if (title.isBlank()) "" else title
+        val hasTitle = title.isNotBlank()
+        val hasArtist = artist.isNotBlank()
+        val displayTitle = if (hasArtist) {
+            "${if (hasTitle) title else "Unknown"} — $artist"
+        } else if (hasTitle) {
+            title
         } else {
-            "${if (title.isBlank()) "Unknown" else title} — $artist"
+            null
         }
         _state.update {
             it.copy(
                 playback = it.playback.copy(
                     isRunning = isPlaying,
-                    playTitle = displayTitle,
-                    trackTitle = if (title.isBlank()) null else title,
-                    trackArtist = if (artist.isBlank()) null else artist,
+                    playTitle = displayTitle ?: it.playback.playTitle,
+                    trackTitle = if (hasTitle) title else it.playback.trackTitle,
+                    trackArtist = if (hasArtist) artist else it.playback.trackArtist,
                     lastYouTubeId = if (songId.isBlank()) it.playback.lastYouTubeId else songId
                 )
             )
