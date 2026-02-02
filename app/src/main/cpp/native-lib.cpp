@@ -12,36 +12,39 @@ namespace {
 
 constexpr const char* kLogTag = "FJOboe";
 
-class OboePlayer : public oboe::AudioStreamDataCallback {
+class OboePlayer : public oboe::AudioStreamDataCallback,
+                   public oboe::AudioStreamErrorCallback {
 public:
     OboePlayer(int32_t sampleRate, int32_t channelCount)
         : mSampleRate(sampleRate), mChannelCount(channelCount) {}
 
     bool open() {
+        std::lock_guard<std::mutex> lock(mStreamMutex);
         oboe::AudioStreamBuilder builder;
         builder.setDirection(oboe::Direction::Output)
             ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-            ->setSharingMode(oboe::SharingMode::Exclusive)
+            ->setSharingMode(oboe::SharingMode::Shared)
+            ->setUsage(oboe::Usage::Media)
+            ->setContentType(oboe::ContentType::Music)
             ->setSampleRate(mSampleRate)
             ->setChannelCount(mChannelCount)
             ->setFormat(oboe::AudioFormat::I16)
-            ->setDataCallback(this);
+            ->setDataCallback(this)
+            ->setErrorCallback(this);
 
         if (builder.openStream(mStream) != oboe::Result::OK) {
-            builder.setSharingMode(oboe::SharingMode::Shared);
-            if (builder.openStream(mStream) != oboe::Result::OK) {
-                __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Failed to open Oboe stream");
-                return false;
-            }
+            __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Failed to open Oboe stream");
+            return false;
         }
         const int32_t burst = mStream->getFramesPerBurst();
         if (burst > 0) {
-            mStream->setBufferSizeInFrames(burst);
+            mStream->setBufferSizeInFrames(burst * 2);
         }
         return true;
     }
 
     void close() {
+        std::lock_guard<std::mutex> lock(mStreamMutex);
         if (mStream) {
             mStream->requestStop();
             mStream->close();
@@ -151,6 +154,18 @@ public:
         return oboe::DataCallbackResult::Continue;
     }
 
+    void onErrorAfterClose(
+        oboe::AudioStream*,
+        oboe::Result error) override {
+        __android_log_print(ANDROID_LOG_WARN, kLogTag,
+                            "Audio stream closed with error: %s",
+                            oboe::convertToText(error));
+        const bool wasPlaying = mIsPlaying.load();
+        if (open() && wasPlaying && mStream) {
+            mStream->requestStart();
+        }
+    }
+
 private:
     void renderFrames(int16_t* output, int64_t startFrame, int32_t frames) {
         const int64_t totalFrames = mTotalFrames;
@@ -184,6 +199,7 @@ private:
     int32_t mSampleRate = 44100;
     int32_t mChannelCount = 2;
     std::shared_ptr<oboe::AudioStream> mStream;
+    std::mutex mStreamMutex;
     std::vector<int16_t> mAudioData;
     std::mutex mDataMutex;
     int64_t mTotalFrames = 0;
