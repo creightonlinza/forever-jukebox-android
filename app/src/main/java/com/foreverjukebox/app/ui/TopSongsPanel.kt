@@ -47,6 +47,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.TopSongItem
 
 @Composable
@@ -56,7 +57,7 @@ fun TopSongsPanel(
     loading: Boolean,
     activeTab: TopSongsTab,
     onTabSelected: (TopSongsTab) -> Unit,
-    onSelect: (String, String?, String?) -> Unit,
+    onSelect: (String, String?, String?, String?, FavoriteSourceType) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     favoritesSyncCode: String?,
     allowFavoritesSync: Boolean,
@@ -122,7 +123,15 @@ fun TopSongsPanel(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onSelect(youtubeId, title, artist) },
+                                    .clickable {
+                                        onSelect(
+                                            youtubeId,
+                                            title,
+                                            artist,
+                                            null,
+                                            FavoriteSourceType.Youtube
+                                        )
+                                    },
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
@@ -210,7 +219,15 @@ fun TopSongsPanel(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onSelect(item.uniqueSongId, title, artist) },
+                                    .clickable {
+                                        onSelect(
+                                            item.uniqueSongId,
+                                            title,
+                                            artist,
+                                            item.tuningParams,
+                                            item.sourceType
+                                        )
+                                    },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(

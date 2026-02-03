@@ -354,6 +354,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             initialJustLong = tuning.justLong,
             initialRemoveSequential = tuning.removeSequential,
             onDismiss = { showTuning = false },
+            onReset = viewModel::resetTuningDefaults,
             onApply = viewModel::applyTuning
         )
     }

@@ -41,6 +41,7 @@ fun TuningDialog(
     initialJustLong: Boolean,
     initialRemoveSequential: Boolean,
     onDismiss: () -> Unit,
+    onReset: () -> Unit,
     onApply: (
         threshold: Int,
         minProb: Double,
@@ -91,15 +92,30 @@ fun TuningDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(
-                onClick = onDismiss,
-                colors = pillOutlinedButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
-            ) {
-                Text("Close", style = MaterialTheme.typography.labelSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        onReset()
+                        onDismiss()
+                    },
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Reset", style = MaterialTheme.typography.labelSmall)
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Close", style = MaterialTheme.typography.labelSmall)
+                }
             }
         },
         title = { Text("Tuning") },

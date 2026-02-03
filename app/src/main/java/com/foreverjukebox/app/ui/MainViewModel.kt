@@ -13,6 +13,7 @@ import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.engine.VisualizationData
+import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.JumpLine
@@ -51,6 +52,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val engine = controller.engine
     private val defaultConfig = engine.getConfig()
     private val json = Json { ignoreUnknownKeys = true }
+    private var pendingTuningParams: String? = null
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
@@ -316,6 +318,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return null to null
     }
 
+    private fun shouldApplyTuningParams(): Boolean = true
+
+    private fun setPendingTuningParams(raw: String?) {
+        pendingTuningParams = if (shouldApplyTuningParams() && !raw.isNullOrBlank()) {
+            raw
+        } else {
+            null
+        }
+    }
+
     private suspend fun maybeRepairMissing(
         response: AnalysisResponse
     ): AnalysisResponse {
@@ -341,7 +353,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     title = title,
                     artist = artist,
                     duration = playback.trackDurationSeconds,
-                    sourceType = FavoriteSourceType.Youtube
+                    sourceType = FavoriteSourceType.Youtube,
+                    tuningParams = buildTuningParamsString()
                 )
                 updateFavorites(favorites + newFavorite)
                 false
@@ -644,7 +657,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadTrackByYoutubeId(youtubeId: String, title: String? = null, artist: String? = null) {
+    fun loadTrackByYoutubeId(
+        youtubeId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null
+    ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
@@ -667,6 +685,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         resetForNewTrack()
+        setPendingTuningParams(tuningParams)
         _state.update {
             it.copy(
                 playback = it.playback.copy(
@@ -706,6 +725,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 startPoll(response.id)
             } catch (err: Exception) {
+                setAnalysisError("Loading failed.")
+            }
+        }
+    }
+
+    fun loadTrackByJobId(
+        jobId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null
+    ) {
+        val baseUrl = state.value.baseUrl
+        if (baseUrl.isBlank()) return
+        if (state.value.playback.isCasting) {
+            castTrackId(jobId, title, artist)
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        lastYouTubeId = null,
+                        lastJobId = jobId,
+                        trackTitle = title,
+                        trackArtist = artist
+                    )
+                )
+            }
+            applyActiveTab(TabId.Play, recordHistory = true)
+            return
+        }
+        resetForNewTrack()
+        setPendingTuningParams(tuningParams)
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(
+                    audioLoading = false,
+                    lastYouTubeId = null,
+                    lastJobId = jobId,
+                    trackTitle = title,
+                    trackArtist = artist
+                )
+            )
+        }
+        applyActiveTab(TabId.Play, recordHistory = true)
+        viewModelScope.launch {
+            if (tryLoadCachedTrack(jobId)) {
+                return@launch
+            }
+            setAnalysisQueued(null, "Fetching audio...")
+            try {
+                val response = maybeRepairMissing(api.getAnalysis(baseUrl, jobId))
+                if (response.id == null) {
+                    setAnalysisError("Loading failed.")
+                    return@launch
+                }
+                updateDeleteEligibility(response)
+                setLastJobId(response.id)
+                if (response.status == "complete" && response.result != null) {
+                    if (!state.value.playback.audioLoaded) {
+                        val loaded = loadAudioFromJob(response.id)
+                        if (!loaded) {
+                            startPoll(response.id)
+                            return@launch
+                        }
+                    }
+                    if (applyAnalysisResult(response)) {
+                        return@launch
+                    }
+                    return@launch
+                }
+                startPoll(response.id)
+            } catch (_: Exception) {
                 setAnalysisError("Loading failed.")
             }
         }
@@ -1281,6 +1370,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun resetTuningDefaults() {
+        viewModelScope.launch {
+            val vizData = withContext(Dispatchers.Default) {
+                engine.clearDeletedEdges()
+                engine.updateConfig(defaultConfig)
+                engine.rebuildGraph()
+                engine.getVisualizationData()
+            }
+            _state.update { it.copy(playback = it.playback.copy(vizData = vizData)) }
+            syncTuningState()
+        }
+    }
+
     fun handleDeepLink(uri: Uri?) {
         if (uri == null) return
         val base = state.value.baseUrl.trim().trimEnd('/')
@@ -1412,6 +1514,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         setAnalysisCalculating()
         val vizData = withContext(Dispatchers.Default) {
             engine.loadAnalysis(result)
+            applyPendingTuningParams()
             engine.getVisualizationData()
         }
         syncTuningState()
@@ -1480,6 +1583,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun resetForNewTrack() {
         engine.clearDeletedEdges()
+        pendingTuningParams = null
         audioLoadInFlight = false
         engine.updateConfig(defaultConfig)
         controller.stopPlayback()
@@ -1611,6 +1715,140 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private data class ParsedTuningParams(
+        val config: JukeboxConfig,
+        val deletedEdgeIds: List<Int>
+    )
+
+    private fun parseTuningParams(raw: String?): ParsedTuningParams? {
+        if (raw.isNullOrBlank()) return null
+        val uri = Uri.parse("http://localhost/?$raw")
+        var config = defaultConfig
+        uri.getQueryParameter("lb")?.let { value ->
+            if (value == "0") {
+                config = config.copy(addLastEdge = false)
+            }
+        }
+        if (uri.getQueryParameter("jb") == "1") {
+            config = config.copy(justBackwards = true)
+        }
+        if (uri.getQueryParameter("lg") == "1") {
+            config = config.copy(justLongBranches = true)
+        }
+        if (uri.getQueryParameter("sq") == "0") {
+            config = config.copy(removeSequentialBranches = true)
+        }
+        uri.getQueryParameter("thresh")?.toIntOrNull()?.let { value ->
+            if (value >= 0) {
+                config = config.copy(currentThreshold = value)
+            }
+        }
+        uri.getQueryParameter("bp")?.let { value ->
+            val parts = value.split(",")
+            if (parts.size == 3) {
+                val minPct = parts[0].toIntOrNull()
+                val maxPct = parts[1].toIntOrNull()
+                val deltaPct = parts[2].toIntOrNull()
+                if (minPct != null) {
+                    config = config.copy(
+                        minRandomBranchChance = mapPercentToRange(minPct, 0.0, 1.0)
+                    )
+                }
+                if (maxPct != null) {
+                    config = config.copy(
+                        maxRandomBranchChance = mapPercentToRange(maxPct, 0.0, 1.0)
+                    )
+                }
+                if (deltaPct != null) {
+                    config = config.copy(
+                        randomBranchChanceDelta = mapPercentToRange(deltaPct, 0.0, 1.0)
+                    )
+                }
+            }
+        }
+        val deletedEdgeIds = uri.getQueryParameter("d")
+            ?.split(",")
+            ?.mapNotNull { it.toIntOrNull()?.takeIf { id -> id >= 0 } }
+            ?: emptyList()
+        return ParsedTuningParams(config, deletedEdgeIds)
+    }
+
+    private fun mapPercentToRange(percent: Int, min: Double, max: Double): Double {
+        val safe = percent.coerceIn(0, 100)
+        return ((max - min) * safe) / 100.0 + min
+    }
+
+    private fun mapValueToPercent(value: Double, min: Double, max: Double): Int {
+        val safeValue = value.coerceIn(min, max)
+        return ((100.0 * (safeValue - min)) / (max - min)).roundToInt()
+    }
+
+    private fun getDeletedEdgeIds(): List<Int> {
+        val graph = engine.getGraphState() ?: return emptyList()
+        return graph.allEdges.filter { it.deleted }.map { it.id }
+    }
+
+    private fun buildTuningParamsString(): String? {
+        if (!shouldApplyTuningParams()) return null
+        val config = engine.getConfig()
+        val params = mutableListOf<String>()
+        if (!config.addLastEdge) {
+            params.add("lb=0")
+        }
+        if (config.justBackwards) {
+            params.add("jb=1")
+        }
+        if (config.justLongBranches) {
+            params.add("lg=1")
+        }
+        if (config.removeSequentialBranches) {
+            params.add("sq=0")
+        }
+        if (config.currentThreshold != 0) {
+            params.add("thresh=${config.currentThreshold}")
+        }
+        val minChanged = config.minRandomBranchChance != defaultConfig.minRandomBranchChance
+        val maxChanged = config.maxRandomBranchChance != defaultConfig.maxRandomBranchChance
+        val deltaChanged = config.randomBranchChanceDelta != defaultConfig.randomBranchChanceDelta
+        if (minChanged || maxChanged || deltaChanged) {
+            val minPct = mapValueToPercent(config.minRandomBranchChance, 0.0, 1.0)
+            val maxPct = mapValueToPercent(config.maxRandomBranchChance, 0.0, 1.0)
+            val deltaPct = mapValueToPercent(config.randomBranchChanceDelta, 0.0, 1.0)
+            params.add("bp=$minPct,$maxPct,$deltaPct")
+        }
+        val deletedIds = getDeletedEdgeIds()
+        if (deletedIds.isNotEmpty()) {
+            params.add("d=${deletedIds.joinToString(",")}")
+        }
+        return if (params.isEmpty()) null else params.joinToString("&")
+    }
+
+    private fun applyPendingTuningParams() {
+        if (!shouldApplyTuningParams()) {
+            pendingTuningParams = null
+            return
+        }
+        val raw = pendingTuningParams
+        pendingTuningParams = null
+        val parsed = parseTuningParams(raw) ?: return
+        val graph = engine.getGraphState()
+        if (graph != null && parsed.deletedEdgeIds.isNotEmpty()) {
+            val edgeById = graph.allEdges.associateBy { it.id }
+            for (id in parsed.deletedEdgeIds) {
+                val edge = edgeById[id] ?: continue
+                engine.deleteEdge(edge)
+            }
+        }
+        val configChanged = parsed.config != defaultConfig
+        val shouldRebuild = configChanged || parsed.deletedEdgeIds.isNotEmpty()
+        if (configChanged) {
+            engine.updateConfig(parsed.config)
+        }
+        if (shouldRebuild) {
+            engine.rebuildGraph()
+        }
+    }
+
     private fun updateFavorites(favorites: List<FavoriteTrack>, sync: Boolean = true) {
         val previous = state.value.favorites
         val sorted = sortFavorites(favorites).take(MAX_FAVORITES)
@@ -1706,12 +1944,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (id.isBlank()) return@mapNotNull null
             val title = item.title.ifBlank { "Untitled" }
             val artist = item.artist
+            val tuningParams = item.tuningParams?.takeIf { it.isNotBlank() }
             FavoriteTrack(
                 uniqueSongId = id,
                 title = title,
                 artist = artist,
                 duration = item.duration,
-                sourceType = item.sourceType
+                sourceType = item.sourceType,
+                tuningParams = tuningParams
             )
         }
         return sortFavorites(normalized).take(MAX_FAVORITES)
