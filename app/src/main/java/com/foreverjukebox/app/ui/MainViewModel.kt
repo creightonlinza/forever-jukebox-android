@@ -546,7 +546,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val youtubeId = response.youtubeId
                     if (jobId != null && youtubeId != null && response.status != "failed") {
                         if (state.value.playback.isCasting) {
-                            castTrackId(youtubeId, name, artist)
+                            castTrackId(youtubeId, name, artist, null)
                             applyActiveTab(TabId.Play, recordHistory = true)
                             return@launch
                         }
@@ -608,7 +608,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val resolvedTitle = title ?: state.value.search.pendingTrackName.orEmpty()
         val resolvedArtist = artist ?: state.value.search.pendingTrackArtist.orEmpty()
         if (state.value.playback.isCasting) {
-            castTrackId(youtubeId, resolvedTitle, resolvedArtist)
+            castTrackId(youtubeId, resolvedTitle, resolvedArtist, null)
             _state.update {
                 it.copy(playback = it.playback.copy(lastYouTubeId = youtubeId))
             }
@@ -671,7 +671,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             title to artist
         }
         if (state.value.playback.isCasting) {
-            castTrackId(youtubeId, resolvedTitle, resolvedArtist)
+            castTrackId(youtubeId, resolvedTitle, resolvedArtist, tuningParams)
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
@@ -739,7 +739,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         if (state.value.playback.isCasting) {
-            castTrackId(jobId, title, artist)
+            castTrackId(jobId, title, artist, tuningParams)
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
@@ -808,7 +808,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         artist: String? = null
     ) {
         if (state.value.playback.isCasting) {
-            castTrackId(youtubeId, title, artist)
+            castTrackId(youtubeId, title, artist, null)
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
@@ -1039,7 +1039,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { showToast("Connect to a Cast device first.") }
             return
         }
-        castTrackId(trackId, playback.trackTitle, playback.trackArtist)
+            castTrackId(trackId, playback.trackTitle, playback.trackArtist, buildTuningParamsString())
     }
 
     fun setCastingConnected(isConnected: Boolean, deviceName: String? = null) {
@@ -1086,7 +1086,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 if (!trackId.isNullOrBlank()) {
-                    castTrackId(trackId, preservedTitle, preservedArtist)
+                    castTrackId(trackId, preservedTitle, preservedArtist, null)
                 }
             }
             requestCastStatus()
@@ -1190,7 +1190,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun castTrackId(trackId: String, title: String? = null, artist: String? = null) {
+    private fun castTrackId(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null
+    ) {
         if (!state.value.castEnabled) {
             notifyCastUnavailable()
             return
@@ -1207,6 +1212,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val customData = JSONObject().apply {
             put("baseUrl", normalizedBaseUrl)
             put("songId", trackId)
+            if (!tuningParams.isNullOrBlank()) {
+                put("tuningParams", tuningParams)
+            }
         }
         val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
             title?.let { putString(MediaMetadata.KEY_TITLE, it) }
