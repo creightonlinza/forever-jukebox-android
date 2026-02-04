@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -230,14 +231,27 @@ fun TopSongsPanel(
                                     },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = display,
+                                Row(
                                     modifier = Modifier
                                         .weight(1f)
                                         .alignByBaseline(),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = display,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (!item.tuningParams.isNullOrBlank()) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Icon(
+                                            Icons.Outlined.Tune,
+                                            contentDescription = "Custom tuning",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
                                 IconButton(
                                     onClick = { onRemoveFavorite(item.uniqueSongId) },
                                     modifier = Modifier.size(24.dp)
