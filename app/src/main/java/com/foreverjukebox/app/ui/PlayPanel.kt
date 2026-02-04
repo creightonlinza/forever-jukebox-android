@@ -122,10 +122,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+            ) outer@{
                 if (playback.isCasting && !hasCastTrack) {
                     CastingPanel(playback)
-                    return@Column
+                    return@outer
                 }
                 if (playback.playTitle.isNotBlank()) {
                     Text(
