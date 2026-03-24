@@ -14,7 +14,7 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
 
 ## Running
 
-1. Open `android/` in Android Studio.
+1. Open this repository root in Android Studio.
 2. Ensure the API and worker are running.
 3. Set the API base URL in the app when prompted (e.g. `http://10.0.2.2:8000` for the emulator).
 
@@ -25,7 +25,6 @@ error about Essentia not being linked into `local_analysis_jni`, fetch prebuilt
 Android artifacts:
 
 ```bash
-cd android
 ./third_party/essentia/fetch_prebuilt_from_rn_essentia_static.sh
 ```
 
@@ -54,7 +53,6 @@ Keep this file safe and backed up. You must reuse the same keystore for all
 future updates of the same Android app signing identity.
 
 ```bash
-cd android
 keytool -genkeypair -v \
   -keystore release.keystore \
   -alias release \
@@ -70,7 +68,6 @@ keytool -genkeypair -v \
 3. Build release artifacts:
 
 ```bash
-cd android
 ./gradlew :app:assembleRelease :app:bundleRelease
 ```
 
@@ -94,7 +91,7 @@ The workflow hardcodes key alias `release`.
 Generate `KEY_BASE64` from your local keystore:
 
 ```bash
-base64 < android/release.keystore | tr -d '\n'
+base64 < release.keystore | tr -d '\n'
 ```
 
 Then run the `Build Release APK` workflow from GitHub Actions and provide a
@@ -106,7 +103,8 @@ the app `versionName` (for example, `v2026.02.01`).
 
 ## Notes
 
-- The native engine/visualization port mirrors the web logic in `web/src/engine` and `web/src/visualization`.
-- The header font is bundled locally in `android/app/src/main/res/font/tilt_neon_regular.ttf`.
+- The native engine/visualization port mirrors the companion web implementation.
+- Shared parity fixtures are vendored at `test-fixtures/engine-parity/` so unit tests run standalone.
+- The header font is bundled locally in `app/src/main/res/font/tilt_neon_regular.ttf`.
 - Audio/analysis results are cached in the app `cacheDir`; the OS may evict cached
   data under storage pressure.

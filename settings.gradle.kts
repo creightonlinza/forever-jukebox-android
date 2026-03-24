@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "forever-jukebox"
+rootProject.name = "forever-jukebox-android"
 include(":app")

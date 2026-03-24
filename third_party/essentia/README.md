@@ -23,14 +23,14 @@ Why #2 is not selected:
 
 Active artifacts are expected at:
 
-- `android/third_party/essentia/prebuilt/active/<abi>/libessentia.a`
-- `android/third_party/essentia/prebuilt/active/include/...`
-- `android/third_party/essentia/prebuilt/active/SOURCE.txt`
+- `third_party/essentia/prebuilt/active/<abi>/libessentia.a`
+- `third_party/essentia/prebuilt/active/include/...`
+- `third_party/essentia/prebuilt/active/SOURCE.txt`
 
 Alternative (from upstream source-build helper script):
 
-- `android/third_party/essentia/android/<abi>/libessentia.so`
-- `android/third_party/essentia/android/include/...`
+- `third_party/essentia/android/<abi>/libessentia.so`
+- `third_party/essentia/android/include/...`
 
 ABIs:
 
@@ -41,17 +41,17 @@ ABIs:
 
 ## Build Integration
 
-CMake (`android/app/src/main/cpp/CMakeLists.txt`) links static Essentia into `local_analysis_jni`:
+CMake (`app/src/main/cpp/CMakeLists.txt`) links static Essentia into `local_analysis_jni`:
 
-- Preferred static path: `android/third_party/essentia/prebuilt/active/<abi>/libessentia.a`
-- Fallback static path: `android/third_party/essentia/built/<abi>/libessentia.a`
-- Fallback shared path: `android/third_party/essentia/android/<abi>/libessentia.so` (from `build_android_from_upstream.sh`)
+- Preferred static path: `third_party/essentia/prebuilt/active/<abi>/libessentia.a`
+- Fallback static path: `third_party/essentia/built/<abi>/libessentia.a`
+- Fallback shared path: `third_party/essentia/android/<abi>/libessentia.so` (from `build_android_from_upstream.sh`)
 
 If no Essentia static artifact exists for the ABI, Essentia JNI methods return a clear runtime error.
 
 ## Recommended Automation
 
-Use `android/third_party/essentia/fetch_prebuilt_from_rn_essentia_static.sh` to
+Use `third_party/essentia/fetch_prebuilt_from_rn_essentia_static.sh` to
 populate `prebuilt/active` from `deeeed/rn-essentia-static`.
 
 By default the script is pinned to commit
@@ -70,17 +70,17 @@ The Android release GitHub workflow runs this script before tests/build.
 If linking static Essentia into `local_analysis_jni.so` fails with relocation/PIC errors:
 
 1. Rebuild Essentia with PIC enabled for Android.
-2. Ensure `android/third_party/essentia/built/<abi>/libessentia.a` exists.
+2. Ensure `third_party/essentia/built/<abi>/libessentia.a` exists.
 3. Rebuild Android native targets.
 
 ## Licensing
 
 - Essentia is AGPLv3.
-- License text is in `android/third_party/essentia/LICENSES/ESSENTIA-AGPLv3.txt`.
+- License text is in `third_party/essentia/LICENSES/ESSENTIA-AGPLv3.txt`.
 
 ## Upstream Build Helper Requirements
 
-`android/third_party/essentia/build_android_from_upstream.sh` expects:
+`third_party/essentia/build_android_from_upstream.sh` expects:
 
 - `pkg-config`
 - `eigen3` headers discoverable as `pkg-config --exists eigen3`

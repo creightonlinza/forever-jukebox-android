@@ -117,6 +117,6 @@ elseif (FJ_REQUIRE_ESSENTIA)
         "  ${FJ_ESSENTIA_PREBUILT_A}\n"
         "  ${FJ_ESSENTIA_BUILT_A}\n"
         "  ${FJ_ESSENTIA_ANDROID_SO}\n"
-        "Run android/third_party/essentia/fetch_prebuilt_from_rn_essentia_static.sh first."
+        "Run ./third_party/essentia/fetch_prebuilt_from_rn_essentia_static.sh first."
     )
 endif()

@@ -10,9 +10,9 @@ This app integrates the madmom beats/downbeats Rust FFI artifacts from:
 
 ABI `.so` files are fetched from the release ZIP at build time and staged to:
 
-- `android/app/build/generated/madmom_beats_port_ffi/jniLibs/arm64-v8a/libmadmom_beats_port_ffi.so`
-- `android/app/build/generated/madmom_beats_port_ffi/jniLibs/armeabi-v7a/libmadmom_beats_port_ffi.so`
-- `android/app/build/generated/madmom_beats_port_ffi/jniLibs/x86_64/libmadmom_beats_port_ffi.so`
+- `app/build/generated/madmom_beats_port_ffi/jniLibs/arm64-v8a/libmadmom_beats_port_ffi.so`
+- `app/build/generated/madmom_beats_port_ffi/jniLibs/armeabi-v7a/libmadmom_beats_port_ffi.so`
+- `app/build/generated/madmom_beats_port_ffi/jniLibs/x86_64/libmadmom_beats_port_ffi.so`
 
 The Gradle task `prepareMadmomBeatsPortFfiJniLibs` is wired into `preBuild`.
 
@@ -23,14 +23,14 @@ Optional overrides:
 
 Header for reference:
 
-- `android/third_party/madmom_beats_port_ffi/include/madmom_beats_port.h`
+- `third_party/madmom_beats_port_ffi/include/madmom_beats_port.h`
 
 ## Model Files
 
 Bundle model files in assets under:
 
-- `android/app/src/main/assets/madmom_beats_port_models/downbeats_blstm.json`
-- `android/app/src/main/assets/madmom_beats_port_models/downbeats_blstm_weights.npz`
+- `app/src/main/assets/madmom_beats_port_models/downbeats_blstm.json`
+- `app/src/main/assets/madmom_beats_port_models/downbeats_blstm_weights.npz`
 
 At runtime, `MadmomBeatsPortModelExtractor` copies these assets to:
 

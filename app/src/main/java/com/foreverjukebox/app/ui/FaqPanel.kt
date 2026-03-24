@@ -71,8 +71,8 @@ fun FaqPanel() {
             )
             val sourceText = buildAnnotatedString {
                 append("The full source code is available in the ")
-                withLink(LinkAnnotation.Url(url = "https://github.com/creightonlinza/forever-jukebox/")) {
-                    withStyle(linkStyle) { append("forever-jukebox") }
+                withLink(LinkAnnotation.Url(url = "https://github.com/creightonlinza/forever-jukebox-android/")) {
+                    withStyle(linkStyle) { append("forever-jukebox-android") }
                 }
                 append(" repository.")
             }
