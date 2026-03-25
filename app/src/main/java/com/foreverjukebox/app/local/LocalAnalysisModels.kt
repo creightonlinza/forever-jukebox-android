@@ -20,6 +20,14 @@ data class LocalAnalysisArtifact(
     val artist: String?
 )
 
+data class CachedLocalAnalysis(
+    val localId: String,
+    val title: String,
+    val artist: String?,
+    val sourceUri: String?,
+    val lastUpdatedEpochMs: Long
+)
+
 sealed interface LocalAnalysisUpdate {
     data class Progress(
         val percent: Int,

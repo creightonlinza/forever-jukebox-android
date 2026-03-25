@@ -53,7 +53,9 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                 when (state.activeTab) {
                     TabId.Input -> InputPanel(
                         state = state,
-                        onOpenFile = viewModel::startLocalAnalysis
+                        onOpenFile = viewModel::startLocalAnalysis,
+                        onOpenCachedTrack = viewModel::openCachedLocalTrack,
+                        onDeleteCachedTrack = viewModel::deleteCachedLocalTrack
                     )
                     TabId.Top -> TopSongsPanel(
                         items = state.search.topSongs,
@@ -124,6 +126,12 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                 ErrorMessageDialog(
                     message = message,
                     onClose = viewModel::dismissTrackLengthLimitErrorDialog
+                )
+            }
+            state.localCachedTrackErrorMessage?.let { message ->
+                ErrorMessageDialog(
+                    message = message,
+                    onClose = viewModel::dismissLocalCachedTrackErrorDialog
                 )
             }
         }

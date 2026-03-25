@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlin.math.roundToInt
+import java.io.File
 
 internal suspend fun tryQueueYoutubeAnalysisForCast(
     baseUrl: String,
@@ -271,6 +272,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         playbackCoordinator.restorePlaybackState()
+        refreshLocalCachedTracks()
         checkForAppUpdateOnce()
     }
 
@@ -317,7 +319,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 localSelectedFileName = resolvedName,
-                localAnalysisJsonPath = null
+                localAnalysisJsonPath = null,
+                localCachedTrackErrorMessage = null
             )
         }
         playbackCoordinator.resetForNewTrack()
@@ -358,6 +361,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 localAnalysisJob = null
             }
         }
+    }
+
+    fun openCachedLocalTrack(localId: String) {
+        if (state.value.appMode != AppMode.Local) return
+        val cachedTrack = state.value.localCachedTracks.firstOrNull { it.localId == localId } ?: return
+        val sourceUri = cachedTrack.sourceUri
+        if (sourceUri.isNullOrBlank()) {
+            _state.update {
+                it.copy(
+                    localCachedTrackErrorMessage =
+                        "This cached analysis has no source file pointer. Re-open the audio file to re-link it."
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            val exists = localAudioSourceExists(sourceUri)
+            if (!exists) {
+                _state.update {
+                    it.copy(
+                        localCachedTrackErrorMessage =
+                            "The source audio file is no longer available. Re-open the file and analyze again."
+                    )
+                }
+                return@launch
+            }
+            startLocalAnalysis(sourceUri.toUri(), cachedTrack.title)
+        }
+    }
+
+    fun deleteCachedLocalTrack(localId: String) {
+        viewModelScope.launch {
+            localAnalysisService.deleteCachedAnalysis(localId)
+            refreshLocalCachedTracks()
+            playbackCoordinator.refreshCacheSize()
+        }
+    }
+
+    fun dismissLocalCachedTrackErrorDialog() {
+        _state.update { it.copy(localCachedTrackErrorMessage = null) }
     }
 
     fun cancelLocalAnalysis() {
@@ -450,6 +493,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (resolvedTab == TabId.Top) {
             scheduleTopSongsRefresh()
+        }
+        if (resolvedTab == TabId.Input) {
+            refreshLocalCachedTracks()
         }
         if (resolvedTab != TabId.Play) {
             _state.update { it.copy(playback = it.playback.copy()) }
@@ -559,7 +605,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 result = artifact.analysisJson
             )
         )
+        refreshLocalCachedTracks()
         applyActiveTab(TabId.Play, recordHistory = true)
+    }
+
+    private suspend fun localAudioSourceExists(uriString: String): Boolean = withContext(Dispatchers.IO) {
+        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return@withContext false
+        when (uri.scheme?.lowercase()) {
+            "file" -> {
+                val path = uri.path ?: return@withContext false
+                val sourceFile = File(path)
+                sourceFile.exists() && sourceFile.isFile && sourceFile.canRead()
+            }
+            else -> {
+                runCatching {
+                    getApplication<Application>().contentResolver
+                        .openAssetFileDescriptor(uri, "r")
+                        ?.use { true }
+                        ?: false
+                }.getOrDefault(false)
+            }
+        }
+    }
+
+    private fun refreshLocalCachedTracks() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cachedTracks = localAnalysisService.listCachedAnalyses()
+                .map { cached ->
+                    LocalCachedTrack(
+                        localId = cached.localId,
+                        title = cached.title,
+                        artist = cached.artist,
+                        sourceUri = cached.sourceUri
+                    )
+                }
+            _state.update { it.copy(localCachedTracks = cachedTracks) }
+        }
     }
 
     private fun scheduleTopSongsRefresh() {
@@ -1940,6 +2021,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearCache() {
         playbackCoordinator.clearCache()
+        viewModelScope.launch {
+            delay(150)
+            refreshLocalCachedTracks()
+        }
     }
 
     fun openListenTab() {

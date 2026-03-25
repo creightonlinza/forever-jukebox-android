@@ -19,6 +19,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.Serializable
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
@@ -53,12 +54,64 @@ class LocalAnalysisService(
     private val cacheDir: File,
     private val cacheKeyResolver: LocalAnalysisCacheKeyResolver = UriStringCacheKeyResolver
 ) {
+    @Serializable
+    private data class CachedLocalAnalysisMetadata(
+        val sourceUri: String,
+        val title: String? = null,
+        val artist: String? = null,
+        val updatedAtEpochMs: Long? = null
+    )
+
     private val cancelled = AtomicBoolean(false)
     private val json = Json { ignoreUnknownKeys = true }
 
     fun cancel() {
         cancelled.set(true)
         NativeAnalysisBridge.cancel()
+    }
+
+    suspend fun listCachedAnalyses(): List<CachedLocalAnalysis> = withContext(Dispatchers.IO) {
+        if (!cacheDir.exists()) {
+            return@withContext emptyList()
+        }
+        cacheDir.listFiles()
+            ?.asSequence()
+            ?.filter { it.isFile && it.name.endsWith(ANALYSIS_FILE_SUFFIX) }
+            ?.mapNotNull { analysisFile ->
+                val cacheKey = analysisFile.name.removeSuffix(ANALYSIS_FILE_SUFFIX)
+                val analysisJson = runCatching {
+                    json.parseToJsonElement(analysisFile.readText())
+                }.getOrNull() ?: return@mapNotNull null
+                if (!isLocalAnalysisPayload(analysisJson)) {
+                    return@mapNotNull null
+                }
+                val metadata = readMetadata(cacheKey)
+                CachedLocalAnalysis(
+                    localId = "local-$cacheKey",
+                    title = metadata?.title?.takeIf { it.isNotBlank() }
+                        ?: extractTrackField(analysisJson, "title")
+                        ?: "Local Track",
+                    artist = metadata?.artist ?: extractTrackField(analysisJson, "artist"),
+                    sourceUri = metadata?.sourceUri,
+                    lastUpdatedEpochMs = analysisFile.lastModified()
+                )
+            }
+            ?.sortedByDescending { it.lastUpdatedEpochMs }
+            ?.toList()
+            ?: emptyList()
+    }
+
+    suspend fun deleteCachedAnalysis(localId: String): Boolean = withContext(Dispatchers.IO) {
+        val cacheKey = parseCacheKeyFromLocalId(localId) ?: return@withContext false
+        val analysisDeleted = runCatching {
+            val file = analysisFile(cacheKey)
+            if (file.exists()) file.delete() else false
+        }.getOrDefault(false)
+        val metadataDeleted = runCatching {
+            val file = metadataFile(cacheKey)
+            if (file.exists()) file.delete() else false
+        }.getOrDefault(false)
+        analysisDeleted || metadataDeleted
     }
 
     fun analyze(
@@ -93,6 +146,17 @@ class LocalAnalysisService(
                     emitProgress(95, "Wrapping up")
                     val cachedText = analysisFile.readText()
                     val cachedJson = json.parseToJsonElement(cachedText)
+                    val cachedTitle = extractTrackField(cachedJson, "title") ?: fallbackTitle
+                    val cachedArtist = extractTrackField(cachedJson, "artist")
+                    writeMetadata(
+                        cacheKey = cacheKey,
+                        metadata = CachedLocalAnalysisMetadata(
+                            sourceUri = uriString,
+                            title = cachedTitle,
+                            artist = cachedArtist,
+                            updatedAtEpochMs = System.currentTimeMillis()
+                        )
+                    )
                     emitProgress(100, "Wrapping up")
                     trySend(
                         LocalAnalysisUpdate.Completed(
@@ -101,8 +165,8 @@ class LocalAnalysisService(
                                 analysisJson = cachedJson,
                                 analysisJsonFile = analysisFile,
                                 sourceUri = uriString,
-                                title = extractTrackField(cachedJson, "title") ?: fallbackTitle,
-                                artist = extractTrackField(cachedJson, "artist")
+                                title = cachedTitle,
+                                artist = cachedArtist
                             )
                         )
                     )
@@ -179,6 +243,16 @@ class LocalAnalysisService(
 
                 emitProgress(95, "Wrapping up")
                 analysisFile.writeText(analysisJson.toString())
+                val resolvedTitle = decoded.displayName ?: fallbackTitle
+                writeMetadata(
+                    cacheKey = cacheKey,
+                    metadata = CachedLocalAnalysisMetadata(
+                        sourceUri = decoded.sourceUri,
+                        title = resolvedTitle,
+                        artist = null,
+                        updatedAtEpochMs = System.currentTimeMillis()
+                    )
+                )
 
                 emitProgress(100, "Wrapping up")
                 trySend(
@@ -188,7 +262,7 @@ class LocalAnalysisService(
                             analysisJson = analysisJson,
                             analysisJsonFile = analysisFile,
                             sourceUri = decoded.sourceUri,
-                            title = decoded.displayName ?: fallbackTitle,
+                            title = resolvedTitle,
                             artist = null
                         )
                     )
@@ -216,9 +290,50 @@ class LocalAnalysisService(
         }
     }
 
+    private fun analysisFile(cacheKey: String): File =
+        cacheDir.resolve("$cacheKey$ANALYSIS_FILE_SUFFIX")
+
+    private fun metadataFile(cacheKey: String): File =
+        cacheDir.resolve("$cacheKey$METADATA_FILE_SUFFIX")
+
+    private fun readMetadata(cacheKey: String): CachedLocalAnalysisMetadata? {
+        val file = metadataFile(cacheKey)
+        if (!file.exists()) return null
+        return runCatching {
+            json.decodeFromString(CachedLocalAnalysisMetadata.serializer(), file.readText())
+        }.getOrNull()
+    }
+
+    private fun writeMetadata(cacheKey: String, metadata: CachedLocalAnalysisMetadata) {
+        runCatching {
+            metadataFile(cacheKey).writeText(
+                json.encodeToString(CachedLocalAnalysisMetadata.serializer(), metadata)
+            )
+        }
+    }
+
+    private fun parseCacheKeyFromLocalId(localId: String): String? {
+        if (!localId.startsWith(LOCAL_ID_PREFIX)) return null
+        val value = localId.removePrefix(LOCAL_ID_PREFIX)
+        return value.takeIf { it.isNotBlank() && it.none { ch -> ch == '/' || ch == '\\' } }
+    }
+
+    private fun isLocalAnalysisPayload(payload: JsonElement): Boolean {
+        val root = payload.jsonObject
+        if (root.containsKey("status") || root.containsKey("result")) {
+            return false
+        }
+        return root.containsKey("track") &&
+            root.containsKey("beats") &&
+            root.containsKey("segments")
+    }
+
     companion object {
         private const val TAG = "LocalAnalysisService"
         private const val ANALYSIS_CACHE_KEY_VERSION = "v2"
+        private const val LOCAL_ID_PREFIX = "local-"
+        private const val ANALYSIS_FILE_SUFFIX = ".analysis.json"
+        private const val METADATA_FILE_SUFFIX = ".meta.json"
 
         private fun heapSummary(): String {
             val runtime = Runtime.getRuntime()
