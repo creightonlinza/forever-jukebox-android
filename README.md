@@ -1,28 +1,64 @@
 # Forever Jukebox Android
 
-Native Android port (Jetpack Compose) for 1:1 feature parity against the web UI.
+Native Android port (Jetpack Compose) for 1:1 feature parity against the Forever Jukebox web UI.
+
+## Download
+
+- [GitHub Releases](https://github.com/creightonlinza/forever-jukebox-android/releases/latest)
+
+## Signature (SHA-256)
+
+```bash
+B5:30:EB:FD:C1:7E:C2:D0:1A:2E:9A:9D:D9:DD:02:CA:5D:2F:E0:7A:E2:C6:E5:F8:45:E7:FF:41:FD:78:B4:4D
+```
 
 ## Features
 
 - Native engine + visualization (ported from the TypeScript web engine).
-- Spotify search, YouTube match selection, analysis polling, and playback.
-- Visualization layouts, edge selection, fullscreen, and tuning controls.
+- Local mode: on-device analysis from audio files, with local caching for faster reloads.
+- Server mode: Music discovery plus Top/Trending/Recent/Favorites flows from API.
+- Visualization layouts, fullscreen, and tuning controls.
 - Theme toggle (system/light/dark).
-- Deep links: `https://foreverjukebox.com/listen/{youtubeId}`.
-- API base URL configuration stored in DataStore.
 - PCM AudioTrack playback for beat-accurate jumping.
 
-## Running
+## Running Locally
 
 1. Open this repository root in Android Studio.
-2. Ensure the API and worker are running.
-3. Set the API base URL in the app when prompted (e.g. `http://10.0.2.2:8000` for the emulator).
+2. Build and install a debug APK:
 
-## Local Mode Native Dependency (Essentia)
+```bash
+./gradlew assembleDebug
+```
 
-Local mode feature extraction requires Essentia native artifacts. If you see an
-error about Essentia not being linked into `local_analysis_jni`, fetch prebuilt
-Android artifacts:
+3. On first launch, choose Local or Server mode.
+4. If you choose Server mode, ensure your API/worker are running and set the API base URL (for example `http://10.0.2.2:8000` on the emulator).
+
+## Modes
+
+### Local mode
+
+- No backend is required.
+- Use the **Input** tab to pick an audio file from the device.
+- Analysis runs fully on-device, then playback uses the native engine/visualization.
+- Results are cached in app cache storage and can be cleared from Settings.
+- Devices with less than 4 GB RAM may fail on longer tracks.
+
+### Server mode
+
+- Requires a running [backend API + worker](https://github.com/creightonlinza/forever-jukebox).
+- Requires a valid base URL (`http://` or `https://` with a host).
+- Server mode unlocks the **Top Songs** and **Search** tabs, plus server-backed favorites sync and cast workflows.
+- You can switch modes later from Settings.
+
+## Local Mode Native Dependencies
+
+Local mode feature extraction requires native analysis libraries:
+
+- `madmom_beats_port_ffi` is fetched automatically during Gradle `preBuild`.
+- Essentia must be available for `local_analysis_jni`.
+
+If you see an error about Essentia not being linked into `local_analysis_jni`,
+fetch prebuilt Android artifacts:
 
 ```bash
 ./third_party/essentia/fetch_prebuilt_from_rn_essentia_static.sh
@@ -33,78 +69,6 @@ This populates:
 - `third_party/essentia/prebuilt/active/<abi>/libessentia.a`
 - `third_party/essentia/prebuilt/active/include/essentia/...`
 
-The release workflow (`.github/workflows/android-release.yml`) runs this
-prebuilt fetch script automatically, so you do not need to commit Essentia
-artifacts.
-
 Optional advanced path: build Essentia from upstream source using
 `./third_party/essentia/build_android_from_upstream.sh` (requires
 `pkg-config` + `eigen3` development headers).
-
-## Debug APK build
-
-```bash
-./gradlew assembleDebug
-```
-
-## Create a release keystore (one-time)
-
-Keep this file safe and backed up. You must reuse the same keystore for all
-future updates of the same Android app signing identity.
-
-```bash
-keytool -genkeypair -v \
-  -keystore release.keystore \
-  -alias release \
-  -keyalg RSA \
-  -keysize 4096 \
-  -validity 10000
-```
-
-## Local release build
-
-1. Copy `keystore.properties.example` to `keystore.properties`.
-2. Set the values to match your keystore password + alias.
-3. Build release artifacts:
-
-```bash
-./gradlew :app:assembleRelease :app:bundleRelease
-```
-
-Outputs:
-
-- APK: `app/build/outputs/apk/release/app-release.apk`
-- App Bundle: `app/build/outputs/bundle/release/*.aab`
-
-## GitHub Actions release build
-
-Workflow: `.github/workflows/android-release.yml`
-
-Add these repository secrets:
-
-- `KEY_BASE64`
-- `KEYSTORE_PASS`
-
-`KEYSTORE_PASS` is used as both keystore password and key password.
-The workflow hardcodes key alias `release`.
-
-Generate `KEY_BASE64` from your local keystore:
-
-```bash
-base64 < release.keystore | tr -d '\n'
-```
-
-Then run the `Build Release APK` workflow from GitHub Actions and provide a
-release tag (for example `v2026.02.01`). The workflow creates signing files at
-runtime and Gradle signs the release APK directly.
-
-The same tag value is passed into Gradle as `APP_VERSION_TAG`, which becomes
-the app `versionName` (for example, `v2026.02.01`).
-
-## Notes
-
-- The native engine/visualization port mirrors the companion web implementation.
-- Shared parity fixtures are vendored at `test-fixtures/engine-parity/` so unit tests run standalone.
-- The header font is bundled locally in `app/src/main/res/font/tilt_neon_regular.ttf`.
-- Audio/analysis results are cached in the app `cacheDir`; the OS may evict cached
-  data under storage pressure.
