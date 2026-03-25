@@ -41,6 +41,8 @@ data class UiState(
     val showBaseUrlPrompt: Boolean = false,
     val localSelectedFileName: String? = null,
     val localAnalysisJsonPath: String? = null,
+    val localCachedTracks: List<LocalCachedTrack> = emptyList(),
+    val localCachedTrackErrorMessage: String? = null,
     val themeMode: ThemeMode = ThemeMode.System,
     val activeTab: TabId = TabId.Top,
     val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,
@@ -55,6 +57,13 @@ data class UiState(
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
     val tuning: TuningState = TuningState()
+)
+
+data class LocalCachedTrack(
+    val localId: String,
+    val title: String,
+    val artist: String?,
+    val sourceUri: String?
 )
 
 data class VersionUpdatePrompt(

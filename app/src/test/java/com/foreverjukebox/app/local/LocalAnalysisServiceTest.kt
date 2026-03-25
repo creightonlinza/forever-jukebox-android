@@ -175,6 +175,53 @@ class LocalAnalysisServiceTest {
         assertEquals("decoder blew up", error?.message)
     }
 
+    @Test
+    fun listsCachedAnalysesWithSourcePointerMetadata() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val uri = "file:///tmp/listed-track.mp3"
+        val cacheKey = analysisCacheKey(uri)
+        val service = LocalAnalysisService(
+            decoder = FakeDecoder(),
+            resampler = PassThroughResampler(),
+            analyzer = FakeAnalyzer(),
+            modelExtractor = NoopModelProvider(),
+            cacheDir = cacheDir
+        )
+
+        service.analyze(uri, "Fixture Track").toList()
+        val entries = service.listCachedAnalyses()
+
+        assertEquals(1, entries.size)
+        assertEquals("local-$cacheKey", entries[0].localId)
+        assertEquals("Fixture Track", entries[0].title)
+        assertEquals(uri, entries[0].sourceUri)
+        assertTrue(File(cacheDir, "$cacheKey.meta.json").exists())
+    }
+
+    @Test
+    fun deleteCachedAnalysisRemovesOnlyAnalysisArtifacts() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val uri = "file:///tmp/delete-cached-track.mp3"
+        val cacheKey = analysisCacheKey(uri)
+        val service = LocalAnalysisService(
+            decoder = FakeDecoder(),
+            resampler = PassThroughResampler(),
+            analyzer = FakeAnalyzer(),
+            modelExtractor = NoopModelProvider(),
+            cacheDir = cacheDir
+        )
+
+        service.analyze(uri, "Fixture Track").toList()
+        val retainedAudio = File(cacheDir, "$cacheKey.audio").apply { writeText("audio-bytes") }
+
+        val deleted = service.deleteCachedAnalysis("local-$cacheKey")
+
+        assertTrue(deleted)
+        assertFalse(File(cacheDir, "$cacheKey.analysis.json").exists())
+        assertFalse(File(cacheDir, "$cacheKey.meta.json").exists())
+        assertTrue(retainedAudio.exists())
+    }
+
     private fun analysisCacheKey(uriString: String): String {
         val hash = MessageDigest.getInstance("SHA-256")
             .digest(uriString.toByteArray(Charsets.UTF_8))
