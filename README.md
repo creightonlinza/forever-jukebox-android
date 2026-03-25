@@ -21,18 +21,6 @@ B5:30:EB:FD:C1:7E:C2:D0:1A:2E:9A:9D:D9:DD:02:CA:5D:2F:E0:7A:E2:C6:E5:F8:45:E7:FF
 - Theme toggle (system/light/dark).
 - PCM AudioTrack playback for beat-accurate jumping.
 
-## Running Locally
-
-1. Open this repository root in Android Studio.
-2. Build and install a debug APK:
-
-```bash
-./gradlew assembleDebug
-```
-
-3. On first launch, choose Local or Server mode.
-4. If you choose Server mode, ensure your API/worker are running and set the API base URL (for example `http://10.0.2.2:8000` on the emulator).
-
 ## Modes
 
 ### Local mode
@@ -49,6 +37,18 @@ B5:30:EB:FD:C1:7E:C2:D0:1A:2E:9A:9D:D9:DD:02:CA:5D:2F:E0:7A:E2:C6:E5:F8:45:E7:FF
 - Requires a valid base URL (`http://` or `https://` with a host).
 - Server mode unlocks the **Top Songs** and **Search** tabs, plus server-backed favorites sync and cast workflows.
 - You can switch modes later from Settings.
+
+## Running Locally
+
+1. Open this repository root in Android Studio.
+2. Build and install a debug APK:
+
+```bash
+./gradlew assembleDebug
+```
+
+3. On first launch, choose Local or Server mode.
+4. If you choose Server mode, ensure your API/worker are running and set the API base URL (for example `http://10.0.2.2:8000` on the emulator).
 
 ## Local Mode Native Dependencies
 
