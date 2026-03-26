@@ -162,6 +162,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onDeleteCurrentTrack = {
                     coroutineScope.launch {
                         val deleted = viewModel.deleteCurrentJob()
+                        if (!deleted && viewModel.state.value.playback.deleteInFlight) {
+                            return@launch
+                        }
                         val deletedText =
                             if (!deleted) "Song can no longer be deleted" else "Song deleted"
                         Toast.makeText(context, deletedText, Toast.LENGTH_SHORT).show()
@@ -206,6 +209,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onDeleteCurrentTrack = {
                     coroutineScope.launch {
                         val deleted = viewModel.deleteCurrentJob()
+                        if (!deleted && viewModel.state.value.playback.deleteInFlight) {
+                            return@launch
+                        }
                         val deletedText =
                             if (!deleted) "Song can no longer be deleted" else "Song deleted"
                         Toast.makeText(context, deletedText, Toast.LENGTH_SHORT).show()
@@ -355,15 +361,28 @@ private fun ColumnScope.CastListenScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (playback.deleteEligible) {
                             IconButton(
-                                onClick = onDeleteCurrentTrack,
+                                onClick = {
+                                    if (!playback.deleteInFlight) {
+                                        onDeleteCurrentTrack()
+                                    }
+                                },
+                                enabled = !playback.deleteInFlight,
                                 modifier = Modifier.size(SmallButtonHeight)
                             ) {
-                                Icon(
-                                    Icons.Outlined.Delete,
-                                    contentDescription = "Delete within 30 minutes of creation",
-                                    tint = Color(0xFFE35A5A),
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                if (playback.deleteInFlight) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = Color(0xFFE35A5A),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Outlined.Delete,
+                                        contentDescription = "Delete within 30 minutes of creation",
+                                        tint = Color(0xFFE35A5A),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                         if (!inAutocanonizer) {
@@ -586,15 +605,28 @@ private fun ColumnScope.LocalListenScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (playback.deleteEligible) {
                         IconButton(
-                            onClick = onDeleteCurrentTrack,
+                            onClick = {
+                                if (!playback.deleteInFlight) {
+                                    onDeleteCurrentTrack()
+                                }
+                            },
+                            enabled = !playback.deleteInFlight,
                             modifier = Modifier.size(SmallButtonHeight)
                         ) {
-                            Icon(
-                                Icons.Outlined.Delete,
-                                contentDescription = "Delete within 30 minutes of creation",
-                                tint = Color(0xFFE35A5A),
-                                modifier = Modifier.size(20.dp)
-                            )
+                            if (playback.deleteInFlight) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color(0xFFE35A5A),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Outlined.Delete,
+                                    contentDescription = "Delete within 30 minutes of creation",
+                                    tint = Color(0xFFE35A5A),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                     if (!inAutocanonizer) {

@@ -859,6 +859,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun runSpotifySearch(query: String) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
+        if (state.value.search.spotifyLoading) return
         setSearchQuery(query)
         _state.update {
             it.copy(
@@ -1731,10 +1732,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun deleteCurrentJob(): Boolean {
+        if (state.value.playback.deleteInFlight) return false
         val jobId = playbackCoordinator.getLastJobId() ?: return false
         val baseUrl = state.value.baseUrl
         val youtubeId = state.value.playback.lastYouTubeId
         if (baseUrl.isBlank()) return false
+        updatePlaybackState { it.copy(deleteInFlight = true) }
         return try {
             api.deleteJob(baseUrl, jobId)
             if (youtubeId != null) {
@@ -1757,6 +1760,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {
             playbackCoordinator.markDeleteEligibilityFailed(jobId)
             false
+        } finally {
+            updatePlaybackState { it.copy(deleteInFlight = false) }
         }
     }
 

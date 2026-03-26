@@ -2,11 +2,13 @@ package com.foreverjukebox.app.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -88,6 +91,9 @@ fun TopSongsPanel(
     var showEnterDialog by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
+    var hasAttemptedTopSongsLoad by remember { mutableStateOf(false) }
+    var hasAttemptedTrendingLoad by remember { mutableStateOf(false) }
+    var hasAttemptedRecentLoad by remember { mutableStateOf(false) }
     var syncInput by remember { mutableStateOf("") }
     var pendingFavorites by remember { mutableStateOf<List<FavoriteTrack>>(emptyList()) }
     var pendingCode by remember { mutableStateOf("") }
@@ -105,6 +111,15 @@ fun TopSongsPanel(
                 "Create a sync code to share your favorites between devices."
             }
         }
+    }
+    LaunchedEffect(loading) {
+        if (loading) hasAttemptedTopSongsLoad = true
+    }
+    LaunchedEffect(trendingLoading) {
+        if (trendingLoading) hasAttemptedTrendingLoad = true
+    }
+    LaunchedEffect(recentLoading) {
+        if (recentLoading) hasAttemptedRecentLoad = true
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -127,11 +142,7 @@ fun TopSongsPanel(
                     onRefresh = onRefreshTopSongs,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (loading) {
-                        Text("Loading top songs…", style = MaterialTheme.typography.bodySmall)
-                    } else if (items.isEmpty()) {
-                        Text("No plays recorded yet.", style = MaterialTheme.typography.bodySmall)
-                    } else {
+                    if (items.isNotEmpty()) {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             itemsIndexed(items) { index, item ->
                                 val title = item.title
@@ -175,6 +186,10 @@ fun TopSongsPanel(
                                 }
                             }
                         }
+                    } else if (loading || !hasAttemptedTopSongsLoad) {
+                        ListLoadingPlaceholder()
+                    } else {
+                        ListStatusMessage(text = "No plays recorded yet.")
                     }
                 }
             } else if (activeTab == TopSongsTab.Trending) {
@@ -184,11 +199,7 @@ fun TopSongsPanel(
                     onRefresh = onRefreshTrendingSongs,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (trendingLoading) {
-                        Text("Loading trending songs…", style = MaterialTheme.typography.bodySmall)
-                    } else if (trendingItems.isEmpty()) {
-                        Text("No trending songs yet.", style = MaterialTheme.typography.bodySmall)
-                    } else {
+                    if (trendingItems.isNotEmpty()) {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             itemsIndexed(trendingItems) { index, item ->
                                 val title = item.title
@@ -232,6 +243,10 @@ fun TopSongsPanel(
                                 }
                             }
                         }
+                    } else if (trendingLoading || !hasAttemptedTrendingLoad) {
+                        ListLoadingPlaceholder()
+                    } else {
+                        ListStatusMessage(text = "No trending songs yet.")
                     }
                 }
             } else if (activeTab == TopSongsTab.Recent) {
@@ -241,11 +256,7 @@ fun TopSongsPanel(
                     onRefresh = onRefreshRecentSongs,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (recentLoading) {
-                        Text("Loading recent plays…", style = MaterialTheme.typography.bodySmall)
-                    } else if (recentItems.isEmpty()) {
-                        Text("No recent plays yet.", style = MaterialTheme.typography.bodySmall)
-                    } else {
+                    if (recentItems.isNotEmpty()) {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             itemsIndexed(recentItems) { index, item ->
                                 val title = item.title
@@ -289,6 +300,10 @@ fun TopSongsPanel(
                                 }
                             }
                         }
+                    } else if (recentLoading || !hasAttemptedRecentLoad) {
+                        ListLoadingPlaceholder()
+                    } else {
+                        ListStatusMessage(text = "No recent plays yet.")
                     }
                 }
             } else {
@@ -345,6 +360,8 @@ fun TopSongsPanel(
                     ) {
                         FavoritesListContent(
                             favorites = favorites,
+                            loading = favoritesLoading,
+                            showLoadingSpinner = false,
                             onSelect = onSelect,
                             onRemoveFavorite = onRemoveFavorite
                         )
@@ -352,6 +369,8 @@ fun TopSongsPanel(
                 } else {
                     FavoritesListContent(
                         favorites = favorites,
+                        loading = favoritesLoading,
+                        showLoadingSpinner = true,
                         onSelect = onSelect,
                         onRemoveFavorite = onRemoveFavorite
                     )
@@ -500,11 +519,22 @@ fun TopSongsPanel(
 @Composable
 private fun FavoritesListContent(
     favorites: List<FavoriteTrack>,
+    loading: Boolean,
+    showLoadingSpinner: Boolean,
     onSelect: (String, String?, String?, String?, FavoriteSourceType) -> Unit,
     onRemoveFavorite: (String) -> Unit
 ) {
-    if (favorites.isEmpty()) {
-        Text("No favorites yet.", style = MaterialTheme.typography.bodySmall)
+    if (loading) {
+        if (showLoadingSpinner) {
+            ListStatusMessage(
+                text = "Loading favorites…",
+                loading = true
+            )
+        } else {
+            ListLoadingPlaceholder()
+        }
+    } else if (favorites.isEmpty()) {
+        ListStatusMessage(text = "No favorites yet.")
     } else {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(favorites) { item ->
@@ -566,6 +596,41 @@ private fun FavoritesListContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ListLoadingPlaceholder() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 120.dp)
+    )
+}
+
+@Composable
+private fun ListStatusMessage(
+    text: String,
+    loading: Boolean = false
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 120.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }
 
