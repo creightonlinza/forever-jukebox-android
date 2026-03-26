@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       APP_VERSION_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      APP_VERSION_CODE_BASE: "20"
     permissions:
       contents: write
       packages: write

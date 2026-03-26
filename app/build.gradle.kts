@@ -56,6 +56,8 @@ val hasReleaseSigningCredentials = listOf(
 ).all { !it.isNullOrBlank() }
 val hasReleaseSigningConfig = hasReleaseSigningCredentials && releaseStoreFile?.exists() == true
 val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+val versionCodeBase = System.getenv("APP_VERSION_CODE_BASE")?.toIntOrNull() ?: 0
+val ciVersionCode = runNumber + versionCodeBase
 val versionTag = System.getenv("APP_VERSION_TAG")?.trim().orEmpty()
 val versionStamp = LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy.MM"))
 val ciVersionName = if (versionTag.isNotEmpty()) versionTag else "$versionStamp.$runNumber"
@@ -132,7 +134,7 @@ extensions.configure<ApplicationExtension>("android") {
         applicationId = "com.foreverjukebox.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = runNumber
+        versionCode = ciVersionCode
         versionName = ciVersionName
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
