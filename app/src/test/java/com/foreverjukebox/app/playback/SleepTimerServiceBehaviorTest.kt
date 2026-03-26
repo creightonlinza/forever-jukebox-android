@@ -28,5 +28,11 @@ class SleepTimerServiceBehaviorTest {
         assertTrue(actions.contains(ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN))
         assertEquals(2, actions.size)
     }
-}
 
+    @Test
+    fun sleepTimerStatusIsActiveOnlyWhenRemainingAndEndRealtimeArePresent() {
+        assertTrue(SleepTimerStatus(endRealtimeMs = 1234L, remainingMs = 1L).isActive)
+        assertTrue(!SleepTimerStatus(endRealtimeMs = null, remainingMs = 1L).isActive)
+        assertTrue(!SleepTimerStatus(endRealtimeMs = 1234L, remainingMs = 0L).isActive)
+    }
+}
