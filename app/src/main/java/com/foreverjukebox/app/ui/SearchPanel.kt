@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +62,7 @@ fun SearchPanel(
         ) {
             Text("Search", style = MaterialTheme.typography.labelLarge)
             val trimmedQuery = query.trim()
+            val searchInFlight = searchState.spotifyLoading
             val keyboardController = LocalSoftwareKeyboardController.current
             val focusManager = LocalFocusManager.current
             OutlinedTextField(
@@ -70,7 +73,7 @@ fun SearchPanel(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
-                    if (trimmedQuery.isBlank()) return@KeyboardActions
+                    if (searchInFlight || trimmedQuery.isBlank()) return@KeyboardActions
                     onSearch(trimmedQuery)
                     keyboardController?.hide()
                     focusManager.clearFocus()
@@ -78,16 +81,24 @@ fun SearchPanel(
                 trailingIcon = {
                     IconButton(
                         onClick = {
+                            if (searchInFlight || trimmedQuery.isBlank()) return@IconButton
                             onSearch(trimmedQuery)
                             keyboardController?.hide()
                             focusManager.clearFocus()
                         },
-                        enabled = trimmedQuery.isNotBlank()
+                        enabled = trimmedQuery.isNotBlank() && !searchInFlight
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Search,
-                            contentDescription = "Search"
-                        )
+                        if (searchInFlight) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = "Search"
+                            )
+                        }
                     }
                 },
                 shape = RoundedCornerShape(12.dp),

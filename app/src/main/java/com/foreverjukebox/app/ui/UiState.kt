@@ -136,6 +136,7 @@ data class PlaybackState(
     val lastYouTubeId: String? = null,
     val isCastLoading: Boolean = false,
     val deleteEligible: Boolean = false,
+    val deleteInFlight: Boolean = false,
     val isCasting: Boolean = false,
     val castDeviceName: String? = null
 )
