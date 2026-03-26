@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -26,6 +29,7 @@ import com.foreverjukebox.app.data.TOP_SONGS_LIMIT
 fun ForeverJukeboxApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    var showSleepTimer by remember { mutableStateOf(false) }
     ForeverJukeboxTheme(mode = state.themeMode) {
         Column(
             modifier = Modifier
@@ -46,7 +50,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     onRefreshCacheSize = viewModel::refreshCacheSize,
                     onClearCache = viewModel::clearCache,
                     onTabSelected = viewModel::setActiveTab,
-                    onCastSessionStarted = {}
+                    onCastSessionStarted = {},
+                    onOpenSleepTimer = { showSleepTimer = true }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -132,6 +137,14 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                 ErrorMessageDialog(
                     message = message,
                     onClose = viewModel::dismissLocalCachedTrackErrorDialog
+                )
+            }
+            if (showSleepTimer) {
+                SleepTimerDialog(
+                    selectedOption = state.sleepTimer.selectedOption,
+                    remainingMs = state.sleepTimer.remainingMs,
+                    onDismiss = { showSleepTimer = false },
+                    onSelectOption = viewModel::setSleepTimer
                 )
             }
         }

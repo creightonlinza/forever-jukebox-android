@@ -1,10 +1,14 @@
 package com.foreverjukebox.app.ui
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.net.toUri
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.foreverjukebox.app.BuildConfig
@@ -70,6 +74,15 @@ internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchSta
     )
 }
 
+internal fun sleepTimerOptionForDurationMs(durationMs: Long?): SleepTimerOption {
+    if (durationMs == null || durationMs <= 0L) {
+        return SleepTimerOption.Off
+    }
+    return SleepTimerOption.entries.firstOrNull { option ->
+        option.durationMs == durationMs
+    } ?: SleepTimerOption.Off
+}
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val api = ApiClient()
@@ -112,8 +125,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab
     )
+    private val sleepTimerExpiredReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action != ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED) {
+                return
+            }
+            playbackCoordinator.stopListenTimer()
+            playbackCoordinator.updateListenTimeDisplay()
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        isRunning = false,
+                        isPaused = false,
+                        canonizerOtherIndex = null
+                    )
+                )
+            }
+            if (state.value.playback.isCasting) {
+                syncCastNotification(state.value.playback)
+            }
+        }
+    }
 
     init {
+        ContextCompat.registerReceiver(
+            getApplication<Application>(),
+            sleepTimerExpiredReceiver,
+            IntentFilter(ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         viewModelScope.launch {
             preferences.appMode.collect { mode ->
                 _state.update { current ->
@@ -211,6 +251,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        viewModelScope.launch {
+            ForegroundPlaybackService.sleepTimerState.collect { status ->
+                val selectedOption = sleepTimerOptionForDurationMs(status.configuredDurationMs)
+                val remainingMs = status.remainingMs.coerceAtLeast(0L)
+                _state.update {
+                    it.copy(
+                        sleepTimer = SleepTimerUiState(
+                            selectedOption = selectedOption,
+                            remainingMs = remainingMs,
+                            isActive = status.isActive
+                        )
+                    )
+                }
+            }
+        }
         engine.onUpdate { engineState ->
             if (state.value.playback.playMode == PlaybackMode.Autocanonizer) {
                 return@onUpdate
@@ -278,6 +333,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         cancelLocalAnalysisInternal(showCancelledMessage = false)
+        runCatching {
+            getApplication<Application>().unregisterReceiver(sleepTimerExpiredReceiver)
+        }
         super.onCleared()
         playbackCoordinator.onCleared()
         controller.release()
@@ -1704,6 +1762,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissTrackLengthLimitErrorDialog() {
         _state.update { it.copy(trackLengthLimitErrorMessage = null) }
+    }
+
+    fun setSleepTimer(option: SleepTimerOption) {
+        ForegroundPlaybackService.setSleepTimer(
+            context = getApplication(),
+            durationMs = option.durationMs
+        )
     }
 
     private fun formatMinutes(value: Double): String {

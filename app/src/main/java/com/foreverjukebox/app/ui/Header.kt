@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -26,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,7 +61,8 @@ fun HeaderBar(
     onRefreshCacheSize: () -> Unit,
     onClearCache: () -> Unit,
     onTabSelected: (TabId) -> Unit,
-    onCastSessionStarted: () -> Unit
+    onCastSessionStarted: () -> Unit,
+    onOpenSleepTimer: () -> Unit
 ) {
     val context = LocalContext.current
     var showSettings by remember { mutableStateOf(false) }
@@ -160,6 +163,10 @@ fun HeaderBar(
         SettingsDialog(
             state = state,
             onDismiss = { showSettings = false },
+            onOpenSleepTimer = {
+                showSettings = false
+                onOpenSleepTimer()
+            },
             onThemeChange = onThemeChange,
             onAppModeChange = onAppModeChange,
             onEditBaseUrl = onEditBaseUrl,
@@ -229,6 +236,7 @@ fun TitleOnlyHeaderBar() {
 private fun SettingsDialog(
     state: UiState,
     onDismiss: () -> Unit,
+    onOpenSleepTimer: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
@@ -272,15 +280,27 @@ private fun SettingsDialog(
             }
         },
         title = {
-            Column(modifier = Modifier) {
-                Text("Settings")
-                Text(
-                    versionLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    maxLines = 1
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Settings")
+                    Text(
+                        versionLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                IconButton(onClick = onOpenSleepTimer) {
+                    Icon(
+                        imageVector = Icons.Outlined.Timer,
+                        contentDescription = "Sleep timer",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         },
         text = {

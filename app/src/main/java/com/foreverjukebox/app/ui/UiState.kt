@@ -33,6 +33,21 @@ enum class PlaybackMode {
     Autocanonizer
 }
 
+enum class SleepTimerOption(val label: String, val durationMs: Long?) {
+    Off("Off", null),
+    Minutes15("15 minutes", 15L * 60L * 1000L),
+    Minutes30("30 minutes", 30L * 60L * 1000L),
+    Minutes45("45 minutes", 45L * 60L * 1000L),
+    Hour1("1 hour", 60L * 60L * 1000L),
+    Hours2("2 hours", 2L * 60L * 60L * 1000L)
+}
+
+data class SleepTimerUiState(
+    val selectedOption: SleepTimerOption = SleepTimerOption.Off,
+    val remainingMs: Long = 0L,
+    val isActive: Boolean = false
+)
+
 data class UiState(
     val appMode: AppMode? = null,
     val baseUrl: String = "",
@@ -56,7 +71,8 @@ data class UiState(
     val versionUpdatePrompt: VersionUpdatePrompt? = null,
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
-    val tuning: TuningState = TuningState()
+    val tuning: TuningState = TuningState(),
+    val sleepTimer: SleepTimerUiState = SleepTimerUiState()
 )
 
 data class LocalCachedTrack(
