@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,8 +13,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,6 +39,26 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
+
+internal data class SleepTimerDialogSelectionState(
+    val appliedOption: SleepTimerOption,
+    val pendingOption: SleepTimerOption
+)
+
+internal sealed interface SleepTimerDialogAction {
+    data class SelectOption(val option: SleepTimerOption) : SleepTimerDialogAction
+    data object Set : SleepTimerDialogAction
+}
+
+internal fun reduceSleepTimerDialogSelection(
+    state: SleepTimerDialogSelectionState,
+    action: SleepTimerDialogAction
+): SleepTimerDialogSelectionState {
+    return when (action) {
+        is SleepTimerDialogAction.SelectOption -> state.copy(pendingOption = action.option)
+        SleepTimerDialogAction.Set -> state.copy(appliedOption = state.pendingOption)
+    }
+}
 
 @Composable
 fun TuningDialog(
@@ -198,6 +224,118 @@ fun TuningDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Highlight forced anchor jump")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun SleepTimerDialog(
+    selectedOption: SleepTimerOption,
+    remainingMs: Long,
+    onDismiss: () -> Unit,
+    onSelectOption: (SleepTimerOption) -> Unit
+) {
+    var showOptions by remember { mutableStateOf(false) }
+    var selectionState by remember(selectedOption) {
+        mutableStateOf(
+            SleepTimerDialogSelectionState(
+                appliedOption = selectedOption,
+                pendingOption = selectedOption
+            )
+        )
+    }
+    val hasActiveTimer = remainingMs > 0L
+    val countdownText = if (hasActiveTimer) {
+        formatDuration(remainingMs.toDouble() / 1000.0)
+    } else {
+        "Off"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    val next = reduceSleepTimerDialogSelection(
+                        state = selectionState,
+                        action = SleepTimerDialogAction.Set
+                    )
+                    selectionState = next
+                    onSelectOption(next.appliedOption)
+                    onDismiss()
+                },
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Set", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Close", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text("Sleep Timer") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    if (hasActiveTimer) {
+                        "Current countdown: $countdownText"
+                    } else {
+                        "Current countdown: Off"
+                    }
+                )
+                Text("Select timer length")
+                Box {
+                    OutlinedButton(
+                        onClick = { showOptions = true },
+                        colors = pillOutlinedButtonColors(),
+                        border = pillButtonBorder(),
+                        shape = PillShape,
+                        contentPadding = SmallButtonPadding,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(selectionState.pendingOption.label)
+                            Icon(
+                                imageVector = Icons.Filled.ArrowDropDown,
+                                contentDescription = null
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = showOptions,
+                        onDismissRequest = { showOptions = false }
+                    ) {
+                        SleepTimerOption.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                onClick = {
+                                    showOptions = false
+                                    selectionState = reduceSleepTimerDialogSelection(
+                                        state = selectionState,
+                                        action = SleepTimerDialogAction.SelectOption(option)
+                                    )
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }

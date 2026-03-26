@@ -14,6 +14,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
@@ -28,6 +29,39 @@ import android.support.v4.media.session.PlaybackStateCompat
 import com.foreverjukebox.app.MainActivity
 import com.foreverjukebox.app.R
 import com.foreverjukebox.app.ui.CastController
+import kotlin.math.min
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+internal enum class ForegroundServiceStopCommand {
+    StopService,
+    ClearNotificationKeepTimer
+}
+
+internal fun resolveForegroundServiceStopCommand(
+    isSleepTimerActive: Boolean
+): ForegroundServiceStopCommand {
+    return if (isSleepTimerActive) {
+        ForegroundServiceStopCommand.ClearNotificationKeepTimer
+    } else {
+        ForegroundServiceStopCommand.StopService
+    }
+}
+
+internal fun sleepTimerExpiryBroadcastActions(): List<String> {
+    return listOf(
+        ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED,
+        ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN
+    )
+}
 
 private object PlaybackServiceConstants {
     const val CHANNEL_ID = "fj_playback"
@@ -35,11 +69,17 @@ private object PlaybackServiceConstants {
     const val ACTION_START = "com.foreverjukebox.app.playback.START"
     const val ACTION_UPDATE = "com.foreverjukebox.app.playback.UPDATE"
     const val ACTION_TOGGLE = "com.foreverjukebox.app.playback.TOGGLE"
+    const val ACTION_SET_SLEEP_TIMER = "com.foreverjukebox.app.playback.SET_SLEEP_TIMER"
+    const val ACTION_CLEAR_NOTIFICATION_KEEP_TIMER =
+        "com.foreverjukebox.app.playback.CLEAR_NOTIFICATION_KEEP_TIMER"
+    const val ACTION_SLEEP_TIMER_EXPIRED = "com.foreverjukebox.app.playback.SLEEP_TIMER_EXPIRED"
+    const val ACTION_CLOSE_FULLSCREEN = "com.foreverjukebox.app.playback.CLOSE_FULLSCREEN"
     const val EXTRA_IS_CASTING = "com.foreverjukebox.app.playback.extra.IS_CASTING"
     const val EXTRA_CAST_IS_PLAYING = "com.foreverjukebox.app.playback.extra.CAST_IS_PLAYING"
     const val EXTRA_TRACK_TITLE = "com.foreverjukebox.app.playback.extra.TRACK_TITLE"
     const val EXTRA_TRACK_ARTIST = "com.foreverjukebox.app.playback.extra.TRACK_ARTIST"
     const val EXTRA_CAST_DEVICE_NAME = "com.foreverjukebox.app.playback.extra.CAST_DEVICE_NAME"
+    const val EXTRA_SLEEP_TIMER_DURATION_MS = "com.foreverjukebox.app.playback.extra.SLEEP_TIMER_DURATION_MS"
     const val CAST_COMMAND_NAMESPACE = "urn:x-cast:com.foreverjukebox.app"
 }
 
@@ -78,10 +118,23 @@ private data class PlaybackNotificationState(
     }
 }
 
+data class SleepTimerStatus(
+    val configuredDurationMs: Long? = null,
+    val endRealtimeMs: Long? = null,
+    val remainingMs: Long = 0L
+) {
+    val isActive: Boolean
+        get() = endRealtimeMs != null && remainingMs > 0L
+}
+
 class ForegroundPlaybackService : Service() {
     private lateinit var mediaSession: MediaSessionCompat
     private val castController by lazy { CastController(application as Application) }
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var activeNotificationState: PlaybackNotificationState? = null
+    private var sleepTimerJob: Job? = null
+    private var sleepTimerEndRealtimeMs: Long? = null
+    private var hasStartedForeground = false
 
     override fun onBind(intent: Intent?) = null
 
@@ -148,18 +201,40 @@ class ForegroundPlaybackService : Service() {
                     handlePlaybackAction(PlaybackAction.Toggle)
                 }
             }
+            PlaybackServiceConstants.ACTION_SET_SLEEP_TIMER -> {
+                val durationMs = intent.getLongExtra(
+                    PlaybackServiceConstants.EXTRA_SLEEP_TIMER_DURATION_MS,
+                    0L
+                )
+                if (durationMs > 0L) {
+                    startSleepTimer(durationMs)
+                } else {
+                    clearSleepTimer()
+                }
+            }
+            PlaybackServiceConstants.ACTION_CLEAR_NOTIFICATION_KEEP_TIMER -> {
+                clearPlaybackNotificationKeepTimer()
+            }
             PlaybackServiceConstants.ACTION_START, PlaybackServiceConstants.ACTION_UPDATE -> {
                 val castState = intent.toCastNotificationState()
                 if (castState != null) {
                     updateNotification(castState)
                 } else {
-                    val controller = PlaybackControllerHolder.get(this)
-                    val isPlaying = controller.isPlaying()
-                    updateNotification(buildLocalNotificationState(isPlaying))
+                    refreshNotificationForCurrentPlayback()
                 }
             }
         }
         return START_STICKY
+    }
+
+    private fun refreshNotificationForCurrentPlayback() {
+        val active = activeNotificationState
+        if (active?.mode == NotificationMode.Cast) {
+            updateNotification(active)
+            return
+        }
+        val controller = PlaybackControllerHolder.get(this)
+        updateNotification(buildLocalNotificationState(controller.isPlaying()))
     }
 
     private fun buildLocalNotificationState(isPlaying: Boolean): PlaybackNotificationState {
@@ -295,8 +370,13 @@ class ForegroundPlaybackService : Service() {
         }
 
         val notification: Notification = builder.build()
-
-        startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
+        if (hasStartedForeground) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(PlaybackServiceConstants.NOTIFICATION_ID, notification)
+        } else {
+            startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
+            hasStartedForeground = true
+        }
     }
 
     private fun tintedIcon(resId: Int, color: Int): IconCompat {
@@ -433,9 +513,97 @@ class ForegroundPlaybackService : Service() {
         handlePlaybackAction(PlaybackAction.Toggle)
     }
 
+    private fun clearPlaybackNotificationKeepTimer() {
+        activeNotificationState = null
+        if (hasStartedForeground) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            hasStartedForeground = false
+        } else {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.cancel(PlaybackServiceConstants.NOTIFICATION_ID)
+        }
+        mediaSession.isActive = false
+    }
+
+    private fun startSleepTimer(durationMs: Long) {
+        sleepTimerJob?.cancel()
+        val endRealtime = SystemClock.elapsedRealtime() + durationMs
+        sleepTimerEndRealtimeMs = endRealtime
+        publishSleepTimerState(
+            configuredDurationMs = durationMs,
+            endRealtimeMs = endRealtime,
+            remainingMs = durationMs
+        )
+        sleepTimerJob = serviceScope.launch {
+            while (isActive) {
+                val remainingMs = (endRealtime - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+                publishSleepTimerState(
+                    configuredDurationMs = durationMs,
+                    endRealtimeMs = endRealtime,
+                    remainingMs = remainingMs
+                )
+                if (remainingMs <= 0L) {
+                    break
+                }
+                delay(min(1000L, remainingMs))
+            }
+            if (sleepTimerEndRealtimeMs == endRealtime) {
+                handleSleepTimerExpired()
+            }
+        }
+    }
+
+    private fun clearSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerEndRealtimeMs = null
+        publishSleepTimerState(
+            configuredDurationMs = null,
+            endRealtimeMs = null,
+            remainingMs = 0L
+        )
+    }
+
+    private fun publishSleepTimerState(
+        configuredDurationMs: Long?,
+        endRealtimeMs: Long?,
+        remainingMs: Long
+    ) {
+        _sleepTimerState.value = SleepTimerStatus(
+            configuredDurationMs = configuredDurationMs,
+            endRealtimeMs = endRealtimeMs,
+            remainingMs = remainingMs
+        )
+    }
+
+    private fun handleSleepTimerExpired() {
+        val activeMode = activeNotificationState?.mode
+        clearSleepTimer()
+        val controller = PlaybackControllerHolder.get(this)
+        controller.stopPlayback()
+        controller.autocanonizer.stop()
+        controller.stopExternalPlayback()
+        if (activeMode == NotificationMode.Cast) {
+            castController.sendCommand(PlaybackServiceConstants.CAST_COMMAND_NAMESPACE, "stop")
+            activeNotificationState?.let { state ->
+                updateNotification(state.copy(isPlaying = false))
+            } ?: refreshNotificationForCurrentPlayback()
+        } else if (activeMode == NotificationMode.Local) {
+            refreshNotificationForCurrentPlayback()
+        }
+        sleepTimerExpiryBroadcastActions().forEach { action ->
+            sendBroadcast(Intent(action).apply {
+                setPackage(packageName)
+            })
+        }
+    }
+
     override fun onDestroy() {
         activeNotificationState = null
         isRunning = false
+        hasStartedForeground = false
+        clearSleepTimer()
+        serviceScope.cancel()
         mediaSession.release()
         super.onDestroy()
     }
@@ -473,6 +641,12 @@ class ForegroundPlaybackService : Service() {
     companion object {
         @Volatile
         private var isRunning: Boolean = false
+        private val _sleepTimerState = MutableStateFlow(SleepTimerStatus())
+        val sleepTimerState: StateFlow<SleepTimerStatus> = _sleepTimerState
+        const val ACTION_SLEEP_TIMER_EXPIRED: String =
+            PlaybackServiceConstants.ACTION_SLEEP_TIMER_EXPIRED
+        const val ACTION_CLOSE_FULLSCREEN: String =
+            PlaybackServiceConstants.ACTION_CLOSE_FULLSCREEN
 
         fun start(context: Context) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
@@ -484,6 +658,17 @@ class ForegroundPlaybackService : Service() {
         fun update(context: Context) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_UPDATE
+            }
+            context.startService(intent)
+        }
+
+        fun setSleepTimer(context: Context, durationMs: Long?) {
+            val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+                action = PlaybackServiceConstants.ACTION_SET_SLEEP_TIMER
+                putExtra(
+                    PlaybackServiceConstants.EXTRA_SLEEP_TIMER_DURATION_MS,
+                    durationMs ?: 0L
+                )
             }
             context.startService(intent)
         }
@@ -511,7 +696,17 @@ class ForegroundPlaybackService : Service() {
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, ForegroundPlaybackService::class.java))
+            when (resolveForegroundServiceStopCommand(_sleepTimerState.value.isActive)) {
+                ForegroundServiceStopCommand.ClearNotificationKeepTimer -> {
+                    val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+                        action = PlaybackServiceConstants.ACTION_CLEAR_NOTIFICATION_KEEP_TIMER
+                    }
+                    context.startService(intent)
+                }
+                ForegroundServiceStopCommand.StopService -> {
+                    context.stopService(Intent(context, ForegroundPlaybackService::class.java))
+                }
+            }
         }
     }
 }

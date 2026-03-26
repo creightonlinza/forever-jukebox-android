@@ -1,6 +1,8 @@
 package com.foreverjukebox.app.ui
 
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.WindowManager
@@ -45,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -150,6 +154,9 @@ private fun FullscreenScreen(
     var beatsPlayed by remember { mutableIntStateOf(0) }
     var listenTime by remember { mutableStateOf("00:00:00") }
     var isRunning by remember { mutableStateOf(controller.isPlaying()) }
+    val latestOnExit by rememberUpdatedState(onExit)
+    val latestVizIndex by rememberUpdatedState(activeVizIndex)
+    val latestPlayMode by rememberUpdatedState(playMode)
 
     fun applyPlaybackMode(nextMode: PlaybackMode) {
         if (playMode == nextMode) {
@@ -230,6 +237,26 @@ private fun FullscreenScreen(
 
     BackHandler {
         onExit(activeVizIndex, playMode)
+    }
+
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: Intent?) {
+                if (intent?.action == ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN) {
+                    latestOnExit(latestVizIndex, latestPlayMode)
+                }
+            }
+        }
+        val filter = IntentFilter(ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN)
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose {
+            runCatching { context.unregisterReceiver(receiver) }
+        }
     }
 
     DisposableEffect(Unit) {
