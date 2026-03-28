@@ -90,12 +90,27 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
 fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
     val hasTitle = status.title.isNotBlank()
     val hasArtist = status.artist.isNotBlank()
-    val displayTitle = if (hasArtist) {
-        "${if (hasTitle) status.title else "Unknown"} — ${status.artist}"
-    } else if (hasTitle) {
-        status.title
+    val currentPlayback = current.playback
+    val resolvedTrackTitle = when {
+        hasTitle && currentPlayback.trackTitle.isNullOrBlank() -> status.title
+        else -> currentPlayback.trackTitle
+    }
+    val resolvedTrackArtist = when {
+        hasArtist && currentPlayback.trackArtist.isNullOrBlank() -> status.artist
+        else -> currentPlayback.trackArtist
+    }
+    val metadataBackfilled = (hasTitle && currentPlayback.trackTitle.isNullOrBlank()) ||
+        (hasArtist && currentPlayback.trackArtist.isNullOrBlank())
+    val displayTitle = if (metadataBackfilled || currentPlayback.playTitle.isBlank()) {
+        when {
+            !resolvedTrackArtist.isNullOrBlank() -> {
+                "${resolvedTrackTitle?.takeIf { it.isNotBlank() } ?: "Unknown"} — $resolvedTrackArtist"
+            }
+            !resolvedTrackTitle.isNullOrBlank() -> resolvedTrackTitle
+            else -> currentPlayback.playTitle
+        }
     } else {
-        null
+        currentPlayback.playTitle
     }
     val resolvedIsLoading = when (status.playbackState) {
         "loading" -> true
@@ -113,24 +128,24 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         "playing", "loading", "idle", "error" -> false
         else -> !resolvedIsLoading && !resolvedIsRunning && current.playback.isPaused
     }
-    val nextPlayback = current.playback.copy(
+    val nextPlayback = currentPlayback.copy(
         playMode = PlaybackMode.Jukebox,
         isRunning = resolvedIsRunning,
         isPaused = resolvedIsPaused,
-        playTitle = displayTitle ?: current.playback.playTitle,
-        trackTitle = if (hasTitle) status.title else current.playback.trackTitle,
-        trackArtist = if (hasArtist) status.artist else current.playback.trackArtist,
-        trackDurationSeconds = status.trackDurationSeconds ?: current.playback.trackDurationSeconds,
-        castTotalBeats = status.totalBeats ?: current.playback.castTotalBeats,
-        castTotalBranches = status.totalBranches ?: current.playback.castTotalBranches,
-        lastYouTubeId = if (status.songId.isBlank()) current.playback.lastYouTubeId else status.songId,
-        analysisErrorMessage = if (status.error.isNotBlank()) status.error else current.playback.analysisErrorMessage,
+        playTitle = displayTitle,
+        trackTitle = resolvedTrackTitle,
+        trackArtist = resolvedTrackArtist,
+        trackDurationSeconds = status.trackDurationSeconds ?: currentPlayback.trackDurationSeconds,
+        castTotalBeats = status.totalBeats ?: currentPlayback.castTotalBeats,
+        castTotalBranches = status.totalBranches ?: currentPlayback.castTotalBranches,
+        lastYouTubeId = if (status.songId.isBlank()) currentPlayback.lastYouTubeId else status.songId,
+        analysisErrorMessage = if (status.error.isNotBlank()) status.error else currentPlayback.analysisErrorMessage,
         analysisInFlight = resolvedIsLoading,
         isCastLoading = resolvedIsLoading,
         activeVizIndex = if ((status.activeVizIndex ?: -1) in 0 until visualizationCount) {
-            status.activeVizIndex ?: current.playback.activeVizIndex
+            status.activeVizIndex ?: currentPlayback.activeVizIndex
         } else {
-            current.playback.activeVizIndex
+            currentPlayback.activeVizIndex
         }
     )
     return current.copy(

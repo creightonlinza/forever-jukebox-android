@@ -334,4 +334,71 @@ class CastStatusReducerTest {
         assertTrue(next.playback.isPaused)
         assertFalse(next.playback.analysisInFlight)
     }
+
+    @Test
+    fun reduceCastStatusKeepsExistingAppMetadataWhenReceiverSendsDifferentValues() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                trackTitle = "App Track",
+                trackArtist = "App Artist",
+                playTitle = "App Track — App Artist",
+                lastYouTubeId = "abc123def45"
+            )
+        )
+        val status = CastStatusMessage(
+            songId = "abc123def45",
+            title = "Receiver Track",
+            artist = "Receiver Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals("App Track", next.playback.trackTitle)
+        assertEquals("App Artist", next.playback.trackArtist)
+        assertEquals("App Track — App Artist", next.playback.playTitle)
+    }
+
+    @Test
+    fun reduceCastStatusBackfillsMissingMetadataFromReceiver() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                trackTitle = null,
+                trackArtist = null,
+                playTitle = "",
+                lastYouTubeId = null
+            )
+        )
+        val status = CastStatusMessage(
+            songId = "abc123def45",
+            title = "Receiver Track",
+            artist = "Receiver Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals("Receiver Track", next.playback.trackTitle)
+        assertEquals("Receiver Artist", next.playback.trackArtist)
+        assertEquals("Receiver Track — Receiver Artist", next.playback.playTitle)
+        assertEquals("abc123def45", next.playback.lastYouTubeId)
+    }
 }
