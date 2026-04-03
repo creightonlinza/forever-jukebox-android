@@ -103,9 +103,6 @@ class PlaybackCoordinator(
         if (deletedIds.isNotEmpty()) {
             params.add("d=${deletedIds.joinToString(",")}")
         }
-        if (uiTuning.highlightAnchorBranch) {
-            params.add("ah=1")
-        }
         return if (params.isEmpty()) null else params.joinToString("&")
     }
 

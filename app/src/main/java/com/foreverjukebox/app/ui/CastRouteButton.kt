@@ -33,7 +33,7 @@ fun CastRouteButton(
     val enabledTint = MaterialTheme.colorScheme.onSurface
     val disabledTint = enabledTint.copy(alpha = 0.4f)
     if (!enabled) {
-        IconButton(
+        SquareIconButton(
             onClick = { onDisabledClick?.invoke() },
             modifier = modifier
         ) {

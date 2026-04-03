@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -84,6 +83,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val isFavorite = playback.lastYouTubeId?.let { id ->
         state.favorites.any { it.uniqueSongId == id }
     } == true
+    val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -182,15 +182,20 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 },
                 onToggleFavorite = {
                     if (playback.lastYouTubeId != null) {
-                        val limitReached = viewModel.toggleFavoriteForCurrent()
-                        val message = when {
-                            limitReached -> "Maximum favorites reached (100)."
-                            isFavorite -> "Removed from Favorites"
-                            else -> "Added to Favorites"
+                        val result = viewModel.toggleFavoriteForCurrent()
+                        val message = when (result) {
+                            FavoriteToggleResult.LimitReached -> "Maximum favorites reached (100)."
+                            FavoriteToggleResult.Removed -> "Removed from Favorites"
+                            FavoriteToggleResult.Added -> "Added to Favorites"
+                            FavoriteToggleResult.BlockedInFlight,
+                            FavoriteToggleResult.NoTrack -> null
                         }
-                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        if (message != null) {
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 },
+                favoriteToggleInFlight = favoriteToggleInFlight,
                 onSelectVisualization = viewModel::setActiveVisualization
             )
             }
@@ -229,15 +234,20 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 },
                 onToggleFavorite = {
                     if (playback.lastYouTubeId != null) {
-                        val limitReached = viewModel.toggleFavoriteForCurrent()
-                        val message = when {
-                            limitReached -> "Maximum favorites reached (100)."
-                            isFavorite -> "Removed from Favorites"
-                            else -> "Added to Favorites"
+                        val result = viewModel.toggleFavoriteForCurrent()
+                        val message = when (result) {
+                            FavoriteToggleResult.LimitReached -> "Maximum favorites reached (100)."
+                            FavoriteToggleResult.Removed -> "Removed from Favorites"
+                            FavoriteToggleResult.Added -> "Added to Favorites"
+                            FavoriteToggleResult.BlockedInFlight,
+                            FavoriteToggleResult.NoTrack -> null
                         }
-                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        if (message != null) {
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 },
+                favoriteToggleInFlight = favoriteToggleInFlight,
                 onSetPlaybackMode = viewModel::setPlaybackMode,
                 onSetVisualization = viewModel::setActiveVisualization,
                 onSetCanonizerFinishOutSong = viewModel::setCanonizerFinishOutSong,
@@ -254,7 +264,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(SurfaceShape)
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -318,13 +328,14 @@ private fun ColumnScope.CastListenScreen(
     onDeleteCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
+    favoriteToggleInFlight: Boolean,
     onSelectVisualization: (Int) -> Unit
 ) {
     val hasCastTrack = playback.hasCastTrack()
     val canShowTransport = shouldShowPlaybackTransport(playback)
     val canSelectVisualization = playback.castControlsReady()
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
-    val playActionLabel = playActionLabelForState(playback)
+    val playActionLabel = playbackTransportContentDescription(playback)
     val showServerActions = shouldShowServerListenActions(appMode)
     val themeTokens = LocalThemeTokens.current
     var showVizMenu by remember(playback.activeVizIndex) { mutableStateOf(false) }
@@ -334,7 +345,7 @@ private fun ColumnScope.CastListenScreen(
         modifier = Modifier
             .weight(1f, fill = true)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(SurfaceShape)
             .background(MaterialTheme.colorScheme.surface)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -360,7 +371,7 @@ private fun ColumnScope.CastListenScreen(
                 if (canShowTransport) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (playback.deleteEligible) {
-                            IconButton(
+                            SquareIconButton(
                                 onClick = {
                                     if (!playback.deleteInFlight) {
                                         onDeleteCurrentTrack()
@@ -386,7 +397,7 @@ private fun ColumnScope.CastListenScreen(
                             }
                         }
                         if (!inAutocanonizer) {
-                            IconButton(
+                            SquareIconButton(
                                 onClick = onOpenTuning,
                                 modifier = Modifier.size(SmallButtonHeight)
                             ) {
@@ -397,7 +408,7 @@ private fun ColumnScope.CastListenScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                            IconButton(
+                            SquareIconButton(
                                 onClick = onOpenInfo,
                                 modifier = Modifier.size(SmallButtonHeight)
                             ) {
@@ -410,7 +421,7 @@ private fun ColumnScope.CastListenScreen(
                             }
                         }
                         if (showServerActions) {
-                            IconButton(
+                            SquareIconButton(
                                 onClick = onShare,
                                 modifier = Modifier.size(SmallButtonHeight)
                             ) {
@@ -421,16 +432,25 @@ private fun ColumnScope.CastListenScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                            IconButton(
+                            SquareIconButton(
                                 onClick = onToggleFavorite,
+                                enabled = !favoriteToggleInFlight,
                                 modifier = Modifier.size(SmallButtonHeight)
                             ) {
-                                Icon(
-                                    imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                    contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
-                                    tint = themeTokens.beatFill,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                if (favoriteToggleInFlight) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = themeTokens.beatFill,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                        contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
+                                        tint = themeTokens.beatFill,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -441,7 +461,7 @@ private fun ColumnScope.CastListenScreen(
             modifier = Modifier
                 .weight(1f, fill = true)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(SurfaceShape)
                 .background(themeTokens.vizBackground),
             contentAlignment = Alignment.Center
         ) {
@@ -519,9 +539,9 @@ private fun ColumnScope.CastListenScreen(
                             onClick = onTogglePlayback,
                             colors = pillButtonColors(),
                             border = pillButtonBorder(),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                            modifier = Modifier.height(SmallButtonHeight)
+                            shape = SurfaceShape,
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.size(SmallButtonHeight)
                         ) {
                             Icon(
                                 imageVector = if (playback.isRunning) {
@@ -531,11 +551,8 @@ private fun ColumnScope.CastListenScreen(
                                 },
                                 contentDescription = playActionLabel,
                                 tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(playActionLabel)
-                            Spacer(modifier = Modifier.width(8.dp))
                         }
                     }
                 }
@@ -559,6 +576,7 @@ private fun ColumnScope.LocalListenScreen(
     onDeleteCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
+    favoriteToggleInFlight: Boolean,
     onSetPlaybackMode: (PlaybackMode) -> Unit,
     onSetVisualization: (Int) -> Unit,
     onSetCanonizerFinishOutSong: (Boolean) -> Unit,
@@ -571,7 +589,7 @@ private fun ColumnScope.LocalListenScreen(
     var showModeMenu by remember { mutableStateOf(false) }
     val showServerActions = shouldShowServerListenActions(appMode)
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
-    val playActionLabel = playActionLabelForState(playback)
+    val playActionLabel = playbackTransportContentDescription(playback)
     val showInlineTitleWithControls = shouldShowPlaybackTransport(playback)
     val themeTokens = LocalThemeTokens.current
 
@@ -579,7 +597,7 @@ private fun ColumnScope.LocalListenScreen(
         modifier = Modifier
             .weight(1f, fill = true)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(SurfaceShape)
             .background(MaterialTheme.colorScheme.surface)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -604,7 +622,7 @@ private fun ColumnScope.LocalListenScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (playback.deleteEligible) {
-                        IconButton(
+                        SquareIconButton(
                             onClick = {
                                 if (!playback.deleteInFlight) {
                                     onDeleteCurrentTrack()
@@ -630,7 +648,7 @@ private fun ColumnScope.LocalListenScreen(
                         }
                     }
                     if (!inAutocanonizer) {
-                        IconButton(
+                        SquareIconButton(
                             onClick = onOpenTuning,
                             modifier = Modifier.size(SmallButtonHeight)
                         ) {
@@ -641,7 +659,7 @@ private fun ColumnScope.LocalListenScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                        IconButton(
+                        SquareIconButton(
                             onClick = onOpenInfo,
                             modifier = Modifier.size(SmallButtonHeight)
                         ) {
@@ -654,7 +672,7 @@ private fun ColumnScope.LocalListenScreen(
                         }
                     }
                     if (showServerActions) {
-                        IconButton(
+                        SquareIconButton(
                             onClick = onShare,
                             modifier = Modifier.size(SmallButtonHeight)
                         ) {
@@ -665,16 +683,25 @@ private fun ColumnScope.LocalListenScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                        IconButton(
+                        SquareIconButton(
                             onClick = onToggleFavorite,
+                            enabled = !favoriteToggleInFlight,
                             modifier = Modifier.size(SmallButtonHeight)
                         ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
-                                tint = themeTokens.beatFill,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            if (favoriteToggleInFlight) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = themeTokens.beatFill,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                    contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
+                                    tint = themeTokens.beatFill,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -685,7 +712,7 @@ private fun ColumnScope.LocalListenScreen(
                 .weight(1f, fill = true)
                 .fillMaxWidth()
                 .onSizeChanged { vizContainerSize = it }
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .clip(SurfaceShape)
                 .background(themeTokens.vizBackground)
         ) {
             val vizSidePx = kotlin.math.min(vizContainerSize.width, vizContainerSize.height)
@@ -792,7 +819,7 @@ private fun ColumnScope.LocalListenScreen(
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
+                    SquareIconButton(
                         onClick = {
                             onSetCanonizerFinishOutSong(!playback.canonizerFinishOutSong)
                         },
@@ -859,7 +886,7 @@ private fun ColumnScope.LocalListenScreen(
                     }
                 }
             }
-            IconButton(
+            SquareIconButton(
                 onClick = onOpenFullscreen,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -877,12 +904,12 @@ private fun ColumnScope.LocalListenScreen(
                     onClick = onTogglePlayback,
                     colors = pillButtonColors(),
                     border = pillButtonBorder(),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    shape = SurfaceShape,
+                    contentPadding = PaddingValues(0.dp),
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(6.dp)
-                        .height(SmallButtonHeight)
+                        .size(SmallButtonHeight)
                 ) {
                     Icon(
                         imageVector = if (playback.isRunning) {
@@ -892,11 +919,8 @@ private fun ColumnScope.LocalListenScreen(
                         },
                         contentDescription = playActionLabel,
                         tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(playActionLabel)
-                    Spacer(modifier = Modifier.width(8.dp))
                 }
             }
         }
@@ -906,14 +930,6 @@ private fun ColumnScope.LocalListenScreen(
                 Text("Total Beats: ${playback.beatsPlayed}", color = MaterialTheme.colorScheme.onBackground)
             }
         }
-    }
-}
-
-private fun playActionLabelForState(playback: PlaybackState): String {
-    return when {
-        playback.isRunning -> "Pause"
-        playback.isPaused -> "Resume"
-        else -> "Play"
     }
 }
 
@@ -1010,7 +1026,7 @@ private fun ErrorStatus(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (showRetry) {
-            IconButton(
+            SquareIconButton(
                 onClick = onRetry,
                 modifier = Modifier
                     .padding(top = 8.dp)

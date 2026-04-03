@@ -17,6 +17,7 @@ class FavoritesController(
     private var favoritesSyncHydratedFor: String? = null
     private var pendingSyncDelta: FavoritesDelta? = null
     private var syncInFlight = false
+    private var listenToggleSyncInFlight = false
 
     fun refreshFavoritesFromSync() {
         scope.launch {
@@ -91,7 +92,11 @@ class FavoritesController(
         }
     }
 
-    fun updateFavorites(favorites: List<FavoriteTrack>, sync: Boolean = true) {
+    fun updateFavorites(
+        favorites: List<FavoriteTrack>,
+        sync: Boolean = true,
+        fromListenToggle: Boolean = false
+    ) {
         val previous = getState().favorites
         val sorted = sortFavorites(favorites).take(MAX_FAVORITES)
         updateState { it.copy(favorites = sorted) }
@@ -105,7 +110,7 @@ class FavoritesController(
         if (delta.isNoop()) {
             return
         }
-        scheduleFavoritesSync(delta)
+        scheduleFavoritesSync(delta, fromListenToggle)
     }
 
     fun maybeHydrateFavoritesFromSync() {
@@ -130,12 +135,16 @@ class FavoritesController(
         }
     }
 
-    private fun scheduleFavoritesSync(delta: FavoritesDelta) {
+    private fun scheduleFavoritesSync(delta: FavoritesDelta, fromListenToggle: Boolean = false) {
         val state = getState()
         if (!state.allowFavoritesSync) {
             return
         }
         val code = state.favoritesSyncCode ?: return
+        if (fromListenToggle) {
+            listenToggleSyncInFlight = true
+            updateState { it.copy(listenFavoriteToggleInFlight = true) }
+        }
         if (syncInFlight) {
             pendingSyncDelta = delta
             return
@@ -169,6 +178,9 @@ class FavoritesController(
             pendingSyncDelta = null
             if (pending != null && !pending.isNoop()) {
                 scheduleFavoritesSync(pending)
+            } else if (listenToggleSyncInFlight) {
+                listenToggleSyncInFlight = false
+                updateState { it.copy(listenFavoriteToggleInFlight = false) }
             }
         }
     }

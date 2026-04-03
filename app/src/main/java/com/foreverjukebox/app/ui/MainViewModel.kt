@@ -765,18 +765,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return response
     }
 
-    fun toggleFavoriteForCurrent(): Boolean {
-        val currentId = state.value.playback.lastYouTubeId ?: return false
-        val favorites = state.value.favorites
+    fun toggleFavoriteForCurrent(): FavoriteToggleResult {
+        val currentState = state.value
+        val currentId = currentState.playback.lastYouTubeId ?: return FavoriteToggleResult.NoTrack
+        if (shouldBlockListenFavoriteToggle(currentState)) {
+            return FavoriteToggleResult.BlockedInFlight
+        }
+        val favorites = currentState.favorites
+        val syncFromListenToggle = hasRealFavoritesSyncPath(currentState)
         val existing = favorites.any { it.uniqueSongId == currentId }
         return if (existing) {
-            favoritesController.updateFavorites(favorites.filterNot { it.uniqueSongId == currentId })
-            false
+            favoritesController.updateFavorites(
+                favorites.filterNot { it.uniqueSongId == currentId },
+                fromListenToggle = syncFromListenToggle
+            )
+            FavoriteToggleResult.Removed
         } else {
             if (favorites.size >= MAX_FAVORITES) {
-                true
+                FavoriteToggleResult.LimitReached
             } else {
-                val playback = state.value.playback
+                val playback = currentState.playback
                 val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
                 val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "Unknown"
                 val newFavorite = FavoriteTrack(
@@ -793,8 +801,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         null
                     }
                 )
-                favoritesController.updateFavorites(favorites + newFavorite)
-                false
+                favoritesController.updateFavorites(
+                    favorites + newFavorite,
+                    fromListenToggle = syncFromListenToggle
+                )
+                FavoriteToggleResult.Added
             }
         }
     }
