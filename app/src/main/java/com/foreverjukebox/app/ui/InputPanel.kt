@@ -147,7 +147,7 @@ fun InputPanel(
                                     }
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
-                                IconButton(
+                                SquareIconButton(
                                     onClick = { onDeleteCachedTrack(track.localId) },
                                     modifier = Modifier.size(24.dp)
                                 ) {

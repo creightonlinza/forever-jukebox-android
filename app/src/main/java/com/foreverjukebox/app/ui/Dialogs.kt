@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -456,7 +455,7 @@ fun AppModeDialog(
                             keyboardType = KeyboardType.Uri,
                             imeAction = ImeAction.Done
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = SurfaceShape,
                         modifier = Modifier.heightIn(min = SmallFieldMinHeight)
                     )
                     if (trimmedUrl.isNotEmpty() && !isValidServerUrl) {

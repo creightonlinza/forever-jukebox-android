@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,8 +16,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Tune
@@ -44,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
@@ -123,6 +127,7 @@ fun TopSongsPanel(
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = SurfaceShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface
@@ -313,7 +318,7 @@ fun TopSongsPanel(
                 ) {
                     Text("Favorites", style = MaterialTheme.typography.labelLarge)
                     if (allowFavoritesSync) {
-                        IconButton(onClick = { showSyncMenu = true }, modifier = Modifier.size(24.dp)) {
+                        SquareIconButton(onClick = { showSyncMenu = true }, modifier = Modifier.size(24.dp)) {
                             Icon(
                                 imageVector = if (hasSyncCode) Icons.Outlined.Cloud else Icons.Outlined.CloudOff,
                                 contentDescription = "Favorites sync",
@@ -582,7 +587,7 @@ private fun FavoritesListContent(
                             )
                         }
                     }
-                    IconButton(
+                    SquareIconButton(
                         onClick = { onRemoveFavorite(item.uniqueSongId) },
                         modifier = Modifier.size(24.dp)
                     ) {
@@ -636,6 +641,7 @@ private fun ListStatusMessage(
 
 @Composable
 private fun TopSongsTabs(activeTab: TopSongsTab, onTabSelected: (TopSongsTab) -> Unit) {
+    val tokens = LocalThemeTokens.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -663,21 +669,46 @@ private fun TopSongsTabs(activeTab: TopSongsTab, onTabSelected: (TopSongsTab) ->
         SubTabButton(
             text = "Favorites",
             active = activeTab == TopSongsTab.Favorites,
+            icon = Icons.Filled.Star,
+            iconTint = tokens.beatFill,
             onClick = { onTabSelected(TopSongsTab.Favorites) }
         )
     }
 }
 
 @Composable
-private fun SubTabButton(text: String, active: Boolean, onClick: () -> Unit) {
+private fun SubTabButton(
+    text: String,
+    active: Boolean,
+    icon: ImageVector? = null,
+    iconTint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onBackground,
+    onClick: () -> Unit
+) {
+    val tokens = LocalThemeTokens.current
+    val containerColor by animateColorAsState(
+        targetValue = if (active) tokens.controlSurface else tokens.panelSurface,
+        label = "subTabContainer"
+    )
     OutlinedButton(
         onClick = onClick,
-        colors = pillOutlinedButtonColors(active),
+        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+            containerColor = containerColor,
+            contentColor = tokens.onBackground
+        ),
         border = pillButtonBorder(),
         contentPadding = SmallButtonPadding,
         shape = PillShape,
         modifier = Modifier.height(SmallButtonHeight)
     ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
         Text(text, style = MaterialTheme.typography.labelSmall)
         Spacer(modifier = Modifier.width(2.dp))
     }

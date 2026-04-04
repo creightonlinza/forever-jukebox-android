@@ -97,6 +97,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var refreshTopSongsJob: Job? = null
     private var localAnalysisJob: Job? = null
+    private var serverTrackLoadJob: Job? = null
     private var topSongsLoaded = false
     private var trendingSongsLoaded = false
     private var recentSongsLoaded = false
@@ -332,6 +333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        cancelServerTrackLoadWork()
         cancelLocalAnalysisInternal(showCancelledMessage = false)
         runCatching {
             getApplication<Application>().unregisterReceiver(sleepTimerExpiredReceiver)
@@ -590,6 +592,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resetRuntimeForModeChange(targetMode: AppMode) {
+        cancelServerTrackLoadWork()
         cancelLocalAnalysisInternal(showCancelledMessage = false)
         refreshTopSongsJob?.cancel()
         refreshTopSongsJob = null
@@ -765,18 +768,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return response
     }
 
-    fun toggleFavoriteForCurrent(): Boolean {
-        val currentId = state.value.playback.lastYouTubeId ?: return false
-        val favorites = state.value.favorites
+    fun toggleFavoriteForCurrent(): FavoriteToggleResult {
+        val currentState = state.value
+        val currentId = currentState.playback.lastYouTubeId ?: return FavoriteToggleResult.NoTrack
+        if (shouldBlockListenFavoriteToggle(currentState)) {
+            return FavoriteToggleResult.BlockedInFlight
+        }
+        val favorites = currentState.favorites
+        val syncFromListenToggle = hasRealFavoritesSyncPath(currentState)
         val existing = favorites.any { it.uniqueSongId == currentId }
         return if (existing) {
-            favoritesController.updateFavorites(favorites.filterNot { it.uniqueSongId == currentId })
-            false
+            favoritesController.updateFavorites(
+                favorites.filterNot { it.uniqueSongId == currentId },
+                fromListenToggle = syncFromListenToggle
+            )
+            FavoriteToggleResult.Removed
         } else {
             if (favorites.size >= MAX_FAVORITES) {
-                true
+                FavoriteToggleResult.LimitReached
             } else {
-                val playback = state.value.playback
+                val playback = currentState.playback
                 val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
                 val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "Unknown"
                 val newFavorite = FavoriteTrack(
@@ -793,8 +804,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         null
                     }
                 )
-                favoritesController.updateFavorites(favorites + newFavorite)
-                false
+                favoritesController.updateFavorites(
+                    favorites + newFavorite,
+                    fromListenToggle = syncFromListenToggle
+                )
+                FavoriteToggleResult.Added
             }
         }
     }
@@ -891,7 +905,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
         }
-        viewModelScope.launch {
+        launchServerTrackLoad {
             if (artist.isNotBlank()) {
                 try {
                     val response = maybeRepairMissing(
@@ -904,7 +918,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             clearSearchSelectionState()
                             castTrackId(youtubeId, name, artist)
                             applyActiveTab(TabId.Play, recordHistory = true)
-                            return@launch
+                            return@launchServerTrackLoad
                         }
                         loadExistingJob(
                             jobId,
@@ -913,7 +927,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             name,
                             artist
                         )
-                        return@launch
+                        return@launchServerTrackLoad
                     }
                 } catch (_: Exception) {
                     // Fall back to YouTube matches.
@@ -980,6 +994,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        cancelServerTrackLoadWork()
         playbackCoordinator.resetForNewTrack()
         _state.update {
             it.copy(
@@ -998,9 +1013,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         applyActiveTab(TabId.Play, recordHistory = true)
-        viewModelScope.launch {
+        launchServerTrackLoad {
             if (playbackCoordinator.tryLoadCachedTrack(youtubeId)) {
-                return@launch
+                return@launchServerTrackLoad
             }
             playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
             try {
@@ -1050,6 +1065,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        cancelServerTrackLoadWork()
         playbackCoordinator.resetForNewTrack()
         playbackCoordinator.setPendingTuningParams(tuningParams)
         _state.update {
@@ -1063,16 +1079,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         applyActiveTab(TabId.Play, recordHistory = true)
-        viewModelScope.launch {
+        launchServerTrackLoad {
             if (playbackCoordinator.tryLoadCachedTrack(youtubeId)) {
-                return@launch
+                return@launchServerTrackLoad
             }
             playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
             try {
                 val response = maybeRepairMissing(api.getJobByYoutube(baseUrl, youtubeId))
                 if (response.id == null) {
                     playbackCoordinator.setAnalysisError("Loading failed.")
-                    return@launch
+                    return@launchServerTrackLoad
                 }
                 playbackCoordinator.updateDeleteEligibility(response)
                 playbackCoordinator.setLastJobId(response.id)
@@ -1081,13 +1097,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val loaded = playbackCoordinator.loadAudioFromJob(response.id)
                         if (!loaded) {
                             playbackCoordinator.startPoll(response.id)
-                            return@launch
+                            return@launchServerTrackLoad
                         }
                     }
                     if (playbackCoordinator.applyAnalysisResult(response)) {
-                        return@launch
+                        return@launchServerTrackLoad
                     }
-                    return@launch
+                    return@launchServerTrackLoad
                 }
                 playbackCoordinator.startPoll(response.id)
             } catch (err: Exception) {
@@ -1109,6 +1125,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
+        cancelServerTrackLoadWork()
         playbackCoordinator.resetForNewTrack()
         playbackCoordinator.setPendingTuningParams(tuningParams)
         _state.update {
@@ -1123,16 +1140,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         applyActiveTab(TabId.Play, recordHistory = true)
-        viewModelScope.launch {
+        launchServerTrackLoad {
             if (playbackCoordinator.tryLoadCachedTrack(jobId)) {
-                return@launch
+                return@launchServerTrackLoad
             }
             playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
             try {
                 val response = maybeRepairMissing(api.getAnalysis(baseUrl, jobId))
                 if (response.id == null) {
                     playbackCoordinator.setAnalysisError("Loading failed.")
-                    return@launch
+                    return@launchServerTrackLoad
                 }
                 playbackCoordinator.updateDeleteEligibility(response)
                 playbackCoordinator.setLastJobId(response.id)
@@ -1141,13 +1158,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val loaded = playbackCoordinator.loadAudioFromJob(response.id)
                         if (!loaded) {
                             playbackCoordinator.startPoll(response.id)
-                            return@launch
+                            return@launchServerTrackLoad
                         }
                     }
                     if (playbackCoordinator.applyAnalysisResult(response)) {
-                        return@launch
+                        return@launchServerTrackLoad
                     }
-                    return@launch
+                    return@launchServerTrackLoad
                 }
                 playbackCoordinator.startPoll(response.id)
             } catch (_: Exception) {
@@ -1512,6 +1529,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             castController.resetStatusListener()
+            cancelServerTrackLoadWork()
             playbackCoordinator.resetForNewTrack()
             if (shouldAutoCast) {
                 _state.update {
@@ -1542,6 +1560,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             castController.resetStatusListener()
+            cancelServerTrackLoadWork()
             playbackCoordinator.resetForNewTrack()
             applyActiveTab(TabId.Top, recordHistory = true)
             ForegroundPlaybackService.stop(getApplication())
@@ -1727,6 +1746,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val title = state.value.playback.trackTitle
         val artist = state.value.playback.trackArtist
+        cancelServerTrackLoadWork()
         playbackCoordinator.resetForNewTrack()
         loadTrackByYoutubeId(youtubeId, title, artist)
     }
@@ -1828,6 +1848,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteSelectedEdge() = Unit
 
     fun prepareForExit() {
+        cancelServerTrackLoadWork()
         cancelLocalAnalysisInternal(showCancelledMessage = false)
         playbackCoordinator.resetForNewTrack()
         engine.clearAnalysis()
@@ -2149,6 +2170,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.Main) {
             android.widget.Toast.makeText(getApplication(), message, android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun launchServerTrackLoad(block: suspend () -> Unit) {
+        serverTrackLoadJob?.cancel()
+        serverTrackLoadJob = viewModelScope.launch {
+            block()
+        }
+    }
+
+    private fun cancelServerTrackLoadWork() {
+        serverTrackLoadJob?.cancel()
+        serverTrackLoadJob = null
     }
 
     companion object {

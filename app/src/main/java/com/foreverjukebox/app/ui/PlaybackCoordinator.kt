@@ -42,6 +42,7 @@ class PlaybackCoordinator(
 ) {
     private var listenTimerJob: Job? = null
     private var pollJob: Job? = null
+    private var backgroundAudioLoadJob: Job? = null
     private var audioLoadInFlight = false
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
@@ -52,6 +53,7 @@ class PlaybackCoordinator(
     fun onCleared() {
         listenTimerJob?.cancel()
         pollJob?.cancel()
+        backgroundAudioLoadJob?.cancel()
     }
 
     fun getLastJobId(): String? = lastJobId
@@ -102,9 +104,6 @@ class PlaybackCoordinator(
         val deletedIds = getDeletedEdgeIds()
         if (deletedIds.isNotEmpty()) {
             params.add("d=${deletedIds.joinToString(",")}")
-        }
-        if (uiTuning.highlightAnchorBranch) {
-            params.add("ah=1")
         }
         return if (params.isEmpty()) null else params.joinToString("&")
     }
@@ -159,6 +158,9 @@ class PlaybackCoordinator(
 
     fun startPoll(jobId: String) {
         pollJob?.cancel()
+        backgroundAudioLoadJob?.cancel()
+        backgroundAudioLoadJob = null
+        audioLoadInFlight = false
         pollJob = scope.launch {
             try {
                 pollAnalysis(jobId)
@@ -169,6 +171,9 @@ class PlaybackCoordinator(
     }
 
     suspend fun tryLoadCachedTrack(youtubeId: String): Boolean {
+        if (!isActiveTrackKey(youtubeId)) {
+            return false
+        }
         val cached = withContext(Dispatchers.IO) {
             val analysisPath = analysisFile(youtubeId)
             val audioPath = audioFile(youtubeId)
@@ -183,6 +188,9 @@ class PlaybackCoordinator(
             return false
         }
         val (response, audioPath) = cached
+        if (!isActiveTrackKey(youtubeId)) {
+            return false
+        }
         setAnalysisProgress(0, "Loading audio")
         try {
             withContext(Dispatchers.Default) {
@@ -196,6 +204,9 @@ class PlaybackCoordinator(
             withContext(Dispatchers.IO) {
                 audioFile(youtubeId).delete()
             }
+            return false
+        }
+        if (!isActiveTrackKey(youtubeId)) {
             return false
         }
         audioLoadInFlight = false
@@ -249,6 +260,9 @@ class PlaybackCoordinator(
     }
 
     suspend fun loadAudioFromJob(jobId: String): Boolean {
+        if (!isActiveJobId(jobId)) {
+            return false
+        }
         val baseUrl = getState().baseUrl
         setAudioLoading(true)
         setAnalysisProgress(0, "Loading audio")
@@ -256,12 +270,18 @@ class PlaybackCoordinator(
             val youtubeId = getState().playback.lastYouTubeId
             val target = audioFile(youtubeId ?: jobId)
             api.fetchAudioToFile(baseUrl, jobId, target)
+            if (!isActiveJobId(jobId)) {
+                return false
+            }
             withContext(Dispatchers.Default) {
                 controller.player.loadFile(target) { percent ->
                     scope.launch(Dispatchers.Main) {
                         setDecodeProgress(percent)
                     }
                 }
+            }
+            if (!isActiveJobId(jobId)) {
+                return false
             }
             audioLoadInFlight = false
             controller.syncAutocanonizerAudio()
@@ -283,6 +303,9 @@ class PlaybackCoordinator(
     }
 
     suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
+        if (response.id?.let { !isActiveJobId(it) } == true) {
+            return false
+        }
         val result = response.result ?: return false
         updateDeleteEligibility(response)
         setAnalysisCalculating()
@@ -411,6 +434,8 @@ class PlaybackCoordinator(
         deleteEligibilityJobId = null
         pollJob?.cancel()
         pollJob = null
+        backgroundAudioLoadJob?.cancel()
+        backgroundAudioLoadJob = null
         syncTuningState()
     }
 
@@ -627,7 +652,13 @@ class PlaybackCoordinator(
         val baseUrl = getState().baseUrl
         val intervalMs = 3000L
         while (currentCoroutineContext().isActive) {
+            if (!isActiveJobId(jobId)) {
+                return
+            }
             val response = api.getAnalysis(baseUrl, jobId)
+            if (!isActiveJobId(jobId)) {
+                return
+            }
             updateDeleteEligibility(response)
             when (response.status) {
                 "failed" -> {
@@ -651,13 +682,20 @@ class PlaybackCoordinator(
                         !audioLoadInFlight
                     ) {
                         audioLoadInFlight = true
-                        scope.launch {
+                        var audioJob: Job? = null
+                        audioJob = scope.launch {
                             try {
                                 loadAudioFromJob(jobId)
                             } catch (_: Exception) {
+                                // Ignore load errors while polling; status loop will continue.
+                            } finally {
                                 audioLoadInFlight = false
+                                if (backgroundAudioLoadJob == audioJob) {
+                                    backgroundAudioLoadJob = null
+                                }
                             }
                         }
+                        backgroundAudioLoadJob = audioJob
                     }
                 }
                 "complete" -> {
@@ -675,6 +713,15 @@ class PlaybackCoordinator(
             }
             delay(intervalMs)
         }
+    }
+
+    private fun isActiveTrackKey(trackKey: String): Boolean {
+        val playback = getState().playback
+        return playback.lastYouTubeId == trackKey || playback.lastJobId == trackKey
+    }
+
+    private fun isActiveJobId(jobId: String): Boolean {
+        return getState().playback.lastJobId == jobId
     }
 
     private fun cacheDir(): File {

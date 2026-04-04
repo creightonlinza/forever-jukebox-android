@@ -22,6 +22,7 @@ data class ThemeTokens(
     val controlBorder: Color,
     val accent: Color,
     val titleAccent: Color,
+    val titleGlow: Color,
     val muted: Color,
     val edgeStroke: Color,
     val beatFill: Color,
@@ -43,6 +44,7 @@ private val DarkTokens = ThemeTokens(
     controlBorder = Color(0xFF3B465B),
     accent = Color(0xFF4AC7FF),
     titleAccent = Color(0xFFF1C47A),
+    titleGlow = Color(0x59F1C47A),
     muted = Color(0xFF9AA3B2),
     edgeStroke = Color(0x804AC7FF),
     beatFill = Color(0xFFFFD46A),
@@ -51,22 +53,23 @@ private val DarkTokens = ThemeTokens(
 )
 
 private val LightTokens = ThemeTokens(
-    background = Color(0xFF5F9EA0),
-    onBackground = Color(0xFF1B2A24),
-    panelSurface = Color(0xFFF4FAF7),
-    heroSurface = Color(0xFFDDEBE3),
-    controlSurface = Color(0xFFD8EADB),
-    controlSurfaceHover = Color(0xFFCCE2D3),
-    panelBorder = Color(0x241B2A24),
-    heroBorder = Color(0x33317873),
-    controlBorder = Color(0x42317873),
-    accent = Color(0xFF317873),
-    titleAccent = Color(0xFF5F9EA0),
-    muted = Color(0xFF1B2A24),
-    edgeStroke = Color(0x801B2A24),
-    beatFill = Color(0xFF5F9EA0),
-    beatHighlight = Color(0xFFF4FAF7),
-    vizBackground = Color(0xFFCFE5DA)
+    background = Color(0xFFF6F1FF),
+    onBackground = Color(0xFF261A38),
+    panelSurface = Color(0xFFFCFAFF),
+    heroSurface = Color(0xFFEFE5FF),
+    controlSurface = Color(0xFFE8DBFF),
+    controlSurfaceHover = Color(0xFFDDCCFF),
+    panelBorder = Color(0x33492B71),
+    heroBorder = Color(0x425B3096),
+    controlBorder = Color(0x57583898),
+    accent = Color(0xFF2E8BFF),
+    titleAccent = Color(0xFFB144FF),
+    titleGlow = Color(0x57B144FF),
+    muted = Color(0xFF635280),
+    edgeStroke = Color(0x704D3078),
+    beatFill = Color(0xFFB144FF),
+    beatHighlight = Color(0xFFB144FF),
+    vizBackground = Color(0xFFE9DBFF)
 )
 
 val LocalThemeTokens = staticCompositionLocalOf { DarkTokens }
@@ -88,26 +91,55 @@ fun loadThemeConfig(context: Context): ThemeConfig? {
     }
 }
 
-private fun parseThemeTokens(obj: JSONObject): ThemeTokens {
+internal fun parseThemeTokens(obj: JSONObject): ThemeTokens {
+    val raw = mutableMapOf<String, String>()
+    raw["background"] = obj.getString("background")
+    raw["onBackground"] = obj.getString("onBackground")
+    raw["panelSurface"] = obj.getString("panelSurface")
+    raw["heroSurface"] = obj.getString("heroSurface")
+    raw["controlSurface"] = obj.getString("controlSurface")
+    raw["controlSurfaceHover"] = obj.getString("controlSurfaceHover")
+    raw["panelBorder"] = obj.getString("panelBorder")
+    raw["heroBorder"] = obj.getString("heroBorder")
+    raw["controlBorder"] = obj.getString("controlBorder")
+    raw["accent"] = obj.getString("accent")
+    raw["titleAccent"] = obj.getString("titleAccent")
+    if (obj.has("titleGlow")) {
+        raw["titleGlow"] = obj.getString("titleGlow")
+    }
+    raw["muted"] = obj.getString("muted")
+    raw["edgeStroke"] = obj.getString("edgeStroke")
+    raw["beatFill"] = obj.getString("beatFill")
+    raw["beatHighlight"] = obj.getString("beatHighlight")
+    raw["vizBackground"] = obj.getString("vizBackground")
+    return themeTokensFromRaw(raw)
+}
+
+internal fun themeTokensFromRaw(raw: Map<String, String>): ThemeTokens {
+    val titleAccent = parseColor(raw.getValue("titleAccent"))
+    val titleGlow = raw["titleGlow"]?.let(::parseColor) ?: fallbackTitleGlow(titleAccent)
     return ThemeTokens(
-        background = parseColor(obj.getString("background")),
-        onBackground = parseColor(obj.getString("onBackground")),
-        panelSurface = parseColor(obj.getString("panelSurface")),
-        heroSurface = parseColor(obj.getString("heroSurface")),
-        controlSurface = parseColor(obj.getString("controlSurface")),
-        controlSurfaceHover = parseColor(obj.getString("controlSurfaceHover")),
-        panelBorder = parseColor(obj.getString("panelBorder")),
-        heroBorder = parseColor(obj.getString("heroBorder")),
-        controlBorder = parseColor(obj.getString("controlBorder")),
-        accent = parseColor(obj.getString("accent")),
-        titleAccent = parseColor(obj.getString("titleAccent")),
-        muted = parseColor(obj.getString("muted")),
-        edgeStroke = parseColor(obj.getString("edgeStroke")),
-        beatFill = parseColor(obj.getString("beatFill")),
-        beatHighlight = parseColor(obj.getString("beatHighlight")),
-        vizBackground = parseColor(obj.getString("vizBackground"))
+        background = parseColor(raw.getValue("background")),
+        onBackground = parseColor(raw.getValue("onBackground")),
+        panelSurface = parseColor(raw.getValue("panelSurface")),
+        heroSurface = parseColor(raw.getValue("heroSurface")),
+        controlSurface = parseColor(raw.getValue("controlSurface")),
+        controlSurfaceHover = parseColor(raw.getValue("controlSurfaceHover")),
+        panelBorder = parseColor(raw.getValue("panelBorder")),
+        heroBorder = parseColor(raw.getValue("heroBorder")),
+        controlBorder = parseColor(raw.getValue("controlBorder")),
+        accent = parseColor(raw.getValue("accent")),
+        titleAccent = titleAccent,
+        titleGlow = titleGlow,
+        muted = parseColor(raw.getValue("muted")),
+        edgeStroke = parseColor(raw.getValue("edgeStroke")),
+        beatFill = parseColor(raw.getValue("beatFill")),
+        beatHighlight = parseColor(raw.getValue("beatHighlight")),
+        vizBackground = parseColor(raw.getValue("vizBackground"))
     )
 }
+
+internal fun fallbackTitleGlow(titleAccent: Color): Color = titleAccent.copy(alpha = 0.28f)
 
 private fun parseColor(value: String): Color {
     val trimmed = value.trim()

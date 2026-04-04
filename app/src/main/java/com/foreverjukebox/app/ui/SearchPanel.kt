@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,9 +78,9 @@ fun SearchPanel(
                     focusManager.clearFocus()
                 }),
                 trailingIcon = {
-                    IconButton(
+                    SquareIconButton(
                         onClick = {
-                            if (searchInFlight || trimmedQuery.isBlank()) return@IconButton
+                            if (searchInFlight || trimmedQuery.isBlank()) return@SquareIconButton
                             onSearch(trimmedQuery)
                             keyboardController?.hide()
                             focusManager.clearFocus()
@@ -101,7 +100,7 @@ fun SearchPanel(
                         }
                     }
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = SurfaceShape,
                 modifier = Modifier.fillMaxWidth()
             )
 

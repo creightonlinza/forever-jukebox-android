@@ -68,6 +68,7 @@ data class UiState(
     val maxTrackLengthMinutes: Double? = null,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,
+    val listenFavoriteToggleInFlight: Boolean = false,
     val versionUpdatePrompt: VersionUpdatePrompt? = null,
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),

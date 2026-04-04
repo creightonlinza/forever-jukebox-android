@@ -6,7 +6,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
@@ -16,7 +18,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -36,13 +37,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -69,60 +77,17 @@ fun HeaderBar(
 
     Column(
         modifier = Modifier
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .clip(SurfaceShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(12.dp)
     ) {
-        val transition = rememberInfiniteTransition(label = "neonFlicker")
-        val flicker = transition.animateFloat(
-            initialValue = 1f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = keyframes {
-                    durationMillis = 6000
-                    1f at 0
-                    0.95f at 120
-                    0.75f at 180
-                    1f at 240
-                    0.85f at 360
-                    1f at 420
-                    0.92f at 720
-                    1f at 780
-                    0.88f at 1680
-                    1f at 1740
-                    0.7f at 2640
-                    1f at 2760
-                    0.9f at 3480
-                    1f at 3540
-                    0.8f at 4560
-                    1f at 4620
-                    0.86f at 5340
-                    1f at 5400
-                    1f at 6000
-                },
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "flicker"
-        ).value
-        val glow = 0.45f + (0.55f * flicker)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text(
-                    text = "THE FOREVER JUKEBOX",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontFamily = neonFontFamily,
-                        letterSpacing = 2.sp,
-                        shadow = Shadow(
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = glow),
-                            offset = Offset(0f, 0f),
-                            blurRadius = 18f * glow
-                        )
-                    ),
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f * flicker),
-                    fontWeight = FontWeight.Bold
-                )
+            Box(
+                modifier = Modifier.weight(1f, fill = true),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                HeroTitle()
             }
-            Spacer(modifier = Modifier.weight(1f))
             if (state.appMode == AppMode.Server) {
                 CastRouteButton(
                     modifier = Modifier.size(SmallButtonHeight),
@@ -138,7 +103,7 @@ fun HeaderBar(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
             }
-            IconButton(
+            SquareIconButton(
                 onClick = {
                     onRefreshCacheSize()
                     showSettings = true
@@ -179,55 +144,122 @@ fun HeaderBar(
 fun TitleOnlyHeaderBar() {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(SurfaceShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(12.dp)
     ) {
-        val transition = rememberInfiniteTransition(label = "neonFlickerTitleOnly")
-        val flicker = transition.animateFloat(
-            initialValue = 1f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = keyframes {
-                    durationMillis = 6000
-                    1f at 0
-                    0.95f at 120
-                    0.75f at 180
-                    1f at 240
-                    0.85f at 360
-                    1f at 420
-                    0.92f at 720
-                    1f at 780
-                    0.88f at 1680
-                    1f at 1740
-                    0.7f at 2640
-                    1f at 2760
-                    0.9f at 3480
-                    1f at 3540
-                    0.8f at 4560
-                    1f at 4620
-                    0.86f at 5340
-                    1f at 5400
-                    1f at 6000
-                },
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "flickerTitleOnly"
-        ).value
-        val glow = 0.45f + (0.55f * flicker)
+        HeroTitle()
+    }
+}
+
+@Composable
+private fun HeroTitle() {
+    val tokens = LocalThemeTokens.current
+    val frameTransition = rememberInfiniteTransition(label = "heroTitleFrameFlicker")
+    val frameFlicker = frameTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 14000
+                1f at 0
+                0.95f at 280
+                0.75f at 420
+                1f at 560
+                0.85f at 840
+                1f at 980
+                0.92f at 1680
+                1f at 1820
+                0.88f at 3920
+                1f at 4060
+                0.7f at 6160
+                1f at 6440
+                0.9f at 8120
+                1f at 8260
+                0.8f at 10640
+                1f at 10780
+                0.86f at 12460
+                1f at 12600
+                1f at 14000
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "frameFlicker"
+    ).value
+    val jukeboxTransition = rememberInfiniteTransition(label = "heroTitleWordFlicker")
+    val jukeboxVisible = jukeboxTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 18000
+                1f at 0
+                1f at 4446
+                0f at 4460
+                0f at 4518
+                1f at 4536
+                1f at 11358
+                0f at 11376
+                0f at 11448
+                1f at 11466
+                1f at 15912
+                0f at 15924
+                0f at 15966
+                1f at 15984
+                1f at 18000
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "jukeboxVisible"
+    ).value
+    val borderColor = lerp(tokens.titleAccent, Color.Black, (1f - frameFlicker) * 0.26f)
+    val glowColor = tokens.titleGlow.copy(alpha = tokens.titleGlow.alpha * (0.5f + (0.5f * frameFlicker)))
+    val activeTitleColor = tokens.titleAccent.copy(alpha = 0.72f + (0.28f * frameFlicker))
+    val titleShadow = Shadow(
+        color = glowColor.copy(alpha = glowColor.alpha * (0.7f + (0.3f * frameFlicker))),
+        offset = Offset(0f, 0f),
+        blurRadius = 18f * (0.75f + (0.25f * frameFlicker))
+    )
+    val titleText = buildAnnotatedString {
+        withStyle(
+            style = SpanStyle(
+                color = activeTitleColor,
+                shadow = titleShadow
+            )
+        ) {
+            append("THE FOREVER ")
+        }
+        withStyle(
+            style = SpanStyle(
+                color = if (jukeboxVisible < 0.5f) tokens.background else activeTitleColor,
+                shadow = if (jukeboxVisible < 0.5f) null else titleShadow
+            )
+        ) {
+            append("JUKEBOX")
+        }
+    }
+    Box(
+        modifier = Modifier
+            .shadow(
+                elevation = 8.dp,
+                shape = SurfaceShape,
+                clip = false,
+                ambientColor = glowColor,
+                spotColor = glowColor
+            )
+            .clip(SurfaceShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(width = 2.dp, color = borderColor, shape = SurfaceShape)
+            .alpha(0.64f + (0.36f * frameFlicker))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
         Text(
-            text = "THE FOREVER JUKEBOX",
+            text = titleText,
             style = MaterialTheme.typography.titleLarge.copy(
                 fontFamily = neonFontFamily,
-                letterSpacing = 2.sp,
-                shadow = Shadow(
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = glow),
-                    offset = Offset(0f, 0f),
-                    blurRadius = 18f * glow
-                )
+                letterSpacing = 2.sp
             ),
-            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f * flicker),
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Normal
         )
     }
 }
@@ -294,7 +326,7 @@ private fun SettingsDialog(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
-                IconButton(onClick = onOpenSleepTimer) {
+                SquareIconButton(onClick = onOpenSleepTimer) {
                     Icon(
                         imageVector = Icons.Outlined.Timer,
                         contentDescription = "Sleep timer",
@@ -323,7 +355,7 @@ private fun SettingsDialog(
                             keyboardType = KeyboardType.Uri,
                             imeAction = ImeAction.Done
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = SurfaceShape,
                         modifier = Modifier.heightIn(min = SmallFieldMinHeight)
                     )
                 }
