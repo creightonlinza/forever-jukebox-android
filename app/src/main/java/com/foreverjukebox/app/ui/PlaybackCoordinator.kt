@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import android.app.Application
 import android.net.Uri
 import android.os.SystemClock
+import android.util.Log
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.engine.JukeboxConfig
@@ -15,6 +16,7 @@ import java.io.IOException
 import java.time.Duration
 import java.time.OffsetDateTime
 import kotlin.math.roundToInt
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -164,7 +166,10 @@ class PlaybackCoordinator(
         pollJob = scope.launch {
             try {
                 pollAnalysis(jobId)
-            } catch (_: Exception) {
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                Log.e(TAG, "Polling failed for $jobId", error)
                 setAnalysisError("Loading failed.")
             }
         }
@@ -551,7 +556,10 @@ class PlaybackCoordinator(
                 }
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 return false
-            } catch (_: Exception) {
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 return false
             }
@@ -686,8 +694,10 @@ class PlaybackCoordinator(
                         audioJob = scope.launch {
                             try {
                                 loadAudioFromJob(jobId)
-                            } catch (_: Exception) {
-                                // Ignore load errors while polling; status loop will continue.
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (error: Exception) {
+                                Log.e(TAG, "Background audio load failed for $jobId", error)
                             } finally {
                                 audioLoadInFlight = false
                                 if (backgroundAudioLoadJob == audioJob) {
@@ -765,6 +775,10 @@ class PlaybackCoordinator(
         val config: JukeboxConfig,
         val deletedEdgeIds: List<Int>
     )
+
+    private companion object {
+        const val TAG = "PlaybackCoordinator"
+    }
 
     private fun parseTuningParams(raw: String?): ResolvedTuningParams? {
         val parsed = TuningParamsCodec.parse(raw, minThreshold = 0) ?: return null
