@@ -681,9 +681,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (artist.isNotBlank()) {
                 try {
                     val response = api.getJobByTrack(baseUrl, name, artist)
-                    val jobId = response.id
-                    val youtubeId = response.youtubeId
-                    if (jobId != null && youtubeId != null && response.status != "failed") {
+                    val jobId = response?.id
+                    val youtubeId = response?.youtubeId
+                    if (response != null && jobId != null && youtubeId != null && response.status != "failed") {
                         if (state.value.playback.isCasting) {
                             clearSearchSelectionState()
                             castPlaybackCoordinator.castTrackId(youtubeId, name, artist)
@@ -816,7 +816,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             failureLogMessage = "Failed to load track by YouTube id"
         ) {
             val response = api.getJobByYoutube(baseUrl, youtubeId)
-            serverTrackLoadCoordinator.loadOrPoll(response)
+            if (response != null) {
+                return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(response)
+            }
+            val started = api.startYoutubeAnalysis(
+                baseUrl = baseUrl,
+                youtubeId = youtubeId,
+                title = resolvedTitle,
+                artist = resolvedArtist
+            )
+            val responseId = started.id ?: return@launchServerTrackLoadWithCache false
+            playbackCoordinator.setAnalysisQueued(started.progress?.roundToInt(), started.message)
+            playbackCoordinator.setLastJobId(responseId)
+            playbackCoordinator.startPoll(responseId)
+            true
         }
     }
 

@@ -56,17 +56,19 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         return getJson(url)
     }
 
-    suspend fun getJobByYoutube(baseUrl: String, youtubeId: String): AnalysisResponse {
+    suspend fun getJobByYoutube(baseUrl: String, youtubeId: String): AnalysisResponse? {
         val url = buildUrl(baseUrl, ApiPaths.jobByYoutube(youtubeId))
-        return getJson(url)
+        val response = getNullableOn404(url) ?: return null
+        return json.decodeFromString(response)
     }
 
-    suspend fun getJobByTrack(baseUrl: String, title: String, artist: String): AnalysisResponse {
+    suspend fun getJobByTrack(baseUrl: String, title: String, artist: String): AnalysisResponse? {
         val url = buildUrl(baseUrl, ApiPaths.JOB_BY_TRACK) {
             addQueryParameter("title", title)
             addQueryParameter("artist", artist)
         }
-        return getJson(url)
+        val response = getNullableOn404(url) ?: return null
+        return json.decodeFromString(response)
     }
 
     suspend fun fetchTopSongs(baseUrl: String, limit: Int = TOP_SONGS_LIMIT): List<TopSongItem> {
@@ -152,6 +154,19 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
+            }
+            response.body?.string() ?: ""
+        }
+    }
+
+    private suspend fun getNullableOn404(url: String): String? = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).get().build()
+        client.newCall(request).execute().use { response ->
+            if (response.code == 404) {
+                return@withContext null
+            }
             if (!response.isSuccessful) {
                 throw IOException("HTTP ${response.code}")
             }

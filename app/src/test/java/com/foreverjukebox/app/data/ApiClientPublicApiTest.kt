@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -115,5 +116,68 @@ class ApiClientPublicApiTest {
 
         assertTrue(result.isFailure)
         assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun getJobByYoutubeReturnsNullOn404WithoutRepair() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(404)
+                .setBody("not found")
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val result = api.getJobByYoutube(baseUrl = baseUrl, youtubeId = "dQw4w9WgXcQ")
+
+        assertNull(result)
+        val lookup = server.takeRequest()
+        assertEquals("GET", lookup.method)
+        assertEquals("/base/api/jobs/by-youtube/dQw4w9WgXcQ", lookup.path)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun getJobByTrackReturnsNullOn404WithoutRepair() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(404)
+                .setBody("not found")
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val result = api.getJobByTrack(baseUrl = baseUrl, title = "Track", artist = "Artist")
+
+        assertNull(result)
+        val lookup = server.takeRequest()
+        assertEquals("GET", lookup.method)
+        assertEquals("/base/api/jobs/by-track?title=Track&artist=Artist", lookup.path)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun getJobByTrackKeepsFailedResponseWithoutAutoRepair() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "id": "job_123",
+                      "status": "failed",
+                      "error": "Analysis missing"
+                    }
+                    """.trimIndent()
+                )
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val result = api.getJobByTrack(baseUrl = baseUrl, title = "Track", artist = "Artist")
+
+        assertEquals("failed", result?.status)
+        assertEquals("Analysis missing", result?.error)
+        val lookup = server.takeRequest()
+        assertEquals("GET", lookup.method)
+        assertEquals("/base/api/jobs/by-track?title=Track&artist=Artist", lookup.path)
+        assertEquals(1, server.requestCount)
     }
 }
