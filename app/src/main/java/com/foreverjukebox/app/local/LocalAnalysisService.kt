@@ -21,6 +21,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -275,7 +276,19 @@ class LocalAnalysisService(
         } catch (unsupported: UnsupportedAudioFormatException) {
             logError("Local analysis unsupported format: ${unsupported.message}", unsupported)
             close(unsupported)
-        } catch (error: Throwable) {
+        } catch (error: NativeLocalAnalysisNotReadyException) {
+            logError("Local analysis failed: ${error.message}", error)
+            close(error)
+        } catch (error: IOException) {
+            logError("Local analysis failed: ${error.message}", error)
+            close(error)
+        } catch (error: IllegalArgumentException) {
+            logError("Local analysis failed: ${error.message}", error)
+            close(error)
+        } catch (error: IllegalStateException) {
+            logError("Local analysis failed: ${error.message}", error)
+            close(error)
+        } catch (error: SecurityException) {
             logError("Local analysis failed: ${error.message}", error)
             close(error)
         }

@@ -15,6 +15,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -228,8 +229,21 @@ kotlin {
     }
 }
 
+detekt {
+    toolVersion = "1.23.8"
+    config.setFrom(rootProject.file("detekt.yml"))
+    baseline = file("$projectDir/detekt-baseline.xml")
+    buildUponDefaultConfig = true
+    parallel = true
+    ignoreFailures = false
+}
+
 tasks.named("preBuild").configure {
     dependsOn(prepareMadmomBeatsPortFfiJniLibs)
+}
+
+tasks.named("check").configure {
+    dependsOn("detekt")
 }
 
 dependencies {

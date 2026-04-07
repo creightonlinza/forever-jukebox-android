@@ -27,6 +27,7 @@ import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
 import com.foreverjukebox.app.cast.CastAppIdResolver
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -710,7 +711,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (cancel: CancellationException) {
                     throw cancel
-                } catch (error: Exception) {
+                } catch (error: IOException) {
+                    Log.e(TAG, "Job lookup by track failed", error)
+                    // Fall back to YouTube matches.
+                } catch (error: IllegalArgumentException) {
+                    Log.e(TAG, "Job lookup by track failed", error)
+                    // Fall back to YouTube matches.
+                } catch (error: IllegalStateException) {
                     Log.e(TAG, "Job lookup by track failed", error)
                     // Fall back to YouTube matches.
                 }
@@ -908,7 +915,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             playbackCoordinator.setAnalysisError("Loading failed.")
         } catch (cancel: CancellationException) {
             throw cancel
-        } catch (error: Exception) {
+        } catch (error: IOException) {
+            Log.e(TAG, "Failed to load existing job", error)
+            playbackCoordinator.setAnalysisError("Loading failed.")
+        } catch (error: IllegalArgumentException) {
+            Log.e(TAG, "Failed to load existing job", error)
+            playbackCoordinator.setAnalysisError("Loading failed.")
+        } catch (error: IllegalStateException) {
             Log.e(TAG, "Failed to load existing job", error)
             playbackCoordinator.setAnalysisError("Loading failed.")
         }
@@ -942,7 +955,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: Exception) {
+            } catch (error: IOException) {
+                Log.e(TAG, failureLogMessage, error)
+                playbackCoordinator.setAnalysisError("Loading failed.")
+            } catch (error: IllegalArgumentException) {
+                Log.e(TAG, failureLogMessage, error)
+                playbackCoordinator.setAnalysisError("Loading failed.")
+            } catch (error: IllegalStateException) {
                 Log.e(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             }
@@ -1053,7 +1072,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: Exception) {
+            } catch (error: IllegalArgumentException) {
+                Log.e(TAG, "Playback toggle failed", error)
+                handleJukeboxPlaybackFailure()
+            } catch (error: IllegalStateException) {
                 Log.e(TAG, "Playback toggle failed", error)
                 handleJukeboxPlaybackFailure()
             }
@@ -1296,7 +1318,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             true
         } catch (cancel: CancellationException) {
             throw cancel
-        } catch (error: Exception) {
+        } catch (error: IOException) {
+            Log.e(TAG, "Failed to delete current job", error)
+            playbackCoordinator.markDeleteEligibilityFailed(jobId)
+            false
+        } catch (error: IllegalArgumentException) {
+            Log.e(TAG, "Failed to delete current job", error)
+            playbackCoordinator.markDeleteEligibilityFailed(jobId)
+            false
+        } catch (error: IllegalStateException) {
             Log.e(TAG, "Failed to delete current job", error)
             playbackCoordinator.markDeleteEligibilityFailed(jobId)
             false
