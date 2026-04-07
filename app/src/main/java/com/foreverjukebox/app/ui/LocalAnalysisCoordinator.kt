@@ -12,6 +12,7 @@ import com.foreverjukebox.app.local.NativeLocalAnalysisNotReadyException
 import com.foreverjukebox.app.local.UnsupportedAudioFormatException
 import com.foreverjukebox.app.playback.PlaybackController
 import java.io.File
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,7 +78,22 @@ class LocalAnalysisCoordinator(
                     error.message ?: "Native local analysis is unavailable."
                 )
                 applyActiveTab(TabId.Input, true)
-            } catch (error: Exception) {
+            } catch (error: IOException) {
+                logError("Local analysis failed", error)
+                val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
+                playbackCoordinator.setAnalysisError(message)
+                applyActiveTab(TabId.Input, true)
+            } catch (error: IllegalArgumentException) {
+                logError("Local analysis failed", error)
+                val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
+                playbackCoordinator.setAnalysisError(message)
+                applyActiveTab(TabId.Input, true)
+            } catch (error: IllegalStateException) {
+                logError("Local analysis failed", error)
+                val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
+                playbackCoordinator.setAnalysisError(message)
+                applyActiveTab(TabId.Input, true)
+            } catch (error: SecurityException) {
                 logError("Local analysis failed", error)
                 val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
                 playbackCoordinator.setAnalysisError(message)

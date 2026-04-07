@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.TOP_SONGS_LIMIT
 import com.foreverjukebox.app.data.TopSongItem
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -94,7 +95,13 @@ class SearchCoordinator(
                 updateSearchState { it.copy(spotifyResults = items) }
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: Exception) {
+            } catch (error: IOException) {
+                logError("Spotify search failed", error)
+                updateSearchState { it.copy(spotifyResults = emptyList()) }
+            } catch (error: IllegalArgumentException) {
+                logError("Spotify search failed", error)
+                updateSearchState { it.copy(spotifyResults = emptyList()) }
+            } catch (error: IllegalStateException) {
                 logError("Spotify search failed", error)
                 updateSearchState { it.copy(spotifyResults = emptyList()) }
             } finally {
@@ -122,7 +129,13 @@ class SearchCoordinator(
                 updateSearchState { it.copy(youtubeMatches = items) }
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: Exception) {
+            } catch (error: IOException) {
+                logError("YouTube match search failed", error)
+                updateSearchState { it.copy(youtubeMatches = emptyList()) }
+            } catch (error: IllegalArgumentException) {
+                logError("YouTube match search failed", error)
+                updateSearchState { it.copy(youtubeMatches = emptyList()) }
+            } catch (error: IllegalStateException) {
                 logError("YouTube match search failed", error)
                 updateSearchState { it.copy(youtubeMatches = emptyList()) }
             } finally {
@@ -152,7 +165,13 @@ class SearchCoordinator(
                 updateSearchState { setFeedItems(it, feed, items) }
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: Exception) {
+            } catch (error: IOException) {
+                logError("Song refresh failed for $feed", error)
+                updateSearchState { setFeedItems(it, feed, emptyList()) }
+            } catch (error: IllegalArgumentException) {
+                logError("Song refresh failed for $feed", error)
+                updateSearchState { setFeedItems(it, feed, emptyList()) }
+            } catch (error: IllegalStateException) {
                 logError("Song refresh failed for $feed", error)
                 updateSearchState { setFeedItems(it, feed, emptyList()) }
             } finally {

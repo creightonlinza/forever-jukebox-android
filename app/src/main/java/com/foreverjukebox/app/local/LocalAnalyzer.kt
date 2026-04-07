@@ -151,9 +151,10 @@ class NativeLocalAnalyzer(
         )
         val madmomBeatsPort = try {
             json.decodeFromString<MadmomBeatsPortResult>(madmomBeatsPortJson)
-        } catch (error: Exception) {
+        } catch (error: IllegalArgumentException) {
             throw NativeLocalAnalysisNotReadyException(
-                "Failed to parse madmom_beats_port output JSON: ${error.message}"
+                "Failed to parse madmom_beats_port output JSON: ${error.message}",
+                error
             )
         }
         if (madmomProgressPercent < 100) {

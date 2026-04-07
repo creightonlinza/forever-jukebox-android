@@ -172,7 +172,13 @@ class PlaybackCoordinator(
                 pollAnalysis(jobId)
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: Exception) {
+            } catch (error: IOException) {
+                Log.e(TAG, "Polling failed for $jobId", error)
+                setAnalysisError("Loading failed.")
+            } catch (error: IllegalArgumentException) {
+                Log.e(TAG, "Polling failed for $jobId", error)
+                setAnalysisError("Loading failed.")
+            } catch (error: IllegalStateException) {
                 Log.e(TAG, "Polling failed for $jobId", error)
                 setAnalysisError("Loading failed.")
             }
@@ -210,6 +216,7 @@ class PlaybackCoordinator(
                 }
             }
         } catch (err: OutOfMemoryError) {
+            Log.e(TAG, "Out of memory while loading cached track audio for $youtubeId", err)
             withContext(Dispatchers.IO) {
                 audioFile(youtubeId).delete()
             }
@@ -557,7 +564,15 @@ class PlaybackCoordinator(
                 return false
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: Exception) {
+            } catch (error: IOException) {
+                Log.e(TAG, "Failed to load cached audio for $cachedId", error)
+                updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+                return false
+            } catch (error: IllegalArgumentException) {
+                Log.e(TAG, "Failed to load cached audio for $cachedId", error)
+                updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+                return false
+            } catch (error: IllegalStateException) {
                 Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 return false
@@ -686,7 +701,11 @@ class PlaybackCoordinator(
                                 loadAudioFromJob(jobId)
                             } catch (cancel: CancellationException) {
                                 throw cancel
-                            } catch (error: Exception) {
+                            } catch (error: IOException) {
+                                Log.e(TAG, "Background audio load failed for $jobId", error)
+                            } catch (error: IllegalArgumentException) {
+                                Log.e(TAG, "Background audio load failed for $jobId", error)
+                            } catch (error: IllegalStateException) {
                                 Log.e(TAG, "Background audio load failed for $jobId", error)
                             } finally {
                                 audioLoadInFlight = false
