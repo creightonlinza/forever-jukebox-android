@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
@@ -135,5 +136,66 @@ class MainViewModelCastQueueTest {
         assertEquals(listOf(recentSong), reset.recentSongs)
         assertTrue(reset.recentSongsLoading)
         assertTrue(reset.spotifyLoading)
+    }
+
+    @Test
+    fun shouldReuseLookupJobReturnsFalseForFailedLookupResponse() {
+        val failed = AnalysisResponse(
+            id = "job_1",
+            youtubeId = "dQw4w9WgXcQ",
+            status = "failed",
+            error = "Blocked"
+        )
+
+        assertFalse(shouldReuseLookupJob(failed))
+    }
+
+    @Test
+    fun shouldReuseLookupJobReturnsTrueForInProgressLookupResponse() {
+        val queued = AnalysisResponse(
+            id = "job_1",
+            youtubeId = "dQw4w9WgXcQ",
+            status = "queued"
+        )
+        val downloading = queued.copy(status = "downloading")
+        val processing = queued.copy(status = "processing")
+
+        assertTrue(shouldReuseLookupJob(queued))
+        assertTrue(shouldReuseLookupJob(downloading))
+        assertTrue(shouldReuseLookupJob(processing))
+    }
+
+    @Test
+    fun shouldReuseLookupJobReturnsTrueForCompleteLookupResponse() {
+        val complete = AnalysisResponse(
+            id = "job_1",
+            youtubeId = "dQw4w9WgXcQ",
+            status = "complete"
+        )
+
+        assertTrue(shouldReuseLookupJob(complete))
+    }
+
+    @Test
+    fun shouldReuseLookupJobReturnsFalseWhenLookupIsMissingOrIncomplete() {
+        assertFalse(shouldReuseLookupJob(null))
+        assertFalse(
+            shouldReuseLookupJob(
+                AnalysisResponse(
+                    id = null,
+                    youtubeId = "dQw4w9WgXcQ",
+                    status = "complete"
+                )
+            )
+        )
+        assertFalse(
+            shouldReuseLookupJob(
+                AnalysisResponse(
+                    id = "job_1",
+                    youtubeId = null,
+                    status = "complete"
+                )
+            )
+        )
     }
 }

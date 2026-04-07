@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import android.app.Application
 import android.net.Uri
 import android.os.SystemClock
+import android.util.Log
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.engine.JukeboxConfig
@@ -15,6 +16,7 @@ import java.io.IOException
 import java.time.Duration
 import java.time.OffsetDateTime
 import kotlin.math.roundToInt
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,6 +28,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+
+internal fun isAnalysisInProgressStatus(status: String?): Boolean {
+    return status == "downloading" || status == "queued" || status == "processing"
+}
 
 class PlaybackCoordinator(
     private val application: Application,
@@ -164,7 +170,10 @@ class PlaybackCoordinator(
         pollJob = scope.launch {
             try {
                 pollAnalysis(jobId)
-            } catch (_: Exception) {
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                Log.e(TAG, "Polling failed for $jobId", error)
                 setAnalysisError("Loading failed.")
             }
         }
@@ -291,11 +300,6 @@ class PlaybackCoordinator(
             audioLoadInFlight = false
             updatePlaybackState { it.copy(audioLoading = false) }
             if (err.message?.contains("HTTP 404") == true) {
-                try {
-                    api.repairJob(baseUrl, jobId)
-                } catch (_: Exception) {
-                    // Ignore repair failures; poll loop will surface errors.
-                }
                 return false
             }
             throw err
@@ -551,7 +555,10 @@ class PlaybackCoordinator(
                 }
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 return false
-            } catch (_: Exception) {
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 return false
             }
@@ -660,21 +667,12 @@ class PlaybackCoordinator(
                 return
             }
             updateDeleteEligibility(response)
-            when (response.status) {
-                "failed" -> {
-                    if (response.errorCode == "analysis_missing" && response.id != null) {
-                        try {
-                            api.repairJob(baseUrl, response.id)
-                            delay(intervalMs)
-                            continue
-                        } catch (_: Exception) {
-                            // Fall through to error handling.
-                        }
-                    }
+            when {
+                response.status == "failed" -> {
                     setAnalysisError(response.error ?: "Loading failed.")
                     return
                 }
-                "downloading", "queued", "processing" -> {
+                isAnalysisInProgressStatus(response.status) -> {
                     val progress = response.progress?.roundToInt()
                     setAnalysisProgress(progress, response.message)
                     if (response.status != "downloading" &&
@@ -686,8 +684,10 @@ class PlaybackCoordinator(
                         audioJob = scope.launch {
                             try {
                                 loadAudioFromJob(jobId)
-                            } catch (_: Exception) {
-                                // Ignore load errors while polling; status loop will continue.
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (error: Exception) {
+                                Log.e(TAG, "Background audio load failed for $jobId", error)
                             } finally {
                                 audioLoadInFlight = false
                                 if (backgroundAudioLoadJob == audioJob) {
@@ -698,7 +698,7 @@ class PlaybackCoordinator(
                         backgroundAudioLoadJob = audioJob
                     }
                 }
-                "complete" -> {
+                response.status == "complete" -> {
                     if (!getState().playback.audioLoaded) {
                         val loaded = loadAudioFromJob(jobId)
                         if (!loaded) {
@@ -765,6 +765,10 @@ class PlaybackCoordinator(
         val config: JukeboxConfig,
         val deletedEdgeIds: List<Int>
     )
+
+    private companion object {
+        const val TAG = "PlaybackCoordinator"
+    }
 
     private fun parseTuningParams(raw: String?): ResolvedTuningParams? {
         val parsed = TuningParamsCodec.parse(raw, minThreshold = 0) ?: return null
