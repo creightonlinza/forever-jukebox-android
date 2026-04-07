@@ -133,11 +133,6 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         return getToFile(url, target)
     }
 
-    suspend fun repairJob(baseUrl: String, jobId: String): AnalysisResponse {
-        val url = buildUrl(baseUrl, ApiPaths.repair(jobId))
-        return postEmptyJson(url).let { json.decodeFromString(it) }
-    }
-
     suspend fun deleteJob(baseUrl: String, jobId: String) {
         val url = buildUrl(baseUrl, ApiPaths.job(jobId))
         deleteEmpty(url)
@@ -227,17 +222,6 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         }
     }
 
-    private suspend fun postEmptyJson(url: String): String = withContext(Dispatchers.IO) {
-        val body = ByteArray(0).toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url(url).post(body).build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
-            }
-            response.body?.string() ?: ""
-        }
-    }
-
     private suspend fun deleteEmpty(url: String) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).delete().build()
         client.newCall(request).execute().use { response ->
@@ -299,7 +283,6 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         fun job(jobId: String) = listOf("api", "jobs", jobId)
         fun play(jobId: String) = listOf("api", "plays", jobId)
         fun audio(jobId: String) = listOf("api", "audio", jobId)
-        fun repair(jobId: String) = listOf("api", "repair", jobId)
         fun favoritesSync(code: String) = listOf("api", "favorites", "sync", code)
     }
 

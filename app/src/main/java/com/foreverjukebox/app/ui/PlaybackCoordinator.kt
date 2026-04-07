@@ -29,6 +29,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
+internal fun isAnalysisInProgressStatus(status: String?): Boolean {
+    return status == "downloading" || status == "queued" || status == "processing"
+}
+
 class PlaybackCoordinator(
     private val application: Application,
     private val scope: CoroutineScope,
@@ -296,11 +300,6 @@ class PlaybackCoordinator(
             audioLoadInFlight = false
             updatePlaybackState { it.copy(audioLoading = false) }
             if (err.message?.contains("HTTP 404") == true) {
-                try {
-                    api.repairJob(baseUrl, jobId)
-                } catch (_: Exception) {
-                    // Ignore repair failures; poll loop will surface errors.
-                }
                 return false
             }
             throw err
@@ -668,21 +667,12 @@ class PlaybackCoordinator(
                 return
             }
             updateDeleteEligibility(response)
-            when (response.status) {
-                "failed" -> {
-                    if (response.errorCode == "analysis_missing" && response.id != null) {
-                        try {
-                            api.repairJob(baseUrl, response.id)
-                            delay(intervalMs)
-                            continue
-                        } catch (_: Exception) {
-                            // Fall through to error handling.
-                        }
-                    }
+            when {
+                response.status == "failed" -> {
                     setAnalysisError(response.error ?: "Loading failed.")
                     return
                 }
-                "downloading", "queued", "processing" -> {
+                isAnalysisInProgressStatus(response.status) -> {
                     val progress = response.progress?.roundToInt()
                     setAnalysisProgress(progress, response.message)
                     if (response.status != "downloading" &&
@@ -708,7 +698,7 @@ class PlaybackCoordinator(
                         backgroundAudioLoadJob = audioJob
                     }
                 }
-                "complete" -> {
+                response.status == "complete" -> {
                     if (!getState().playback.audioLoaded) {
                         val loaded = loadAudioFromJob(jobId)
                         if (!loaded) {

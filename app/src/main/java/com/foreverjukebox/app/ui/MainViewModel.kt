@@ -65,6 +65,15 @@ internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchSta
     )
 }
 
+internal fun shouldReuseLookupJob(response: AnalysisResponse?): Boolean {
+    val jobId = response?.id
+    val youtubeId = response?.youtubeId
+    return response != null &&
+        jobId != null &&
+        youtubeId != null &&
+        response.status != "failed"
+}
+
 internal fun sleepTimerOptionForDurationMs(durationMs: Long?): SleepTimerOption {
     if (durationMs == null || durationMs <= 0L) {
         return SleepTimerOption.Off
@@ -681,9 +690,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (artist.isNotBlank()) {
                 try {
                     val response = api.getJobByTrack(baseUrl, name, artist)
-                    val jobId = response?.id
-                    val youtubeId = response?.youtubeId
-                    if (response != null && jobId != null && youtubeId != null && response.status != "failed") {
+                    if (shouldReuseLookupJob(response)) {
+                        val jobId = response!!.id!!
+                        val youtubeId = response.youtubeId!!
                         if (state.value.playback.isCasting) {
                             clearSearchSelectionState()
                             castPlaybackCoordinator.castTrackId(youtubeId, name, artist)
