@@ -174,6 +174,69 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun deletingOnlyAnchorEdgeFallsBackToNoForcedAnchor() {
+        val engine = JukeboxEngine(FakePlayer())
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val anchorEdge = makeEdge(0, beats[1], beats[0], 10.0)
+        beats[1].neighbors = mutableListOf(anchorEdge)
+        beats[1].allNeighbors = mutableListOf(anchorEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(anchorEdge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+
+        engine.deleteEdge(anchorEdge)
+
+        val updated = engine.getGraphState()
+        assertNotNull(updated)
+        assertEquals(-1, updated?.lastBranchPoint)
+        val viz = engine.getVisualizationData()
+        assertNotNull(viz)
+        assertNull(viz?.anchorEdgeId)
+    }
+
+    @Test
+    fun deletingLateAnchorWhenOnlyEarlySourceRemainsFallsBackToNoForcedAnchor() {
+        val engine = JukeboxEngine(FakePlayer())
+        val beats = (0 until 6).map { makeBeat(it) }.toMutableList()
+        linkBeats(beats)
+        val lateAnchorEdge = makeEdge(0, beats[5], beats[0], 10.0)
+        val earlyEdge = makeEdge(1, beats[2], beats[0], 8.0)
+        beats[5].neighbors = mutableListOf(lateAnchorEdge)
+        beats[5].allNeighbors = mutableListOf(lateAnchorEdge)
+        beats[2].neighbors = mutableListOf(earlyEdge)
+        beats[2].allNeighbors = mutableListOf(earlyEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 5,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(lateAnchorEdge, earlyEdge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+
+        engine.deleteEdge(lateAnchorEdge)
+
+        val updated = engine.getGraphState()
+        assertNotNull(updated)
+        assertEquals(-1, updated?.lastBranchPoint)
+        val viz = engine.getVisualizationData()
+        assertNotNull(viz)
+        assertNull(viz?.anchorEdgeId)
+    }
+
+    @Test
     fun doesNotForceBranchWhenOnlyCurrentBeatIsLastBranchPoint() {
         val player = FakePlayer()
         val engine = JukeboxEngine(player)
