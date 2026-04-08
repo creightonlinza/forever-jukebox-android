@@ -1,6 +1,11 @@
 package com.foreverjukebox.app.engine
 
-data class BranchState(var curRandomBranchChance: Double)
+import kotlin.math.max
+
+data class BranchState(
+    var curRandomBranchChance: Double,
+    var lastDestBySource: MutableMap<Int, Int>? = null
+)
 
 private const val REFERENCE_BEAT_DURATION_SECONDS = 0.5
 
@@ -219,9 +224,51 @@ fun selectNextBeatIndex(
             seed.neighbors.removeFirstOrNull()
         }
     } else {
-        seed.neighbors.removeFirstOrNull()
+        val selectedIndex = selectWeightedNeighborIndex(seed, rng, state)
+        if (selectedIndex in seed.neighbors.indices) {
+            seed.neighbors.removeAt(selectedIndex)
+        } else {
+            seed.neighbors.removeFirstOrNull()
+        }
     } ?: return seed.which to false
     seed.neighbors.add(nextEdge)
+    if (state.lastDestBySource == null) {
+        state.lastDestBySource = mutableMapOf()
+    }
+    state.lastDestBySource?.set(seed.which, nextEdge.dest.which)
     val nextIndex = nextEdge.dest.which
     return nextIndex to (nextIndex != seed.which)
+}
+
+private fun selectWeightedNeighborIndex(
+    seed: QuantumBase,
+    rng: () -> Double,
+    state: BranchState
+): Int {
+    if (seed.neighbors.size <= 1) {
+        return 0
+    }
+    val lastDest = state.lastDestBySource?.get(seed.which)
+    val weights = seed.neighbors.map { edge ->
+        val distanceWeight = 1.0 / (1.0 + max(0.0, edge.distance))
+        val repeatPenalty = if (lastDest != null && edge.dest.which == lastDest) {
+            0.35
+        } else {
+            1.0
+        }
+        val weight = distanceWeight * repeatPenalty
+        if (weight.isFinite() && weight > 0.0) weight else 0.0
+    }
+    val totalWeight = weights.sum()
+    if (totalWeight <= 0.0) {
+        return 0
+    }
+    var target = rng() * totalWeight
+    for (i in weights.indices) {
+        target -= weights[i]
+        if (target <= 0.0) {
+            return i
+        }
+    }
+    return weights.lastIndex
 }

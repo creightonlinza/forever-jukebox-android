@@ -86,8 +86,12 @@ class JukeboxEngine(
 
     fun getConfig(): JukeboxConfig = config.copy()
 
+    fun updateConfig(partial: JukeboxConfigUpdate) {
+        config = config.applyUpdate(partial)
+    }
+
     fun updateConfig(partial: JukeboxConfig) {
-        config = partial
+        updateConfig(partial.toUpdate())
     }
 
     fun rebuildGraph() {
@@ -254,7 +258,7 @@ class JukeboxEngine(
         lastJumped = false
         val remainingMs = ((nextAudioTime - player.getAudioTime()) * 1000.0 - 10.0)
             .coerceAtLeast(0.0)
-        return remainingMs.toLong().coerceAtLeast(1L)
+        return remainingMs.toLong()
     }
 
     private fun advanceBeat(audioTime: Double) {
@@ -399,7 +403,7 @@ class JukeboxEngine(
 data class JukeboxEngineOptions(
     val randomMode: RandomMode = RandomMode.Random,
     val seed: Int? = null,
-    val config: JukeboxConfig? = null
+    val config: JukeboxConfigUpdate? = null
 )
 
 data class VisualizationData(

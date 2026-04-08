@@ -41,6 +41,32 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun updateConfigMergesPartialValues() {
+        val engine = JukeboxEngine(FakePlayer())
+        val before = engine.getConfig()
+
+        engine.updateConfig(JukeboxConfigUpdate(currentThreshold = 42))
+
+        val after = engine.getConfig()
+        assertEquals(42, after.currentThreshold)
+        assertEquals(before.maxBranches, after.maxBranches)
+        assertEquals(before.maxBranchThreshold, after.maxBranchThreshold)
+    }
+
+    @Test
+    fun constructorConfigAppliesPartialUpdates() {
+        val engine = JukeboxEngine(
+            FakePlayer(),
+            JukeboxEngineOptions(
+                config = JukeboxConfigUpdate(currentThreshold = 70)
+            )
+        )
+        val cfg = engine.getConfig()
+        assertEquals(70, cfg.currentThreshold)
+        assertEquals(JukeboxConfig().maxBranches, cfg.maxBranches)
+    }
+
+    @Test
     fun loadAnalysisSetsMinLongBranchFromBeatCount() {
         val player = FakePlayer()
         val engine = JukeboxEngine(player)
@@ -57,7 +83,7 @@ class JukeboxEngineParityTest {
         val engine = JukeboxEngine(
             player,
             JukeboxEngineOptions(
-                config = JukeboxConfig(
+                config = JukeboxConfigUpdate(
                     currentThreshold = 80,
                     maxBranchThreshold = 80
                 )
@@ -88,7 +114,7 @@ class JukeboxEngineParityTest {
         val engine = JukeboxEngine(
             player,
             JukeboxEngineOptions(
-                config = JukeboxConfig(
+                config = JukeboxConfigUpdate(
                     currentThreshold = 80,
                     maxBranchThreshold = 80
                 )

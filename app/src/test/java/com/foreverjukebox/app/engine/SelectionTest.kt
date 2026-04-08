@@ -247,6 +247,46 @@ class SelectionTest {
     }
 
     @Test
+    fun nonAnchorSelectionUsesWeightedChoiceAndRepeatPenalty() {
+        val seed = makeBeat(5)
+        val firstTarget = makeBeat(1)
+        val secondTarget = makeBeat(2)
+        seed.neighbors.add(
+            makeEdge(
+                id = 0,
+                src = seed,
+                dest = firstTarget,
+                distance = 0.0
+            )
+        )
+        seed.neighbors.add(
+            makeEdge(
+                id = 1,
+                src = seed,
+                dest = secondTarget,
+                distance = 0.0
+            )
+        )
+
+        val state = BranchState(
+            curRandomBranchChance = 0.18,
+            lastDestBySource = mutableMapOf(seed.which to firstTarget.which)
+        )
+        val result = selectNextBeatIndex(
+            seed = seed,
+            graph = graph(lastBranchPoint = 99, totalBeats = 10),
+            config = config(),
+            rng = { 0.5 },
+            state = state,
+            forceBranch = true
+        )
+
+        assertEquals(secondTarget.which, result.first)
+        assertTrue(result.second)
+        assertEquals(secondTarget.which, state.lastDestBySource?.get(seed.which))
+    }
+
+    @Test
     fun shouldRandomBranchRampsChanceAndClampsToMax() {
         val beat = makeBeat(0)
         val state = BranchState(curRandomBranchChance = 0.28)

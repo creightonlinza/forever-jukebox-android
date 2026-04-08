@@ -50,7 +50,7 @@ class DeleteResetParityFixtureTest {
                     )
                 },
                 options = JukeboxEngineOptions(
-                    config = JukeboxConfig(
+                    config = JukeboxConfigUpdate(
                         currentThreshold = 10,
                         maxBranchThreshold = 80
                     )

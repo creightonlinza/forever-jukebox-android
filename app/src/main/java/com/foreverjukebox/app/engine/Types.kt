@@ -19,6 +19,49 @@ data class JukeboxConfig(
     val minLongBranch: Int = 0
 )
 
+data class JukeboxConfigUpdate(
+    val maxBranches: Int? = null,
+    val maxBranchThreshold: Int? = null,
+    val currentThreshold: Int? = null,
+    val justBackwards: Boolean? = null,
+    val justLongBranches: Boolean? = null,
+    val removeSequentialBranches: Boolean? = null,
+    val minRandomBranchChance: Double? = null,
+    val maxRandomBranchChance: Double? = null,
+    val randomBranchChanceDelta: Double? = null,
+    val minLongBranch: Int? = null
+)
+
+fun JukeboxConfig.applyUpdate(update: JukeboxConfigUpdate): JukeboxConfig {
+    return copy(
+        maxBranches = update.maxBranches ?: maxBranches,
+        maxBranchThreshold = update.maxBranchThreshold ?: maxBranchThreshold,
+        currentThreshold = update.currentThreshold ?: currentThreshold,
+        justBackwards = update.justBackwards ?: justBackwards,
+        justLongBranches = update.justLongBranches ?: justLongBranches,
+        removeSequentialBranches = update.removeSequentialBranches ?: removeSequentialBranches,
+        minRandomBranchChance = update.minRandomBranchChance ?: minRandomBranchChance,
+        maxRandomBranchChance = update.maxRandomBranchChance ?: maxRandomBranchChance,
+        randomBranchChanceDelta = update.randomBranchChanceDelta ?: randomBranchChanceDelta,
+        minLongBranch = update.minLongBranch ?: minLongBranch
+    )
+}
+
+fun JukeboxConfig.toUpdate(): JukeboxConfigUpdate {
+    return JukeboxConfigUpdate(
+        maxBranches = maxBranches,
+        maxBranchThreshold = maxBranchThreshold,
+        currentThreshold = currentThreshold,
+        justBackwards = justBackwards,
+        justLongBranches = justLongBranches,
+        removeSequentialBranches = removeSequentialBranches,
+        minRandomBranchChance = minRandomBranchChance,
+        maxRandomBranchChance = maxRandomBranchChance,
+        randomBranchChanceDelta = randomBranchChanceDelta,
+        minLongBranch = minLongBranch
+    )
+}
+
 data class JukeboxGraphState(
     val computedThreshold: Int,
     val currentThreshold: Int,
