@@ -275,6 +275,12 @@ private data class AnchorSourceCandidate(
     val outcome: NeighborOutcome
 )
 
+private data class AnchorDecisionContext(
+    val earlyTargetBeat: Int,
+    val branchesToTarget: Map<Int, Int>,
+    val earliestByBeat: Map<Int, Int>
+)
+
 private fun calculateBranchesToEarlyTarget(
     quanta: List<QuantumBase>,
     earlyTargetBeat: Int
@@ -382,6 +388,15 @@ private fun compareAnchorOutcomeQuality(a: NeighborOutcome, b: NeighborOutcome):
     }
 }
 
+private fun buildAnchorDecisionContext(quanta: List<QuantumBase>): AnchorDecisionContext {
+    val earlyTargetBeat = resolveEarlyTargetBeat(quanta, 25)
+    return AnchorDecisionContext(
+        earlyTargetBeat = earlyTargetBeat,
+        branchesToTarget = calculateBranchesToEarlyTarget(quanta, earlyTargetBeat),
+        earliestByBeat = calculateEarliestReachableByBeat(quanta)
+    )
+}
+
 private fun findBestTieredAnchorSource(
     quanta: List<QuantumBase>,
     earliestByBeat: Map<Int, Int>,
@@ -484,11 +499,10 @@ private fun insertBestBackwardBranch(
     quanta: List<QuantumBase>,
     threshold: Int,
     maxThreshold: Int,
-    minSourceIndex: Int = floor(quanta.size * 0.66).toInt()
+    minSourceIndex: Int = floor(quanta.size * 0.66).toInt(),
+    context: AnchorDecisionContext? = null
 ): Int? {
-    val earlyTargetBeat = resolveEarlyTargetBeat(quanta, 25)
-    val branchesToTarget = calculateBranchesToEarlyTarget(quanta, earlyTargetBeat)
-    val earliestByBeat = calculateEarliestReachableByBeat(quanta)
+    val decisionContext = context ?: buildAnchorDecisionContext(quanta)
     val branches = mutableListOf<BranchCandidate>()
     for (i in quanta.indices) {
         val q = quanta[i]
@@ -506,8 +520,8 @@ private fun insertBestBackwardBranch(
                 }
                 branches.add(
                     BranchCandidate(
-                        branchesToTarget = branchesToTarget[neighbor.dest.which] ?: Int.MAX_VALUE,
-                        earliestReachable = earliestByBeat[neighbor.dest.which] ?: neighbor.dest.which,
+                        branchesToTarget = decisionContext.branchesToTarget[neighbor.dest.which] ?: Int.MAX_VALUE,
+                        earliestReachable = decisionContext.earliestByBeat[neighbor.dest.which] ?: neighbor.dest.which,
                         immediateBackward = delta,
                         distance = neighbor.distance,
                         q = q,
@@ -533,18 +547,17 @@ private fun insertBestBackwardBranch(
 
 private fun findExistingAnchorSource(
     quanta: List<QuantumBase>,
-    minLongBranch: Int
+    minLongBranch: Int,
+    context: AnchorDecisionContext? = null
 ): Int? {
+    val decisionContext = context ?: buildAnchorDecisionContext(quanta)
     val minSourceIndex = floor(quanta.size * 0.66).toInt()
-    val earlyTargetBeat = resolveEarlyTargetBeat(quanta, 25)
-    val branchesToTarget = calculateBranchesToEarlyTarget(quanta, earlyTargetBeat)
-    val earliestByBeat = calculateEarliestReachableByBeat(quanta)
 
     val tieredSource = findBestTieredAnchorSource(
         quanta,
-        earliestByBeat,
-        branchesToTarget,
-        earlyTargetBeat,
+        decisionContext.earliestByBeat,
+        decisionContext.branchesToTarget,
+        decisionContext.earlyTargetBeat,
         minSourceIndex,
         minLongBranch
     )
@@ -565,11 +578,11 @@ private fun findExistingAnchorSource(
             if (immediate <= 0) {
                 continue
             }
-            val targetBranches = branchesToTarget[neighbor.dest.which] ?: Int.MAX_VALUE
+            val targetBranches = decisionContext.branchesToTarget[neighbor.dest.which] ?: Int.MAX_VALUE
             if (targetBranches > 0) {
                 continue
             }
-            val earliestReachable = earliestByBeat[neighbor.dest.which] ?: neighbor.dest.which
+            val earliestReachable = decisionContext.earliestByBeat[neighbor.dest.which] ?: neighbor.dest.which
             if (targetBranches < bestBranchesToTarget ||
                 (targetBranches == bestBranchesToTarget &&
                     earliestReachable < bestEarliestReachable) ||
@@ -596,6 +609,13 @@ private fun findExistingAnchorSource(
     }
 
     return if (bestSource >= 0) bestSource else null
+}
+
+fun selectExistingAnchorSource(
+    quanta: List<QuantumBase>,
+    minLongBranch: Int
+): Int? {
+    return findExistingAnchorSource(quanta, minLongBranch)
 }
 
 private fun calculateReachability(quanta: List<QuantumBase>) {
@@ -647,17 +667,15 @@ private fun calculateReachability(quanta: List<QuantumBase>) {
 
 private fun findBestLastBeat(
     quanta: List<QuantumBase>,
-    earliestByBeat: Map<Int, Int>,
-    branchesToTarget: Map<Int, Int>,
-    earlyTargetBeat: Int,
+    context: AnchorDecisionContext,
     minLongBranch: Int
 ): Pair<Int, Double> {
     val minLastBranchIndex = floor(quanta.size * 0.66).toInt()
     val tieredSource = findBestTieredAnchorSource(
         quanta,
-        earliestByBeat,
-        branchesToTarget,
-        earlyTargetBeat,
+        context.earliestByBeat,
+        context.branchesToTarget,
+        context.earlyTargetBeat,
         minLastBranchIndex,
         minLongBranch
     )
@@ -689,12 +707,12 @@ private fun findBestLastBeat(
         }
         val bestOutcome = selectBestBackwardNeighborOutcome(
             q,
-            earliestByBeat,
-            branchesToTarget
+            context.earliestByBeat,
+            context.branchesToTarget
         )
         if (bestOutcome != null) {
             if (i >= minLastBranchIndex &&
-                bestOutcome.earliestReachable <= earlyTargetBeat &&
+                bestOutcome.earliestReachable <= context.earlyTargetBeat &&
                 (bestOutcome.branchesToTarget < bestEarlyTargetBranches ||
                     (bestOutcome.branchesToTarget == bestEarlyTargetBranches &&
                         bestOutcome.earliestReachable < bestEarlyReachable) ||
@@ -784,9 +802,14 @@ private fun addAnchorBranch(
     threshold: Int,
     config: JukeboxConfig
 ): Int? {
+    val decisionContext = buildAnchorDecisionContext(quanta)
     val preferredLateStart = floor(quanta.size * 0.8).toInt()
     val maxAnchorThreshold = if (longestBackwardBranch(quanta) < 50) 65 else 55
-    val existingAnchorSource = findExistingAnchorSource(quanta, config.minLongBranch)
+    val existingAnchorSource = findExistingAnchorSource(
+        quanta,
+        config.minLongBranch,
+        decisionContext
+    )
     if (existingAnchorSource != null && existingAnchorSource >= preferredLateStart) {
         // Existing end-of-track branch already reaches the early target zone.
         return existingAnchorSource
@@ -795,7 +818,8 @@ private fun addAnchorBranch(
         quanta,
         threshold,
         maxAnchorThreshold,
-        preferredLateStart
+        preferredLateStart,
+        decisionContext
     )
     if (lateInsertedSource != null) {
         return lateInsertedSource
@@ -803,7 +827,13 @@ private fun addAnchorBranch(
     if (existingAnchorSource != null) {
         return existingAnchorSource
     }
-    return insertBestBackwardBranch(quanta, threshold, maxAnchorThreshold)
+    return insertBestBackwardBranch(
+        quanta,
+        threshold,
+        maxAnchorThreshold,
+        floor(quanta.size * 0.66).toInt(),
+        decisionContext
+    )
 }
 
 private fun applyBranchFilters(
@@ -812,37 +842,52 @@ private fun applyBranchFilters(
     preferredLastBranchPoint: Int?
 ): Pair<Int, Double> {
     calculateReachability(quanta)
-    val earlyTargetBeat = resolveEarlyTargetBeat(quanta, 25)
-    val branchesToTarget = calculateBranchesToEarlyTarget(
-        quanta,
-        earlyTargetBeat
-    )
-    val earliestByBeat = calculateEarliestReachableByBeat(quanta)
-    val selectedLastBranchPoint: Int
-    val selectedLongestReach: Double
+    val decisionContext = buildAnchorDecisionContext(quanta)
+    var selectedLastBranchPoint: Int
+    var selectedLongestReach: Double
     if (preferredLastBranchPoint != null &&
         preferredLastBranchPoint >= 0 &&
         preferredLastBranchPoint < quanta.size &&
         quanta[preferredLastBranchPoint].neighbors.isNotEmpty()
     ) {
-        val distanceToEnd = quanta.size - preferredLastBranchPoint
         val q = quanta[preferredLastBranchPoint]
-        selectedLastBranchPoint = preferredLastBranchPoint
-        selectedLongestReach = if (q.reach != null) {
-            ((q.reach!! - distanceToEnd) * 100.0) / quanta.size
+        val preferredOutcome = selectBestBackwardNeighborOutcome(
+            q,
+            decisionContext.earliestByBeat,
+            decisionContext.branchesToTarget
+        )
+        val preferredCanReachTarget = preferredOutcome != null &&
+            preferredOutcome.branchesToTarget != Int.MAX_VALUE
+        if (!preferredCanReachTarget) {
+            selectedLastBranchPoint = -1
+            selectedLongestReach = 0.0
         } else {
-            0.0
+            val distanceToEnd = quanta.size - preferredLastBranchPoint
+            selectedLastBranchPoint = preferredLastBranchPoint
+            selectedLongestReach = if (q.reach != null) {
+                ((q.reach!! - distanceToEnd) * 100.0) / quanta.size
+            } else {
+                0.0
+            }
         }
     } else {
-        val best = findBestLastBeat(
+        val hasEligibleAnchorSource = findExistingAnchorSource(
             quanta,
-            earliestByBeat,
-            branchesToTarget,
-            earlyTargetBeat,
-            config.minLongBranch
-        )
-        selectedLastBranchPoint = best.first
-        selectedLongestReach = best.second
+            config.minLongBranch,
+            decisionContext
+        ) != null
+        if (!hasEligibleAnchorSource) {
+            selectedLastBranchPoint = -1
+            selectedLongestReach = 0.0
+        } else {
+            val best = findBestLastBeat(
+                quanta,
+                decisionContext,
+                config.minLongBranch
+            )
+            selectedLastBranchPoint = best.first
+            selectedLongestReach = best.second
+        }
     }
     filterOutBadBranches(quanta, selectedLastBranchPoint)
     if (config.removeSequentialBranches) {

@@ -21,8 +21,10 @@ interface JukeboxPlayer {
 
 class JukeboxEngine(
     private val player: JukeboxPlayer,
-    options: JukeboxEngineOptions = JukeboxEngineOptions()
+    options: JukeboxEngineOptions = JukeboxEngineOptions(),
+    private val graphBuilder: (TrackAnalysis, JukeboxConfig) -> JukeboxGraphState = ::buildJumpGraph
 ) {
+
     private val scope = CoroutineScope(Dispatchers.Default)
     private var tickJob: Job? = null
     private var analysis: TrackAnalysis? = null
@@ -66,7 +68,7 @@ class JukeboxEngine(
         analysis = normalizeAnalysis(data)
         val beatsCount = analysis?.beats?.size ?: 0
         config = config.copy(minLongBranch = beatsCount / 5)
-        graph = analysis?.let { buildJumpGraph(it, config) }
+        graph = analysis?.let { graphBuilder(it, config) }
         applyDeletedEdges()
         beats = analysis?.beats ?: mutableListOf()
         resetState()
@@ -84,15 +86,19 @@ class JukeboxEngine(
 
     fun getConfig(): JukeboxConfig = config.copy()
 
+    fun updateConfig(partial: JukeboxConfigUpdate) {
+        config = config.applyUpdate(partial)
+    }
+
     fun updateConfig(partial: JukeboxConfig) {
-        config = partial
+        updateConfig(partial.toUpdate())
     }
 
     fun rebuildGraph() {
         val current = analysis ?: return
         clearEdgeDeletionFlags()
         config = config.copy(minLongBranch = current.beats.size / 5)
-        graph = buildJumpGraph(current, config)
+        graph = graphBuilder(current, config)
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
         applyDeletedEdges()
@@ -252,7 +258,7 @@ class JukeboxEngine(
         lastJumped = false
         val remainingMs = ((nextAudioTime - player.getAudioTime()) * 1000.0 - 10.0)
             .coerceAtLeast(0.0)
-        return remainingMs.toLong().coerceAtLeast(1L)
+        return remainingMs.toLong()
     }
 
     private fun advanceBeat(audioTime: Double) {
@@ -349,32 +355,14 @@ class JukeboxEngine(
     private fun ensureAnchorSourceHasNeighbors() {
         val current = graph ?: return
         val currentAnalysis = analysis ?: return
-        val anchorSource = currentAnalysis.beats.getOrNull(current.lastBranchPoint)
-        if (anchorSource != null && anchorSource.neighbors.isNotEmpty()) {
+        if (current.lastBranchPoint < 0) {
             return
         }
-        val fallback = findFallbackLastBranchPoint(currentAnalysis)
-        if (fallback != null) {
-            graph = current.copy(lastBranchPoint = fallback)
-        }
-    }
-
-    private fun findFallbackLastBranchPoint(currentAnalysis: TrackAnalysis): Int? {
-        var latestAnySource: Int? = null
-        for (i in currentAnalysis.beats.lastIndex downTo 0) {
-            val beat = currentAnalysis.beats[i]
-            if (beat.neighbors.isEmpty()) {
-                continue
-            }
-            if (latestAnySource == null) {
-                latestAnySource = i
-            }
-            val hasBackward = beat.neighbors.any { edge -> edge.dest.which < beat.which }
-            if (hasBackward) {
-                return i
-            }
-        }
-        return latestAnySource
+        val refreshedAnchorSource = selectExistingAnchorSource(
+            currentAnalysis.beats,
+            config.minLongBranch
+        )
+        graph = current.copy(lastBranchPoint = refreshedAnchorSource ?: -1)
     }
 
     private fun clearEdgeDeletionFlags() {
@@ -415,7 +403,7 @@ class JukeboxEngine(
 data class JukeboxEngineOptions(
     val randomMode: RandomMode = RandomMode.Random,
     val seed: Int? = null,
-    val config: JukeboxConfig? = null
+    val config: JukeboxConfigUpdate? = null
 )
 
 data class VisualizationData(

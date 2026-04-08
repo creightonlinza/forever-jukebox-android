@@ -116,6 +116,15 @@ class GraphAnchorSelectionTest {
         assertEquals(90, graph.lastBranchPoint)
     }
 
+    @Test
+    fun fallsBackToNoAnchorWhenPreferredInsertedSourceCannotReachEarlyTarget() {
+        val analysis = makeUnreachableLateInsertionScenario()
+        val graph = buildJumpGraph(analysis, testConfig(minLongBranch = 6))
+
+        assertEquals(-1, graph.lastBranchPoint)
+        assertEquals(0.0, graph.longestReach, 0.000001)
+    }
+
     private fun testConfig(minLongBranch: Int = 2): JukeboxConfig {
         return JukeboxConfig(
             maxBranches = 4,
@@ -345,6 +354,29 @@ class GraphAnchorSelectionTest {
         // All backward branching starts late in the track.
         push(90, 70, 10.0)
         push(75, 70, 10.0)
+        return analysis
+    }
+
+    private fun makeUnreachableLateInsertionScenario(): TrackAnalysis {
+        val analysis = makeLinearAnalysis(30)
+        val beats = analysis.beats
+        beats.forEach { beat ->
+            beat.allNeighbors = mutableListOf()
+            beat.neighbors = mutableListOf()
+        }
+        var id = 0
+        fun push(src: Int, dest: Int, distance: Double) {
+            beats[src].allNeighbors.add(makeEdge(id, beats[src], beats[dest], distance))
+            id += 1
+        }
+        // Keep beat 0 non-empty so graph build uses cached neighbors.
+        push(0, 2, 10.0)
+        // Existing source in the last third but before the preferred late window.
+        push(20, 8, 10.0)
+        push(8, 2, 10.0)
+        // Late-window insertion options cannot reach the early target zone.
+        push(27, 26, 40.0)
+        push(28, 27, 42.0)
         return analysis
     }
 
