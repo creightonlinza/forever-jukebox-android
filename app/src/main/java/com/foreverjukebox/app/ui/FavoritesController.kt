@@ -3,6 +3,8 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
+import com.foreverjukebox.app.data.parseTrackStableId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -209,11 +211,17 @@ class FavoritesController(
 
     fun normalizeFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
         val normalized = items.mapNotNull { item ->
-            val id = item.uniqueSongId
-            if (id.isBlank()) return@mapNotNull null
+            val parsedIdentity = parseTrackStableId(item.uniqueSongId) ?: return@mapNotNull null
+            val resolvedSourceType = if (parsedIdentity.sourceProvider != null) {
+                favoriteSourceTypeFromProvider(parsedIdentity.sourceProvider)
+            } else {
+                item.sourceType
+            }
             item.copy(
+                uniqueSongId = parsedIdentity.stableId,
                 title = item.title.ifBlank { "Untitled" },
                 artist = item.artist,
+                sourceType = resolvedSourceType,
                 tuningParams = TuningParamsCodec.stripHighlightAnchorParam(item.tuningParams)
             )
         }

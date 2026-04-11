@@ -188,7 +188,7 @@ class MainViewModelCastQueueTest {
                 )
             )
         )
-        assertFalse(
+        assertTrue(
             shouldReuseLookupJob(
                 AnalysisResponse(
                     id = "job_1",

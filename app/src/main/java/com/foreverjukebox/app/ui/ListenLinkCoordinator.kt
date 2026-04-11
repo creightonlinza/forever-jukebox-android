@@ -9,8 +9,8 @@ class ListenLinkCoordinator(
     private val buildTuningParamsString: () -> String?,
     private val getState: () -> UiState,
     private val setPlaybackMode: (PlaybackMode) -> Unit,
-    private val loadTrackByYoutubeId: (
-        youtubeId: String,
+    private val loadTrackByStableId: (
+        stableId: String,
         title: String?,
         artist: String?,
         tuningParams: String?
@@ -18,7 +18,7 @@ class ListenLinkCoordinator(
 ) {
     fun buildShareUrl(): String? {
         val playback = getState().playback
-        val trackId = playback.lastYouTubeId ?: playback.lastJobId ?: return null
+        val trackId = playback.stableTrackIdOrNull() ?: return null
         val baseUrl = getState().baseUrl.trim().trimEnd('/')
         if (baseUrl.isBlank()) return null
         val encodedId = encodeUriComponent(trackId)
@@ -47,7 +47,7 @@ class ListenLinkCoordinator(
             ?.filter { it.isNotBlank() }
             ?: emptyList()
         if (segments.size >= 2 && segments.firstOrNull() == "listen") {
-            val id = segments[1]
+            val id = decodeUriComponent(segments[1])
             val queryParams = parseQueryParams(uri.rawQuery)
             val mode = if (queryParams["mode"]?.firstOrNull() == "autocanonizer") {
                 PlaybackMode.Autocanonizer
@@ -60,7 +60,7 @@ class ListenLinkCoordinator(
             } else {
                 null
             }
-            loadTrackByYoutubeId(id, null, null, tuningParams)
+            loadTrackByStableId(id, null, null, tuningParams)
         }
     }
 

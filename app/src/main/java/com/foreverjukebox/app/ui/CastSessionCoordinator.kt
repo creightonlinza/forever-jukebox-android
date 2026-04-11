@@ -9,6 +9,9 @@ import kotlinx.coroutines.launch
 
 internal data class PreservedCastTrack(
     val trackId: String,
+    val sourceProvider: String?,
+    val sourceId: String?,
+    val stableTrackId: String?,
     val youtubeId: String?,
     val jobId: String?,
     val title: String?,
@@ -16,13 +19,16 @@ internal data class PreservedCastTrack(
 )
 
 internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTrack? {
-    val trackId = playback.lastYouTubeId ?: playback.lastJobId ?: return null
+    val trackId = playback.lastJobId ?: playback.lastSourceId ?: playback.lastYouTubeId ?: return null
     val shouldAutoCast = playback.audioLoaded && playback.analysisLoaded
     if (!shouldAutoCast) {
         return null
     }
     return PreservedCastTrack(
         trackId = trackId,
+        sourceProvider = playback.lastSourceProvider,
+        sourceId = playback.lastSourceId,
+        stableTrackId = playback.stableTrackIdOrNull(),
         youtubeId = playback.lastYouTubeId,
         jobId = playback.lastJobId,
         title = playback.trackTitle,
@@ -59,7 +65,7 @@ class CastSessionCoordinator(
             return
         }
         val playback = getState().playback
-        val trackId = playback.lastYouTubeId ?: playback.lastJobId
+        val trackId = playback.lastJobId ?: playback.lastSourceId ?: playback.lastYouTubeId
         if (trackId.isNullOrBlank()) {
             scope.launch { showToast("Load a track before casting.") }
             return
@@ -75,7 +81,14 @@ class CastSessionCoordinator(
             scope.launch { showToast("Connect to a Cast device first.") }
             return
         }
-        castPlaybackCoordinator.castTrackId(trackId, playback.trackTitle, playback.trackArtist)
+        castPlaybackCoordinator.castTrackId(
+            trackId = trackId,
+            title = playback.trackTitle,
+            artist = playback.trackArtist,
+            sourceProvider = playback.lastSourceProvider,
+            sourceId = playback.lastSourceId,
+            stableTrackId = playback.stableTrackIdOrNull()
+        )
     }
 
     fun setCastingConnected(isConnected: Boolean, deviceName: String? = null) {
@@ -132,6 +145,9 @@ class CastSessionCoordinator(
             updateState {
                 it.copy(
                     playback = it.playback.copy(
+                        lastSourceProvider = preservedTrack.sourceProvider,
+                        lastSourceId = preservedTrack.sourceId,
+                        lastStableTrackId = preservedTrack.stableTrackId,
                         lastYouTubeId = preservedTrack.youtubeId,
                         lastJobId = preservedTrack.jobId,
                         trackTitle = preservedTrack.title,
@@ -140,9 +156,12 @@ class CastSessionCoordinator(
                 )
             }
             castPlaybackCoordinator.castTrackId(
-                preservedTrack.trackId,
-                preservedTrack.title,
-                preservedTrack.artist
+                trackId = preservedTrack.trackId,
+                title = preservedTrack.title,
+                artist = preservedTrack.artist,
+                sourceProvider = preservedTrack.sourceProvider,
+                sourceId = preservedTrack.sourceId,
+                stableTrackId = preservedTrack.stableTrackId
             )
         }
         castPlaybackCoordinator.requestCastStatus()

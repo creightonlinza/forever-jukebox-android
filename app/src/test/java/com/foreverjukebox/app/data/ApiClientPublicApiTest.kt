@@ -132,7 +132,7 @@ class ApiClientPublicApiTest {
         assertNull(result)
         val lookup = server.takeRequest()
         assertEquals("GET", lookup.method)
-        assertEquals("/base/api/jobs/by-youtube/dQw4w9WgXcQ", lookup.path)
+        assertEquals("/base/api/jobs/by-source/youtube/dQw4w9WgXcQ", lookup.path)
         assertEquals(1, server.requestCount)
     }
 
@@ -190,7 +190,8 @@ class ApiClientPublicApiTest {
                     """
                     {
                       "id": "job_yt",
-                      "youtube_id": "dQw4w9WgXcQ",
+                      "source_provider": "youtube",
+                      "source_id": "dQw4w9WgXcQ",
                       "status": "failed",
                       "error": "Analysis missing"
                     }
@@ -206,8 +207,56 @@ class ApiClientPublicApiTest {
         assertEquals("job_yt", result?.id)
         val lookup = server.takeRequest()
         assertEquals("GET", lookup.method)
-        assertEquals("/base/api/jobs/by-youtube/dQw4w9WgXcQ", lookup.path)
+        assertEquals("/base/api/jobs/by-source/youtube/dQw4w9WgXcQ", lookup.path)
         assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun getJobBySourceReturnsNullOn404() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(404)
+                .setBody("not found")
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val result = api.getJobBySource(
+            baseUrl = baseUrl,
+            sourceProvider = "soundcloud",
+            sourceId = "abc123"
+        )
+
+        assertNull(result)
+        val lookup = server.takeRequest()
+        assertEquals("GET", lookup.method)
+        assertEquals("/base/api/jobs/by-source/soundcloud/abc123", lookup.path)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun getJobBySourceThrowsHttpStatusExceptionForNon404Errors() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(422)
+                .setBody("""{"detail":[{"msg":"too long"}]}""")
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val result = runCatching {
+            api.getJobBySource(
+                baseUrl = baseUrl,
+                sourceProvider = "youtube",
+                sourceId = "dQw4w9WgXcQ"
+            )
+        }
+
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull()
+        assertTrue(exception is HttpStatusException)
+        assertEquals(422, (exception as HttpStatusException).statusCode)
+        val lookup = server.takeRequest()
+        assertEquals("GET", lookup.method)
+        assertEquals("/base/api/jobs/by-source/youtube/dQw4w9WgXcQ", lookup.path)
     }
 
     @Test

@@ -35,7 +35,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val playback = state.playback
     val tuning = state.tuning
     val headerTitle = resolvePlaybackHeaderTitle(playback)
-    val isFavorite = playback.lastYouTubeId?.let { id ->
+    val isFavorite = playback.stableTrackIdOrNull()?.let { id ->
         state.favorites.any { it.uniqueSongId == id }
     } == true
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
@@ -65,7 +65,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         }
     }
     val onToggleFavorite: () -> Unit = {
-        if (playback.lastYouTubeId != null) {
+        if (playback.stableTrackIdOrNull() != null) {
             val result = viewModel.toggleFavoriteForCurrent()
             val message = when (result) {
                 FavoriteToggleResult.LimitReached -> "Maximum favorites reached (100)."

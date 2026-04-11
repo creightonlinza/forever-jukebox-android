@@ -15,11 +15,20 @@ import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.AnalysisResponse
-import com.foreverjukebox.app.data.FavoriteSourceType
+import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.YoutubeSearchItem
+import com.foreverjukebox.app.data.buildJobStableTrackId
+import com.foreverjukebox.app.data.buildSourceStableTrackId
+import com.foreverjukebox.app.data.canonicalStableTrackId
+import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
+import com.foreverjukebox.app.data.parseTrackStableId
+import com.foreverjukebox.app.data.stableTrackIdFromAnalysis
+import com.foreverjukebox.app.data.stableTrackIdFromTopSong
+import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
@@ -68,10 +77,8 @@ internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchSta
 
 internal fun shouldReuseLookupJob(response: AnalysisResponse?): Boolean {
     val jobId = response?.id
-    val youtubeId = response?.youtubeId
     return response != null &&
         jobId != null &&
-        youtubeId != null &&
         response.status != "failed"
 }
 
@@ -182,7 +189,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         buildTuningParamsString = playbackCoordinator::buildTuningParamsString,
         getState = { state.value },
         setPlaybackMode = ::setPlaybackMode,
-        loadTrackByYoutubeId = ::loadTrackByYoutubeId
+        loadTrackByStableId = ::loadTrackByStableId
     )
     private val appLifecycleCoordinator = AppLifecycleCoordinator(
         scope = viewModelScope,
@@ -614,12 +621,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(playback = transform(it.playback)) }
     }
 
-    private fun resolveTrackMeta(youtubeId: String): Pair<String?, String?> {
-        val topMatch = state.value.search.topSongs.firstOrNull { it.youtubeId == youtubeId }
+    private fun resolveTrackMeta(stableTrackId: String): Pair<String?, String?> {
+        val canonicalTarget = canonicalStableTrackId(stableTrackId) ?: stableTrackId
+        val topMatch = state.value.search.topSongs.firstOrNull {
+            canonicalStableTrackId(stableTrackIdFromTopSong(it)) == canonicalTarget
+        }
         if (topMatch != null) {
             return topMatch.title to topMatch.artist
         }
-        val favoriteMatch = state.value.favorites.firstOrNull { it.uniqueSongId == youtubeId }
+        val favoriteMatch = state.value.favorites.firstOrNull {
+            canonicalStableTrackId(it.uniqueSongId) == canonicalTarget
+        }
         if (favoriteMatch != null) {
             return favoriteMatch.title to favoriteMatch.artist
         }
@@ -628,7 +640,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleFavoriteForCurrent(): FavoriteToggleResult {
         val currentState = state.value
-        val currentId = currentState.playback.lastYouTubeId ?: return FavoriteToggleResult.NoTrack
+        val playback = currentState.playback
+        val currentId = playback.stableTrackIdOrNull() ?: return FavoriteToggleResult.NoTrack
         if (shouldBlockListenFavoriteToggle(currentState)) {
             return FavoriteToggleResult.BlockedInFlight
         }
@@ -645,7 +658,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (favorites.size >= MAX_FAVORITES) {
                 FavoriteToggleResult.LimitReached
             } else {
-                val playback = currentState.playback
                 val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
                 val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "Unknown"
                 val newFavorite = FavoriteTrack(
@@ -653,7 +665,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     title = title,
                     artist = artist,
                     duration = playback.trackDurationSeconds,
-                    sourceType = FavoriteSourceType.Youtube,
+                    sourceType = favoriteSourceTypeFromProvider(playback.lastSourceProvider),
                     tuningParams = if (playback.playMode == PlaybackMode.Jukebox) {
                         TuningParamsCodec.stripHighlightAnchorParam(
                             playbackCoordinator.buildTuningParamsString()
@@ -708,16 +720,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val response = api.getJobByTrack(baseUrl, name, artist)
                     if (shouldReuseLookupJob(response)) {
                         val jobId = response!!.id!!
-                        val youtubeId = response.youtubeId!!
+                        val stableId = stableTrackIdFromAnalysis(response)
+                            ?: buildJobStableTrackId(jobId)
+                        val parsedIdentity = parseTrackStableId(stableId)
                         if (state.value.playback.isCasting) {
                             clearSearchSelectionState()
-                            castPlaybackCoordinator.castTrackId(youtubeId, name, artist)
+                            castPlaybackCoordinator.castTrackId(
+                                trackId = jobId,
+                                title = name,
+                                artist = artist,
+                                sourceProvider = parsedIdentity?.sourceProvider,
+                                sourceId = parsedIdentity?.sourceId,
+                                stableTrackId = stableId
+                            )
                             applyActiveTab(TabId.Play, recordHistory = true)
                             return@launch
                         }
                         loadExistingJob(
                             jobId,
-                            youtubeId,
+                            stableId,
                             response,
                             name,
                             artist
@@ -726,6 +747,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (cancel: CancellationException) {
                     throw cancel
+                } catch (error: HttpStatusException) {
+                    if (error.statusCode == 422) {
+                        showServerTrackLengthLimitError()
+                        return@launch
+                    }
+                    Log.e(TAG, "Job lookup by track failed", error)
+                    // Fall back to YouTube matches.
                 } catch (error: IOException) {
                     Log.e(TAG, "Job lookup by track failed", error)
                     // Fall back to YouTube matches.
@@ -759,6 +787,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (baseUrl.isBlank()) return
         val resolvedTitle = title ?: state.value.search.pendingTrackName.orEmpty()
         val resolvedArtist = artist ?: state.value.search.pendingTrackArtist.orEmpty()
+        val stableId = buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, youtubeId)
         if (state.value.playback.isCasting) {
             clearSearchSelectionState()
             applyActiveTab(TabId.Play, recordHistory = true)
@@ -771,7 +800,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!queued) {
                     return@launch
                 }
-                castPlaybackCoordinator.castTrackId(youtubeId, resolvedTitle, resolvedArtist)
+                castPlaybackCoordinator.castTrackId(
+                    trackId = youtubeId,
+                    title = resolvedTitle,
+                    artist = resolvedArtist,
+                    sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+                    sourceId = youtubeId,
+                    stableTrackId = stableId
+                )
             }
             return
         }
@@ -782,12 +818,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 search = resetSearchStateAfterTrackSelection(current.search),
                 playback = current.playback.copy(
                     audioLoading = false,
+                    lastSourceProvider = SOURCE_PROVIDER_YOUTUBE,
+                    lastSourceId = youtubeId,
+                    lastStableTrackId = stableId,
                     lastYouTubeId = youtubeId
                 )
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = youtubeId,
+            cacheKey = stableId,
             failureLogMessage = "Failed to start YouTube analysis"
         ) {
             val response = api.startYoutubeAnalysis(
@@ -804,31 +843,127 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadTrackByStableId(
+        stableId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null
+    ) {
+        val parsed = parseTrackStableId(stableId) ?: return
+        when {
+            parsed.sourceProvider != null && parsed.sourceId != null -> {
+                loadTrackBySource(
+                    sourceProvider = parsed.sourceProvider,
+                    sourceId = parsed.sourceId,
+                    title = title,
+                    artist = artist,
+                    tuningParams = tuningParams,
+                    stableTrackIdOverride = parsed.stableId
+                )
+            }
+            parsed.jobId != null -> {
+                loadTrackByJobId(
+                    jobId = parsed.jobId,
+                    title = title,
+                    artist = artist,
+                    tuningParams = tuningParams,
+                    stableTrackIdOverride = parsed.stableId
+                )
+            }
+        }
+    }
+
     fun loadTrackByYoutubeId(
         youtubeId: String,
         title: String? = null,
         artist: String? = null,
         tuningParams: String? = null
     ) {
+        loadTrackBySource(
+            sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+            sourceId = youtubeId,
+            title = title,
+            artist = artist,
+            tuningParams = tuningParams
+        )
+    }
+
+    fun loadTrackBySource(
+        sourceProvider: String,
+        sourceId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null,
+        stableTrackIdOverride: String? = null
+    ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
+        val provider = sourceProviderFromRaw(sourceProvider) ?: return
+        val normalizedSourceId = sourceId.trim()
+        if (normalizedSourceId.isBlank()) return
+        val stableId = stableTrackIdOverride
+            ?: buildSourceStableTrackId(provider, normalizedSourceId)
         val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
-            resolveTrackMeta(youtubeId)
+            resolveTrackMeta(stableId)
         } else {
             title to artist
         }
         if (state.value.playback.isCasting) {
             applyActiveTab(TabId.Play, recordHistory = true)
             viewModelScope.launch {
-                val queued = queueYoutubeAnalysisForCast(
-                    youtubeId = youtubeId,
-                    title = resolvedTitle,
-                    artist = resolvedArtist
-                )
-                if (!queued) {
+                if (provider == SOURCE_PROVIDER_YOUTUBE) {
+                    val queued = queueYoutubeAnalysisForCast(
+                        youtubeId = normalizedSourceId,
+                        title = resolvedTitle,
+                        artist = resolvedArtist
+                    )
+                    if (!queued) {
+                        return@launch
+                    }
+                    castPlaybackCoordinator.castTrackId(
+                        trackId = normalizedSourceId,
+                        title = resolvedTitle,
+                        artist = resolvedArtist,
+                        sourceProvider = provider,
+                        sourceId = normalizedSourceId,
+                        stableTrackId = stableId
+                    )
                     return@launch
                 }
-                castPlaybackCoordinator.castTrackId(youtubeId, resolvedTitle, resolvedArtist)
+                try {
+                    val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                    val resolvedJobId = existing?.id
+                    if (resolvedJobId.isNullOrBlank()) {
+                        showToast("Unable to queue this track for casting.")
+                        return@launch
+                    }
+                    castPlaybackCoordinator.castTrackId(
+                        trackId = resolvedJobId,
+                        title = resolvedTitle,
+                        artist = resolvedArtist,
+                        sourceProvider = provider,
+                        sourceId = normalizedSourceId,
+                        stableTrackId = stableId
+                    )
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (error: HttpStatusException) {
+                    if (error.statusCode == 422) {
+                        showServerTrackLengthLimitError()
+                        return@launch
+                    }
+                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    showToast("Unable to queue this track for casting.")
+                } catch (error: IOException) {
+                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    showToast("Unable to queue this track for casting.")
+                } catch (error: IllegalArgumentException) {
+                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    showToast("Unable to queue this track for casting.")
+                } catch (error: IllegalStateException) {
+                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    showToast("Unable to queue this track for casting.")
+                }
             }
             return
         }
@@ -836,23 +971,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(
                 playback = current.playback.copy(
                     audioLoading = false,
-                    lastYouTubeId = youtubeId,
+                    lastSourceProvider = provider,
+                    lastSourceId = normalizedSourceId,
+                    lastStableTrackId = stableId,
+                    lastYouTubeId = if (provider == SOURCE_PROVIDER_YOUTUBE) normalizedSourceId else null,
                     trackTitle = resolvedTitle,
                     trackArtist = resolvedArtist
                 )
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = youtubeId,
-            failureLogMessage = "Failed to load track by YouTube id"
+            cacheKey = stableId,
+            failureLogMessage = "Failed to load track by source"
         ) {
-            val response = api.getJobByYoutube(baseUrl, youtubeId)
-            if (response != null) {
-                return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(response)
+            val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
+            if (existing != null) {
+                return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(existing)
+            }
+            if (provider != SOURCE_PROVIDER_YOUTUBE) {
+                return@launchServerTrackLoadWithCache false
             }
             val started = api.startYoutubeAnalysis(
                 baseUrl = baseUrl,
-                youtubeId = youtubeId,
+                youtubeId = normalizedSourceId,
                 title = resolvedTitle,
                 artist = resolvedArtist
             )
@@ -868,12 +1009,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         jobId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        stableTrackIdOverride: String? = null
     ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
+        val normalizedJobId = jobId.trim()
+        if (normalizedJobId.isBlank()) return
+        val stableId = stableTrackIdOverride
+            ?: buildJobStableTrackId(normalizedJobId)
+        val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
+            resolveTrackMeta(stableId)
+        } else {
+            title to artist
+        }
         if (state.value.playback.isCasting) {
-            castPlaybackCoordinator.castTrackId(jobId, title, artist)
+            castPlaybackCoordinator.castTrackId(
+                trackId = normalizedJobId,
+                title = resolvedTitle,
+                artist = resolvedArtist,
+                stableTrackId = stableId
+            )
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
@@ -881,31 +1037,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(
                 playback = current.playback.copy(
                     audioLoading = false,
+                    lastSourceProvider = null,
+                    lastSourceId = null,
+                    lastStableTrackId = stableId,
                     lastYouTubeId = null,
-                    lastJobId = jobId,
-                    trackTitle = title,
-                    trackArtist = artist
+                    lastJobId = normalizedJobId,
+                    trackTitle = resolvedTitle,
+                    trackArtist = resolvedArtist
                 )
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = jobId,
+            cacheKey = stableId,
             failureLogMessage = "Failed to load track by job id"
         ) {
-            val response = api.getAnalysis(baseUrl, jobId)
-            serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = jobId)
+            val response = api.getAnalysis(baseUrl, normalizedJobId)
+            serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = normalizedJobId)
         }
     }
 
     private suspend fun loadExistingJob(
         jobId: String,
-        youtubeId: String,
+        stableTrackId: String,
         response: AnalysisResponse,
         title: String? = null,
         artist: String? = null
     ) {
+        val parsedIdentity = parseTrackStableId(stableTrackId)
         if (state.value.playback.isCasting) {
-            castPlaybackCoordinator.castTrackId(youtubeId, title, artist)
+            castPlaybackCoordinator.castTrackId(
+                trackId = jobId,
+                title = title,
+                artist = artist,
+                sourceProvider = parsedIdentity?.sourceProvider,
+                sourceId = parsedIdentity?.sourceId,
+                stableTrackId = stableTrackId
+            )
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
@@ -914,7 +1081,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 search = resetSearchStateAfterTrackSelection(it.search),
                 playback = it.playback.copy(
-                    lastYouTubeId = youtubeId,
+                    lastSourceProvider = parsedIdentity?.sourceProvider,
+                    lastSourceId = parsedIdentity?.sourceId,
+                    lastStableTrackId = stableTrackId,
+                    lastYouTubeId = if (parsedIdentity?.sourceProvider == SOURCE_PROVIDER_YOUTUBE) {
+                        parsedIdentity.sourceId
+                    } else {
+                        null
+                    },
                     trackTitle = title,
                     trackArtist = artist
                 )
@@ -970,6 +1144,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
+            } catch (error: HttpStatusException) {
+                if (error.statusCode == 422) {
+                    showServerTrackLengthLimitError()
+                } else {
+                    Log.e(TAG, failureLogMessage, error)
+                    playbackCoordinator.setAnalysisError("Loading failed.")
+                }
             } catch (error: IOException) {
                 Log.e(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
@@ -995,10 +1176,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (hasAnalysis) {
             return true
         }
-        val youtubeId = current.lastYouTubeId
-        if (!youtubeId.isNullOrBlank()) {
+        val stableTrackId = current.stableTrackIdOrNull()
+        if (!stableTrackId.isNullOrBlank()) {
             playbackCoordinator.setAnalysisQueued(null, "Restoring track...")
-            loadTrackByYoutubeId(youtubeId, current.trackTitle, current.trackArtist)
+            loadTrackByStableId(stableTrackId, current.trackTitle, current.trackArtist)
             return false
         }
         playbackCoordinator.setAnalysisError("Analysis unavailable. Reload the track.")
@@ -1028,7 +1209,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             notifyCastUnavailable()
             return
         }
-        val trackId = current.lastYouTubeId ?: current.lastJobId
+        val trackId = current.stableTrackIdOrNull()
         if (trackId.isNullOrBlank()) {
             viewModelScope.launch { showToast("Select a track before playing.") }
             return
@@ -1257,24 +1438,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         title: String?,
         artist: String?
     ): Boolean {
-        val queued = tryQueueYoutubeAnalysisForCast(
-            baseUrl = state.value.baseUrl,
-            youtubeId = youtubeId,
-            title = title,
-            artist = artist
-        ) { baseUrl, id, trackTitle, trackArtist ->
-            api.startYoutubeAnalysis(
-                baseUrl = baseUrl,
-                youtubeId = id,
-                title = trackTitle,
-                artist = trackArtist
-            )
-            Unit
-        }
-        if (!queued) {
+        val normalizedBaseUrl = state.value.baseUrl.trim()
+        if (normalizedBaseUrl.isBlank()) {
             showToast("Unable to queue this track for casting.")
+            return false
         }
-        return queued
+        return try {
+            api.startYoutubeAnalysis(
+                baseUrl = normalizedBaseUrl,
+                youtubeId = youtubeId,
+                title = title,
+                artist = artist
+            )
+            true
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: HttpStatusException) {
+            if (error.statusCode == 422) {
+                showServerTrackLengthLimitError()
+            } else {
+                showToast("Unable to queue this track for casting.")
+            }
+            false
+        } catch (_: Exception) {
+            showToast("Unable to queue this track for casting.")
+            false
+        }
     }
 
     private fun sendCastVisualizationIndex(index: Int) {
@@ -1293,8 +1482,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { showToast("Set a base URL first.") }
             return
         }
-        val youtubeId = state.value.playback.lastYouTubeId
-        if (youtubeId.isNullOrBlank()) {
+        val stableId = state.value.playback.stableTrackIdOrNull()
+        if (stableId.isNullOrBlank()) {
             viewModelScope.launch { showToast("Nothing to retry.") }
             return
         }
@@ -1302,22 +1491,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val artist = state.value.playback.trackArtist
         serverTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack()
-        loadTrackByYoutubeId(youtubeId, title, artist)
+        loadTrackByStableId(stableId, title, artist)
     }
 
     suspend fun deleteCurrentJob(): Boolean {
         if (state.value.playback.deleteInFlight) return false
         val jobId = playbackCoordinator.getLastJobId() ?: return false
         val baseUrl = state.value.baseUrl
-        val youtubeId = state.value.playback.lastYouTubeId
+        val stableTrackId = state.value.playback.stableTrackIdOrNull()
         if (baseUrl.isBlank()) return false
         updatePlaybackState { it.copy(deleteInFlight = true) }
         return try {
             api.deleteJob(baseUrl, jobId)
-            if (youtubeId != null) {
-                playbackCoordinator.clearCachedTrack(youtubeId)
+            if (stableTrackId != null) {
+                playbackCoordinator.clearCachedTrack(stableTrackId)
                 favoritesController.updateFavorites(
-                    state.value.favorites.filterNot { it.uniqueSongId == youtubeId }
+                    state.value.favorites.filterNot { it.uniqueSongId == stableTrackId }
                 )
             }
             playbackCoordinator.resetForNewTrack()
@@ -1372,6 +1561,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun castTrackLengthLimitErrorMessage(): String {
         return "Sorry, tracks longer than ${CAST_MAX_TRACK_DURATION_MINUTES.toInt()} minutes " +
             "cannot be cast due to Chromecast memory limitations."
+    }
+
+    private fun showServerTrackLengthLimitError() {
+        val maxTrackLengthMinutes = state.value.maxTrackLengthMinutes
+        val message = if (maxTrackLengthMinutes != null && maxTrackLengthMinutes > 0) {
+            "The maximum track length for this server is ${formatMinutes(maxTrackLengthMinutes)} minutes."
+        } else {
+            "This track exceeds the server's maximum allowed length."
+        }
+        playbackCoordinator.setAnalysisError("Loading failed.")
+        _state.update { it.copy(trackLengthLimitErrorMessage = message) }
     }
 
     private fun showTrackLengthLimitIfExceeded(durationSeconds: Double?): Boolean {

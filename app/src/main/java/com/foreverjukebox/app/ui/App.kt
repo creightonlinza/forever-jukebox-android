@@ -22,7 +22,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.TOP_SONGS_LIMIT
 
 @Composable
@@ -78,13 +77,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         onRefreshTrendingSongs = viewModel::refreshTrendingSongs,
                         onRefreshRecentSongs = viewModel::refreshRecentSongs,
                         onRefreshFavorites = viewModel::refreshFavoritesFromSync,
-                        onSelect = { id, title, artist, tuningParams, sourceType ->
-                            when (sourceType) {
-                                FavoriteSourceType.Upload ->
-                                    viewModel.loadTrackByJobId(id, title, artist, tuningParams)
-                                FavoriteSourceType.Youtube ->
-                                    viewModel.loadTrackByYoutubeId(id, title, artist, tuningParams)
-                            }
+                        onSelect = { id, title, artist, tuningParams ->
+                            viewModel.loadTrackByStableId(id, title, artist, tuningParams)
                         },
                         onRemoveFavorite = viewModel::removeFavorite,
                         favoritesSyncCode = state.favoritesSyncCode,
