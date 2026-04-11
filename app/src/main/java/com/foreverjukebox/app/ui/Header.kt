@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
@@ -40,17 +41,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -58,6 +66,7 @@ import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.ThemeMode
 import java.util.Locale
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
@@ -223,7 +232,7 @@ private fun HeroTitle() {
                 shadow = titleShadow
             )
         ) {
-            append("THE FOREVER ")
+            append("THE FOREVER\u00A0")
         }
         withStyle(
             style = SpanStyle(
@@ -234,30 +243,88 @@ private fun HeroTitle() {
             append("JUKEBOX")
         }
     }
-    Box(
-        modifier = Modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = SurfaceShape,
-                clip = false,
-                ambientColor = glowColor,
-                spotColor = glowColor
+    val textMeasurer = rememberTextMeasurer()
+    val baseStyle = MaterialTheme.typography.titleLarge.copy(fontFamily = neonFontFamily)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val horizontalPaddingPx = with(density) { 24.dp.roundToPx() }
+        val availableTextWidthPx = max(0, constraints.maxWidth - horizontalPaddingPx)
+        val fittedStyle = remember(titleText, baseStyle, availableTextWidthPx) {
+            fitHeroTitleStyle(
+                text = titleText,
+                baseStyle = baseStyle,
+                textMeasurer = textMeasurer,
+                maxWidthPx = availableTextWidthPx
             )
-            .clip(SurfaceShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(width = 2.dp, color = borderColor, shape = SurfaceShape)
-            .alpha(0.64f + (0.36f * frameFlicker))
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = titleText,
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontFamily = neonFontFamily,
-                letterSpacing = 2.sp
-            ),
-            fontWeight = FontWeight.Normal
+        }
+        Box(
+            modifier = Modifier
+                .shadow(
+                    elevation = 8.dp,
+                    shape = SurfaceShape,
+                    clip = false,
+                    ambientColor = glowColor,
+                    spotColor = glowColor
+                )
+                .clip(SurfaceShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(width = 2.dp, color = borderColor, shape = SurfaceShape)
+                .alpha(0.64f + (0.36f * frameFlicker))
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = titleText,
+                style = fittedStyle,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip
+            )
+        }
+    }
+}
+
+private fun fitHeroTitleStyle(
+    text: AnnotatedString,
+    baseStyle: TextStyle,
+    textMeasurer: androidx.compose.ui.text.TextMeasurer,
+    maxWidthPx: Int
+): TextStyle {
+    val fallbackFontSizeSp = 22f
+    val minFontSizeSp = 11f
+    val maxFontSizeSp = if (baseStyle.fontSize == TextUnit.Unspecified) {
+        fallbackFontSizeSp
+    } else {
+        baseStyle.fontSize.value
+    }
+    if (maxWidthPx <= 0) {
+        return baseStyle.copy(
+            fontSize = minFontSizeSp.sp,
+            letterSpacing = (minFontSizeSp * 0.09f).sp
         )
     }
+    var candidateSp = maxFontSizeSp
+    while (candidateSp > minFontSizeSp) {
+        val candidateStyle = baseStyle.copy(
+            fontSize = candidateSp.sp,
+            letterSpacing = (candidateSp * 0.09f).sp
+        )
+        val layout = textMeasurer.measure(
+            text = text,
+            style = candidateStyle,
+            maxLines = 1,
+            softWrap = false,
+            constraints = Constraints(maxWidth = maxWidthPx)
+        )
+        if (!layout.didOverflowWidth) {
+            return candidateStyle
+        }
+        candidateSp -= 1f
+    }
+    return baseStyle.copy(
+        fontSize = minFontSizeSp.sp,
+        letterSpacing = (minFontSizeSp * 0.09f).sp
+    )
 }
 
 @Composable
