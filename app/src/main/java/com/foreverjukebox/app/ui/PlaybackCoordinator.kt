@@ -321,13 +321,18 @@ class PlaybackCoordinator(
             updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
             syncLoadingKeepAliveService()
             return true
+        } catch (err: HttpStatusException) {
+            audioLoadInFlight = false
+            updatePlaybackState { it.copy(audioLoading = false) }
+            syncLoadingKeepAliveService()
+            if (err.statusCode == 404) {
+                return false
+            }
+            throw err
         } catch (err: IOException) {
             audioLoadInFlight = false
             updatePlaybackState { it.copy(audioLoading = false) }
             syncLoadingKeepAliveService()
-            if (err is HttpStatusException && err.statusCode == 404) {
-                return false
-            }
             throw err
         }
     }
