@@ -18,6 +18,7 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
@@ -383,6 +384,11 @@ class ForegroundPlaybackService : Service() {
             } catch (error: ForegroundServiceStartNotAllowedException) {
                 // Android can reject entering foreground if the app is background-restricted.
                 // Avoid crashing the process; drop this notification update.
+                Log.w(
+                    TAG,
+                    "Foreground start denied for playback notification update.",
+                    error
+                )
                 activeNotificationState = null
                 hasStartedForeground = false
                 stopSelf()
@@ -650,6 +656,7 @@ class ForegroundPlaybackService : Service() {
     }
 
     companion object {
+        private const val TAG = "ForegroundPlaybackSvc"
         @Volatile
         private var isRunning: Boolean = false
         private val _sleepTimerState = MutableStateFlow(SleepTimerStatus())
