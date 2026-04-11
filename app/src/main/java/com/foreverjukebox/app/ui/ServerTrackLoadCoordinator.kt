@@ -12,6 +12,8 @@ class ServerTrackLoadCoordinator(
 ) {
     private var serverTrackLoadJob: Job? = null
 
+    fun isRunning(): Boolean = serverTrackLoadJob?.isActive == true
+
     fun launch(block: suspend () -> Unit) {
         cancel()
         serverTrackLoadJob = scope.launch {

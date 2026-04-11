@@ -194,18 +194,14 @@ private fun HeroTitle() {
             animation = keyframes {
                 durationMillis = 18000
                 1f at 0
-                1f at 4446
-                0f at 4460
-                0f at 4518
-                1f at 4536
-                1f at 11358
-                0f at 11376
-                0f at 11448
-                1f at 11466
-                1f at 15912
-                0f at 15924
-                0f at 15966
-                1f at 15984
+                1f at 15911 // 88.3%
+                0f at 15912 // 88.4%
+                0f at 15983
+                1f at 15984 // 88.8%
+                1f at 16055
+                0f at 16056 // 89.2%
+                0f at 16127
+                1f at 16128 // 89.6%
                 1f at 18000
             },
             repeatMode = RepeatMode.Restart

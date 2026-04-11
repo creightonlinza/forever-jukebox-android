@@ -97,6 +97,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<UiState> = _state
 
     private var appConfigLoaded = false
+    private var foregroundRecoveryInFlight = false
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
@@ -411,6 +412,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         playbackCoordinator.onCleared()
         controller.release()
+    }
+
+    fun onHostStarted() {
+        if (foregroundRecoveryInFlight) {
+            return
+        }
+        foregroundRecoveryInFlight = true
+        viewModelScope.launch {
+            try {
+                recoverLoadingStateOnForeground()
+            } finally {
+                foregroundRecoveryInFlight = false
+            }
+        }
     }
 
     fun setBaseUrl(url: String) {
@@ -1539,6 +1554,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissVersionUpdatePrompt() {
         _state.update { it.copy(versionUpdatePrompt = null) }
+    }
+
+    private fun recoverLoadingStateOnForeground() {
+        val current = state.value
+        val playback = current.playback
+        val isTrackLoadInProgress =
+            playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading
+        if (!isTrackLoadInProgress) {
+            return
+        }
+        when (current.appMode) {
+            AppMode.Server -> recoverServerLoadingOnForeground(current, playback)
+            AppMode.Local -> recoverLocalLoadingOnForeground()
+            null -> Unit
+        }
+    }
+
+    private fun recoverServerLoadingOnForeground(current: UiState, playback: PlaybackState) {
+        val baseUrl = current.baseUrl.trim()
+        val jobId = playback.lastJobId ?: return
+        if (baseUrl.isBlank()) {
+            return
+        }
+        if (serverTrackLoadCoordinator.isRunning() || playbackCoordinator.hasActiveServerLoadWork()) {
+            return
+        }
+        serverTrackLoadCoordinator.launch {
+            playbackCoordinator.setAnalysisQueued(
+                playback.analysisProgress,
+                playback.analysisMessage ?: "Resuming load..."
+            )
+            try {
+                val response = api.getAnalysis(baseUrl, jobId)
+                val handled = serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = jobId)
+                if (!handled) {
+                    playbackCoordinator.setAnalysisError("Loading failed.")
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: IOException) {
+                Log.e(TAG, "Failed to recover server load state", error)
+                playbackCoordinator.setAnalysisError("Loading failed.")
+            } catch (error: IllegalArgumentException) {
+                Log.e(TAG, "Failed to recover server load state", error)
+                playbackCoordinator.setAnalysisError("Loading failed.")
+            } catch (error: IllegalStateException) {
+                Log.e(TAG, "Failed to recover server load state", error)
+                playbackCoordinator.setAnalysisError("Loading failed.")
+            }
+        }
+    }
+
+    private fun recoverLocalLoadingOnForeground() {
+        if (localAnalysisCoordinator.isAnalysisRunning()) {
+            return
+        }
+        playbackCoordinator.setAnalysisError("Analysis interrupted. Please retry.")
     }
 
     private fun checkForAppUpdateOnce() {

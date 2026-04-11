@@ -50,6 +50,7 @@ class PlaybackCoordinator(
     private var pollJob: Job? = null
     private var backgroundAudioLoadJob: Job? = null
     private var audioLoadInFlight = false
+    private var loadingKeepAliveActive = false
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
     private var deleteEligibilityJobId: String? = null
@@ -60,6 +61,17 @@ class PlaybackCoordinator(
         listenTimerJob?.cancel()
         pollJob?.cancel()
         backgroundAudioLoadJob?.cancel()
+        if (loadingKeepAliveActive) {
+            loadingKeepAliveActive = false
+            val playback = getState().playback
+            if (!playback.isRunning && !playback.isPaused && !playback.shouldShowCastNotification()) {
+                ForegroundPlaybackService.stop(application)
+            }
+        }
+    }
+
+    fun hasActiveServerLoadWork(): Boolean {
+        return pollJob?.isActive == true || backgroundAudioLoadJob?.isActive == true || audioLoadInFlight
     }
 
     fun getLastJobId(): String? = lastJobId
@@ -237,6 +249,7 @@ class PlaybackCoordinator(
                 analysisCalculating = false
             )
         }
+        syncLoadingKeepAliveService()
         setLastJobId(response.id)
         applyAnalysisResult(response)
         return true
@@ -302,10 +315,12 @@ class PlaybackCoordinator(
             audioLoadInFlight = false
             controller.syncAutocanonizerAudio()
             updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
+            syncLoadingKeepAliveService()
             return true
         } catch (err: IOException) {
             audioLoadInFlight = false
             updatePlaybackState { it.copy(audioLoading = false) }
+            syncLoadingKeepAliveService()
             if (err.message?.contains("HTTP 404") == true) {
                 return false
             }
@@ -361,6 +376,7 @@ class PlaybackCoordinator(
             )
         }
         applyActiveTab(TabId.Play, true)
+        syncLoadingKeepAliveService()
         val jobId = response.id ?: lastJobId
         if (jobId != null) {
             recordPlay(jobId)
@@ -437,6 +453,7 @@ class PlaybackCoordinator(
                 )
             )
         }
+        syncLoadingKeepAliveService()
         engine.stopJukebox()
         val emptyViz = VisualizationData(beats = emptyList(), edges = mutableListOf())
         updateState { it.copy(playback = it.playback.copy(vizData = emptyViz)) }
@@ -555,26 +572,31 @@ class PlaybackCoordinator(
                 }
                 controller.syncAutocanonizerAudio()
                 updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
+                syncLoadingKeepAliveService()
                 return true
             } catch (_: OutOfMemoryError) {
                 withContext(Dispatchers.IO) {
                     cachedAudio.delete()
                 }
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+                syncLoadingKeepAliveService()
                 return false
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
                 Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+                syncLoadingKeepAliveService()
                 return false
             } catch (error: IllegalArgumentException) {
                 Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+                syncLoadingKeepAliveService()
                 return false
             } catch (error: IllegalStateException) {
                 Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+                syncLoadingKeepAliveService()
                 return false
             }
         }
@@ -660,6 +682,28 @@ class PlaybackCoordinator(
                 }
             )
         }
+        syncLoadingKeepAliveService()
+    }
+
+    private fun syncLoadingKeepAliveService() {
+        val playback = getState().playback
+        val shouldKeepAlive =
+            playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading
+        if (shouldKeepAlive) {
+            if (!loadingKeepAliveActive) {
+                ForegroundPlaybackService.start(application)
+                loadingKeepAliveActive = true
+            }
+            return
+        }
+        if (!loadingKeepAliveActive) {
+            return
+        }
+        loadingKeepAliveActive = false
+        if (playback.isRunning || playback.isPaused || playback.shouldShowCastNotification()) {
+            return
+        }
+        ForegroundPlaybackService.stop(application)
     }
 
     private inline fun ignoreFailures(block: () -> Unit) {

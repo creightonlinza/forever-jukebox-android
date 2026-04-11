@@ -1,6 +1,8 @@
 package com.foreverjukebox.app.playback
 
+import android.app.ActivityManager
 import android.app.Application
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -14,7 +16,9 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
@@ -374,8 +378,21 @@ class ForegroundPlaybackService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(PlaybackServiceConstants.NOTIFICATION_ID, notification)
         } else {
-            startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
-            hasStartedForeground = true
+            try {
+                startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
+                hasStartedForeground = true
+            } catch (error: ForegroundServiceStartNotAllowedException) {
+                // Android can reject entering foreground if the app is background-restricted.
+                // Avoid crashing the process; drop this notification update.
+                Log.w(
+                    TAG,
+                    "Foreground start denied for playback notification update.",
+                    error
+                )
+                activeNotificationState = null
+                hasStartedForeground = false
+                stopSelf()
+            }
         }
     }
 
@@ -639,6 +656,7 @@ class ForegroundPlaybackService : Service() {
     }
 
     companion object {
+        private const val TAG = "ForegroundPlaybackSvc"
         @Volatile
         private var isRunning: Boolean = false
         private val _sleepTimerState = MutableStateFlow(SleepTimerStatus())
@@ -652,14 +670,22 @@ class ForegroundPlaybackService : Service() {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_START
             }
-            context.startForegroundService(intent)
+            if (isRunning) {
+                context.startService(intent)
+            } else if (canStartForegroundService(context)) {
+                context.startForegroundService(intent)
+            }
         }
 
         fun update(context: Context) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_UPDATE
             }
-            context.startService(intent)
+            if (isRunning) {
+                context.startService(intent)
+            } else if (canStartForegroundService(context)) {
+                context.startForegroundService(intent)
+            }
         }
 
         fun setSleepTimer(context: Context, durationMs: Long?) {
@@ -690,7 +716,7 @@ class ForegroundPlaybackService : Service() {
             }
             if (isRunning) {
                 context.startService(intent)
-            } else {
+            } else if (canStartForegroundService(context)) {
                 context.startForegroundService(intent)
             }
         }
@@ -707,6 +733,15 @@ class ForegroundPlaybackService : Service() {
                     context.stopService(Intent(context, ForegroundPlaybackService::class.java))
                 }
             }
+        }
+
+        private fun canStartForegroundService(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                return true
+            }
+            val appState = ActivityManager.RunningAppProcessInfo()
+            ActivityManager.getMyMemoryState(appState)
+            return appState.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
         }
     }
 }

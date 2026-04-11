@@ -80,6 +80,11 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.onHostStarted()
+    }
+
     override fun onDestroy() {
         syncCastSessionListener(
             enable = false,
