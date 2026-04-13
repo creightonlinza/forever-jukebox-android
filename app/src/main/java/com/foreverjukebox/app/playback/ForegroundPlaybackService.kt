@@ -8,20 +8,26 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.toColorInt
@@ -77,6 +83,8 @@ private object PlaybackServiceConstants {
     const val ACTION_CLEAR_NOTIFICATION_KEEP_TIMER =
         "com.foreverjukebox.app.playback.CLEAR_NOTIFICATION_KEEP_TIMER"
     const val ACTION_SLEEP_TIMER_EXPIRED = "com.foreverjukebox.app.playback.SLEEP_TIMER_EXPIRED"
+    const val ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED =
+        "com.foreverjukebox.app.playback.BLUETOOTH_DISCONNECT_AUTO_PAUSED"
     const val ACTION_CLOSE_FULLSCREEN = "com.foreverjukebox.app.playback.CLOSE_FULLSCREEN"
     const val EXTRA_IS_CASTING = "com.foreverjukebox.app.playback.extra.IS_CASTING"
     const val EXTRA_CAST_IS_PLAYING = "com.foreverjukebox.app.playback.extra.CAST_IS_PLAYING"
@@ -90,6 +98,7 @@ private object PlaybackServiceConstants {
 private const val NOTIFICATION_ACCENT = "#4AC7FF"
 private const val DEFAULT_NOTIFICATION_TITLE = "The Forever Jukebox"
 private const val CAST_FALLBACK_DEVICE_LABEL = "Other device"
+private const val BLUETOOTH_DISCONNECT_WINDOW_MS = 3_000L
 
 private enum class NotificationMode {
     Local,
@@ -101,6 +110,37 @@ private enum class PlaybackAction {
     Pause,
     Stop,
     Toggle
+}
+
+internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
+    return when (type) {
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_HEARING_AID,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_BLE_SPEAKER,
+        AudioDeviceInfo.TYPE_BLE_BROADCAST -> true
+        else -> false
+    }
+}
+
+internal fun hasRecentBluetoothDisconnect(
+    nowElapsedMs: Long,
+    disconnectElapsedMs: Long?,
+    windowMs: Long
+): Boolean {
+    val disconnectedAt = disconnectElapsedMs ?: return false
+    if (windowMs < 0L) return false
+    val elapsed = nowElapsedMs - disconnectedAt
+    return elapsed in 0L..windowMs
+}
+
+internal fun shouldAutoPauseForBluetoothDisconnect(
+    isLocalPlayback: Boolean,
+    isPlaybackRunning: Boolean,
+    hasRecentBluetoothDisconnect: Boolean
+): Boolean {
+    return isLocalPlayback && isPlaybackRunning && hasRecentBluetoothDisconnect
 }
 
 private data class PlaybackNotificationState(
@@ -139,6 +179,25 @@ class ForegroundPlaybackService : Service() {
     private var sleepTimerJob: Job? = null
     private var sleepTimerEndRealtimeMs: Long? = null
     private var hasStartedForeground = false
+    private var audioManager: AudioManager? = null
+    private var bluetoothRouteMonitoringRegistered = false
+    @Volatile
+    private var lastBluetoothOutputDisconnectElapsedMs: Long? = null
+    private val bluetoothAudioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesRemoved(removedDevices: Array<AudioDeviceInfo>) {
+            if (removedDevices.any { device -> isBluetoothOutputDeviceType(device.type) }) {
+                lastBluetoothOutputDisconnectElapsedMs = SystemClock.elapsedRealtime()
+            }
+        }
+    }
+    private val audioBecomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                return
+            }
+            handleAudioBecomingNoisy()
+        }
+    }
 
     override fun onBind(intent: Intent?) = null
 
@@ -193,6 +252,7 @@ class ForegroundPlaybackService : Service() {
                 }
             })
         }
+        registerBluetoothRouteMonitoring()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -530,6 +590,56 @@ class ForegroundPlaybackService : Service() {
         handlePlaybackAction(PlaybackAction.Toggle)
     }
 
+    private fun registerBluetoothRouteMonitoring() {
+        val manager = getSystemService(AudioManager::class.java) ?: return
+        audioManager = manager
+        manager.registerAudioDeviceCallback(bluetoothAudioDeviceCallback, null)
+        val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        ContextCompat.registerReceiver(
+            this,
+            audioBecomingNoisyReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        bluetoothRouteMonitoringRegistered = true
+    }
+
+    private fun unregisterBluetoothRouteMonitoring() {
+        if (!bluetoothRouteMonitoringRegistered) {
+            return
+        }
+        audioManager?.unregisterAudioDeviceCallback(bluetoothAudioDeviceCallback)
+        runCatching { unregisterReceiver(audioBecomingNoisyReceiver) }
+        bluetoothRouteMonitoringRegistered = false
+        audioManager = null
+    }
+
+    private fun handleAudioBecomingNoisy() {
+        val now = SystemClock.elapsedRealtime()
+        val hasRecentDisconnect = hasRecentBluetoothDisconnect(
+            nowElapsedMs = now,
+            disconnectElapsedMs = lastBluetoothOutputDisconnectElapsedMs,
+            windowMs = BLUETOOTH_DISCONNECT_WINDOW_MS
+        )
+        // Consume the removal signal so unrelated later noisy events do not auto-pause.
+        lastBluetoothOutputDisconnectElapsedMs = null
+        val isLocalPlayback = activeNotificationState?.mode != NotificationMode.Cast
+        val isPlaybackRunning = PlaybackControllerHolder.get(this).isPlaying()
+        if (
+            !shouldAutoPauseForBluetoothDisconnect(
+                isLocalPlayback = isLocalPlayback,
+                isPlaybackRunning = isPlaybackRunning,
+                hasRecentBluetoothDisconnect = hasRecentDisconnect
+            )
+        ) {
+            return
+        }
+        handlePlaybackAction(PlaybackAction.Pause)
+        sendBroadcast(Intent(PlaybackServiceConstants.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED).apply {
+            setPackage(packageName)
+        })
+    }
+
     private fun clearPlaybackNotificationKeepTimer() {
         activeNotificationState = null
         if (hasStartedForeground) {
@@ -619,6 +729,7 @@ class ForegroundPlaybackService : Service() {
         activeNotificationState = null
         isRunning = false
         hasStartedForeground = false
+        unregisterBluetoothRouteMonitoring()
         clearSleepTimer()
         serviceScope.cancel()
         mediaSession.release()
@@ -663,6 +774,8 @@ class ForegroundPlaybackService : Service() {
         val sleepTimerState: StateFlow<SleepTimerStatus> = _sleepTimerState
         const val ACTION_SLEEP_TIMER_EXPIRED: String =
             PlaybackServiceConstants.ACTION_SLEEP_TIMER_EXPIRED
+        const val ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED: String =
+            PlaybackServiceConstants.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED
         const val ACTION_CLOSE_FULLSCREEN: String =
             PlaybackServiceConstants.ACTION_CLOSE_FULLSCREEN
 

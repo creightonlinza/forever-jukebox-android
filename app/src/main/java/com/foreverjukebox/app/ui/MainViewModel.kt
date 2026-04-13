@@ -204,33 +204,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         githubRepoOwner = GITHUB_REPO_OWNER,
         githubRepoName = GITHUB_REPO_NAME
     )
-    private val sleepTimerExpiredReceiver = object : BroadcastReceiver() {
+    private val playbackServiceEventReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
-            if (intent?.action != ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED) {
-                return
-            }
-            playbackCoordinator.stopListenTimer()
-            playbackCoordinator.updateListenTimeDisplay()
-            _state.update {
-                it.copy(
-                    playback = it.playback.copy(
-                        isRunning = false,
-                        isPaused = false,
-                        canonizerOtherIndex = null
-                    )
-                )
-            }
-            if (state.value.playback.isCasting) {
-                syncCastNotification(state.value.playback)
+            when (intent?.action) {
+                ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED -> {
+                    handleSleepTimerExpired()
+                }
+                ForegroundPlaybackService.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED -> {
+                    handleBluetoothDisconnectAutoPaused()
+                }
             }
         }
     }
 
     init {
+        val playbackServiceEvents = IntentFilter().apply {
+            addAction(ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED)
+            addAction(ForegroundPlaybackService.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED)
+        }
         ContextCompat.registerReceiver(
             getApplication<Application>(),
-            sleepTimerExpiredReceiver,
-            IntentFilter(ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED),
+            playbackServiceEventReceiver,
+            playbackServiceEvents,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         viewModelScope.launch {
@@ -414,11 +409,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         serverTrackLoadCoordinator.cancel()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         runCatching {
-            getApplication<Application>().unregisterReceiver(sleepTimerExpiredReceiver)
+            getApplication<Application>().unregisterReceiver(playbackServiceEventReceiver)
         }
         super.onCleared()
         playbackCoordinator.onCleared()
         controller.release()
+    }
+
+    private fun handleSleepTimerExpired() {
+        playbackCoordinator.stopListenTimer()
+        playbackCoordinator.updateListenTimeDisplay()
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(
+                    isRunning = false,
+                    isPaused = false,
+                    canonizerOtherIndex = null
+                )
+            )
+        }
+        if (state.value.playback.isCasting) {
+            syncCastNotification(state.value.playback)
+        }
+    }
+
+    private fun handleBluetoothDisconnectAutoPaused() {
+        val playback = state.value.playback
+        if (playback.isCasting) {
+            return
+        }
+        playbackCoordinator.stopListenTimer()
+        playbackCoordinator.updateListenTimeDisplay()
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(
+                    isRunning = false,
+                    isPaused = true,
+                    canonizerOtherIndex = null
+                )
+            )
+        }
     }
 
     fun onHostStarted() {
