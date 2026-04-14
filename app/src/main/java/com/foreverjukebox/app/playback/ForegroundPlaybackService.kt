@@ -83,8 +83,8 @@ private object PlaybackServiceConstants {
     const val ACTION_CLEAR_NOTIFICATION_KEEP_TIMER =
         "com.foreverjukebox.app.playback.CLEAR_NOTIFICATION_KEEP_TIMER"
     const val ACTION_SLEEP_TIMER_EXPIRED = "com.foreverjukebox.app.playback.SLEEP_TIMER_EXPIRED"
-    const val ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED =
-        "com.foreverjukebox.app.playback.BLUETOOTH_DISCONNECT_AUTO_PAUSED"
+    const val ACTION_PLAYBACK_STATE_CHANGED =
+        "com.foreverjukebox.app.playback.PLAYBACK_STATE_CHANGED"
     const val ACTION_CLOSE_FULLSCREEN = "com.foreverjukebox.app.playback.CLOSE_FULLSCREEN"
     const val EXTRA_IS_CASTING = "com.foreverjukebox.app.playback.extra.IS_CASTING"
     const val EXTRA_CAST_IS_PLAYING = "com.foreverjukebox.app.playback.extra.CAST_IS_PLAYING"
@@ -584,6 +584,7 @@ class ForegroundPlaybackService : Service() {
                 }
             }
         }
+        broadcastLocalPlaybackStateChanged()
     }
 
     private fun handleCastToggle() {
@@ -635,7 +636,10 @@ class ForegroundPlaybackService : Service() {
             return
         }
         handlePlaybackAction(PlaybackAction.Pause)
-        sendBroadcast(Intent(PlaybackServiceConstants.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED).apply {
+    }
+
+    private fun broadcastLocalPlaybackStateChanged() {
+        sendBroadcast(Intent(PlaybackServiceConstants.ACTION_PLAYBACK_STATE_CHANGED).apply {
             setPackage(packageName)
         })
     }
@@ -774,8 +778,8 @@ class ForegroundPlaybackService : Service() {
         val sleepTimerState: StateFlow<SleepTimerStatus> = _sleepTimerState
         const val ACTION_SLEEP_TIMER_EXPIRED: String =
             PlaybackServiceConstants.ACTION_SLEEP_TIMER_EXPIRED
-        const val ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED: String =
-            PlaybackServiceConstants.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED
+        const val ACTION_PLAYBACK_STATE_CHANGED: String =
+            PlaybackServiceConstants.ACTION_PLAYBACK_STATE_CHANGED
         const val ACTION_CLOSE_FULLSCREEN: String =
             PlaybackServiceConstants.ACTION_CLOSE_FULLSCREEN
 

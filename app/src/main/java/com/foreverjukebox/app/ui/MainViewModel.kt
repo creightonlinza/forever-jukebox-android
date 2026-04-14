@@ -281,8 +281,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED -> {
                     handleSleepTimerExpired()
                 }
-                ForegroundPlaybackService.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED -> {
-                    handleBluetoothDisconnectAutoPaused()
+                ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED -> {
+                    handleLocalPlaybackStateChanged()
                 }
             }
         }
@@ -291,7 +291,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         val playbackServiceEvents = IntentFilter().apply {
             addAction(ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED)
-            addAction(ForegroundPlaybackService.ACTION_BLUETOOTH_DISCONNECT_AUTO_PAUSED)
+            addAction(ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED)
         }
         ContextCompat.registerReceiver(
             getApplication<Application>(),
@@ -509,19 +509,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun handleBluetoothDisconnectAutoPaused() {
+    private fun handleLocalPlaybackStateChanged() {
         val playback = state.value.playback
         if (playback.isCasting) {
             return
         }
-        playbackCoordinator.stopListenTimer()
+        val isRunning = controller.isPlaying()
+        val isPaused = controller.isPaused()
+        if (isRunning) {
+            playbackCoordinator.startListenTimer()
+        } else {
+            playbackCoordinator.stopListenTimer()
+        }
         playbackCoordinator.updateListenTimeDisplay()
         _state.update {
             it.copy(
                 playback = it.playback.copy(
-                    isRunning = false,
-                    isPaused = true,
-                    canonizerOtherIndex = null
+                    isRunning = isRunning,
+                    isPaused = isPaused,
+                    canonizerOtherIndex = if (isRunning || isPaused) {
+                        it.playback.canonizerOtherIndex
+                    } else {
+                        null
+                    }
                 )
             )
         }
