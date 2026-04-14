@@ -76,8 +76,6 @@ class FavoritesController(
                     favoritesSyncHydratedFor = snapshot.code
                     showToast("Favorites refreshed.")
                 }
-            } catch (cancel: CancellationException) {
-                throw cancel
             } finally {
                 if (isSnapshotCurrent(snapshot, requireCodeMatch = false)) {
                     updateState { it.copy(favoritesSyncLoading = false) }
