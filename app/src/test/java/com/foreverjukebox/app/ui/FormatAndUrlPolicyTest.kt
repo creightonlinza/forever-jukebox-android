@@ -29,4 +29,26 @@ class FormatAndUrlPolicyTest {
         assertFalse(isValidBaseUrl("https://"))
         assertFalse(isValidBaseUrl("   "))
     }
+
+    @Test
+    fun baseUrlChangeDetectionUsesNormalizedServerIdentity() {
+        assertFalse(
+            hasBaseUrlServerChanged(
+                "https://Example.com/",
+                "https://example.com"
+            )
+        )
+        assertFalse(
+            hasBaseUrlServerChanged(
+                "https://example.com/api/",
+                "https://example.com/api"
+            )
+        )
+        assertTrue(
+            hasBaseUrlServerChanged(
+                "https://example.com/api",
+                "https://example.com/other"
+            )
+        )
+    }
 }

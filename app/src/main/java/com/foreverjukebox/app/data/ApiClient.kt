@@ -19,7 +19,10 @@ class HttpStatusException(
     val responseBody: String? = null
 ) : IOException("HTTP $statusCode")
 
-class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
+class ApiClient(
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    private val githubApiBaseUrl: String = DEFAULT_GITHUB_API_BASE_URL
+) {
     private val jsonWithDefaults = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -164,7 +167,10 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         owner: String,
         repo: String
     ): GitHubReleaseResponse {
-        val url = "https://api.github.com/repos/$owner/$repo/releases/latest"
+        val url = buildUrl(
+            baseUrl = githubApiBaseUrl,
+            pathSegments = listOf("repos", owner, repo, "releases", "latest")
+        )
         return getGitHubJson(url)
     }
 
@@ -315,6 +321,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
     }
 
     companion object {
+        private const val DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com"
         private const val MAX_FAVORITES = 100
         private const val TRENDING_LIMIT = 25
         private val sharedClient = OkHttpClient.Builder()

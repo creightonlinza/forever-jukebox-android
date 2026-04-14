@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AnalysisResponse
+import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
@@ -136,6 +137,53 @@ class MainViewModelCastQueueTest {
         assertEquals(listOf(recentSong), reset.recentSongs)
         assertTrue(reset.recentSongsLoading)
         assertTrue(reset.spotifyLoading)
+    }
+
+    @Test
+    fun favoriteRemovalTrackIdsForDeletionIncludesSourceAndJobIdentity() {
+        val playback = PlaybackState(
+            lastSourceProvider = "youtube",
+            lastSourceId = "dQw4w9WgXcQ",
+            lastJobId = "job_123"
+        )
+
+        val trackIds = favoriteRemovalTrackIdsForDeletion(playback)
+
+        assertTrue(trackIds.contains("src:youtube:dQw4w9WgXcQ"))
+        assertTrue(trackIds.contains("job:job_123"))
+    }
+
+    @Test
+    fun favoriteRemovalTrackIdsForDeletionUsesFallbackJobIdWhenPlaybackJobMissing() {
+        val playback = PlaybackState()
+
+        val trackIds = favoriteRemovalTrackIdsForDeletion(
+            playback = playback,
+            fallbackJobId = "job_fallback"
+        )
+
+        assertEquals(setOf("job:job_fallback"), trackIds)
+    }
+
+    @Test
+    fun removeFavoritesForTrackIdsRemovesCanonicalAndLegacyMatches() {
+        val favorites = listOf(
+            FavoriteTrack(uniqueSongId = "dQw4w9WgXcQ", title = "Legacy", artist = "Artist"),
+            FavoriteTrack(
+                uniqueSongId = "src:youtube:dQw4w9WgXcQ",
+                title = "Canonical",
+                artist = "Artist"
+            ),
+            FavoriteTrack(uniqueSongId = "job:other", title = "Other", artist = "Artist")
+        )
+
+        val filtered = removeFavoritesForTrackIds(
+            favorites = favorites,
+            trackIds = setOf("src:youtube:dQw4w9WgXcQ")
+        )
+
+        assertEquals(1, filtered.size)
+        assertEquals("job:other", filtered.first().uniqueSongId)
     }
 
     @Test

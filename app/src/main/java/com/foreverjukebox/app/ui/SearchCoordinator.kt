@@ -25,13 +25,19 @@ class SearchCoordinator(
     }
 
     private var refreshSongsJob: Job? = null
+    private var topSongsRefreshJob: Job? = null
+    private var recentSongsRefreshJob: Job? = null
+    private var trendingSongsRefreshJob: Job? = null
+    private var spotifySearchJob: Job? = null
+    private var youtubeMatchesJob: Job? = null
+    private var requestGeneration = 0L
     private var topSongsLoaded = false
     private var trendingSongsLoaded = false
     private var recentSongsLoaded = false
 
     fun resetRuntimeState() {
-        refreshSongsJob?.cancel()
-        refreshSongsJob = null
+        requestGeneration += 1
+        cancelAllJobs()
         topSongsLoaded = false
         trendingSongsLoaded = false
         recentSongsLoaded = false
@@ -78,9 +84,10 @@ class SearchCoordinator(
     }
 
     fun runSpotifySearch(query: String) {
-        val baseUrl = getState().baseUrl
+        val baseUrl = getState().baseUrl.trim()
         if (baseUrl.isBlank()) return
         if (getState().search.spotifyLoading) return
+        val generation = requestGeneration
         setSearchQuery(query)
         updateSearchState {
             it.copy(
@@ -89,30 +96,46 @@ class SearchCoordinator(
                 spotifyLoading = true
             )
         }
-        scope.launch {
+        spotifySearchJob?.cancel()
+        spotifySearchJob = scope.launch {
             try {
                 val items = api.searchSpotify(baseUrl, query)
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 updateSearchState { it.copy(spotifyResults = items) }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("Spotify search failed", error)
                 updateSearchState { it.copy(spotifyResults = emptyList()) }
             } catch (error: IllegalArgumentException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("Spotify search failed", error)
                 updateSearchState { it.copy(spotifyResults = emptyList()) }
             } catch (error: IllegalStateException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("Spotify search failed", error)
                 updateSearchState { it.copy(spotifyResults = emptyList()) }
             } finally {
-                updateSearchState { it.copy(spotifyLoading = false) }
+                if (isRequestCurrent(generation, baseUrl)) {
+                    updateSearchState { it.copy(spotifyLoading = false) }
+                }
             }
         }
     }
 
     fun fetchYoutubeMatches(name: String, artist: String, duration: Double) {
-        val baseUrl = getState().baseUrl
+        val baseUrl = getState().baseUrl.trim()
         if (baseUrl.isBlank()) return
+        val generation = requestGeneration
         val query = if (artist.isNotBlank()) "$artist - $name" else name
         updateSearchState {
             it.copy(
@@ -123,61 +146,104 @@ class SearchCoordinator(
                 youtubeLoading = true
             )
         }
-        scope.launch {
+        youtubeMatchesJob?.cancel()
+        youtubeMatchesJob = scope.launch {
             try {
                 val items = api.searchYoutube(baseUrl, query, duration)
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 updateSearchState { it.copy(youtubeMatches = items) }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("YouTube match search failed", error)
                 updateSearchState { it.copy(youtubeMatches = emptyList()) }
             } catch (error: IllegalArgumentException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("YouTube match search failed", error)
                 updateSearchState { it.copy(youtubeMatches = emptyList()) }
             } catch (error: IllegalStateException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("YouTube match search failed", error)
                 updateSearchState { it.copy(youtubeMatches = emptyList()) }
             } finally {
-                updateSearchState { it.copy(youtubeLoading = false) }
+                if (isRequestCurrent(generation, baseUrl)) {
+                    updateSearchState { it.copy(youtubeLoading = false) }
+                }
             }
         }
     }
 
     private fun scheduleSongsRefresh(feed: SongsFeed) {
-        val baseUrl = getState().baseUrl
+        val baseUrl = getState().baseUrl.trim()
         if (baseUrl.isBlank() || isFeedLoaded(feed)) return
+        val generation = requestGeneration
         refreshSongsJob?.cancel()
         refreshSongsJob = scope.launch {
             delay(250)
+            if (!isRequestCurrent(generation, baseUrl)) {
+                return@launch
+            }
             refreshSongs(feed)
         }
     }
 
     private fun refreshSongs(feed: SongsFeed) {
-        val baseUrl = getState().baseUrl
+        val baseUrl = getState().baseUrl.trim()
         if (baseUrl.isBlank()) return
-        scope.launch {
+        val generation = requestGeneration
+        currentFeedJob(feed)?.cancel()
+        var feedJob: Job? = null
+        feedJob = scope.launch {
+            if (!isRequestCurrent(generation, baseUrl)) {
+                return@launch
+            }
             updateSearchState { setFeedLoading(it, feed, true) }
             try {
                 val items = fetchSongs(feed, baseUrl)
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 markFeedLoaded(feed)
                 updateSearchState { setFeedItems(it, feed, items) }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("Song refresh failed for $feed", error)
                 updateSearchState { setFeedItems(it, feed, emptyList()) }
             } catch (error: IllegalArgumentException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("Song refresh failed for $feed", error)
                 updateSearchState { setFeedItems(it, feed, emptyList()) }
             } catch (error: IllegalStateException) {
+                if (!isRequestCurrent(generation, baseUrl)) {
+                    return@launch
+                }
                 logError("Song refresh failed for $feed", error)
                 updateSearchState { setFeedItems(it, feed, emptyList()) }
             } finally {
-                updateSearchState { setFeedLoading(it, feed, false) }
+                if (isRequestCurrent(generation, baseUrl)) {
+                    updateSearchState { setFeedLoading(it, feed, false) }
+                }
+                if (currentFeedJob(feed) === feedJob) {
+                    setFeedJob(feed, null)
+                }
             }
         }
+        setFeedJob(feed, feedJob)
     }
 
     private suspend fun fetchSongs(feed: SongsFeed, baseUrl: String): List<TopSongItem> {
@@ -218,5 +284,40 @@ class SearchCoordinator(
             SongsFeed.Recent -> recentSongsLoaded = true
             SongsFeed.Trending -> trendingSongsLoaded = true
         }
+    }
+
+    private fun isRequestCurrent(generation: Long, baseUrl: String): Boolean {
+        return generation == requestGeneration && getState().baseUrl.trim() == baseUrl
+    }
+
+    private fun currentFeedJob(feed: SongsFeed): Job? {
+        return when (feed) {
+            SongsFeed.Top -> topSongsRefreshJob
+            SongsFeed.Recent -> recentSongsRefreshJob
+            SongsFeed.Trending -> trendingSongsRefreshJob
+        }
+    }
+
+    private fun setFeedJob(feed: SongsFeed, job: Job?) {
+        when (feed) {
+            SongsFeed.Top -> topSongsRefreshJob = job
+            SongsFeed.Recent -> recentSongsRefreshJob = job
+            SongsFeed.Trending -> trendingSongsRefreshJob = job
+        }
+    }
+
+    private fun cancelAllJobs() {
+        refreshSongsJob?.cancel()
+        refreshSongsJob = null
+        topSongsRefreshJob?.cancel()
+        topSongsRefreshJob = null
+        recentSongsRefreshJob?.cancel()
+        recentSongsRefreshJob = null
+        trendingSongsRefreshJob?.cancel()
+        trendingSongsRefreshJob = null
+        spotifySearchJob?.cancel()
+        spotifySearchJob = null
+        youtubeMatchesJob?.cancel()
+        youtubeMatchesJob = null
     }
 }

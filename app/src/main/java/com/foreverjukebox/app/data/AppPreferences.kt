@@ -122,6 +122,12 @@ class AppPreferences(private val context: Context) {
         }
     }
 
+    suspend fun clearAppConfig() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(KEY_APP_CONFIG)
+        }
+    }
+
     suspend fun setCanonizerFinishOutSong(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_CANONIZER_FINISH] = enabled

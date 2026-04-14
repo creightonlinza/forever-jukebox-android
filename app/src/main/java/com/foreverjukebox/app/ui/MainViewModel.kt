@@ -37,6 +37,7 @@ import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
 import com.foreverjukebox.app.cast.CastAppIdResolver
 import java.io.IOException
+import java.net.URI
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -75,6 +76,28 @@ internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchSta
     )
 }
 
+internal fun normalizedBaseUrlForComparison(value: String?): String {
+    val trimmed = value?.trim().orEmpty()
+    if (trimmed.isBlank()) {
+        return ""
+    }
+    val parsed = runCatching { URI(trimmed) }.getOrNull() ?: return trimmed.trimEnd('/')
+    val scheme = parsed.scheme?.lowercase().orEmpty()
+    val host = parsed.host?.lowercase()
+    if (scheme.isBlank() || host.isNullOrBlank()) {
+        return trimmed.trimEnd('/')
+    }
+    val port = if (parsed.port != -1) ":${parsed.port}" else ""
+    val path = parsed.path?.trimEnd('/').orEmpty().let { normalizedPath ->
+        if (normalizedPath.isBlank() || normalizedPath == "/") "" else normalizedPath
+    }
+    return "$scheme://$host$port$path"
+}
+
+internal fun hasBaseUrlServerChanged(previous: String?, next: String?): Boolean {
+    return normalizedBaseUrlForComparison(previous) != normalizedBaseUrlForComparison(next)
+}
+
 internal fun shouldReuseLookupJob(response: AnalysisResponse?): Boolean {
     val jobId = response?.id
     return response != null &&
@@ -89,6 +112,54 @@ internal fun sleepTimerOptionForDurationMs(durationMs: Long?): SleepTimerOption 
     return SleepTimerOption.entries.firstOrNull { option ->
         option.durationMs == durationMs
     } ?: SleepTimerOption.Off
+}
+
+internal fun favoriteRemovalTrackIdsForDeletion(
+    playback: PlaybackState,
+    fallbackJobId: String? = null
+): Set<String> {
+    val trackIds = linkedSetOf<String>()
+
+    fun addCanonical(raw: String?) {
+        val canonical = canonicalStableTrackId(raw) ?: return
+        trackIds += canonical
+    }
+
+    addCanonical(playback.lastStableTrackId)
+    addCanonical(playback.stableTrackIdOrNull())
+
+    val provider = sourceProviderFromRaw(playback.lastSourceProvider)
+    val sourceId = playback.lastSourceId?.trim().orEmpty()
+    if (provider != null && sourceId.isNotBlank()) {
+        addCanonical(buildSourceStableTrackId(provider, sourceId))
+    }
+
+    val youtubeId = playback.lastYouTubeId?.trim().orEmpty()
+    if (youtubeId.isNotBlank()) {
+        addCanonical(buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, youtubeId))
+    }
+
+    val fallback = fallbackJobId?.trim().orEmpty()
+    if (fallback.isNotBlank()) {
+        addCanonical(buildJobStableTrackId(fallback))
+    }
+    val lastJobId = playback.lastJobId?.trim().orEmpty()
+    if (lastJobId.isNotBlank()) {
+        addCanonical(buildJobStableTrackId(lastJobId))
+    }
+
+    return trackIds
+}
+
+internal fun removeFavoritesForTrackIds(
+    favorites: List<FavoriteTrack>,
+    trackIds: Set<String>
+): List<FavoriteTrack> {
+    if (trackIds.isEmpty()) return favorites
+    return favorites.filterNot { favorite ->
+        val canonical = canonicalStableTrackId(favorite.uniqueSongId)
+        canonical != null && canonical in trackIds
+    }
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -285,7 +356,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     favoritesController.maybeHydrateFavoritesFromSync()
                 } else {
-                    _state.update { it.copy(maxTrackLengthMinutes = null) }
+                    _state.update {
+                        it.copy(
+                            allowFavoritesSync = false,
+                            maxTrackLengthMinutes = null
+                        )
+                    }
                 }
             }
         }
@@ -467,14 +543,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setBaseUrl(url: String) {
         val trimmedUrl = url.trim()
-        _state.update {
-            it.copy(
-                baseUrl = trimmedUrl,
-                showBaseUrlPrompt = shouldShowBaseUrlPrompt(it.appMode, trimmedUrl)
-            )
+        val current = state.value
+        val mode = current.appMode
+        val didServerChange = mode == AppMode.Server &&
+            hasBaseUrlServerChanged(current.baseUrl, trimmedUrl)
+        if (didServerChange) {
+            resetRuntimeForServerSwitch(trimmedUrl)
+        } else {
+            val resolvedAppId = CastAppIdResolver.resolve(getApplication(), trimmedUrl)
+            _state.update {
+                it.copy(
+                    baseUrl = trimmedUrl,
+                    showBaseUrlPrompt = shouldShowBaseUrlPrompt(it.appMode, trimmedUrl),
+                    castEnabled = mode == AppMode.Server && !resolvedAppId.isNullOrBlank()
+                )
+            }
         }
         viewModelScope.launch {
             preferences.setBaseUrl(trimmedUrl)
+            if (didServerChange) {
+                preferences.setFavorites(emptyList())
+                preferences.setFavoritesSyncCode(null)
+                preferences.clearAppConfig()
+            }
             if (state.value.appMode == AppMode.Server) {
                 delay(100)
                 refreshTopSongs()
@@ -497,6 +588,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteCachedLocalTrack(localId: String) {
+        val stableId = localId.trim()
+            .takeIf { it.isNotBlank() }
+            ?.let(::buildJobStableTrackId)
+        if (stableId != null) {
+            val favorites = state.value.favorites
+            val updated = removeFavoritesForTrackIds(favorites, setOf(stableId))
+            if (updated.size != favorites.size) {
+                favoritesController.updateFavorites(updated)
+            }
+        }
         localAnalysisCoordinator.deleteCachedLocalTrack(localId)
     }
 
@@ -631,6 +732,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 current = current,
                 targetMode = targetMode,
                 castEnabled = targetMode == AppMode.Server && !resolvedAppId.isNullOrBlank()
+            )
+        }
+    }
+
+    private fun resetRuntimeForServerSwitch(nextBaseUrl: String) {
+        serverTrackLoadCoordinator.cancel()
+        searchCoordinator.resetRuntimeState()
+        favoritesController.resetRuntimeState()
+        appConfigLoaded = false
+        tabHistory.clear()
+
+        stopCasting()
+        castPlaybackCoordinator.resetStatusListener()
+        playbackCoordinator.resetForNewTrack()
+        playbackCoordinator.clearCache()
+        engine.clearAnalysis()
+        controller.player.clear()
+        controller.setTrackMeta(null, null)
+        ForegroundPlaybackService.stop(getApplication())
+
+        _state.update { current ->
+            val mode = current.appMode
+            val resolvedAppId = CastAppIdResolver.resolve(getApplication(), nextBaseUrl)
+            current.copy(
+                baseUrl = nextBaseUrl,
+                showBaseUrlPrompt = shouldShowBaseUrlPrompt(mode, nextBaseUrl),
+                castEnabled = mode == AppMode.Server && !resolvedAppId.isNullOrBlank(),
+                activeTab = TabId.Top,
+                topSongsTab = TopSongsTab.TopSongs,
+                favorites = emptyList(),
+                favoritesSyncCode = null,
+                allowFavoritesSync = false,
+                maxTrackLengthMinutes = null,
+                trackLengthLimitErrorMessage = null,
+                favoritesSyncLoading = false,
+                listenFavoriteToggleInFlight = false,
+                search = SearchState(),
+                playback = PlaybackState()
             )
         }
     }
@@ -1528,16 +1667,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (state.value.playback.deleteInFlight) return false
         val jobId = playbackCoordinator.getLastJobId() ?: return false
         val baseUrl = state.value.baseUrl
-        val stableTrackId = state.value.playback.stableTrackIdOrNull()
+        val playback = state.value.playback
+        val trackIdsForRemoval = favoriteRemovalTrackIdsForDeletion(
+            playback = playback,
+            fallbackJobId = jobId
+        )
         if (baseUrl.isBlank()) return false
         updatePlaybackState { it.copy(deleteInFlight = true) }
         return try {
             api.deleteJob(baseUrl, jobId)
-            if (stableTrackId != null) {
-                playbackCoordinator.clearCachedTrack(stableTrackId)
-                favoritesController.updateFavorites(
-                    state.value.favorites.filterNot { it.uniqueSongId == stableTrackId }
-                )
+            if (trackIdsForRemoval.isNotEmpty()) {
+                trackIdsForRemoval.forEach { trackId ->
+                    playbackCoordinator.clearCachedTrack(trackId)
+                }
+                val favorites = state.value.favorites
+                val updatedFavorites = removeFavoritesForTrackIds(favorites, trackIdsForRemoval)
+                if (updatedFavorites.size != favorites.size) {
+                    favoritesController.updateFavorites(updatedFavorites)
+                }
             }
             playbackCoordinator.resetForNewTrack()
             _state.update {

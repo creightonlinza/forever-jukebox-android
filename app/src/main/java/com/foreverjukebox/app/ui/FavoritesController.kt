@@ -5,7 +5,9 @@ import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
 import com.foreverjukebox.app.data.parseTrackStableId
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class FavoritesController(
@@ -20,9 +22,37 @@ class FavoritesController(
     private var pendingSyncDelta: FavoritesDelta? = null
     private var syncInFlight = false
     private var listenToggleSyncInFlight = false
+    private var runtimeGeneration = 0L
+    private var refreshFavoritesJob: Job? = null
+    private var createSyncCodeJob: Job? = null
+    private var hydrateFavoritesJob: Job? = null
+    private var syncFavoritesJob: Job? = null
+
+    fun resetRuntimeState() {
+        runtimeGeneration += 1
+        favoritesSyncHydratedFor = null
+        pendingSyncDelta = null
+        syncInFlight = false
+        listenToggleSyncInFlight = false
+        refreshFavoritesJob?.cancel()
+        refreshFavoritesJob = null
+        createSyncCodeJob?.cancel()
+        createSyncCodeJob = null
+        hydrateFavoritesJob?.cancel()
+        hydrateFavoritesJob = null
+        syncFavoritesJob?.cancel()
+        syncFavoritesJob = null
+        updateState {
+            it.copy(
+                favoritesSyncLoading = false,
+                listenFavoriteToggleInFlight = false
+            )
+        }
+    }
 
     fun refreshFavoritesFromSync() {
-        scope.launch {
+        refreshFavoritesJob?.cancel()
+        refreshFavoritesJob = scope.launch {
             val state = getState()
             if (!state.allowFavoritesSync) {
                 showToast("Favorites sync is disabled.")
@@ -32,24 +62,33 @@ class FavoritesController(
                 showToast("Create or enter a sync code first.")
                 return@launch
             }
+            val snapshot = currentSyncSnapshot(requireCode = true) ?: return@launch
             updateState { it.copy(favoritesSyncLoading = true) }
             try {
-                val result = fetchFavoritesFromSync()
+                val result = fetchFavoritesFromSync(snapshot)
+                if (!isSnapshotCurrent(snapshot)) {
+                    return@launch
+                }
                 if (result == null) {
                     showToast("Favorites sync failed.")
                 } else {
                     updateFavorites(result, sync = false)
-                    favoritesSyncHydratedFor = state.favoritesSyncCode
+                    favoritesSyncHydratedFor = snapshot.code
                     showToast("Favorites refreshed.")
                 }
+            } catch (cancel: CancellationException) {
+                throw cancel
             } finally {
-                updateState { it.copy(favoritesSyncLoading = false) }
+                if (isSnapshotCurrent(snapshot, requireCodeMatch = false)) {
+                    updateState { it.copy(favoritesSyncLoading = false) }
+                }
             }
         }
     }
 
     fun createFavoritesSyncCode() {
-        scope.launch {
+        createSyncCodeJob?.cancel()
+        createSyncCodeJob = scope.launch {
             val state = getState()
             if (!state.allowFavoritesSync) {
                 showToast("Favorites sync is disabled.")
@@ -60,17 +99,23 @@ class FavoritesController(
                 showToast("API base URL is required.")
                 return@launch
             }
+            val snapshot = currentSyncSnapshot(requireCode = false) ?: return@launch
             try {
                 val favorites = state.favorites
                 val response = api.createFavoritesSync(baseUrl, favorites)
+                if (!isSnapshotCurrent(snapshot, requireCodeMatch = false)) {
+                    return@launch
+                }
                 val code = response.code ?: return@launch
                 preferences.setFavoritesSyncCode(code)
-                favoritesSyncHydratedFor = code
+                favoritesSyncHydratedFor = code.trim().lowercase()
                 val normalized = normalizeFavorites(response.favorites)
                 if (normalized.isNotEmpty()) {
                     updateFavorites(normalized, sync = false)
                 }
                 showToast("Favorites synced.")
+            } catch (cancel: CancellationException) {
+                throw cancel
             } catch (_: Exception) {
                 showToast("Favorites sync failed.")
             }
@@ -78,7 +123,12 @@ class FavoritesController(
     }
 
     suspend fun fetchFavoritesPreview(code: String): List<FavoriteTrack>? {
-        return fetchFavoritesFromSync(code)
+        val snapshot = currentSyncSnapshot(codeOverride = code, requireCode = true) ?: return null
+        val favorites = fetchFavoritesFromSync(snapshot) ?: return null
+        if (!isSnapshotCurrent(snapshot, requireCodeMatch = false)) {
+            return null
+        }
+        return favorites
     }
 
     fun applyFavoritesSync(code: String, favorites: List<FavoriteTrack>) {
@@ -88,8 +138,12 @@ class FavoritesController(
                 showToast("Favorites sync is disabled.")
                 return@launch
             }
+            val snapshot = currentSyncSnapshot(requireCode = false) ?: return@launch
+            if (!isSnapshotCurrent(snapshot, requireCodeMatch = false)) {
+                return@launch
+            }
             preferences.setFavoritesSyncCode(code)
-            favoritesSyncHydratedFor = code
+            favoritesSyncHydratedFor = code.trim().lowercase()
             updateFavorites(normalizeFavorites(favorites), sync = false)
         }
     }
@@ -117,8 +171,8 @@ class FavoritesController(
 
     fun maybeHydrateFavoritesFromSync() {
         val state = getState()
-        val code = state.favoritesSyncCode
-        val baseUrl = state.baseUrl
+        val code = state.favoritesSyncCode?.trim()?.lowercase()
+        val baseUrl = state.baseUrl.trim()
         if (code.isNullOrBlank() || baseUrl.isBlank() || !state.allowFavoritesSync) {
             return
         }
@@ -126,8 +180,13 @@ class FavoritesController(
             return
         }
         favoritesSyncHydratedFor = code
-        scope.launch {
-            val favorites = fetchFavoritesFromSync(code)
+        val snapshot = currentSyncSnapshot(codeOverride = code, requireCode = true) ?: return
+        hydrateFavoritesJob?.cancel()
+        hydrateFavoritesJob = scope.launch {
+            val favorites = fetchFavoritesFromSync(snapshot)
+            if (!isSnapshotCurrent(snapshot)) {
+                return@launch
+            }
             if (favorites == null) {
                 favoritesSyncHydratedFor = null
                 showToast("Favorites sync failed.")
@@ -142,7 +201,7 @@ class FavoritesController(
         if (!state.allowFavoritesSync) {
             return
         }
-        val code = state.favoritesSyncCode ?: return
+        val snapshot = currentSyncSnapshot(requireCode = true) ?: return
         if (fromListenToggle) {
             listenToggleSyncInFlight = true
             updateState { it.copy(listenFavoriteToggleInFlight = true) }
@@ -152,37 +211,49 @@ class FavoritesController(
             return
         }
         syncInFlight = true
-        scope.launch {
-            syncFavoritesToBackend(code, delta)
+        syncFavoritesJob?.cancel()
+        syncFavoritesJob = scope.launch {
+            syncFavoritesToBackend(snapshot, delta)
         }
     }
 
-    private suspend fun syncFavoritesToBackend(code: String, delta: FavoritesDelta) {
+    private suspend fun syncFavoritesToBackend(snapshot: SyncSnapshot, delta: FavoritesDelta) {
         try {
             val state = getState()
-            if (!state.allowFavoritesSync) {
+            if (!state.allowFavoritesSync || !isSnapshotCurrent(snapshot)) {
                 return
             }
-            val baseUrl = state.baseUrl
-            if (baseUrl.isBlank()) return
-            val serverFavorites = fetchFavoritesFromSync(code) ?: return
+            val code = snapshot.code ?: return
+            val serverFavorites = fetchFavoritesFromSync(snapshot) ?: return
+            if (!isSnapshotCurrent(snapshot)) {
+                return
+            }
             val merged = applyFavoritesDelta(serverFavorites, delta)
-            val response = api.updateFavoritesSync(baseUrl, code, merged)
+            val response = api.updateFavoritesSync(snapshot.baseUrl, code, merged)
+            if (!isSnapshotCurrent(snapshot)) {
+                return
+            }
             val normalized = normalizeFavorites(response.favorites)
             if (normalized.isNotEmpty()) {
                 updateFavorites(normalized, sync = false)
             }
+        } catch (cancel: CancellationException) {
+            throw cancel
         } catch (_: Exception) {
-            showToast("Favorites sync failed.")
+            if (isSnapshotCurrent(snapshot, requireCodeMatch = false)) {
+                showToast("Favorites sync failed.")
+            }
         } finally {
             syncInFlight = false
             val pending = pendingSyncDelta
             pendingSyncDelta = null
-            if (pending != null && !pending.isNoop()) {
+            if (pending != null && !pending.isNoop() && isSnapshotCurrent(snapshot)) {
                 scheduleFavoritesSync(pending)
             } else if (listenToggleSyncInFlight) {
                 listenToggleSyncInFlight = false
-                updateState { it.copy(listenFavoriteToggleInFlight = false) }
+                if (snapshot.generation == runtimeGeneration) {
+                    updateState { it.copy(listenFavoriteToggleInFlight = false) }
+                }
             }
         }
     }
@@ -228,18 +299,55 @@ class FavoritesController(
         return sortFavorites(normalized).take(MAX_FAVORITES)
     }
 
-    private suspend fun fetchFavoritesFromSync(codeOverride: String? = null): List<FavoriteTrack>? {
+    private suspend fun fetchFavoritesFromSync(snapshot: SyncSnapshot): List<FavoriteTrack>? {
         val state = getState()
         if (!state.allowFavoritesSync) return null
-        val baseUrl = state.baseUrl
-        if (baseUrl.isBlank()) return null
-        val code = codeOverride ?: state.favoritesSyncCode
-        if (code.isNullOrBlank()) return null
+        val code = snapshot.code ?: return null
         return try {
-            api.fetchFavoritesSync(baseUrl, code.trim())
+            api.fetchFavoritesSync(snapshot.baseUrl, code)
+        } catch (cancel: CancellationException) {
+            throw cancel
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun currentSyncSnapshot(
+        codeOverride: String? = null,
+        requireCode: Boolean
+    ): SyncSnapshot? {
+        val state = getState()
+        val baseUrl = state.baseUrl.trim()
+        if (baseUrl.isBlank()) {
+            return null
+        }
+        val code = normalizeSyncCode(codeOverride ?: state.favoritesSyncCode)
+        if (requireCode && code == null) {
+            return null
+        }
+        return SyncSnapshot(
+            generation = runtimeGeneration,
+            baseUrl = baseUrl,
+            code = code
+        )
+    }
+
+    private fun isSnapshotCurrent(snapshot: SyncSnapshot, requireCodeMatch: Boolean = true): Boolean {
+        if (snapshot.generation != runtimeGeneration) {
+            return false
+        }
+        val state = getState()
+        if (state.baseUrl.trim() != snapshot.baseUrl) {
+            return false
+        }
+        if (!requireCodeMatch) {
+            return true
+        }
+        return normalizeSyncCode(state.favoritesSyncCode) == snapshot.code
+    }
+
+    private fun normalizeSyncCode(code: String?): String? {
+        return code?.trim()?.lowercase()?.ifBlank { null }
     }
 
     fun sortFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
@@ -253,6 +361,12 @@ class FavoritesController(
     companion object {
         private const val MAX_FAVORITES = 100
     }
+
+    private data class SyncSnapshot(
+        val generation: Long,
+        val baseUrl: String,
+        val code: String?
+    )
 }
 
 private data class FavoritesDelta(
