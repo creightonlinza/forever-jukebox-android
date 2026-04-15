@@ -28,6 +28,7 @@ import android.view.KeyEvent
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.toColorInt
@@ -205,15 +206,15 @@ class ForegroundPlaybackService : Service() {
         super.onCreate()
         isRunning = true
         mediaSession = MediaSessionCompat(this, "ForeverJukeboxPlayback").apply {
-            setFlags(
-                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
-                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-            )
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onMediaButtonEvent(mediaButtonIntent: Intent?): Boolean {
-                    val keyEvent = mediaButtonIntent
-                        ?.extras
-                        ?.get(Intent.EXTRA_KEY_EVENT) as? KeyEvent
+                    val keyEvent = mediaButtonIntent?.let { intent ->
+                        IntentCompat.getParcelableExtra(
+                            intent,
+                            Intent.EXTRA_KEY_EVENT,
+                            KeyEvent::class.java
+                        )
+                    }
                         ?: return super.onMediaButtonEvent(mediaButtonIntent)
                     if (keyEvent.action != KeyEvent.ACTION_DOWN) {
                         return true
