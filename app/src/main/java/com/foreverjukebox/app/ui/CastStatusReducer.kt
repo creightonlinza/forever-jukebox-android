@@ -1,5 +1,9 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
+import com.foreverjukebox.app.data.buildJobStableTrackId
+import com.foreverjukebox.app.data.buildSourceStableTrackId
+import com.foreverjukebox.app.data.isYoutubeLikeSourceId
 import com.foreverjukebox.app.visualization.visualizationCount
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
@@ -128,6 +132,35 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         "playing", "loading", "idle", "error" -> false
         else -> !resolvedIsLoading && !resolvedIsRunning && current.playback.isPaused
     }
+    val resolvedLastJobId = if (status.songId.isBlank()) {
+        currentPlayback.lastJobId
+    } else {
+        status.songId
+    }
+    val fallbackStableTrackId = if (status.songId.isBlank()) {
+        null
+    } else {
+        buildJobStableTrackId(status.songId)
+    }
+    val resolvedStableTrackId = currentPlayback.lastStableTrackId ?: fallbackStableTrackId
+    val hasSourceIdentity = !currentPlayback.lastSourceProvider.isNullOrBlank() &&
+        !currentPlayback.lastSourceId.isNullOrBlank()
+    val resolvedSourceProvider = currentPlayback.lastSourceProvider
+    val resolvedSourceId = currentPlayback.lastSourceId
+    val resolvedYouTubeId = when {
+        !currentPlayback.lastYouTubeId.isNullOrBlank() -> currentPlayback.lastYouTubeId
+        hasSourceIdentity && currentPlayback.lastSourceProvider == SOURCE_PROVIDER_YOUTUBE ->
+            currentPlayback.lastSourceId
+        isYoutubeLikeSourceId(status.songId) -> status.songId
+        else -> null
+    }
+    val normalizedStableTrackId = when {
+        !resolvedStableTrackId.isNullOrBlank() -> resolvedStableTrackId
+        hasSourceIdentity && resolvedSourceProvider == SOURCE_PROVIDER_YOUTUBE -> {
+            buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, resolvedSourceId.orEmpty())
+        }
+        else -> null
+    }
     val nextPlayback = currentPlayback.copy(
         playMode = PlaybackMode.Jukebox,
         isRunning = resolvedIsRunning,
@@ -138,7 +171,11 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         trackDurationSeconds = status.trackDurationSeconds ?: currentPlayback.trackDurationSeconds,
         castTotalBeats = status.totalBeats ?: currentPlayback.castTotalBeats,
         castTotalBranches = status.totalBranches ?: currentPlayback.castTotalBranches,
-        lastYouTubeId = if (status.songId.isBlank()) currentPlayback.lastYouTubeId else status.songId,
+        lastSourceProvider = resolvedSourceProvider,
+        lastSourceId = resolvedSourceId,
+        lastStableTrackId = normalizedStableTrackId,
+        lastYouTubeId = resolvedYouTubeId,
+        lastJobId = resolvedLastJobId,
         analysisErrorMessage = if (status.error.isNotBlank()) status.error else currentPlayback.analysisErrorMessage,
         analysisInFlight = resolvedIsLoading,
         isCastLoading = resolvedIsLoading,

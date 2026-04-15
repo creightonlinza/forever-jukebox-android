@@ -1,6 +1,9 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.buildSourceStableTrackId
+import com.foreverjukebox.app.data.buildJobStableTrackId
+import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.TopSongItem
@@ -134,6 +137,9 @@ data class PlaybackState(
     val lastJumpFromIndex: Int? = null,
     val jumpLine: JumpLine? = null,
     val lastJobId: String? = null,
+    val lastSourceProvider: String? = null,
+    val lastSourceId: String? = null,
+    val lastStableTrackId: String? = null,
     val lastYouTubeId: String? = null,
     val isCastLoading: Boolean = false,
     val deleteEligible: Boolean = false,
@@ -201,7 +207,28 @@ fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boole
 }
 
 fun PlaybackState.hasCastTrack(): Boolean {
-    return lastYouTubeId != null || lastJobId != null
+    return !stableTrackIdOrNull().isNullOrBlank()
+}
+
+fun PlaybackState.stableTrackIdOrNull(): String? {
+    val stable = lastStableTrackId?.trim().orEmpty()
+    if (stable.isNotBlank()) {
+        return stable
+    }
+    val provider = sourceProviderFromRaw(lastSourceProvider)
+    val sourceId = lastSourceId?.trim().orEmpty()
+    if (provider != null && sourceId.isNotBlank()) {
+        return buildSourceStableTrackId(provider, sourceId)
+    }
+    val youtubeId = lastYouTubeId?.trim().orEmpty()
+    if (youtubeId.isNotBlank()) {
+        return buildSourceStableTrackId("youtube", youtubeId)
+    }
+    val jobId = lastJobId?.trim().orEmpty()
+    if (jobId.isNotBlank()) {
+        return buildJobStableTrackId(jobId)
+    }
+    return null
 }
 
 fun PlaybackState.castControlsReady(): Boolean {
@@ -227,7 +254,7 @@ fun PlaybackState.shouldShowCastNotification(): Boolean {
     if (!isCasting) return false
     if (isRunning) return true
     if (!trackTitle.isNullOrBlank() || !trackArtist.isNullOrBlank()) return true
-    if (!lastYouTubeId.isNullOrBlank() || !lastJobId.isNullOrBlank()) return true
+    if (!stableTrackIdOrNull().isNullOrBlank()) return true
     return playTitle.isNotBlank()
 }
 

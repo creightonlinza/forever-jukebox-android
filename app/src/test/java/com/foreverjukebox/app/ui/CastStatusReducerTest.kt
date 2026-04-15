@@ -114,7 +114,8 @@ class CastStatusReducerTest {
 
         assertTrue(next.playback.isRunning)
         assertTrue(next.playback.analysisInFlight)
-        assertEquals("new_song", next.playback.lastYouTubeId)
+        assertEquals("old_song", next.playback.lastYouTubeId)
+        assertEquals("new_song", next.playback.lastJobId)
         assertEquals(4, next.playback.activeVizIndex)
         assertEquals("Existing", next.playback.playTitle)
         assertEquals("Old Track", next.playback.trackTitle)
@@ -159,7 +160,8 @@ class CastStatusReducerTest {
         assertEquals(189.5, next.playback.trackDurationSeconds ?: 0.0, 0.0001)
         assertEquals(640, next.playback.castTotalBeats)
         assertEquals(82, next.playback.castTotalBranches)
-        assertEquals("song_2", next.playback.lastYouTubeId)
+        assertNull(next.playback.lastYouTubeId)
+        assertEquals("song_2", next.playback.lastJobId)
         assertEquals(3, next.playback.activeVizIndex)
         assertEquals(31, next.tuning.threshold)
     }

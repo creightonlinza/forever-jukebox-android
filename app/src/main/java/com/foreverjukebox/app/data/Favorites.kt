@@ -7,6 +7,10 @@ import kotlinx.serialization.Serializable
 enum class FavoriteSourceType {
     @SerialName("youtube")
     Youtube,
+    @SerialName("soundcloud")
+    SoundCloud,
+    @SerialName("bandcamp")
+    Bandcamp,
     @SerialName("upload")
     Upload
 }
@@ -20,3 +24,12 @@ data class FavoriteTrack(
     val sourceType: FavoriteSourceType = FavoriteSourceType.Youtube,
     val tuningParams: String? = null
 )
+
+fun favoriteSourceTypeFromProvider(provider: String?): FavoriteSourceType {
+    return when (sourceProviderFromRaw(provider)) {
+        SOURCE_PROVIDER_SOUNDCLOUD -> FavoriteSourceType.SoundCloud
+        SOURCE_PROVIDER_BANDCAMP -> FavoriteSourceType.Bandcamp
+        SOURCE_PROVIDER_UPLOAD -> FavoriteSourceType.Upload
+        else -> FavoriteSourceType.Youtube
+    }
+}

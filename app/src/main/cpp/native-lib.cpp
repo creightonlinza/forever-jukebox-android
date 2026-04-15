@@ -11,6 +11,8 @@
 namespace {
 
 constexpr const char* kLogTag = "FJOboe";
+constexpr const char* kPackageName = "com.foreverjukebox.app";
+constexpr const char* kPlaybackAttributionTag = "audio_playback";
 
 class OboePlayer : public oboe::AudioStreamDataCallback,
                    public oboe::AudioStreamErrorCallback {
@@ -202,6 +204,8 @@ private:
             ->setSharingMode(oboe::SharingMode::Shared)
             ->setUsage(oboe::Usage::Media)
             ->setContentType(oboe::ContentType::Music)
+            ->setPackageName(kPackageName)
+            ->setAttributionTag(kPlaybackAttributionTag)
             ->setSampleRate(mSampleRate)
             ->setChannelCount(mChannelCount)
             ->setFormat(oboe::AudioFormat::I16)

@@ -57,8 +57,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import com.foreverjukebox.app.data.FavoriteTrack
-import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.TopSongItem
+import com.foreverjukebox.app.data.stableTrackIdFromTopSong
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +78,7 @@ fun TopSongsPanel(
     onRefreshTrendingSongs: () -> Unit,
     onRefreshRecentSongs: () -> Unit,
     onRefreshFavorites: () -> Unit,
-    onSelect: (String, String?, String?, String?, FavoriteSourceType) -> Unit,
+    onSelect: (String, String?, String?, String?) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     favoritesSyncCode: String?,
     allowFavoritesSync: Boolean,
@@ -154,17 +154,16 @@ fun TopSongsPanel(
                                 val artist = item.artist
                                 val displayTitle = title ?: "Untitled"
                                 val displayArtist = artist ?: ""
-                                val youtubeId = item.youtubeId ?: return@itemsIndexed
+                                val stableId = stableTrackIdFromTopSong(item) ?: return@itemsIndexed
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             onSelect(
-                                                youtubeId,
+                                                stableId,
                                                 title,
                                                 artist,
-                                                null,
-                                                FavoriteSourceType.Youtube
+                                                null
                                             )
                                         },
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -211,17 +210,16 @@ fun TopSongsPanel(
                                 val artist = item.artist
                                 val displayTitle = title ?: "Untitled"
                                 val displayArtist = artist ?: ""
-                                val youtubeId = item.youtubeId ?: return@itemsIndexed
+                                val stableId = stableTrackIdFromTopSong(item) ?: return@itemsIndexed
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             onSelect(
-                                                youtubeId,
+                                                stableId,
                                                 title,
                                                 artist,
-                                                null,
-                                                FavoriteSourceType.Youtube
+                                                null
                                             )
                                         },
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -268,17 +266,16 @@ fun TopSongsPanel(
                                 val artist = item.artist
                                 val displayTitle = title ?: "Untitled"
                                 val displayArtist = artist ?: ""
-                                val youtubeId = item.youtubeId ?: return@itemsIndexed
+                                val stableId = stableTrackIdFromTopSong(item) ?: return@itemsIndexed
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             onSelect(
-                                                youtubeId,
+                                                stableId,
                                                 title,
                                                 artist,
-                                                null,
-                                                FavoriteSourceType.Youtube
+                                                null
                                             )
                                         },
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -526,7 +523,7 @@ private fun FavoritesListContent(
     favorites: List<FavoriteTrack>,
     loading: Boolean,
     showLoadingSpinner: Boolean,
-    onSelect: (String, String?, String?, String?, FavoriteSourceType) -> Unit,
+    onSelect: (String, String?, String?, String?) -> Unit,
     onRemoveFavorite: (String) -> Unit
 ) {
     if (loading) {
@@ -560,8 +557,7 @@ private fun FavoritesListContent(
                                 item.uniqueSongId,
                                 title,
                                 artist,
-                                item.tuningParams,
-                                item.sourceType
+                                item.tuningParams
                             )
                         },
                     verticalAlignment = Alignment.CenterVertically

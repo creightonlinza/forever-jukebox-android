@@ -8,7 +8,9 @@ enum class RandomMode {
 
 fun createRng(mode: RandomMode, seed: Int? = null): () -> Double {
     return when (mode) {
-        RandomMode.Random -> { { kotlin.random.Random.nextDouble() } }
+        RandomMode.Random -> {
+            { kotlin.random.Random.nextDouble() }
+        }
         RandomMode.Seeded,
         RandomMode.Deterministic -> {
             var t = seed ?: DEFAULT_SEED
@@ -16,7 +18,7 @@ fun createRng(mode: RandomMode, seed: Int? = null): () -> Double {
                 t += MIX_CONSTANT
                 var x = t
                 x = (x xor (x ushr 15)) * (x or 1)
-                x = x xor (x + (x xor (x ushr 7)) * (x or 61))
+                x = x xor (x + ((x xor (x ushr 7)) * (x or 61)))
                 ((x xor (x ushr 14)).toLong() and MASK_32).toDouble() / UINT32_RANGE
             }
         }

@@ -1,5 +1,11 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
+import com.foreverjukebox.app.data.buildJobStableTrackId
+import com.foreverjukebox.app.data.buildSourceStableTrackId
+import com.foreverjukebox.app.data.canonicalStableTrackId
+import com.foreverjukebox.app.data.parseTrackStableId
+import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.google.android.gms.cast.framework.CastSession
 
 class CastPlaybackCoordinator(
@@ -30,7 +36,10 @@ class CastPlaybackCoordinator(
     fun castTrackId(
         trackId: String,
         title: String? = null,
-        artist: String? = null
+        artist: String? = null,
+        sourceProvider: String? = null,
+        sourceId: String? = null,
+        stableTrackId: String? = null
     ) {
         if (!getState().castEnabled) {
             onCastUnavailable()
@@ -52,7 +61,31 @@ class CastPlaybackCoordinator(
             raw = null,
             highlightAnchorBranch = currentState.tuning.highlightAnchorBranch
         )
-        val isYoutubeTrackId = isLikelyYoutubeId(trackId)
+        val normalizedProvider = sourceProviderFromRaw(sourceProvider)
+        val normalizedSourceId = sourceId?.trim().orEmpty().ifBlank { null }
+        val resolvedStableTrackId = canonicalStableTrackId(stableTrackId)
+            ?: when {
+                normalizedProvider != null && normalizedSourceId != null ->
+                    buildSourceStableTrackId(normalizedProvider, normalizedSourceId)
+                normalizedProvider == SOURCE_PROVIDER_YOUTUBE && isLikelyYoutubeId(trackId) ->
+                    buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, trackId)
+                normalizedProvider == null && isLikelyYoutubeId(trackId) ->
+                    buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, trackId)
+                else -> buildJobStableTrackId(trackId)
+            }
+        val parsedIdentity = parseTrackStableId(resolvedStableTrackId)
+        val resolvedProvider = parsedIdentity?.sourceProvider
+        val resolvedSourceId = parsedIdentity?.sourceId
+        val resolvedJobId = when {
+            parsedIdentity?.jobId != null -> parsedIdentity.jobId
+            resolvedProvider == SOURCE_PROVIDER_YOUTUBE -> null
+            else -> trackId
+        }
+        val resolvedYoutubeId = when {
+            resolvedProvider == SOURCE_PROVIDER_YOUTUBE -> resolvedSourceId
+            isLikelyYoutubeId(trackId) && resolvedProvider == null -> trackId
+            else -> null
+        }
         updateState {
             it.copy(
                 playback = it.playback.copy(
@@ -63,8 +96,11 @@ class CastPlaybackCoordinator(
                     trackDurationSeconds = null,
                     castTotalBeats = null,
                     castTotalBranches = null,
-                    lastYouTubeId = if (isYoutubeTrackId) trackId else null,
-                    lastJobId = if (isYoutubeTrackId) null else trackId,
+                    lastSourceProvider = resolvedProvider,
+                    lastSourceId = resolvedSourceId,
+                    lastStableTrackId = resolvedStableTrackId,
+                    lastYouTubeId = resolvedYoutubeId,
+                    lastJobId = resolvedJobId,
                     isCastLoading = true,
                     analysisInFlight = true,
                     analysisErrorMessage = null,

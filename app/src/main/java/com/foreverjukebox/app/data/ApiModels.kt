@@ -36,7 +36,9 @@ data class AnalysisStartResponse(
     val id: String? = null,
     val status: String? = null,
     val progress: Double? = null,
-    val message: String? = null
+    val message: String? = null,
+    @SerialName("source_id") val sourceId: String? = null,
+    @SerialName("source_provider") val sourceProvider: String? = null
 )
 
 @Serializable
@@ -45,6 +47,9 @@ data class AnalysisResponse(
     val status: String? = null,
     val progress: Double? = null,
     val message: String? = null,
+    @SerialName("source_id") val sourceId: String? = null,
+    @SerialName("source_provider") val sourceProvider: String? = null,
+    // Legacy decode-only field: do not use as primary client identity.
     @SerialName("youtube_id") val youtubeId: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     val result: JsonElement? = null,
@@ -55,7 +60,7 @@ data class AnalysisResponse(
 @Serializable
 data class AppConfigResponse(
     @SerialName("allow_user_upload") val allowUserUpload: Boolean = false,
-    @SerialName("allow_user_youtube") val allowUserYoutube: Boolean = false,
+    @SerialName("allow_user_url") val allowUserUrl: Boolean = false,
     @SerialName("allow_favorites_sync") val allowFavoritesSync: Boolean = false,
     @SerialName("max_upload_size") val maxUploadSize: Int? = null,
     @SerialName("allowed_upload_exts") val allowedUploadExts: List<String>? = null,
@@ -65,6 +70,9 @@ data class AppConfigResponse(
 @Serializable
 data class TopSongItem(
     val id: String? = null,
+    @SerialName("source_id") val sourceId: String? = null,
+    @SerialName("source_provider") val sourceProvider: String? = null,
+    // Legacy decode-only field: do not use as primary client identity.
     @SerialName("youtube_id") val youtubeId: String? = null,
     val title: String? = null,
     val artist: String? = null,

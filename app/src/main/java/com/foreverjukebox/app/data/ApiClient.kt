@@ -8,12 +8,21 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
+class HttpStatusException(
+    val statusCode: Int,
+    val responseBody: String? = null
+) : IOException("HTTP $statusCode")
+
+class ApiClient(
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    private val githubApiBaseUrl: String = DEFAULT_GITHUB_API_BASE_URL
+) {
     private val jsonWithDefaults = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -56,10 +65,26 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         return getJson(url)
     }
 
-    suspend fun getJobByYoutube(baseUrl: String, youtubeId: String): AnalysisResponse? {
-        val url = buildUrl(baseUrl, ApiPaths.jobByYoutube(youtubeId))
+    suspend fun getJobBySource(
+        baseUrl: String,
+        sourceProvider: String,
+        sourceId: String
+    ): AnalysisResponse? {
+        val normalizedProvider = sourceProvider.trim().lowercase()
+        val normalizedSourceId = sourceId.trim()
+        require(normalizedProvider.isNotBlank()) { "sourceProvider must not be blank" }
+        require(normalizedSourceId.isNotBlank()) { "sourceId must not be blank" }
+        val url = buildUrl(baseUrl, ApiPaths.jobBySource(normalizedProvider, normalizedSourceId))
         val response = getNullableOn404(url) ?: return null
         return json.decodeFromString(response)
+    }
+
+    suspend fun getJobByYoutube(baseUrl: String, youtubeId: String): AnalysisResponse? {
+        return getJobBySource(
+            baseUrl = baseUrl,
+            sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+            sourceId = youtubeId
+        )
     }
 
     suspend fun getJobByTrack(baseUrl: String, title: String, artist: String): AnalysisResponse? {
@@ -142,7 +167,10 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         owner: String,
         repo: String
     ): GitHubReleaseResponse {
-        val url = "https://api.github.com/repos/$owner/$repo/releases/latest"
+        val url = buildUrl(
+            baseUrl = githubApiBaseUrl,
+            pathSegments = listOf("repos", owner, repo, "releases", "latest")
+        )
         return getGitHubJson(url)
     }
 
@@ -150,7 +178,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
             response.body?.string() ?: ""
         }
@@ -163,7 +191,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
                 return@withContext null
             }
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
             response.body?.string() ?: ""
         }
@@ -173,7 +201,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
             val body = response.body ?: throw IOException("Empty response body")
             target.outputStream().use { output ->
@@ -195,7 +223,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val request = Request.Builder().url(url).post(body).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
             response.body?.string() ?: ""
         }
@@ -206,7 +234,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val request = Request.Builder().url(url).put(body).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
             response.body?.string() ?: ""
         }
@@ -217,7 +245,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val request = Request.Builder().url(url).post(body).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
         }
     }
@@ -226,7 +254,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val request = Request.Builder().url(url).delete().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
         }
     }
@@ -260,11 +288,16 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throwHttpStatus(response)
             }
             val body = response.body?.string() ?: ""
             json.decodeFromString(body)
         }
+    }
+
+    private fun throwHttpStatus(response: Response): Nothing {
+        val body = response.body?.string()
+        throw HttpStatusException(response.code, body)
     }
 
     private object ApiPaths {
@@ -279,7 +312,8 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
         val FAVORITES_SYNC = listOf("api", "favorites", "sync")
 
         fun analysisJob(jobId: String) = listOf("api", "analysis", jobId)
-        fun jobByYoutube(youtubeId: String) = listOf("api", "jobs", "by-youtube", youtubeId)
+        fun jobBySource(sourceProvider: String, sourceId: String) =
+            listOf("api", "jobs", "by-source", sourceProvider, sourceId)
         fun job(jobId: String) = listOf("api", "jobs", jobId)
         fun play(jobId: String) = listOf("api", "plays", jobId)
         fun audio(jobId: String) = listOf("api", "audio", jobId)
@@ -287,6 +321,7 @@ class ApiClient(private val json: Json = Json { ignoreUnknownKeys = true }) {
     }
 
     companion object {
+        private const val DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com"
         private const val MAX_FAVORITES = 100
         private const val TRENDING_LIMIT = 25
         private val sharedClient = OkHttpClient.Builder()
