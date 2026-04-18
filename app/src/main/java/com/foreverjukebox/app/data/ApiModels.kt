@@ -102,6 +102,12 @@ data class FavoritesSyncPayload(
 )
 
 @Serializable
+data class DeleteJobResponse(
+    val status: String,
+    val id: String
+)
+
+@Serializable
 data class GitHubReleaseResponse(
     @SerialName("tag_name") val tagName: String? = null,
     @SerialName("html_url") val htmlUrl: String? = null

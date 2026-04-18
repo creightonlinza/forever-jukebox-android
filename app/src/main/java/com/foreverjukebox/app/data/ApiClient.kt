@@ -158,9 +158,9 @@ class ApiClient(
         return getToFile(url, target)
     }
 
-    suspend fun deleteJob(baseUrl: String, jobId: String) {
+    suspend fun deleteJob(baseUrl: String, jobId: String): DeleteJobResponse {
         val url = buildUrl(baseUrl, ApiPaths.job(jobId))
-        deleteEmpty(url)
+        return deleteJson(url).let { json.decodeFromString(it) }
     }
 
     suspend fun fetchLatestGitHubRelease(
@@ -250,12 +250,13 @@ class ApiClient(
         }
     }
 
-    private suspend fun deleteEmpty(url: String) = withContext(Dispatchers.IO) {
+    private suspend fun deleteJson(url: String): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).delete().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throwHttpStatus(response)
             }
+            response.body?.string() ?: ""
         }
     }
 

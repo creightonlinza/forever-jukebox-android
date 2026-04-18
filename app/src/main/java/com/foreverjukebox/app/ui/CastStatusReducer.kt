@@ -3,8 +3,8 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.buildJobStableTrackId
 import com.foreverjukebox.app.data.buildSourceStableTrackId
-import com.foreverjukebox.app.data.isYoutubeLikeSourceId
 import com.foreverjukebox.app.visualization.visualizationCount
+import java.time.OffsetDateTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -13,7 +13,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 data class CastStatusMessage(
-    val songId: String,
+    val jobId: String? = null,
+    val createdAt: String? = null,
     val title: String,
     val artist: String,
     val trackDurationSeconds: Double?,
@@ -43,7 +44,8 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
             ?: ""
     }
 
-    val songId = stringField("songId")
+    val jobId = stringField("jobId").ifBlank { null }
+    val createdAt = stringField("createdAt").ifBlank { null }
     val title = stringField("title")
     val artist = stringField("artist")
     val trackDurationSeconds = json["trackDurationSeconds"]
@@ -75,7 +77,8 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
         ?.toIntOrNull()
         ?.takeIf { it >= 2 }
     return CastStatusMessage(
-        songId = songId,
+        jobId = jobId,
+        createdAt = createdAt,
         title = title,
         artist = artist,
         trackDurationSeconds = trackDurationSeconds,
@@ -92,9 +95,22 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
 }
 
 fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
-    val hasTitle = status.title.isNotBlank()
-    val hasArtist = status.artist.isNotBlank()
     val currentPlayback = current.playback
+    val parsedCreatedAtEpochMs = parseCreatedAtEpochMs(status.createdAt)
+    val resolvedLastJobId = when {
+        !status.jobId.isNullOrBlank() -> status.jobId
+        else -> currentPlayback.lastJobId
+    }
+    val canCarryCreatedAtFromState = resolvedLastJobId == currentPlayback.lastJobId &&
+        !currentPlayback.isCastLoading
+    val resolvedCreatedAtEpochMs = when {
+        parsedCreatedAtEpochMs != null -> parsedCreatedAtEpochMs
+        canCarryCreatedAtFromState -> currentPlayback.lastTrackCreatedAtEpochMs
+        else -> null
+    }
+    val canApplyReceiverMetadata = resolvedCreatedAtEpochMs != null
+    val hasTitle = canApplyReceiverMetadata && status.title.isNotBlank()
+    val hasArtist = canApplyReceiverMetadata && status.artist.isNotBlank()
     val resolvedTrackTitle = when {
         hasTitle && currentPlayback.trackTitle.isNullOrBlank() -> status.title
         else -> currentPlayback.trackTitle
@@ -132,15 +148,10 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         "playing", "loading", "idle", "error" -> false
         else -> !resolvedIsLoading && !resolvedIsRunning && current.playback.isPaused
     }
-    val resolvedLastJobId = if (status.songId.isBlank()) {
-        currentPlayback.lastJobId
-    } else {
-        status.songId
-    }
-    val fallbackStableTrackId = if (status.songId.isBlank()) {
-        null
-    } else {
-        buildJobStableTrackId(status.songId)
+    val fallbackStableTrackId = when {
+        status.jobId.isNullOrBlank() -> null
+        isLikelyJobId(status.jobId) -> buildJobStableTrackId(status.jobId)
+        else -> null
     }
     val resolvedStableTrackId = currentPlayback.lastStableTrackId ?: fallbackStableTrackId
     val hasSourceIdentity = !currentPlayback.lastSourceProvider.isNullOrBlank() &&
@@ -151,7 +162,6 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         !currentPlayback.lastYouTubeId.isNullOrBlank() -> currentPlayback.lastYouTubeId
         hasSourceIdentity && currentPlayback.lastSourceProvider == SOURCE_PROVIDER_YOUTUBE ->
             currentPlayback.lastSourceId
-        isYoutubeLikeSourceId(status.songId) -> status.songId
         else -> null
     }
     val normalizedStableTrackId = when {
@@ -161,6 +171,10 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         }
         else -> null
     }
+    val resolvedDeleteEligible = computeDeleteEligibility(
+        jobId = resolvedLastJobId,
+        createdAtEpochMs = resolvedCreatedAtEpochMs
+    )
     val nextPlayback = currentPlayback.copy(
         playMode = PlaybackMode.Jukebox,
         isRunning = resolvedIsRunning,
@@ -168,17 +182,31 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         playTitle = displayTitle,
         trackTitle = resolvedTrackTitle,
         trackArtist = resolvedTrackArtist,
-        trackDurationSeconds = status.trackDurationSeconds ?: currentPlayback.trackDurationSeconds,
-        castTotalBeats = status.totalBeats ?: currentPlayback.castTotalBeats,
-        castTotalBranches = status.totalBranches ?: currentPlayback.castTotalBranches,
+        trackDurationSeconds = if (canApplyReceiverMetadata) {
+            status.trackDurationSeconds ?: currentPlayback.trackDurationSeconds
+        } else {
+            currentPlayback.trackDurationSeconds
+        },
+        castTotalBeats = if (canApplyReceiverMetadata) {
+            status.totalBeats ?: currentPlayback.castTotalBeats
+        } else {
+            currentPlayback.castTotalBeats
+        },
+        castTotalBranches = if (canApplyReceiverMetadata) {
+            status.totalBranches ?: currentPlayback.castTotalBranches
+        } else {
+            currentPlayback.castTotalBranches
+        },
         lastSourceProvider = resolvedSourceProvider,
         lastSourceId = resolvedSourceId,
         lastStableTrackId = normalizedStableTrackId,
         lastYouTubeId = resolvedYouTubeId,
+        lastTrackCreatedAtEpochMs = resolvedCreatedAtEpochMs,
         lastJobId = resolvedLastJobId,
         analysisErrorMessage = if (status.error.isNotBlank()) status.error else currentPlayback.analysisErrorMessage,
         analysisInFlight = resolvedIsLoading,
         isCastLoading = resolvedIsLoading,
+        deleteEligible = resolvedDeleteEligible,
         activeVizIndex = if ((status.activeVizIndex ?: -1) in 0 until visualizationCount) {
             status.activeVizIndex ?: currentPlayback.activeVizIndex
         } else {
@@ -194,3 +222,27 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         }
     )
 }
+
+private fun parseCreatedAtEpochMs(createdAt: String?): Long? {
+    val raw = createdAt?.trim().orEmpty()
+    if (raw.isBlank()) {
+        return null
+    }
+    return runCatching { OffsetDateTime.parse(raw).toInstant().toEpochMilli() }.getOrNull()
+}
+
+private fun isLikelyJobId(value: String): Boolean {
+    return value.length == CAST_JOB_ID_HEX_LENGTH &&
+        value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+}
+
+private fun computeDeleteEligibility(jobId: String?, createdAtEpochMs: Long?): Boolean {
+    if (jobId.isNullOrBlank() || createdAtEpochMs == null) {
+        return false
+    }
+    val ageMs = System.currentTimeMillis() - createdAtEpochMs
+    return ageMs <= DELETE_ELIGIBILITY_WINDOW_MS
+}
+
+private const val CAST_JOB_ID_HEX_LENGTH = 32
+private const val DELETE_ELIGIBILITY_WINDOW_MS = 30L * 60L * 1000L

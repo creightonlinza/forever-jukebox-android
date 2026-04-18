@@ -1,5 +1,8 @@
 package com.foreverjukebox.app.ui
 
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -17,11 +20,13 @@ class CastStatusReducerTest {
 
     @Test
     fun parseCastStatusMessageParsesKnownFields() {
+        val createdAt = "2026-04-17T00:57:46.945271+00:00"
         val parsed = parseCastStatusMessage(
             """
             {
               "type":"status",
-              "songId":"abc123def45",
+              "jobId":"0123456789abcdef0123456789abcdef",
+              "createdAt":"$createdAt",
               "title":"Track",
               "artist":"Artist",
               "trackDurationSeconds":212.4,
@@ -38,7 +43,8 @@ class CastStatusReducerTest {
             """.trimIndent()
         )
         assertNotNull(parsed)
-        assertEquals("abc123def45", parsed?.songId)
+        assertEquals("0123456789abcdef0123456789abcdef", parsed?.jobId)
+        assertEquals(createdAt, parsed?.createdAt)
         assertEquals("Track", parsed?.title)
         assertEquals("Artist", parsed?.artist)
         assertEquals(212.4, parsed?.trackDurationSeconds ?: 0.0, 0.0001)
@@ -82,6 +88,23 @@ class CastStatusReducerTest {
     }
 
     @Test
+    fun parseCastStatusMessageParsesCamelCaseJobAndCreatedAtFields() {
+        val parsed = parseCastStatusMessage(
+            """
+            {
+              "type":"status",
+              "jobId":"0123456789abcdef0123456789abcdef",
+              "createdAt":"2026-04-17T00:57:46.945271+00:00"
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals("0123456789abcdef0123456789abcdef", parsed?.jobId)
+        assertEquals("2026-04-17T00:57:46.945271+00:00", parsed?.createdAt)
+    }
+
+    @Test
     fun reduceCastStatusKeepsRunningDuringLoadingState() {
         val current = UiState(
             playback = PlaybackState(
@@ -96,7 +119,6 @@ class CastStatusReducerTest {
             tuning = TuningState(threshold = 22)
         )
         val status = CastStatusMessage(
-            songId = "new_song",
             title = "",
             artist = "",
             trackDurationSeconds = null,
@@ -115,7 +137,7 @@ class CastStatusReducerTest {
         assertTrue(next.playback.isRunning)
         assertTrue(next.playback.analysisInFlight)
         assertEquals("old_song", next.playback.lastYouTubeId)
-        assertEquals("new_song", next.playback.lastJobId)
+        assertNull(next.playback.lastJobId)
         assertEquals(4, next.playback.activeVizIndex)
         assertEquals("Existing", next.playback.playTitle)
         assertEquals("Old Track", next.playback.trackTitle)
@@ -135,7 +157,7 @@ class CastStatusReducerTest {
             tuning = TuningState(threshold = 8)
         )
         val status = CastStatusMessage(
-            songId = "song_2",
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 3),
             title = "New Song",
             artist = "New Artist",
             trackDurationSeconds = 189.5,
@@ -161,7 +183,7 @@ class CastStatusReducerTest {
         assertEquals(640, next.playback.castTotalBeats)
         assertEquals(82, next.playback.castTotalBranches)
         assertNull(next.playback.lastYouTubeId)
-        assertEquals("song_2", next.playback.lastJobId)
+        assertNull(next.playback.lastJobId)
         assertEquals(3, next.playback.activeVizIndex)
         assertEquals(31, next.tuning.threshold)
     }
@@ -176,7 +198,6 @@ class CastStatusReducerTest {
             tuning = TuningState(threshold = 19)
         )
         val status = CastStatusMessage(
-            songId = "",
             title = "",
             artist = "",
             trackDurationSeconds = null,
@@ -206,7 +227,6 @@ class CastStatusReducerTest {
             playback = PlaybackState(isRunning = true)
         )
         val loadingStatus = CastStatusMessage(
-            songId = "",
             title = "",
             artist = "",
             trackDurationSeconds = null,
@@ -247,7 +267,6 @@ class CastStatusReducerTest {
             tuning = TuningState(threshold = 24)
         )
         val loading = CastStatusMessage(
-            songId = "new_song",
             title = "",
             artist = "",
             trackDurationSeconds = null,
@@ -280,7 +299,7 @@ class CastStatusReducerTest {
             )
         )
         val ready = CastStatusMessage(
-            songId = "new_song",
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 2),
             title = "Loaded Song",
             artist = "Artist",
             trackDurationSeconds = 201.0,
@@ -316,7 +335,6 @@ class CastStatusReducerTest {
             )
         )
         val paused = CastStatusMessage(
-            songId = "new_song",
             title = "Loaded Song",
             artist = "Artist",
             trackDurationSeconds = 201.0,
@@ -349,7 +367,7 @@ class CastStatusReducerTest {
             )
         )
         val status = CastStatusMessage(
-            songId = "abc123def45",
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 1),
             title = "Receiver Track",
             artist = "Receiver Artist",
             trackDurationSeconds = 201.0,
@@ -371,18 +389,75 @@ class CastStatusReducerTest {
     }
 
     @Test
-    fun reduceCastStatusBackfillsMissingMetadataFromReceiver() {
+    fun reduceCastStatusIgnoresReceiverMetadataUntilCreatedAtResolvesForCurrentJob() {
+        val jobId = "0123456789abcdef0123456789abcdef"
+        val previousCreatedAtEpochMs = OffsetDateTime.now(ZoneOffset.UTC)
+            .minusDays(10)
+            .toInstant()
+            .toEpochMilli()
         val current = UiState(
             playback = PlaybackState(
                 isCasting = true,
-                trackTitle = null,
-                trackArtist = null,
-                playTitle = "",
-                lastYouTubeId = null
+                isCastLoading = true,
+                lastJobId = jobId,
+                lastTrackCreatedAtEpochMs = previousCreatedAtEpochMs,
+                deleteEligible = true,
+                trackTitle = "Stealth",
+                trackArtist = "Bad Religion",
+                playTitle = "Stealth — Bad Religion",
+                trackDurationSeconds = null,
+                castTotalBeats = null,
+                castTotalBranches = null
             )
         )
         val status = CastStatusMessage(
-            songId = "abc123def45",
+            jobId = jobId,
+            createdAt = null,
+            title = "Gangnam Style (강남스타일)",
+            artist = "PSY",
+            trackDurationSeconds = 219.50566893424036,
+            totalBeats = 475,
+            totalBranches = 173,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals("Stealth", next.playback.trackTitle)
+        assertEquals("Bad Religion", next.playback.trackArtist)
+        assertEquals("Stealth — Bad Religion", next.playback.playTitle)
+        assertNull(next.playback.trackDurationSeconds)
+        assertNull(next.playback.castTotalBeats)
+        assertNull(next.playback.castTotalBranches)
+        assertNull(next.playback.lastTrackCreatedAtEpochMs)
+        assertFalse(next.playback.deleteEligible)
+    }
+
+    @Test
+    fun reduceCastStatusAllowsReceiverMetadataAfterCreatedAtWasPreviouslyResolved() {
+        val jobId = "0123456789abcdef0123456789abcdef"
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                isCastLoading = false,
+                lastJobId = jobId,
+                lastTrackCreatedAtEpochMs = OffsetDateTime.now(ZoneOffset.UTC)
+                    .minusMinutes(5)
+                    .toInstant()
+                    .toEpochMilli(),
+                trackTitle = null,
+                trackArtist = null,
+                playTitle = ""
+            )
+        )
+        val status = CastStatusMessage(
+            jobId = jobId,
+            createdAt = null,
             title = "Receiver Track",
             artist = "Receiver Artist",
             trackDurationSeconds = 201.0,
@@ -401,6 +476,181 @@ class CastStatusReducerTest {
         assertEquals("Receiver Track", next.playback.trackTitle)
         assertEquals("Receiver Artist", next.playback.trackArtist)
         assertEquals("Receiver Track — Receiver Artist", next.playback.playTitle)
-        assertEquals("abc123def45", next.playback.lastYouTubeId)
+        assertEquals(201.0, next.playback.trackDurationSeconds ?: 0.0, 0.0001)
+        assertEquals(480, next.playback.castTotalBeats)
+        assertEquals(56, next.playback.castTotalBranches)
+    }
+
+    @Test
+    fun reduceCastStatusBackfillsMissingMetadataFromReceiver() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                trackTitle = null,
+                trackArtist = null,
+                playTitle = "",
+                lastYouTubeId = null
+            )
+        )
+        val status = CastStatusMessage(
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 1),
+            title = "Receiver Track",
+            artist = "Receiver Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals("Receiver Track", next.playback.trackTitle)
+        assertEquals("Receiver Artist", next.playback.trackArtist)
+        assertEquals("Receiver Track — Receiver Artist", next.playback.playTitle)
+        assertNull(next.playback.lastYouTubeId)
+    }
+
+    @Test
+    fun reduceCastStatusEnablesDeleteForRecentCreatedAtWithJobId() {
+        val jobId = "0123456789abcdef0123456789abcdef"
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                deleteEligible = false
+            )
+        )
+        val status = CastStatusMessage(
+            jobId = jobId,
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 5),
+            title = "Track",
+            artist = "Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertTrue(next.playback.deleteEligible)
+        assertEquals(jobId, next.playback.lastJobId)
+    }
+
+    @Test
+    fun reduceCastStatusDisablesDeleteWhenCreatedAtMissing() {
+        val jobId = "0123456789abcdef0123456789abcdef"
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = jobId,
+                deleteEligible = true
+            )
+        )
+        val status = CastStatusMessage(
+            jobId = jobId,
+            createdAt = null,
+            title = "Track",
+            artist = "Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertFalse(next.playback.deleteEligible)
+    }
+
+    @Test
+    fun reduceCastStatusRetainsCreatedAtAcrossStatusUpdatesForSameJob() {
+        val jobId = "0123456789abcdef0123456789abcdef"
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = jobId,
+                lastTrackCreatedAtEpochMs = OffsetDateTime.now(ZoneOffset.UTC)
+                    .minusMinutes(2)
+                    .toInstant()
+                    .toEpochMilli(),
+                deleteEligible = true
+            )
+        )
+        val status = CastStatusMessage(
+            jobId = jobId,
+            createdAt = null,
+            title = "Track",
+            artist = "Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertTrue(next.playback.deleteEligible)
+        assertEquals(jobId, next.playback.lastJobId)
+        assertEquals(
+            current.playback.lastTrackCreatedAtEpochMs,
+            next.playback.lastTrackCreatedAtEpochMs
+        )
+    }
+
+    @Test
+    fun reduceCastStatusKeepsExistingJobIdWhenStatusJobIdMissing() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = "0123456789abcdef0123456789abcdef"
+            )
+        )
+        val status = CastStatusMessage(
+            jobId = null,
+            createdAt = null,
+            title = "Track",
+            artist = "Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+            resolvedThreshold = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals("0123456789abcdef0123456789abcdef", next.playback.lastJobId)
+    }
+
+    private fun serverTimestampMinutesAgo(minutesAgo: Long): String {
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSSxxx")
+        return OffsetDateTime.now(ZoneOffset.UTC)
+            .minusMinutes(minutesAgo)
+            .withNano(945_271_000)
+            .format(formatter)
     }
 }

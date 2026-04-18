@@ -56,12 +56,9 @@ class CastController(private val application: Application) {
     fun sendCommand(namespace: String, command: String): Boolean {
         val session = getSession() ?: return false
         val payload = JSONObject().apply { put("type", command) }
-        return try {
+        return runCatching {
             session.sendMessage(namespace, payload.toString())
-            true
-        } catch (_: Exception) {
-            false
-        }
+        }.isSuccess
     }
 
     fun sendTuningParams(namespace: String, tuningParams: String?): Boolean {
@@ -74,12 +71,9 @@ class CastController(private val application: Application) {
                 put("tuningParams", tuningParams)
             }
         }
-        return try {
+        return runCatching {
             session.sendMessage(namespace, payload.toString())
-            true
-        } catch (_: Exception) {
-            false
-        }
+        }.isSuccess
     }
 
     fun sendVisualizationIndex(namespace: String, vizIndex: Int): Boolean {
@@ -88,18 +82,15 @@ class CastController(private val application: Application) {
             put("type", "setVisualization")
             put("vizIndex", vizIndex)
         }
-        return try {
+        return runCatching {
             session.sendMessage(namespace, payload.toString())
-            true
-        } catch (_: Exception) {
-            false
-        }
+        }.isSuccess
     }
 
     fun loadTrack(
         session: CastSession,
         baseUrl: String,
-        trackId: String,
+        jobId: String,
         title: String?,
         artist: String?,
         tuningParams: String?,
@@ -108,7 +99,7 @@ class CastController(private val application: Application) {
         val normalizedBaseUrl = baseUrl.trimEnd('/')
         val customData = JSONObject().apply {
             put("baseUrl", normalizedBaseUrl)
-            put("songId", trackId)
+            put("jobId", jobId)
             if (!tuningParams.isNullOrBlank()) {
                 put("tuningParams", tuningParams)
             }
@@ -120,7 +111,7 @@ class CastController(private val application: Application) {
             title?.let { putString(MediaMetadata.KEY_TITLE, it) }
             artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
         }
-        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/$trackId")
+        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/$jobId")
             .setStreamType(MediaInfo.STREAM_TYPE_NONE)
             .setContentType("application/json")
             .setMetadata(metadata)

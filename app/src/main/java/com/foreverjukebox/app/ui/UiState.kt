@@ -141,6 +141,7 @@ data class PlaybackState(
     val lastSourceId: String? = null,
     val lastStableTrackId: String? = null,
     val lastYouTubeId: String? = null,
+    val lastTrackCreatedAtEpochMs: Long? = null,
     val isCastLoading: Boolean = false,
     val deleteEligible: Boolean = false,
     val deleteInFlight: Boolean = false,
