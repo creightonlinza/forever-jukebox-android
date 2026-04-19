@@ -78,7 +78,7 @@ class PlaybackCoordinator(
         return pollJob?.isActive == true || backgroundAudioLoadJob?.isActive == true || audioLoadInFlight
     }
 
-    fun getLastJobId(): String? = lastJobId
+    fun getLastJobId(): String? = lastJobId ?: getState().playback.lastJobId
 
     fun setLastJobId(jobId: String?) {
         lastJobId = jobId
@@ -461,6 +461,7 @@ class PlaybackCoordinator(
                     lastSourceId = null,
                     lastStableTrackId = null,
                     lastYouTubeId = null,
+                    lastTrackCreatedAtEpochMs = null,
                     lastJobId = null,
                     isCastLoading = false,
                     deleteEligible = false,

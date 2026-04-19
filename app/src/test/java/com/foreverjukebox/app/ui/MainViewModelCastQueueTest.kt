@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AnalysisResponse
+import com.foreverjukebox.app.data.AnalysisStartResponse
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.TopSongItem
@@ -19,16 +20,17 @@ class MainViewModelCastQueueTest {
     fun tryQueueYoutubeAnalysisForCastSkipsBlankBaseUrl() = runTest {
         var called = false
 
-        val queued = tryQueueYoutubeAnalysisForCast(
+        val queuedJobId = tryQueueYoutubeAnalysisForCast(
             baseUrl = "   ",
             youtubeId = "dQw4w9WgXcQ",
             title = "Track",
             artist = "Artist"
         ) { _, _, _, _ ->
             called = true
+            AnalysisStartResponse(id = "job_123")
         }
 
-        assertFalse(queued)
+        assertNull(queuedJobId)
         assertFalse(called)
     }
 
@@ -39,7 +41,7 @@ class MainViewModelCastQueueTest {
         var resolvedTitle: String? = null
         var resolvedArtist: String? = null
 
-        val queued = tryQueueYoutubeAnalysisForCast(
+        val queuedJobId = tryQueueYoutubeAnalysisForCast(
             baseUrl = " https://api.example.com ",
             youtubeId = "dQw4w9WgXcQ",
             title = "Track",
@@ -49,9 +51,10 @@ class MainViewModelCastQueueTest {
             resolvedYoutubeId = youtubeId
             resolvedTitle = title
             resolvedArtist = artist
+            AnalysisStartResponse(id = "job_abc123")
         }
 
-        assertTrue(queued)
+        assertEquals("job_abc123", queuedJobId)
         assertEquals("https://api.example.com", resolvedBaseUrl)
         assertEquals("dQw4w9WgXcQ", resolvedYoutubeId)
         assertEquals("Track", resolvedTitle)
@@ -60,7 +63,7 @@ class MainViewModelCastQueueTest {
 
     @Test
     fun tryQueueYoutubeAnalysisForCastReturnsFalseWhenStartFails() = runTest {
-        val queued = tryQueueYoutubeAnalysisForCast(
+        val queuedJobId = tryQueueYoutubeAnalysisForCast(
             baseUrl = "https://api.example.com",
             youtubeId = "dQw4w9WgXcQ",
             title = null,
@@ -69,7 +72,7 @@ class MainViewModelCastQueueTest {
             throw IOException("boom")
         }
 
-        assertFalse(queued)
+        assertNull(queuedJobId)
     }
 
     @Test
@@ -77,7 +80,7 @@ class MainViewModelCastQueueTest {
         var resolvedTitle: String? = "unexpected"
         var resolvedArtist: String? = "unexpected"
 
-        val queued = tryQueueYoutubeAnalysisForCast(
+        val queuedJobId = tryQueueYoutubeAnalysisForCast(
             baseUrl = "https://api.example.com",
             youtubeId = "dQw4w9WgXcQ",
             title = null,
@@ -85,9 +88,10 @@ class MainViewModelCastQueueTest {
         ) { _, _, title, artist ->
             resolvedTitle = title
             resolvedArtist = artist
+            AnalysisStartResponse(id = "job_metadata")
         }
 
-        assertTrue(queued)
+        assertEquals("job_metadata", queuedJobId)
         assertNull(resolvedTitle)
         assertNull(resolvedArtist)
     }
@@ -184,6 +188,106 @@ class MainViewModelCastQueueTest {
 
         assertEquals(1, filtered.size)
         assertEquals("job:other", filtered.first().uniqueSongId)
+    }
+
+    @Test
+    fun resolveKnownJobIdForSourceFindsJobIdInTopSongs() {
+        val state = UiState(
+            search = SearchState(
+                topSongs = listOf(
+                    TopSongItem(
+                        id = "job_top_1",
+                        sourceProvider = "soundcloud",
+                        sourceId = "sc_123",
+                        title = "Top Song"
+                    )
+                )
+            )
+        )
+
+        val resolved = resolveKnownJobIdForSource(
+            state = state,
+            sourceProvider = "soundcloud",
+            sourceId = "sc_123"
+        )
+
+        assertEquals("job_top_1", resolved)
+    }
+
+    @Test
+    fun resolveKnownJobIdForSourceFindsJobIdInTrendingAndRecent() {
+        val state = UiState(
+            search = SearchState(
+                trendingSongs = listOf(
+                    TopSongItem(
+                        id = "job_trending_1",
+                        sourceProvider = "bandcamp",
+                        sourceId = "bc_42",
+                        title = "Trending Song"
+                    )
+                ),
+                recentSongs = listOf(
+                    TopSongItem(
+                        id = "job_recent_1",
+                        sourceProvider = "upload",
+                        sourceId = "upload_9",
+                        title = "Recent Song"
+                    )
+                )
+            )
+        )
+
+        val trendingResolved = resolveKnownJobIdForSource(
+            state = state,
+            sourceProvider = "bandcamp",
+            sourceId = "bc_42"
+        )
+        val recentResolved = resolveKnownJobIdForSource(
+            state = state,
+            sourceProvider = "upload",
+            sourceId = "upload_9"
+        )
+
+        assertEquals("job_trending_1", trendingResolved)
+        assertEquals("job_recent_1", recentResolved)
+    }
+
+    @Test
+    fun resolveKnownJobIdForSourceReturnsNullWhenMissingOrInvalid() {
+        val state = UiState(
+            search = SearchState(
+                topSongs = listOf(
+                    TopSongItem(
+                        id = null,
+                        sourceProvider = "soundcloud",
+                        sourceId = "sc_123",
+                        title = "Song"
+                    )
+                )
+            )
+        )
+
+        assertNull(
+            resolveKnownJobIdForSource(
+                state = state,
+                sourceProvider = "soundcloud",
+                sourceId = "sc_123"
+            )
+        )
+        assertNull(
+            resolveKnownJobIdForSource(
+                state = state,
+                sourceProvider = "soundcloud",
+                sourceId = "missing"
+            )
+        )
+        assertNull(
+            resolveKnownJobIdForSource(
+                state = state,
+                sourceProvider = " ",
+                sourceId = "sc_123"
+            )
+        )
     }
 
     @Test

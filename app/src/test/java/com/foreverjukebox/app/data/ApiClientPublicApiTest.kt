@@ -399,15 +399,49 @@ class ApiClientPublicApiTest {
     fun deleteJobUsesExpectedPathAndMethod() = runTest {
         server.enqueue(
             MockResponse()
-                .setResponseCode(204)
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "status": "deleted",
+                      "id": "job_delete"
+                    }
+                    """.trimIndent()
+                )
         )
 
         val baseUrl = server.url("/base/").toString()
-        api.deleteJob(baseUrl = baseUrl, jobId = "job_delete")
+        val response = api.deleteJob(baseUrl = baseUrl, jobId = "job_delete")
 
         val request = server.takeRequest()
         assertEquals("DELETE", request.method)
         assertEquals("/base/api/jobs/job_delete", request.path)
+        assertEquals("", request.body.readUtf8())
+        assertEquals("deleted", response.status)
+        assertEquals("job_delete", response.id)
+    }
+
+    @Test
+    fun deleteJobThrowsHttpStatusExceptionWithFastApiErrorBody() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(404)
+                .setBody("""{"detail":"Job not found"}""")
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val result = runCatching {
+            api.deleteJob(baseUrl = baseUrl, jobId = "job_missing")
+        }
+
+        assertTrue(result.isFailure)
+        val exception = result.exceptionOrNull()
+        assertTrue(exception is HttpStatusException)
+        assertEquals(404, (exception as HttpStatusException).statusCode)
+        assertEquals("""{"detail":"Job not found"}""", exception.responseBody)
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/base/api/jobs/job_missing", request.path)
     }
 
     @Test

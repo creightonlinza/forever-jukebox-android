@@ -8,29 +8,27 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 internal data class PreservedCastTrack(
-    val trackId: String,
+    val jobId: String,
     val sourceProvider: String?,
     val sourceId: String?,
     val stableTrackId: String?,
     val youtubeId: String?,
-    val jobId: String?,
     val title: String?,
     val artist: String?
 )
 
 internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTrack? {
-    val trackId = playback.lastJobId ?: playback.lastSourceId ?: playback.lastYouTubeId ?: return null
+    val jobId = playback.lastJobId ?: return null
     val shouldAutoCast = playback.audioLoaded && playback.analysisLoaded
     if (!shouldAutoCast) {
         return null
     }
     return PreservedCastTrack(
-        trackId = trackId,
+        jobId = jobId,
         sourceProvider = playback.lastSourceProvider,
         sourceId = playback.lastSourceId,
         stableTrackId = playback.stableTrackIdOrNull(),
         youtubeId = playback.lastYouTubeId,
-        jobId = playback.lastJobId,
         title = playback.trackTitle,
         artist = playback.trackArtist
     )
@@ -65,8 +63,8 @@ class CastSessionCoordinator(
             return
         }
         val playback = getState().playback
-        val trackId = playback.lastJobId ?: playback.lastSourceId ?: playback.lastYouTubeId
-        if (trackId.isNullOrBlank()) {
+        val jobId = playback.lastJobId
+        if (jobId.isNullOrBlank()) {
             scope.launch { showToast("Load a track before casting.") }
             return
         }
@@ -82,7 +80,7 @@ class CastSessionCoordinator(
             return
         }
         castPlaybackCoordinator.castTrackId(
-            trackId = trackId,
+            jobId = jobId,
             title = playback.trackTitle,
             artist = playback.trackArtist,
             sourceProvider = playback.lastSourceProvider,
@@ -156,7 +154,7 @@ class CastSessionCoordinator(
                 )
             }
             castPlaybackCoordinator.castTrackId(
-                trackId = preservedTrack.trackId,
+                jobId = preservedTrack.jobId,
                 title = preservedTrack.title,
                 artist = preservedTrack.artist,
                 sourceProvider = preservedTrack.sourceProvider,

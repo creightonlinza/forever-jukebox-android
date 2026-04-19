@@ -15,6 +15,7 @@ import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.AnalysisResponse
+import com.foreverjukebox.app.data.AnalysisStartResponse
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
@@ -40,6 +41,7 @@ import java.io.IOException
 import java.net.URI
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,15 +56,18 @@ internal suspend fun tryQueueYoutubeAnalysisForCast(
     youtubeId: String,
     title: String?,
     artist: String?,
-    startAnalysis: suspend (baseUrl: String, youtubeId: String, title: String?, artist: String?) -> Unit
-): Boolean {
+    startAnalysis: suspend (baseUrl: String, youtubeId: String, title: String?, artist: String?) -> AnalysisStartResponse
+): String? {
     val normalizedBaseUrl = baseUrl.trim()
     if (normalizedBaseUrl.isBlank()) {
-        return false
+        return null
     }
     return runCatching {
         startAnalysis(normalizedBaseUrl, youtubeId, title, artist)
-    }.isSuccess
+            .id
+            ?.trim()
+            ?.ifBlank { null }
+    }.getOrNull()
 }
 
 internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchState {
@@ -112,6 +117,27 @@ internal fun sleepTimerOptionForDurationMs(durationMs: Long?): SleepTimerOption 
     return SleepTimerOption.entries.firstOrNull { option ->
         option.durationMs == durationMs
     } ?: SleepTimerOption.Off
+}
+
+internal fun resolveKnownJobIdForSource(
+    state: UiState,
+    sourceProvider: String,
+    sourceId: String
+): String? {
+    val provider = sourceProviderFromRaw(sourceProvider) ?: return null
+    val normalizedSourceId = sourceId.trim()
+    if (normalizedSourceId.isBlank()) return null
+    val matched = sequenceOf(
+        state.search.topSongs,
+        state.search.trendingSongs,
+        state.search.recentSongs
+    )
+        .flatten()
+        .firstOrNull { item ->
+            sourceProviderFromRaw(item.sourceProvider) == provider &&
+                item.sourceId?.trim() == normalizedSourceId
+        } ?: return null
+    return matched.id?.trim().orEmpty().ifBlank { null }
 }
 
 internal fun favoriteRemovalTrackIdsForDeletion(
@@ -176,6 +202,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var appConfigLoaded = false
     private var foregroundRecoveryInFlight = false
+    private var castSelectionJob: Job? = null
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
@@ -483,6 +510,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         serverTrackLoadCoordinator.cancel()
+        cancelCastSelection()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         runCatching {
             getApplication<Application>().unregisterReceiver(playbackServiceEventReceiver)
@@ -721,6 +749,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun resetRuntimeForModeChange(targetMode: AppMode) {
         serverTrackLoadCoordinator.cancel()
+        cancelCastSelection()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         searchCoordinator.resetRuntimeState()
         appConfigLoaded = false
@@ -748,6 +777,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun resetRuntimeForServerSwitch(nextBaseUrl: String) {
         serverTrackLoadCoordinator.cancel()
+        cancelCastSelection()
         searchCoordinator.resetRuntimeState()
         favoritesController.resetRuntimeState()
         appConfigLoaded = false
@@ -905,7 +935,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (state.value.playback.isCasting) {
                             clearSearchSelectionState()
                             castPlaybackCoordinator.castTrackId(
-                                trackId = jobId,
+                                jobId = jobId,
                                 title = name,
                                 artist = artist,
                                 sourceProvider = parsedIdentity?.sourceProvider,
@@ -970,17 +1000,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (state.value.playback.isCasting) {
             clearSearchSelectionState()
             applyActiveTab(TabId.Play, recordHistory = true)
-            viewModelScope.launch {
-                val queued = queueYoutubeAnalysisForCast(
+            launchCastSelection {
+                val knownJobId = resolveKnownJobIdForSource(
+                    state = state.value,
+                    sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+                    sourceId = youtubeId
+                )
+                if (!knownJobId.isNullOrBlank()) {
+                    castPlaybackCoordinator.castTrackId(
+                        jobId = knownJobId,
+                        title = resolvedTitle,
+                        artist = resolvedArtist,
+                        sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+                        sourceId = youtubeId,
+                        stableTrackId = stableId
+                    )
+                    return@launchCastSelection
+                }
+                try {
+                    val existing = api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
+                    val resolvedJobId = existing?.id
+                    if (!resolvedJobId.isNullOrBlank()) {
+                        castPlaybackCoordinator.castTrackId(
+                            jobId = resolvedJobId,
+                            title = resolvedTitle,
+                            artist = resolvedArtist,
+                            sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+                            sourceId = youtubeId,
+                            stableTrackId = stableId
+                        )
+                        return@launchCastSelection
+                    }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (error: HttpStatusException) {
+                    if (error.statusCode == 422) {
+                        showServerTrackLengthLimitError()
+                        return@launchCastSelection
+                    }
+                } catch (_: IOException) {
+                    Unit
+                } catch (_: IllegalArgumentException) {
+                    Unit
+                } catch (_: IllegalStateException) {
+                    Unit
+                }
+                val resolvedJobId = queueYoutubeAnalysisForCast(
                     youtubeId = youtubeId,
                     title = resolvedTitle,
                     artist = resolvedArtist
                 )
-                if (!queued) {
-                    return@launch
+                if (resolvedJobId == null) {
+                    return@launchCastSelection
                 }
                 castPlaybackCoordinator.castTrackId(
-                    trackId = youtubeId,
+                    jobId = resolvedJobId,
                     title = resolvedTitle,
                     artist = resolvedArtist,
                     sourceProvider = SOURCE_PROVIDER_YOUTUBE,
@@ -1008,6 +1082,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cacheKey = stableId,
             failureLogMessage = "Failed to start YouTube analysis"
         ) {
+            val existing = api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
+            if (existing != null) {
+                return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(existing)
+            }
             val response = api.startYoutubeAnalysis(
                 baseUrl,
                 youtubeId,
@@ -1089,35 +1167,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (state.value.playback.isCasting) {
             applyActiveTab(TabId.Play, recordHistory = true)
-            viewModelScope.launch {
-                if (provider == SOURCE_PROVIDER_YOUTUBE) {
-                    val queued = queueYoutubeAnalysisForCast(
-                        youtubeId = normalizedSourceId,
-                        title = resolvedTitle,
-                        artist = resolvedArtist
-                    )
-                    if (!queued) {
-                        return@launch
-                    }
+            launchCastSelection {
+                val knownJobId = resolveKnownJobIdForSource(
+                    state = state.value,
+                    sourceProvider = provider,
+                    sourceId = normalizedSourceId
+                )
+                if (!knownJobId.isNullOrBlank()) {
                     castPlaybackCoordinator.castTrackId(
-                        trackId = normalizedSourceId,
+                        jobId = knownJobId,
                         title = resolvedTitle,
                         artist = resolvedArtist,
                         sourceProvider = provider,
                         sourceId = normalizedSourceId,
                         stableTrackId = stableId
                     )
-                    return@launch
+                    return@launchCastSelection
                 }
+
+                if (provider == SOURCE_PROVIDER_YOUTUBE) {
+                    try {
+                        val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                        val resolvedJobId = existing?.id
+                        if (!resolvedJobId.isNullOrBlank()) {
+                            castPlaybackCoordinator.castTrackId(
+                                jobId = resolvedJobId,
+                                title = resolvedTitle,
+                                artist = resolvedArtist,
+                                sourceProvider = provider,
+                                sourceId = normalizedSourceId,
+                                stableTrackId = stableId
+                            )
+                            return@launchCastSelection
+                        }
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (error: HttpStatusException) {
+                        if (error.statusCode == 422) {
+                            showServerTrackLengthLimitError()
+                            return@launchCastSelection
+                        }
+                    } catch (_: IOException) {
+                        Unit
+                    } catch (_: IllegalArgumentException) {
+                        Unit
+                    } catch (_: IllegalStateException) {
+                        Unit
+                    }
+                    val resolvedJobId = queueYoutubeAnalysisForCast(
+                        youtubeId = normalizedSourceId,
+                        title = resolvedTitle,
+                        artist = resolvedArtist
+                    )
+                    if (resolvedJobId == null) {
+                        return@launchCastSelection
+                    }
+                    castPlaybackCoordinator.castTrackId(
+                        jobId = resolvedJobId,
+                        title = resolvedTitle,
+                        artist = resolvedArtist,
+                        sourceProvider = provider,
+                        sourceId = normalizedSourceId,
+                        stableTrackId = stableId
+                    )
+                    return@launchCastSelection
+                }
+
                 try {
                     val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
                     val resolvedJobId = existing?.id
                     if (resolvedJobId.isNullOrBlank()) {
                         showToast("Unable to queue this track for casting.")
-                        return@launch
+                        return@launchCastSelection
                     }
                     castPlaybackCoordinator.castTrackId(
-                        trackId = resolvedJobId,
+                        jobId = resolvedJobId,
                         title = resolvedTitle,
                         artist = resolvedArtist,
                         sourceProvider = provider,
@@ -1129,7 +1253,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (error: HttpStatusException) {
                     if (error.statusCode == 422) {
                         showServerTrackLengthLimitError()
-                        return@launch
+                        return@launchCastSelection
                     }
                     Log.e(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
@@ -1204,7 +1328,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (state.value.playback.isCasting) {
             castPlaybackCoordinator.castTrackId(
-                trackId = normalizedJobId,
+                jobId = normalizedJobId,
                 title = resolvedTitle,
                 artist = resolvedArtist,
                 stableTrackId = stableId
@@ -1245,7 +1369,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val parsedIdentity = parseTrackStableId(stableTrackId)
         if (state.value.playback.isCasting) {
             castPlaybackCoordinator.castTrackId(
-                trackId = jobId,
+                jobId = jobId,
                 title = title,
                 artist = artist,
                 sourceProvider = parsedIdentity?.sourceProvider,
@@ -1601,6 +1725,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopCasting() {
+        cancelCastSelection()
         castSessionCoordinator.stopCasting()
     }
 
@@ -1612,24 +1737,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return castPlaybackCoordinator.sendCastCommand(command)
     }
 
+    private fun launchCastSelection(block: suspend () -> Unit) {
+        cancelCastSelection()
+        castSelectionJob = viewModelScope.launch {
+            block()
+        }
+    }
+
+    private fun cancelCastSelection() {
+        castSelectionJob?.cancel()
+        castSelectionJob = null
+    }
+
     private suspend fun queueYoutubeAnalysisForCast(
         youtubeId: String,
         title: String?,
         artist: String?
-    ): Boolean {
+    ): String? {
         val normalizedBaseUrl = state.value.baseUrl.trim()
         if (normalizedBaseUrl.isBlank()) {
             showToast("Unable to queue this track for casting.")
-            return false
+            return null
         }
         return try {
-            api.startYoutubeAnalysis(
+            val started = api.startYoutubeAnalysis(
                 baseUrl = normalizedBaseUrl,
                 youtubeId = youtubeId,
                 title = title,
                 artist = artist
             )
-            true
+            val resolvedJobId = started.id?.trim()?.ifBlank { null }
+            resolvedJobId
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (error: HttpStatusException) {
@@ -1638,10 +1776,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 showToast("Unable to queue this track for casting.")
             }
-            false
-        } catch (_: Exception) {
+            null
+        } catch (_: IOException) {
             showToast("Unable to queue this track for casting.")
-            false
+            null
+        } catch (_: IllegalArgumentException) {
+            showToast("Unable to queue this track for casting.")
+            null
+        } catch (_: IllegalStateException) {
+            showToast("Unable to queue this track for casting.")
+            null
         }
     }
 
@@ -1674,7 +1818,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun deleteCurrentJob(): Boolean {
-        if (state.value.playback.deleteInFlight) return false
+        if (state.value.playback.deleteInFlight) {
+            return false
+        }
         val jobId = playbackCoordinator.getLastJobId() ?: return false
         val baseUrl = state.value.baseUrl
         val playback = state.value.playback
@@ -1682,10 +1828,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             playback = playback,
             fallbackJobId = jobId
         )
-        if (baseUrl.isBlank()) return false
+        if (baseUrl.isBlank()) {
+            return false
+        }
         updatePlaybackState { it.copy(deleteInFlight = true) }
         return try {
             api.deleteJob(baseUrl, jobId)
+            if (playback.isCasting) {
+                sendCastCommand("reset")
+            }
             if (trackIdsForRemoval.isNotEmpty()) {
                 trackIdsForRemoval.forEach { trackId ->
                     playbackCoordinator.clearCachedTrack(trackId)
@@ -1709,6 +1860,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             true
         } catch (cancel: CancellationException) {
             throw cancel
+        } catch (error: HttpStatusException) {
+            Log.e(TAG, "Failed to delete current job", error)
+            playbackCoordinator.markDeleteEligibilityFailed(jobId)
+            false
         } catch (error: IOException) {
             Log.e(TAG, "Failed to delete current job", error)
             playbackCoordinator.markDeleteEligibilityFailed(jobId)
