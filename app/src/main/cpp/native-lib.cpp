@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #include <android/log.h>
@@ -70,10 +71,11 @@ public:
         mIsPlaying.store(false);
     }
 
-    void loadPcm(const int16_t* data, size_t frames) {
+    void loadPcm(std::vector<int16_t>&& data) {
         std::lock_guard<std::mutex> lock(mDataMutex);
-        mAudioData.assign(data, data + frames * static_cast<size_t>(mChannelCount));
-        mTotalFrames = static_cast<int64_t>(frames);
+        mAudioData = std::move(data);
+        mTotalFrames =
+            static_cast<int64_t>(mAudioData.size() / static_cast<size_t>(mChannelCount));
         mReadFrame.store(0);
         mAudioFrame.store(0);
         mHasJump.store(false);
@@ -339,8 +341,7 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeLoadPcm(
     std::vector<int16_t> pcm(static_cast<size_t>(length / 2));
     env->GetByteArrayRegion(data, 0, length,
                             reinterpret_cast<jbyte*>(pcm.data()));
-    const size_t frames = pcm.size() / static_cast<size_t>(player->getChannelCount());
-    player->loadPcm(pcm.data(), frames);
+    player->loadPcm(std::move(pcm));
 }
 
 extern "C" JNIEXPORT void JNICALL

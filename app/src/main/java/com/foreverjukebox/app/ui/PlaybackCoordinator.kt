@@ -242,7 +242,6 @@ class PlaybackCoordinator(
             return false
         }
         audioLoadInFlight = false
-        controller.syncAutocanonizerAudio()
         updatePlaybackState {
             it.copy(
                 audioLoaded = true,
@@ -317,7 +316,6 @@ class PlaybackCoordinator(
                 return false
             }
             audioLoadInFlight = false
-            controller.syncAutocanonizerAudio()
             updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
             syncLoadingKeepAliveService()
             return true
@@ -599,7 +597,6 @@ class PlaybackCoordinator(
                         }
                     }
                 }
-                controller.syncAutocanonizerAudio()
                 updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
                 syncLoadingKeepAliveService()
                 return true
@@ -792,6 +789,10 @@ class PlaybackCoordinator(
                 }
                 response.status == "complete" -> {
                     if (!getState().playback.audioLoaded) {
+                        if (audioLoadInFlight) {
+                            delay(intervalMs)
+                            continue
+                        }
                         val loaded = loadAudioFromJob(jobId)
                         if (!loaded) {
                             delay(intervalMs)
