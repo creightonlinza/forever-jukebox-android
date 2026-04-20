@@ -191,7 +191,6 @@ class LocalAnalysisCoordinator(
                 }
             }
         }
-        controller.syncAutocanonizerAudio()
         updateState {
             it.copy(
                 playback = it.playback.copy(
