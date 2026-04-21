@@ -37,10 +37,8 @@ class ListenLinkCoordinator(
         if (uriString.isNullOrBlank()) return
         val uri = runCatching { URI(uriString) }.getOrNull() ?: return
         val base = getState().baseUrl.trim().trimEnd('/')
-        if (base.isBlank()) return
-        val baseUri = runCatching { URI(base) }.getOrNull() ?: return
-        if (uri.scheme != baseUri.scheme || uri.host != baseUri.host) return
-        if (baseUri.port != -1 && uri.port != baseUri.port) return
+        val baseUri = runCatching { URI(base) }.getOrNull()
+        if (!matchesKnownListenHost(uri, baseUri)) return
         val segments = uri.path
             ?.trim('/')
             ?.split('/')
@@ -62,6 +60,27 @@ class ListenLinkCoordinator(
             }
             loadTrackByStableId(id, null, null, tuningParams)
         }
+    }
+
+    private fun matchesKnownListenHost(uri: URI, baseUri: URI?): Boolean {
+        val uriScheme = uri.scheme?.lowercase()
+        val uriHost = uri.host?.lowercase()
+        if (uriScheme == "https" && uriHost == CANONICAL_LISTEN_HOST) {
+            return true
+        }
+        if (baseUri == null) {
+            return false
+        }
+        if (uriScheme != baseUri.scheme?.lowercase()) {
+            return false
+        }
+        if (uriHost != baseUri.host?.lowercase()) {
+            return false
+        }
+        if (baseUri.port != -1 && uri.port != baseUri.port) {
+            return false
+        }
+        return true
     }
 
     private fun parseQueryParams(rawQuery: String?): LinkedHashMap<String, List<String>> {
@@ -106,5 +125,9 @@ class ListenLinkCoordinator(
 
     private fun decodeUriComponent(value: String): String {
         return URLDecoder.decode(value, StandardCharsets.UTF_8.name())
+    }
+
+    private companion object {
+        private const val CANONICAL_LISTEN_HOST = "foreverjukebox.com"
     }
 }

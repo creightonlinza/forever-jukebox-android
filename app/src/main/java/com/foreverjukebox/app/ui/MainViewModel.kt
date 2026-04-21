@@ -203,6 +203,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var appConfigLoaded = false
     private var foregroundRecoveryInFlight = false
     private var castSelectionJob: Job? = null
+    private var pendingDeepLinkUriString: String? = null
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
@@ -354,6 +355,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 maybeRefreshServerDataForCurrentState()
+                consumePendingDeepLinkIfReady()
             }
         }
         viewModelScope.launch {
@@ -597,6 +599,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+        consumePendingDeepLinkIfReady()
         viewModelScope.launch {
             preferences.setBaseUrl(trimmedUrl)
             if (didServerChange) {
@@ -2079,7 +2082,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun handleDeepLink(uri: Uri?) {
-        listenLinkCoordinator.handleDeepLink(uri?.toString())
+        pendingDeepLinkUriString = uri?.toString()
+        consumePendingDeepLinkIfReady()
     }
 
     fun refreshCacheSize() {
@@ -2111,6 +2115,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppMode.Local -> recoverLocalLoadingOnForeground()
             null -> Unit
         }
+    }
+
+    private fun consumePendingDeepLinkIfReady() {
+        val pending = pendingDeepLinkUriString ?: return
+        if (state.value.baseUrl.isBlank()) {
+            return
+        }
+        pendingDeepLinkUriString = null
+        listenLinkCoordinator.handleDeepLink(pending)
     }
 
     private fun recoverServerLoadingOnForeground(current: UiState, playback: PlaybackState) {

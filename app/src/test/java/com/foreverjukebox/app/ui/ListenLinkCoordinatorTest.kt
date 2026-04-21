@@ -122,6 +122,25 @@ class ListenLinkCoordinatorTest {
         assertEquals("thresh=9", loads.single().tuningParams)
     }
 
+    @Test
+    fun handleDeepLinkAcceptsCanonicalListenHostWhenBaseDiffers() {
+        val loads = mutableListOf<LoadRequest>()
+        val coordinator = createCoordinator(
+            state = UiState(baseUrl = "https://api.foreverjukebox.internal"),
+            loadTrackByStableId = { stableId, title, artist, tuningParams ->
+                loads += LoadRequest(stableId, title, artist, tuningParams)
+            }
+        )
+
+        coordinator.handleDeepLink(
+            "https://foreverjukebox.com/listen/src:youtube:yt123?thresh=7&jb=1"
+        )
+
+        assertEquals(1, loads.size)
+        assertEquals("src:youtube:yt123", loads.single().stableId)
+        assertEquals("thresh=7&jb=1", loads.single().tuningParams)
+    }
+
     private fun createCoordinator(
         state: UiState,
         tuningParams: String? = null,
