@@ -21,7 +21,6 @@ class TuningParamsCodecTest {
         assertTrue(parsed?.justBackwards == true)
         assertFalse(parsed?.justLongBranches == true)
         assertTrue(parsed?.removeSequentialBranches == true)
-        assertTrue(parsed?.highlightAnchorBranch == true)
         assertEquals(listOf(3, 8), parsed?.deletedEdgeIds)
     }
 
@@ -50,11 +49,20 @@ class TuningParamsCodecTest {
 
     @Test
     fun parseTreatsBooleanFieldsCaseInsensitively() {
-        val parsed = TuningParamsCodec.parse("jb=TRUE&lg=False&ah=TrUe")
+        val parsed = TuningParamsCodec.parse("jb=TRUE&lg=False")
 
         assertTrue(parsed?.justBackwards == true)
         assertFalse(parsed?.justLongBranches == true)
-        assertTrue(parsed?.highlightAnchorBranch == true)
+    }
+
+    @Test
+    fun parseIgnoresHighlightAndUnknownParams() {
+        assertNull(TuningParamsCodec.parse("ah=1"))
+        assertNull(TuningParamsCodec.parse("foo=bar"))
+
+        val parsed = TuningParamsCodec.parse("jb=1&foo=bar&ah=1")
+        assertNotNull(parsed)
+        assertTrue(parsed?.justBackwards == true)
     }
 
     @Test
@@ -115,6 +123,15 @@ class TuningParamsCodecTest {
             highlightAnchorBranch = false
         )
         assertEquals("jb=1&d=1%2C4&ah=0", payload)
+    }
+
+    @Test
+    fun buildCastLoadPayloadDropsUnknownKeys() {
+        val payload = TuningParamsCodec.buildCastLoadPayload(
+            raw = "jb=1&foo=bar&d=2",
+            highlightAnchorBranch = false
+        )
+        assertEquals("jb=1&d=2&ah=0", payload)
     }
 
     @Test
@@ -192,7 +209,7 @@ class TuningParamsCodecTest {
         assertEquals(original.minProb, merged.minProb)
         assertEquals(original.maxProb, merged.maxProb)
         assertEquals(original.ramp, merged.ramp)
-        assertEquals(original.highlightAnchorBranch, merged.highlightAnchorBranch)
+        assertEquals(false, merged.highlightAnchorBranch)
         assertEquals(original.justBackwards, merged.justBackwards)
         assertEquals(original.justLong, merged.justLong)
         assertEquals(original.removeSequential, merged.removeSequential)

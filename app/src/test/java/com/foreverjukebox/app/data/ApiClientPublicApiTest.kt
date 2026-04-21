@@ -191,6 +191,38 @@ class ApiClientPublicApiTest {
     }
 
     @Test
+    fun createFavoritesSyncEncodesSchemaFieldsIncludingTuningParams() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"code":"abc123","count":1,"favorites":[]}""")
+        )
+        val baseUrl = server.url("/api/").toString()
+        val favorites = listOf(
+            FavoriteTrack(
+                uniqueSongId = "mvJjmWTg7Qo",
+                title = "Song 1",
+                artist = "Artist 1",
+                duration = 123.45,
+                sourceType = FavoriteSourceType.Youtube,
+                tuningParams = "jb=1&thresh=7"
+            )
+        )
+
+        api.createFavoritesSync(baseUrl = baseUrl, favorites = favorites)
+
+        val request = server.takeRequest()
+        val payload = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+        val item = payload.getValue("favorites").jsonArray.single().jsonObject
+        assertEquals("mvJjmWTg7Qo", item.getValue("uniqueSongId").toString().trim('"'))
+        assertEquals("Song 1", item.getValue("title").toString().trim('"'))
+        assertEquals("Artist 1", item.getValue("artist").toString().trim('"'))
+        assertEquals("123.45", item.getValue("duration").toString())
+        assertEquals("youtube", item.getValue("sourceType").toString().trim('"'))
+        assertEquals("jb=1&thresh=7", item.getValue("tuningParams").toString().trim('"'))
+    }
+
+    @Test
     fun updateFavoritesSyncUsesExpectedPathMethodAndBody() = runTest {
         server.enqueue(
             MockResponse()
@@ -235,6 +267,37 @@ class ApiClientPublicApiTest {
         assertEquals(1, payloadFavorites.size)
         assertEquals("song_1", payloadFavorites.first().jsonObject.getValue("uniqueSongId").toString().trim('"'))
         assertEquals("abc123", response.code)
+    }
+
+    @Test
+    fun fetchFavoritesSyncParsesNullSourceTypeAndTuningParams() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "favorites": [
+                        {
+                          "uniqueSongId": "song_1",
+                          "title": "Song 1",
+                          "artist": "Artist 1",
+                          "duration": null,
+                          "sourceType": null,
+                          "tuningParams": "jb=1&thresh=7"
+                        }
+                      ]
+                    }
+                    """.trimIndent()
+                )
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val favorites = api.fetchFavoritesSync(baseUrl = baseUrl, code = "abc123")
+
+        assertEquals(1, favorites.size)
+        assertNull(favorites.first().sourceType)
+        assertEquals("jb=1&thresh=7", favorites.first().tuningParams)
     }
 
     @Test

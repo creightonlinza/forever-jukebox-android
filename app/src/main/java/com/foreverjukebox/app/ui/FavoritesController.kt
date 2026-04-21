@@ -2,8 +2,10 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.ApiClient
+import com.foreverjukebox.app.data.canonicalStableTrackId
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
+import com.foreverjukebox.app.data.favoriteUniqueSongIdFromTrackId
 import com.foreverjukebox.app.data.parseTrackStableId
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -152,15 +154,15 @@ class FavoritesController(
         fromListenToggle: Boolean = false
     ) {
         val previous = getState().favorites
-        val sorted = sortFavorites(favorites).take(MAX_FAVORITES)
-        updateState { it.copy(favorites = sorted) }
+        val normalized = normalizeFavorites(favorites).take(MAX_FAVORITES)
+        updateState { it.copy(favorites = normalized) }
         scope.launch {
-            preferences.setFavorites(sorted)
+            preferences.setFavorites(normalized)
         }
         if (!sync) {
             return
         }
-        val delta = computeFavoritesDelta(previous, sorted)
+        val delta = computeFavoritesDelta(previous, normalized)
         if (delta.isNoop()) {
             return
         }
@@ -260,9 +262,12 @@ class FavoritesController(
         previous: List<FavoriteTrack>,
         next: List<FavoriteTrack>
     ): FavoritesDelta {
-        val prevMap = previous.associateBy { it.uniqueSongId }
-        val nextMap = next.associateBy { it.uniqueSongId }
-        val added = next.filter { !prevMap.containsKey(it.uniqueSongId) }
+        val prevMap = previous.associateBy { canonicalStableTrackId(it.uniqueSongId) ?: it.uniqueSongId }
+        val nextMap = next.associateBy { canonicalStableTrackId(it.uniqueSongId) ?: it.uniqueSongId }
+        val added = next.filter { item ->
+            val key = canonicalStableTrackId(item.uniqueSongId) ?: item.uniqueSongId
+            !prevMap.containsKey(key)
+        }
         val removedIds = prevMap.keys.filterNot { nextMap.containsKey(it) }.toSet()
         return FavoritesDelta(added = added, removedIds = removedIds)
     }
@@ -271,23 +276,33 @@ class FavoritesController(
         serverFavorites: List<FavoriteTrack>,
         delta: FavoritesDelta
     ): List<FavoriteTrack> {
-        val filtered = serverFavorites.filter { it.uniqueSongId !in delta.removedIds }
-        val merged = filtered + delta.added.filter { added ->
-            filtered.none { it.uniqueSongId == added.uniqueSongId }
+        val filtered = serverFavorites.filter { favorite ->
+            val canonical = canonicalStableTrackId(favorite.uniqueSongId) ?: favorite.uniqueSongId
+            canonical !in delta.removedIds
         }
-        return sortFavorites(merged).take(MAX_FAVORITES)
+        val merged = filtered + delta.added.filter { added ->
+            val addedCanonical = canonicalStableTrackId(added.uniqueSongId) ?: added.uniqueSongId
+            filtered.none { existing ->
+                val existingCanonical =
+                    canonicalStableTrackId(existing.uniqueSongId) ?: existing.uniqueSongId
+                existingCanonical == addedCanonical
+            }
+        }
+        return normalizeFavorites(merged).take(MAX_FAVORITES)
     }
 
     fun normalizeFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
         val normalized = items.mapNotNull { item ->
             val parsedIdentity = parseTrackStableId(item.uniqueSongId) ?: return@mapNotNull null
+            val uniqueSongId =
+                favoriteUniqueSongIdFromTrackId(parsedIdentity.stableId) ?: return@mapNotNull null
             val resolvedSourceType = if (parsedIdentity.sourceProvider != null) {
                 favoriteSourceTypeFromProvider(parsedIdentity.sourceProvider)
             } else {
                 item.sourceType
             }
             item.copy(
-                uniqueSongId = parsedIdentity.stableId,
+                uniqueSongId = uniqueSongId,
                 title = item.title.ifBlank { "Untitled" },
                 artist = item.artist,
                 sourceType = resolvedSourceType,
@@ -349,7 +364,7 @@ class FavoritesController(
     }
 
     fun sortFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
-        val deduped = items.distinctBy { it.uniqueSongId }
+        val deduped = items.distinctBy { canonicalStableTrackId(it.uniqueSongId) ?: it.uniqueSongId }
         return deduped.sortedWith(
             compareBy<FavoriteTrack, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.artist }

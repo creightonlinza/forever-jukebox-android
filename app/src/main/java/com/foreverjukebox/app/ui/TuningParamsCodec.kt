@@ -12,12 +12,12 @@ data class ParsedTuningParams(
     val justBackwards: Boolean?,
     val justLongBranches: Boolean?,
     val removeSequentialBranches: Boolean?,
-    val highlightAnchorBranch: Boolean?,
     val deletedEdgeIds: List<Int>
 )
 
 object TuningParamsCodec {
-    private val knownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ah")
+    private val knownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d")
+    private val castKnownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ah")
 
     fun parse(raw: String?, minThreshold: Int = 0): ParsedTuningParams? {
         if (raw.isNullOrBlank()) {
@@ -55,7 +55,6 @@ object TuningParamsCodec {
             justBackwards = parseStandardBoolean(params.firstValue("jb")),
             justLongBranches = parseStandardBoolean(params.firstValue("lg")),
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
-            highlightAnchorBranch = parseStandardBoolean(params.firstValue("ah")),
             deletedEdgeIds = deletedEdgeIds
         )
     }
@@ -67,6 +66,9 @@ object TuningParamsCodec {
         val params = parseQuery(raw).toMutableMap()
         val sanitized = linkedMapOf<String, String>()
         for ((name, values) in params) {
+            if (name !in castKnownKeys) {
+                continue
+            }
             val value = values.firstOrNull() ?: continue
             if (name == "thresh") {
                 val threshold = value.toIntOrNull()
@@ -120,8 +122,7 @@ object TuningParamsCodec {
             ramp = parsed.rampPercent ?: base.ramp,
             justBackwards = parsed.justBackwards ?: base.justBackwards,
             justLong = parsed.justLongBranches ?: base.justLong,
-            removeSequential = parsed.removeSequentialBranches ?: base.removeSequential,
-            highlightAnchorBranch = parsed.highlightAnchorBranch ?: base.highlightAnchorBranch
+            removeSequential = parsed.removeSequentialBranches ?: base.removeSequential
         )
     }
 

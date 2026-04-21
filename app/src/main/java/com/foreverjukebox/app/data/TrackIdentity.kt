@@ -89,6 +89,11 @@ fun canonicalStableTrackId(raw: String?): String? {
     return parseTrackStableId(raw)?.stableId
 }
 
+fun favoriteUniqueSongIdFromTrackId(raw: String?): String? {
+    val parsed = parseTrackStableId(raw) ?: return null
+    return parsed.sourceId ?: parsed.jobId
+}
+
 fun stableTrackIdFromAnalysis(response: AnalysisResponse): String? {
     val provider = sourceProviderFromRaw(response.sourceProvider)
     val sourceId = response.sourceId?.trim().orEmpty().ifBlank { null }
