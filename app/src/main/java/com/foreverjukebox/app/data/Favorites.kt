@@ -21,7 +21,7 @@ data class FavoriteTrack(
     val title: String,
     val artist: String,
     val duration: Double? = null,
-    val sourceType: FavoriteSourceType = FavoriteSourceType.Youtube,
+    val sourceType: FavoriteSourceType? = null,
     val tuningParams: String? = null
 )
 

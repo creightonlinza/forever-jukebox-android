@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.canonicalStableTrackId
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -35,9 +36,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val playback = state.playback
     val tuning = state.tuning
     val headerTitle = resolvePlaybackHeaderTitle(playback)
-    val isFavorite = playback.stableTrackIdOrNull()?.let { id ->
-        state.favorites.any { it.uniqueSongId == id }
-    } == true
+    val favoriteTargetCanonical = canonicalStableTrackId(playback.stableTrackIdOrNull())
+    val isFavorite = favoriteTargetCanonical != null && state.favorites.any { favorite ->
+        canonicalStableTrackId(favorite.uniqueSongId) == favoriteTargetCanonical
+    }
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }

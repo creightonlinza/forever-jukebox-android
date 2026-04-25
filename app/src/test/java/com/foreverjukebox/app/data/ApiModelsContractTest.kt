@@ -91,4 +91,13 @@ class ApiModelsContractTest {
         assertEquals("track/42", parsedSource?.sourceId)
         assertNull(parsedSource?.jobId)
     }
+
+    @Test
+    fun favoriteUniqueSongIdFromTrackIdReturnsLegacyIds() {
+        assertEquals("dQw4w9WgXcQ", favoriteUniqueSongIdFromTrackId("src:youtube:dQw4w9WgXcQ"))
+        assertEquals("job_abc", favoriteUniqueSongIdFromTrackId("job:job_abc"))
+        assertEquals("dQw4w9WgXcQ", favoriteUniqueSongIdFromTrackId("dQw4w9WgXcQ"))
+        assertEquals("job_abc", favoriteUniqueSongIdFromTrackId("job_abc"))
+        assertNull(favoriteUniqueSongIdFromTrackId("src:youtube:"))
+    }
 }

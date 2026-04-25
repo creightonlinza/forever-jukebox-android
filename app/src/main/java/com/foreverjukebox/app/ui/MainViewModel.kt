@@ -26,6 +26,7 @@ import com.foreverjukebox.app.data.buildJobStableTrackId
 import com.foreverjukebox.app.data.buildSourceStableTrackId
 import com.foreverjukebox.app.data.canonicalStableTrackId
 import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
+import com.foreverjukebox.app.data.favoriteUniqueSongIdFromTrackId
 import com.foreverjukebox.app.data.parseTrackStableId
 import com.foreverjukebox.app.data.stableTrackIdFromAnalysis
 import com.foreverjukebox.app.data.stableTrackIdFromTopSong
@@ -853,16 +854,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleFavoriteForCurrent(): FavoriteToggleResult {
         val currentState = state.value
         val playback = currentState.playback
-        val currentId = playback.stableTrackIdOrNull() ?: return FavoriteToggleResult.NoTrack
+        val currentStableId = playback.stableTrackIdOrNull() ?: return FavoriteToggleResult.NoTrack
+        val currentCanonicalId =
+            canonicalStableTrackId(currentStableId) ?: return FavoriteToggleResult.NoTrack
+        val currentId =
+            favoriteUniqueSongIdFromTrackId(currentCanonicalId) ?: return FavoriteToggleResult.NoTrack
         if (shouldBlockListenFavoriteToggle(currentState)) {
             return FavoriteToggleResult.BlockedInFlight
         }
         val favorites = currentState.favorites
         val syncFromListenToggle = hasRealFavoritesSyncPath(currentState)
-        val existing = favorites.any { it.uniqueSongId == currentId }
+        val existing = favorites.any {
+            canonicalStableTrackId(it.uniqueSongId) == currentCanonicalId
+        }
         return if (existing) {
             favoritesController.updateFavorites(
-                favorites.filterNot { it.uniqueSongId == currentId },
+                favorites.filterNot {
+                    canonicalStableTrackId(it.uniqueSongId) == currentCanonicalId
+                },
                 fromListenToggle = syncFromListenToggle
             )
             FavoriteToggleResult.Removed
@@ -879,9 +888,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     duration = playback.trackDurationSeconds,
                     sourceType = favoriteSourceTypeFromProvider(playback.lastSourceProvider),
                     tuningParams = if (playback.playMode == PlaybackMode.Jukebox) {
-                        TuningParamsCodec.stripHighlightAnchorParam(
-                            playbackCoordinator.buildTuningParamsString()
-                        )
+                        playbackCoordinator.buildTuningParamsString()
                     } else {
                         null
                     }
@@ -897,8 +904,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun removeFavorite(uniqueSongId: String) {
         val favorites = state.value.favorites
-        if (favorites.none { it.uniqueSongId == uniqueSongId }) return
-        favoritesController.updateFavorites(favorites.filterNot { it.uniqueSongId == uniqueSongId })
+        val canonicalTarget = canonicalStableTrackId(uniqueSongId) ?: return
+        val filtered = favorites.filterNot { canonicalStableTrackId(it.uniqueSongId) == canonicalTarget }
+        if (filtered.size == favorites.size) return
+        favoritesController.updateFavorites(filtered)
     }
 
     fun refreshTopSongs() {
