@@ -42,7 +42,8 @@ class CastSessionCoordinatorPolicyTest {
                 lastYouTubeId = "yt123",
                 lastJobId = "job123",
                 trackTitle = "Track",
-                trackArtist = "Artist"
+                trackArtist = "Artist",
+                jukeboxAudioMode = JukeboxAudioMode.EightD
             )
         )
 
@@ -54,7 +55,8 @@ class CastSessionCoordinatorPolicyTest {
                 stableTrackId = "src:youtube:yt123",
                 youtubeId = "yt123",
                 title = "Track",
-                artist = "Artist"
+                artist = "Artist",
+                audioMode = JukeboxAudioMode.EightD
             ),
             preserved
         )

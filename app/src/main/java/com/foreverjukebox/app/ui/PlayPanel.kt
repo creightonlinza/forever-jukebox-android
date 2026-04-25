@@ -205,7 +205,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         }
     }
 
-    if (showInfo && playback.playMode != PlaybackMode.Autocanonizer) {
+    val canOpenCastReceiverDetails = playback.castReceiverDetailsReady()
+    if (showInfo && playback.playMode != PlaybackMode.Autocanonizer && canOpenCastReceiverDetails) {
         val totalBeats = if (playback.isCasting) {
             playback.castTotalBeats ?: 0
         } else {
@@ -224,7 +225,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    if (showTuning && playback.playMode != PlaybackMode.Autocanonizer) {
+    if (showTuning && playback.playMode != PlaybackMode.Autocanonizer && canOpenCastReceiverDetails) {
         TuningDialog(
             initialThreshold = tuning.threshold,
             initialMinProb = tuning.minProb,
@@ -234,6 +235,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             initialJustBackwards = tuning.justBackwards,
             initialJustLong = tuning.justLong,
             initialRemoveSequential = tuning.removeSequential,
+            initialAudioMode = playback.jukeboxAudioMode,
             onDismiss = { showTuning = false },
             onReset = viewModel::resetTuningDefaults,
             onApply = viewModel::applyTuning

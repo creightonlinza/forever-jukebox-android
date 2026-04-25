@@ -69,6 +69,7 @@ fun TuningDialog(
     initialJustBackwards: Boolean,
     initialJustLong: Boolean,
     initialRemoveSequential: Boolean,
+    initialAudioMode: JukeboxAudioMode,
     onDismiss: () -> Unit,
     onReset: () -> Unit,
     onApply: (
@@ -79,7 +80,8 @@ fun TuningDialog(
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
         justLongBranches: Boolean,
-        removeSequentialBranches: Boolean
+        removeSequentialBranches: Boolean,
+        audioMode: JukeboxAudioMode
     ) -> Unit
 ) {
     var threshold by remember(initialThreshold) { mutableFloatStateOf(initialThreshold.toFloat()) }
@@ -92,6 +94,8 @@ fun TuningDialog(
     var justBackwards by remember(initialJustBackwards) { mutableStateOf(initialJustBackwards) }
     var justLong by remember(initialJustLong) { mutableStateOf(initialJustLong) }
     var removeSequential by remember(initialRemoveSequential) { mutableStateOf(initialRemoveSequential) }
+    var audioMode by remember(initialAudioMode) { mutableStateOf(initialAudioMode) }
+    var showAudioModeOptions by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -149,7 +153,8 @@ fun TuningDialog(
                                 highlightAnchorBranch,
                                 justBackwards,
                                 justLong,
-                                removeSequential
+                                removeSequential,
+                                audioMode
                             )
                             onDismiss()
                         },
@@ -201,6 +206,41 @@ fun TuningDialog(
                     valueRange = 0f..100f,
                     steps = 49
                 )
+                Text("Audio Mode")
+                Box {
+                    OutlinedButton(
+                        onClick = { showAudioModeOptions = true },
+                        colors = pillOutlinedButtonColors(),
+                        border = pillButtonBorder(),
+                        shape = PillShape,
+                        contentPadding = SmallButtonPadding,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(SmallButtonHeight)
+                    ) {
+                        Text(audioMode.label, style = MaterialTheme.typography.labelSmall)
+                        Spacer(modifier = Modifier.weight(1f))
+                        Icon(
+                            imageVector = Icons.Filled.ArrowDropDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showAudioModeOptions,
+                        onDismissRequest = { showAudioModeOptions = false }
+                    ) {
+                        JukeboxAudioMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(mode.label) },
+                                onClick = {
+                                    audioMode = mode
+                                    showAudioModeOptions = false
+                                }
+                            )
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = justBackwards, onCheckedChange = { justBackwards = it })
                     Spacer(modifier = Modifier.width(8.dp))

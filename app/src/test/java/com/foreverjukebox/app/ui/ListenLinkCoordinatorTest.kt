@@ -43,6 +43,28 @@ class ListenLinkCoordinatorTest {
     }
 
     @Test
+    fun buildShareUrlIncludesAudioModeInJukeboxTuningParams() {
+        val coordinator = createCoordinator(
+            state = UiState(
+                baseUrl = "https://example.com/",
+                playback = PlaybackState(
+                    playMode = PlaybackMode.Jukebox,
+                    jukeboxAudioMode = JukeboxAudioMode.Nightcore,
+                    lastYouTubeId = "dQw4w9WgXcQ"
+                )
+            ),
+            tuningParams = "am=nightcore"
+        )
+
+        val shareUrl = coordinator.buildShareUrl()
+
+        assertEquals(
+            "https://example.com/listen/src%3Ayoutube%3AdQw4w9WgXcQ?am=nightcore",
+            shareUrl
+        )
+    }
+
+    @Test
     fun buildShareUrlUsesAutocanonizerModeParam() {
         val coordinator = createCoordinator(
             state = UiState(
@@ -120,6 +142,22 @@ class ListenLinkCoordinatorTest {
 
         assertEquals(1, loads.size)
         assertEquals("thresh=9", loads.single().tuningParams)
+    }
+
+    @Test
+    fun handleDeepLinkKeepsAudioModeInJukeboxTuningParams() {
+        val loads = mutableListOf<LoadRequest>()
+        val coordinator = createCoordinator(
+            state = UiState(baseUrl = "https://example.com"),
+            loadTrackByStableId = { stableId, title, artist, tuningParams ->
+                loads += LoadRequest(stableId, title, artist, tuningParams)
+            }
+        )
+
+        coordinator.handleDeepLink("https://example.com/listen/src:youtube:yt123?am=lofi")
+
+        assertEquals(1, loads.size)
+        assertEquals("am=lofi", loads.single().tuningParams)
     }
 
     @Test

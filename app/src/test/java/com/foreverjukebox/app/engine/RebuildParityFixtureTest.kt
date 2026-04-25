@@ -192,6 +192,7 @@ class RebuildParityFixtureTest {
         override fun scheduleJump(targetTime: Double, audioStart: Double) = Unit
         override fun getCurrentTime(): Double = 0.0
         override fun getAudioTime(): Double = 0.0
+        override fun getPlaybackRate(): Double = 1.0
         override fun isPlaying(): Boolean = true
     }
 }

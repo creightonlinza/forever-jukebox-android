@@ -16,6 +16,7 @@ interface JukeboxPlayer {
     fun scheduleJump(targetTime: Double, audioStart: Double)
     fun getCurrentTime(): Double
     fun getAudioTime(): Double
+    fun getPlaybackRate(): Double
     fun isPlaying(): Boolean
 }
 
@@ -214,10 +215,26 @@ class JukeboxEngine(
         val clamped = index.coerceIn(0, beats.size - 1)
         val beat = beats[clamped]
         val audioNow = player.getAudioTime()
+        val playbackRate = getPlaybackRate()
         currentBeatIndex = clamped
-        nextAudioTime = audioNow + beat.duration
+        nextAudioTime = audioNow + beat.duration / playbackRate
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
+        lastJumped = false
+        lastJumpTime = null
+        lastJumpFromIndex = null
+    }
+
+    fun syncToPlaybackPosition() {
+        if (analysis == null || beats.isEmpty()) return
+        val trackTime = player.getCurrentTime()
+        val beatIndex = findBeatIndexByTime(trackTime)
+        if (beatIndex !in beats.indices) return
+        val beat = beats[beatIndex]
+        val beatEnd = beat.start + beat.duration
+        val remainingInBeat = (beatEnd - trackTime).coerceAtLeast(0.0)
+        currentBeatIndex = beatIndex
+        nextAudioTime = player.getAudioTime() + remainingInBeat / getPlaybackRate()
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
@@ -311,8 +328,13 @@ class JukeboxEngine(
 
         currentBeatIndex = chosenIndex
         val startTime = if (nextAudioTime == 0.0) audioTime else nextAudioTime
-        nextAudioTime = startTime + beats[currentBeatIndex].duration
+        nextAudioTime = startTime + beats[currentBeatIndex].duration / getPlaybackRate()
         beatsPlayed += 1
+    }
+
+    private fun getPlaybackRate(): Double {
+        val rate = player.getPlaybackRate()
+        return if (rate.isFinite() && rate > 0.0) rate else 1.0
     }
 
     private fun findBeatIndexByTime(time: Double): Int {

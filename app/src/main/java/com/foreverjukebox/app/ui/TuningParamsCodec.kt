@@ -9,15 +9,17 @@ data class ParsedTuningParams(
     val minProbPercent: Int?,
     val maxProbPercent: Int?,
     val rampPercent: Int?,
+    val highlightAnchorBranch: Boolean?,
     val justBackwards: Boolean?,
     val justLongBranches: Boolean?,
     val removeSequentialBranches: Boolean?,
-    val deletedEdgeIds: List<Int>
+    val deletedEdgeIds: List<Int>,
+    val audioMode: JukeboxAudioMode?
 )
 
 object TuningParamsCodec {
-    private val knownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d")
-    private val castKnownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ah")
+    private val knownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ah", "am")
+    private val castKnownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ah", "am")
 
     fun parse(raw: String?, minThreshold: Int = 0): ParsedTuningParams? {
         if (raw.isNullOrBlank()) {
@@ -25,6 +27,10 @@ object TuningParamsCodec {
         }
         val params = parseQuery(raw)
         if (params.keys.none { it in knownKeys }) {
+            return null
+        }
+        val audioMode = JukeboxAudioMode.fromWireValue(params.firstValue("am"))
+        if (params.keys.all { it == "am" } && audioMode == null) {
             return null
         }
         val threshold = params.firstValue("thresh")
@@ -52,19 +58,22 @@ object TuningParamsCodec {
             minProbPercent = minProbPercent,
             maxProbPercent = maxProbPercent,
             rampPercent = rampPercent,
+            highlightAnchorBranch = parseStandardBoolean(params.firstValue("ah")),
             justBackwards = parseStandardBoolean(params.firstValue("jb")),
             justLongBranches = parseStandardBoolean(params.firstValue("lg")),
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
-            deletedEdgeIds = deletedEdgeIds
+            deletedEdgeIds = deletedEdgeIds,
+            audioMode = audioMode
         )
     }
 
     fun buildCastLoadPayload(raw: String?, highlightAnchorBranch: Boolean): String? {
         if (raw.isNullOrBlank()) {
-            return if (highlightAnchorBranch) "ah=1" else "ah=0"
+            return if (highlightAnchorBranch) "ah=1" else null
         }
         val params = parseQuery(raw).toMutableMap()
         val sanitized = linkedMapOf<String, String>()
+        val hasHighlightParam = params.containsKey("ah")
         for ((name, values) in params) {
             if (name !in castKnownKeys) {
                 continue
@@ -76,21 +85,38 @@ object TuningParamsCodec {
                     continue
                 }
             }
+            if (name == "am" && JukeboxAudioMode.fromWireValue(value) == null) {
+                continue
+            }
             sanitized[name] = value
         }
-        sanitized["ah"] = if (highlightAnchorBranch) "1" else "0"
+        if (highlightAnchorBranch || hasHighlightParam) {
+            sanitized["ah"] = if (highlightAnchorBranch) "1" else "0"
+        }
         return encodeQuery(sanitized).ifBlank { null }
     }
 
-    fun buildFromTuningState(tuning: TuningState): String {
-        return listOf(
+    fun buildFromTuningState(
+        tuning: TuningState,
+        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
+        includeOffAudioMode: Boolean = false
+    ): String {
+        val params = mutableListOf(
             "jb=${if (tuning.justBackwards) 1 else 0}",
             "lg=${if (tuning.justLong) 1 else 0}",
             "sq=${if (tuning.removeSequential) 0 else 1}",
             "thresh=${tuning.threshold.coerceAtLeast(2)}",
             "bp=${tuning.minProb.coerceIn(0, 100)},${tuning.maxProb.coerceIn(0, 100)},${tuning.ramp.coerceIn(0, 100)}",
             "ah=${if (tuning.highlightAnchorBranch) 1 else 0}"
-        ).joinToString("&")
+        )
+        if (audioMode != JukeboxAudioMode.Off || includeOffAudioMode) {
+            params.add("am=${audioMode.wireValue}")
+        }
+        return params.joinToString("&")
+    }
+
+    fun buildAudioModeParam(audioMode: JukeboxAudioMode): String {
+        return "am=${audioMode.wireValue}"
     }
 
     fun stripHighlightAnchorParam(raw: String?): String? {
@@ -120,6 +146,7 @@ object TuningParamsCodec {
             minProb = parsed.minProbPercent ?: base.minProb,
             maxProb = parsed.maxProbPercent ?: base.maxProb,
             ramp = parsed.rampPercent ?: base.ramp,
+            highlightAnchorBranch = parsed.highlightAnchorBranch ?: base.highlightAnchorBranch,
             justBackwards = parsed.justBackwards ?: base.justBackwards,
             justLong = parsed.justLongBranches ?: base.justLong,
             removeSequential = parsed.removeSequentialBranches ?: base.removeSequential

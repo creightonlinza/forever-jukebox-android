@@ -96,7 +96,7 @@ class PlaybackCoordinator(
     fun buildTuningParamsString(): String? {
         if (!shouldApplyTuningParams()) return null
         val config = engine.getConfig()
-        val uiTuning = getState().tuning
+        val playback = getState().playback
         val params = mutableListOf<String>()
         if (config.justBackwards) {
             params.add("jb=1")
@@ -126,6 +126,9 @@ class PlaybackCoordinator(
         val deletedIds = getDeletedEdgeIds()
         if (deletedIds.isNotEmpty()) {
             params.add("d=${deletedIds.joinToString(",")}")
+        }
+        if (playback.jukeboxAudioMode != JukeboxAudioMode.Off) {
+            params.add("am=${playback.jukeboxAudioMode.wireValue}")
         }
         return if (params.isEmpty()) null else params.joinToString("&")
     }
@@ -368,7 +371,12 @@ class PlaybackCoordinator(
         } else {
             currentPlayback.lastYouTubeId
         }
-        val playTitle = buildPlayTitle(title, artist, currentPlayback.playMode)
+        val playTitle = buildPlayTitle(
+            title,
+            artist,
+            currentPlayback.playMode,
+            currentPlayback.jukeboxAudioMode
+        )
         controller.setTrackMeta(title, artist)
         updateState {
             it.copy(
@@ -426,6 +434,7 @@ class PlaybackCoordinator(
         audioLoadInFlight = false
         controller.autocanonizer.reset()
         controller.stopExternalPlayback()
+        controller.player.setJukeboxAudioMode(JukeboxAudioMode.Off)
         engine.updateConfig(defaultConfig)
         controller.stopPlayback()
         controller.resetTimers()
@@ -436,6 +445,7 @@ class PlaybackCoordinator(
             it.copy(
                 playback = it.playback.copy(
                     playMode = it.playback.playMode,
+                    jukeboxAudioMode = JukeboxAudioMode.Off,
                     canonizerFinishOutSong = it.playback.canonizerFinishOutSong,
                     audioLoaded = false,
                     analysisLoaded = false,
@@ -461,6 +471,7 @@ class PlaybackCoordinator(
                     lastYouTubeId = null,
                     lastTrackCreatedAtEpochMs = null,
                     lastJobId = null,
+                    castPlaybackState = null,
                     isCastLoading = false,
                     deleteEligible = false,
                     analysisProgress = null,
@@ -546,7 +557,13 @@ class PlaybackCoordinator(
         if (!hasAnalysis && !hasAudio) return
         val title = controller.getTrackTitle()
         val artist = controller.getTrackArtist()
-        val playTitle = buildPlayTitle(title, artist, getState().playback.playMode)
+        val currentPlayback = getState().playback
+        val playTitle = buildPlayTitle(
+            title,
+            artist,
+            currentPlayback.playMode,
+            currentPlayback.jukeboxAudioMode
+        )
         val currentTime = controller.player.getCurrentTime()
         val beatIndex = if (hasAnalysis) engine.getBeatAtTime(currentTime)?.which ?: -1 else -1
         updateState {
@@ -657,7 +674,21 @@ class PlaybackCoordinator(
         updatePlaybackState {
             it.copy(
                 playMode = mode,
-                playTitle = buildPlayTitle(it.trackTitle, it.trackArtist, mode)
+                jukeboxAudioMode = if (mode == PlaybackMode.Autocanonizer) {
+                    JukeboxAudioMode.Off
+                } else {
+                    it.jukeboxAudioMode
+                },
+                playTitle = buildPlayTitle(
+                    it.trackTitle,
+                    it.trackArtist,
+                    mode,
+                    if (mode == PlaybackMode.Autocanonizer) {
+                        JukeboxAudioMode.Off
+                    } else {
+                        it.jukeboxAudioMode
+                    }
+                )
             )
         }
     }
@@ -858,7 +889,8 @@ class PlaybackCoordinator(
 
     private data class ResolvedTuningParams(
         val config: JukeboxConfig,
-        val deletedEdgeIds: List<Int>
+        val deletedEdgeIds: List<Int>,
+        val audioMode: JukeboxAudioMode?
     )
 
     private companion object {
@@ -895,7 +927,7 @@ class PlaybackCoordinator(
                 randomBranchChanceDelta = mapPercentToRange(value, 0.0, MAX_RANDOM_BRANCH_DELTA)
             )
         }
-        return ResolvedTuningParams(config, parsed.deletedEdgeIds)
+        return ResolvedTuningParams(config, parsed.deletedEdgeIds, parsed.audioMode)
     }
 
     private fun mapPercentToRange(percent: Int, min: Double, max: Double): Double {
@@ -937,20 +969,35 @@ class PlaybackCoordinator(
         if (shouldRebuild) {
             engine.rebuildGraph()
         }
+        if (parsed.audioMode != null) {
+            controller.player.setJukeboxAudioMode(parsed.audioMode)
+            updatePlaybackState {
+                it.copy(
+                    jukeboxAudioMode = parsed.audioMode,
+                    playTitle = buildPlayTitle(
+                        it.trackTitle,
+                        it.trackArtist,
+                        it.playMode,
+                        parsed.audioMode
+                    )
+                )
+            }
+        }
     }
 
     private fun buildPlayTitle(
         title: String?,
         artist: String?,
-        mode: PlaybackMode
+        mode: PlaybackMode,
+        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
     ): String {
         if (title.isNullOrBlank()) {
             return ""
         }
-        val resolvedTitle = if (mode == PlaybackMode.Autocanonizer) {
-            "$title (autocanonized)"
-        } else {
-            title
+        val resolvedTitle = when {
+            mode == PlaybackMode.Autocanonizer -> "$title (autocanonized)"
+            audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
+            else -> title
         }
         return if (!artist.isNullOrBlank()) {
             "$resolvedTitle — $artist"

@@ -451,9 +451,19 @@ private fun FullscreenScreen(
         ) {
             val title = controller.getTrackTitle().orEmpty()
             val artist = controller.getTrackArtist().orEmpty()
+            val audioMode = controller.player.getJukeboxAudioMode()
+            val displayTitle = if (
+                playMode == PlaybackMode.Jukebox &&
+                audioMode != JukeboxAudioMode.Off &&
+                title.isNotBlank()
+            ) {
+                "$title (${audioMode.wireValue})"
+            } else {
+                title
+            }
             val nowPlaying = when {
-                title.isNotBlank() && artist.isNotBlank() -> "$title - $artist"
-                title.isNotBlank() -> title
+                displayTitle.isNotBlank() && artist.isNotBlank() -> "$displayTitle - $artist"
+                displayTitle.isNotBlank() -> displayTitle
                 else -> "The Forever Jukebox"
             }
             Row(

@@ -14,7 +14,8 @@ internal data class PreservedCastTrack(
     val stableTrackId: String?,
     val youtubeId: String?,
     val title: String?,
-    val artist: String?
+    val artist: String?,
+    val audioMode: JukeboxAudioMode
 )
 
 internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTrack? {
@@ -30,7 +31,8 @@ internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTr
         stableTrackId = playback.stableTrackIdOrNull(),
         youtubeId = playback.lastYouTubeId,
         title = playback.trackTitle,
-        artist = playback.trackArtist
+        artist = playback.trackArtist,
+        audioMode = playback.jukeboxAudioMode
     )
 }
 
@@ -85,7 +87,8 @@ class CastSessionCoordinator(
             artist = playback.trackArtist,
             sourceProvider = playback.lastSourceProvider,
             sourceId = playback.lastSourceId,
-            stableTrackId = playback.stableTrackIdOrNull()
+            stableTrackId = playback.stableTrackIdOrNull(),
+            tuningParams = playbackCoordinator.buildTuningParamsString()
         )
     }
 
@@ -122,6 +125,8 @@ class CastSessionCoordinator(
                     )
                 )
             }
+            castPlaybackCoordinator.resetStatusListener()
+            castPlaybackCoordinator.requestCastStatus()
             syncCastNotification(getState().playback)
             return
         }
@@ -159,7 +164,12 @@ class CastSessionCoordinator(
                 artist = preservedTrack.artist,
                 sourceProvider = preservedTrack.sourceProvider,
                 sourceId = preservedTrack.sourceId,
-                stableTrackId = preservedTrack.stableTrackId
+                stableTrackId = preservedTrack.stableTrackId,
+                tuningParams = if (preservedTrack.audioMode == JukeboxAudioMode.Off) {
+                    null
+                } else {
+                    TuningParamsCodec.buildAudioModeParam(preservedTrack.audioMode)
+                }
             )
         }
         castPlaybackCoordinator.requestCastStatus()

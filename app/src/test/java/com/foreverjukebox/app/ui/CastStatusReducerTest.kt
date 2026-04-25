@@ -38,7 +38,21 @@ class CastStatusReducerTest {
               "error":"",
               "errorCode":"cast_track_too_long",
               "activeVizIndex":4,
-              "resolvedThreshold":"28"
+              "tuning":{
+                "justBackwards":true,
+                "justLongBranches":false,
+                "removeSequentialBranches":true,
+                "threshold":28,
+                "computedThreshold":31,
+                "branchProbability":{
+                  "minPercent":12,
+                  "maxPercent":45,
+                  "deltaPercent":20
+                },
+                "deletedEdgeIds":[2,5],
+                "highlightAnchorBranch":true,
+                "audioMode":"daycore"
+              }
             }
             """.trimIndent()
         )
@@ -56,21 +70,29 @@ class CastStatusReducerTest {
         assertEquals("", parsed?.error)
         assertEquals("cast_track_too_long", parsed?.errorCode)
         assertEquals(4, parsed?.activeVizIndex)
-        assertEquals(28, parsed?.resolvedThreshold)
+        assertEquals(JukeboxAudioMode.Daycore, parsed?.tuning?.audioMode)
+        assertEquals(28, parsed?.tuning?.threshold)
+        assertEquals(31, parsed?.tuning?.computedThreshold)
+        assertEquals(12, parsed?.tuning?.branchProbability?.minPercent)
+        assertEquals(45, parsed?.tuning?.branchProbability?.maxPercent)
+        assertEquals(20, parsed?.tuning?.branchProbability?.deltaPercent)
+        assertEquals(listOf(2, 5), parsed?.tuning?.deletedEdgeIds)
+        assertTrue(parsed?.tuning?.justBackwards == true)
+        assertTrue(parsed?.tuning?.highlightAnchorBranch == true)
     }
 
     @Test
-    fun parseCastStatusMessageIgnoresInvalidThreshold() {
+    fun parseCastStatusMessageKeepsNullTuning() {
         val parsed = parseCastStatusMessage(
             """
             {
               "type":"status",
-              "resolvedThreshold":"1"
+              "tuning":null
             }
             """.trimIndent()
         )
         assertNotNull(parsed)
-        assertNull(parsed?.resolvedThreshold)
+        assertNull(parsed?.tuning)
     }
 
     @Test
@@ -129,7 +151,6 @@ class CastStatusReducerTest {
             playbackState = "loading",
             error = "",
             activeVizIndex = 4,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -168,7 +189,7 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 3,
-            resolvedThreshold = 31
+            tuning = castTuning(threshold = 31)
         )
 
         val next = reduceCastStatus(current, status)
@@ -186,6 +207,86 @@ class CastStatusReducerTest {
         assertNull(next.playback.lastJobId)
         assertEquals(3, next.playback.activeVizIndex)
         assertEquals(31, next.tuning.threshold)
+    }
+
+    @Test
+    fun reduceCastStatusAppliesReceiverTuningAndAudioMode() {
+        val current = UiState(
+            playback = PlaybackState(
+                isRunning = true,
+                playTitle = "Old Song",
+                trackTitle = "Old Song",
+                jukeboxAudioMode = JukeboxAudioMode.Off
+            ),
+            tuning = TuningState(threshold = 8)
+        )
+        val status = CastStatusMessage(
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 3),
+            title = "New Song",
+            artist = "New Artist",
+            trackDurationSeconds = 189.5,
+            totalBeats = 640,
+            totalBranches = 82,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 3,
+            tuning = castTuning(
+                justBackwards = true,
+                removeSequentialBranches = true,
+                threshold = 31,
+                minPercent = 12,
+                maxPercent = 45,
+                deltaPercent = 20,
+                highlightAnchorBranch = true,
+                audioMode = JukeboxAudioMode.Daycore
+            )
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals(JukeboxAudioMode.Daycore, next.playback.jukeboxAudioMode)
+        assertEquals("Old Song (daycore) — New Artist", next.playback.playTitle)
+        assertEquals(31, next.tuning.threshold)
+        assertEquals(12, next.tuning.minProb)
+        assertEquals(45, next.tuning.maxProb)
+        assertEquals(20, next.tuning.ramp)
+        assertTrue(next.tuning.justBackwards)
+        assertTrue(next.tuning.removeSequential)
+        assertTrue(next.tuning.highlightAnchorBranch)
+    }
+
+    @Test
+    fun reduceCastStatusDoesNotHydrateTuningWhenReceiverTuningIsNull() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                isRunning = true,
+                lastJobId = "job_1",
+                jukeboxAudioMode = JukeboxAudioMode.Lofi
+            ),
+            tuning = TuningState(threshold = 42, justBackwards = true)
+        )
+        val status = CastStatusMessage(
+            title = "",
+            artist = "",
+            trackDurationSeconds = null,
+            totalBeats = null,
+            totalBranches = null,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals(JukeboxAudioMode.Lofi, next.playback.jukeboxAudioMode)
+        assertEquals(42, next.tuning.threshold)
+        assertTrue(next.tuning.justBackwards)
+        assertTrue(next.playback.castReceiverDetailsReady())
     }
 
     @Test
@@ -208,7 +309,6 @@ class CastStatusReducerTest {
             playbackState = "error",
             error = "Receiver error",
             activeVizIndex = 99,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -237,7 +337,6 @@ class CastStatusReducerTest {
             playbackState = "mystery",
             error = "",
             activeVizIndex = null,
-            resolvedThreshold = null
         )
         val loadedPausedStatus = loadingStatus.copy(
             isLoading = false,
@@ -277,7 +376,6 @@ class CastStatusReducerTest {
             playbackState = "loading",
             error = "",
             activeVizIndex = 4,
-            resolvedThreshold = 31
         )
 
         val next = reduceCastStatus(current, loading)
@@ -310,7 +408,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = 20
         )
 
         val next = reduceCastStatus(current, ready)
@@ -345,7 +442,6 @@ class CastStatusReducerTest {
             playbackState = "paused",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = 20
         )
 
         val next = reduceCastStatus(current, paused)
@@ -378,7 +474,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -423,7 +518,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -468,7 +562,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -504,7 +597,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -537,7 +629,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -569,7 +660,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -604,7 +694,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -638,7 +727,6 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 1,
-            resolvedThreshold = null
         )
 
         val next = reduceCastStatus(current, status)
@@ -652,5 +740,35 @@ class CastStatusReducerTest {
             .minusMinutes(minutesAgo)
             .withNano(945_271_000)
             .format(formatter)
+    }
+
+    private fun castTuning(
+        justBackwards: Boolean = false,
+        justLongBranches: Boolean = false,
+        removeSequentialBranches: Boolean = false,
+        threshold: Int? = null,
+        computedThreshold: Int? = null,
+        minPercent: Int = 18,
+        maxPercent: Int = 50,
+        deltaPercent: Int = 10,
+        deletedEdgeIds: List<Int> = emptyList(),
+        highlightAnchorBranch: Boolean = false,
+        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
+    ): CastTuningStatus {
+        return CastTuningStatus(
+            justBackwards = justBackwards,
+            justLongBranches = justLongBranches,
+            removeSequentialBranches = removeSequentialBranches,
+            threshold = threshold,
+            computedThreshold = computedThreshold,
+            branchProbability = CastBranchProbabilityStatus(
+                minPercent = minPercent,
+                maxPercent = maxPercent,
+                deltaPercent = deltaPercent
+            ),
+            deletedEdgeIds = deletedEdgeIds,
+            highlightAnchorBranch = highlightAnchorBranch,
+            audioMode = audioMode
+        )
     }
 }

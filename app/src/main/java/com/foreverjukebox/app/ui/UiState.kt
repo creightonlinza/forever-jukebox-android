@@ -36,6 +36,26 @@ enum class PlaybackMode {
     Autocanonizer
 }
 
+enum class JukeboxAudioMode(
+    val wireValue: String,
+    val label: String,
+    val playbackRate: Double
+) {
+    Off("off", "Off", 1.0),
+    Nightcore("nightcore", "Nightcore", 1.2),
+    Daycore("daycore", "Daycore", 0.8),
+    Vaporwave("vaporwave", "Vaporwave", 0.65),
+    EightD("eight_d", "8D Audio", 1.0),
+    Lofi("lofi", "Lofi", 1.0);
+
+    companion object {
+        fun fromWireValue(value: String?): JukeboxAudioMode? {
+            val normalized = value?.trim()?.lowercase() ?: return null
+            return entries.firstOrNull { it.wireValue == normalized }
+        }
+    }
+}
+
 enum class SleepTimerOption(val label: String, val durationMs: Long?) {
     Off("Off", null),
     Minutes15("15 minutes", 15L * 60L * 1000L),
@@ -109,6 +129,7 @@ data class SearchState(
 
 data class PlaybackState(
     val playMode: PlaybackMode = PlaybackMode.Jukebox,
+    val jukeboxAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
     val canonizerFinishOutSong: Boolean = false,
     val analysisProgress: Int? = null,
     val analysisMessage: String? = null,
@@ -142,6 +163,7 @@ data class PlaybackState(
     val lastStableTrackId: String? = null,
     val lastYouTubeId: String? = null,
     val lastTrackCreatedAtEpochMs: Long? = null,
+    val castPlaybackState: String? = null,
     val isCastLoading: Boolean = false,
     val deleteEligible: Boolean = false,
     val deleteInFlight: Boolean = false,
@@ -235,8 +257,7 @@ fun PlaybackState.stableTrackIdOrNull(): String? {
 fun PlaybackState.castControlsReady(): Boolean {
     return isCasting &&
         hasCastTrack() &&
-        !isCastLoading &&
-        !analysisInFlight &&
+        castPlaybackState != "loading" &&
         analysisErrorMessage.isNullOrBlank()
 }
 
@@ -244,8 +265,12 @@ fun shouldShowPlaybackTransport(playback: PlaybackState): Boolean {
     return !playback.isCasting || playback.castControlsReady()
 }
 
+fun PlaybackState.castReceiverDetailsReady(): Boolean {
+    return !isCasting || castControlsReady()
+}
+
 fun resolvePlaybackHeaderTitle(playback: PlaybackState): String? {
-    if (playback.isCasting && (playback.isCastLoading || playback.analysisInFlight)) {
+    if (playback.isCasting && playback.castPlaybackState == "loading") {
         return "Loading track on cast device..."
     }
     return playback.playTitle.takeIf { it.isNotBlank() }

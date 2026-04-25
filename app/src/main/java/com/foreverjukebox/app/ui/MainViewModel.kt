@@ -189,6 +189,27 @@ internal fun removeFavoritesForTrackIds(
     }
 }
 
+private fun buildPlaybackTitle(
+    title: String?,
+    artist: String?,
+    playMode: PlaybackMode,
+    audioMode: JukeboxAudioMode
+): String {
+    if (title.isNullOrBlank()) {
+        return ""
+    }
+    val resolvedTitle = when {
+        playMode == PlaybackMode.Autocanonizer -> "$title (autocanonized)"
+        audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
+        else -> title
+    }
+    return if (artist.isNullOrBlank()) {
+        resolvedTitle
+    } else {
+        "$resolvedTitle — $artist"
+    }
+}
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val api = ApiClient()
@@ -1192,7 +1213,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         artist = resolvedArtist,
                         sourceProvider = provider,
                         sourceId = normalizedSourceId,
-                        stableTrackId = stableId
+                        stableTrackId = stableId,
+                        tuningParams = tuningParams
                     )
                     return@launchCastSelection
                 }
@@ -1208,7 +1230,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 artist = resolvedArtist,
                                 sourceProvider = provider,
                                 sourceId = normalizedSourceId,
-                                stableTrackId = stableId
+                                stableTrackId = stableId,
+                                tuningParams = tuningParams
                             )
                             return@launchCastSelection
                         }
@@ -1240,7 +1263,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         artist = resolvedArtist,
                         sourceProvider = provider,
                         sourceId = normalizedSourceId,
-                        stableTrackId = stableId
+                        stableTrackId = stableId,
+                        tuningParams = tuningParams
                     )
                     return@launchCastSelection
                 }
@@ -1258,7 +1282,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         artist = resolvedArtist,
                         sourceProvider = provider,
                         sourceId = normalizedSourceId,
-                        stableTrackId = stableId
+                        stableTrackId = stableId,
+                        tuningParams = tuningParams
                     )
                 } catch (cancel: CancellationException) {
                     throw cancel
@@ -1343,7 +1368,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 jobId = normalizedJobId,
                 title = resolvedTitle,
                 artist = resolvedArtist,
-                stableTrackId = stableId
+                stableTrackId = stableId,
+                tuningParams = tuningParams
             )
             applyActiveTab(TabId.Play, recordHistory = true)
             return
@@ -2016,6 +2042,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (current.playMode == mode) {
             return
         }
+        if (mode == PlaybackMode.Autocanonizer) {
+            controller.player.setJukeboxAudioMode(JukeboxAudioMode.Off)
+        }
         if (!current.isCasting) {
             stopTransportForModeChange(
                 context = getApplication(),
@@ -2040,6 +2069,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (current.isCasting) {
             syncCastNotification(state.value.playback)
         }
+    }
+
+    fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
+        val current = state.value.playback
+        if (current.playMode != PlaybackMode.Jukebox) {
+            return
+        }
+        if (current.jukeboxAudioMode == mode) {
+            return
+        }
+        if (current.isCasting) {
+            castPlaybackCoordinator.sendCastTuningParams(
+                TuningParamsCodec.buildFromTuningState(
+                    tuning = state.value.tuning,
+                    audioMode = mode
+                )
+            )
+            castPlaybackCoordinator.requestCastStatus()
+            return
+        }
+        controller.player.setJukeboxAudioMode(mode)
+        if (current.isRunning || current.isPaused) {
+            engine.syncToPlaybackPosition()
+        }
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(
+                    jukeboxAudioMode = mode,
+                    playTitle = buildPlaybackTitle(
+                        title = it.playback.trackTitle,
+                        artist = it.playback.trackArtist,
+                        playMode = it.playback.playMode,
+                        audioMode = mode
+                    )
+                )
+            )
+        }
+        ForegroundPlaybackService.update(getApplication())
     }
 
     fun setCanonizerFinishOutSong(enabled: Boolean) {
@@ -2068,9 +2135,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
         justLongBranches: Boolean,
-        removeSequentialBranches: Boolean
+        removeSequentialBranches: Boolean,
+        audioMode: JukeboxAudioMode? = null
     ) {
         viewModelScope.launch {
+            val currentPlayback = state.value.playback
+            val requestedAudioMode = when (currentPlayback.playMode) {
+                PlaybackMode.Jukebox -> audioMode ?: currentPlayback.jukeboxAudioMode
+                PlaybackMode.Autocanonizer -> JukeboxAudioMode.Off
+            }
+            val audioModeChanged = currentPlayback.playMode == PlaybackMode.Jukebox &&
+                currentPlayback.jukeboxAudioMode != requestedAudioMode
+            if (audioModeChanged && !currentPlayback.isCasting) {
+                controller.player.setJukeboxAudioMode(requestedAudioMode)
+            }
             tuningCoordinator.applyTuning(
                 threshold = threshold,
                 minProb = minProb,
@@ -2079,14 +2157,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 highlightAnchorBranch = highlightAnchorBranch,
                 justBackwards = justBackwards,
                 justLongBranches = justLongBranches,
-                removeSequentialBranches = removeSequentialBranches
+                removeSequentialBranches = removeSequentialBranches,
+                audioMode = requestedAudioMode
             )
+            if (audioModeChanged && !currentPlayback.isCasting &&
+                (currentPlayback.isRunning || currentPlayback.isPaused)
+            ) {
+                engine.syncToPlaybackPosition()
+            }
+            if (audioModeChanged && !currentPlayback.isCasting) {
+                _state.update {
+                    it.copy(
+                        playback = it.playback.copy(
+                            jukeboxAudioMode = requestedAudioMode,
+                            playTitle = buildPlaybackTitle(
+                                title = it.playback.trackTitle,
+                                artist = it.playback.trackArtist,
+                                playMode = it.playback.playMode,
+                                audioMode = requestedAudioMode
+                            )
+                        )
+                    )
+                }
+                ForegroundPlaybackService.update(getApplication())
+            }
         }
     }
 
     fun resetTuningDefaults() {
         viewModelScope.launch {
+            val currentPlayback = state.value.playback
+            val resetAudioMode = currentPlayback.playMode == PlaybackMode.Jukebox &&
+                currentPlayback.jukeboxAudioMode != JukeboxAudioMode.Off
+            if (resetAudioMode && !currentPlayback.isCasting) {
+                controller.player.setJukeboxAudioMode(JukeboxAudioMode.Off)
+            }
             tuningCoordinator.resetTuningDefaults()
+            if (resetAudioMode && !currentPlayback.isCasting &&
+                (currentPlayback.isRunning || currentPlayback.isPaused)
+            ) {
+                engine.syncToPlaybackPosition()
+            }
+            if (resetAudioMode && !currentPlayback.isCasting) {
+                _state.update {
+                    it.copy(
+                        playback = it.playback.copy(
+                            jukeboxAudioMode = JukeboxAudioMode.Off,
+                            playTitle = buildPlaybackTitle(
+                                title = it.playback.trackTitle,
+                                artist = it.playback.trackArtist,
+                                playMode = it.playback.playMode,
+                                audioMode = JukeboxAudioMode.Off
+                            )
+                        )
+                    )
+                }
+                ForegroundPlaybackService.update(getApplication())
+            }
         }
     }
 

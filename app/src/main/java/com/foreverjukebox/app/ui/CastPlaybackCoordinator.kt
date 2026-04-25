@@ -39,7 +39,8 @@ class CastPlaybackCoordinator(
         artist: String? = null,
         sourceProvider: String? = null,
         sourceId: String? = null,
-        stableTrackId: String? = null
+        stableTrackId: String? = null,
+        tuningParams: String? = null
     ) {
         if (!getState().castEnabled) {
             onCastUnavailable()
@@ -60,10 +61,8 @@ class CastPlaybackCoordinator(
         } else {
             "${title?.takeIf { it.isNotBlank() } ?: "Unknown"} — $artist"
         }
-        // Track-level tuning resets on each new cast load; only keep persistent
-        // highlight preference on LOAD. Full tuning is sent via setTuning only.
         val resolvedCastTuningParams = TuningParamsCodec.buildCastLoadPayload(
-            raw = null,
+            raw = tuningParams,
             highlightAnchorBranch = currentState.tuning.highlightAnchorBranch
         )
         val normalizedProvider = sourceProviderFromRaw(sourceProvider)
@@ -95,11 +94,13 @@ class CastPlaybackCoordinator(
                     trackDurationSeconds = null,
                     castTotalBeats = null,
                     castTotalBranches = null,
+                    jukeboxAudioMode = JukeboxAudioMode.Off,
                     lastSourceProvider = resolvedProvider,
                     lastSourceId = resolvedSourceId,
                     lastStableTrackId = resolvedStableTrackId,
                     lastYouTubeId = resolvedYoutubeId,
                     lastTrackCreatedAtEpochMs = null,
+                    castPlaybackState = "loading",
                     lastJobId = normalizedJobId,
                     isCastLoading = true,
                     analysisInFlight = true,
