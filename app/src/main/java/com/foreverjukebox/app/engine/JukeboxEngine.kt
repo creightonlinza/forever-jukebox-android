@@ -13,7 +13,8 @@ interface JukeboxPlayer {
     fun pause()
     fun stop()
     fun seek(time: Double)
-    fun scheduleJump(targetTime: Double, audioStart: Double)
+    fun scheduleJump(targetTime: Double, sourceStartTime: Double)
+    fun cancelScheduledJump()
     fun getCurrentTime(): Double
     fun getAudioTime(): Double
     fun getPlaybackRate(): Double
@@ -42,6 +43,7 @@ class JukeboxEngine(
     private var lastJumpFromIndex: Int? = null
     private var lastTickTime: Double? = null
     private var forceBranch = false
+    private var pendingAdvance: PendingAdvance? = null
     private val deletedEdgeKeys = mutableSetOf<String>()
     private val rng = createRng(options.randomMode, options.seed)
     private val listeners = CopyOnWriteArraySet<(JukeboxState) -> Unit>()
@@ -97,6 +99,7 @@ class JukeboxEngine(
 
     fun rebuildGraph() {
         val current = analysis ?: return
+        clearPendingAdvance(cancelScheduledJump = true)
         clearEdgeDeletionFlags()
         config = config.copy(minLongBranch = current.beats.size / 5)
         graph = graphBuilder(current, config)
@@ -181,11 +184,13 @@ class JukeboxEngine(
 
     fun clearDeletedEdges() {
         deletedEdgeKeys.clear()
+        clearPendingAdvance(cancelScheduledJump = true)
         clearEdgeDeletionFlags()
     }
 
     fun deleteEdge(edge: Edge) {
         deletedEdgeKeys.add(edgeKey(edge.src.which, edge.dest.which))
+        clearPendingAdvance(cancelScheduledJump = true)
         applyDeletedEdges()
     }
 
@@ -197,6 +202,7 @@ class JukeboxEngine(
             val edge = edgeById[id] ?: continue
             deletedEdgeKeys.add(edgeKey(edge.src.which, edge.dest.which))
         }
+        clearPendingAdvance(cancelScheduledJump = true)
         applyDeletedEdges()
     }
 
@@ -223,6 +229,7 @@ class JukeboxEngine(
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
+        clearPendingAdvance(cancelScheduledJump = false)
     }
 
     fun syncToPlaybackPosition() {
@@ -238,6 +245,7 @@ class JukeboxEngine(
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
+        clearPendingAdvance(cancelScheduledJump = true)
     }
 
     private fun resetState() {
@@ -246,10 +254,12 @@ class JukeboxEngine(
         beatsPlayed = 0
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
+        branchState.lastDestBySource = null
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
         lastTickTime = null
+        clearPendingAdvance(cancelScheduledJump = true)
     }
 
     private fun tick(): Long {
@@ -266,8 +276,10 @@ class JukeboxEngine(
             nextAudioTime = audioTime
         }
         var guard = beats.size
+        preparePendingAdvance(nextAudioTime)
         while (guard > 0 && audioTime >= nextAudioTime) {
             advanceBeat(nextAudioTime)
+            preparePendingAdvance(nextAudioTime)
             guard -= 1
         }
 
@@ -279,17 +291,56 @@ class JukeboxEngine(
     }
 
     private fun advanceBeat(audioTime: Double) {
-        val currentGraph = graph ?: return
+        val advance = pendingAdvance?.takeIf { it.boundaryAudioTime == audioTime }
+            ?: createPendingAdvance(audioTime, scheduleJump = true)
+            ?: return
+        pendingAdvance = null
+        commitAdvance(advance)
+    }
+
+    private fun preparePendingAdvance(boundaryAudioTime: Double) {
+        if (currentBeatIndex < 0 || boundaryAudioTime <= 0.0) {
+            return
+        }
+        val current = pendingAdvance
+        if (current != null && current.boundaryAudioTime == boundaryAudioTime) {
+            return
+        }
+        pendingAdvance = createPendingAdvance(boundaryAudioTime, scheduleJump = true)
+    }
+
+    private fun createPendingAdvance(
+        boundaryAudioTime: Double,
+        scheduleJump: Boolean
+    ): PendingAdvance? {
+        val currentGraph = graph ?: return null
         val currentIndex = currentBeatIndex
         val beatsCount = beats.size
         var chosenIndex = 0
         var shouldJump = false
         var jumpFromIndex: Int? = null
+        var sourceBoundaryTime: Double? = null
 
         if (currentIndex >= 0) {
             val nextIndex = currentIndex + 1
             val wrappedIndex = if (nextIndex >= beatsCount) 0 else nextIndex
             val seed = beats[wrappedIndex]
+            val wrappedToStart = wrappedIndex == 0 && currentIndex == beatsCount - 1
+            sourceBoundaryTime = if (wrappedToStart) {
+                beats[currentIndex].start + beats[currentIndex].duration
+            } else {
+                seed.start
+            }
+            if (!wrappedToStart && !hasJumpScheduleLead(sourceBoundaryTime)) {
+                return PendingAdvance(
+                    boundaryAudioTime = boundaryAudioTime,
+                    chosenIndex = wrappedIndex,
+                    shouldJump = false,
+                    targetTime = null,
+                    jumpFromIndex = null,
+                    sourceBoundaryTime = null
+                )
+            }
             branchState.curRandomBranchChance = curRandomBranchChance
             val selection = selectNextBeatIndex(
                 seed,
@@ -302,7 +353,6 @@ class JukeboxEngine(
             curRandomBranchChance = branchState.curRandomBranchChance
             shouldJump = selection.second
             chosenIndex = if (shouldJump) selection.first else wrappedIndex
-            val wrappedToStart = wrappedIndex == 0 && currentIndex == beatsCount - 1
             if (wrappedToStart) {
                 shouldJump = true
             }
@@ -313,23 +363,47 @@ class JukeboxEngine(
             }
         }
 
-        val targetBeat = beats[chosenIndex]
-        if (shouldJump) {
-            val targetTime = targetBeat.start
-            player.scheduleJump(targetTime, audioTime)
+        val targetBeat = beats.getOrNull(chosenIndex) ?: return null
+        val targetTime = if (shouldJump) targetBeat.start else null
+        if (scheduleJump && targetTime != null && sourceBoundaryTime != null) {
+            player.scheduleJump(targetTime, sourceBoundaryTime)
+        }
+        return PendingAdvance(
+            boundaryAudioTime = boundaryAudioTime,
+            chosenIndex = chosenIndex,
+            shouldJump = shouldJump,
+            targetTime = targetTime,
+            jumpFromIndex = jumpFromIndex,
+            sourceBoundaryTime = sourceBoundaryTime
+        )
+    }
+
+    private fun commitAdvance(advance: PendingAdvance) {
+        val targetBeat = beats[advance.chosenIndex]
+        if (advance.shouldJump) {
             lastJumped = true
-            lastJumpTime = targetTime
-            lastJumpFromIndex = jumpFromIndex
+            lastJumpTime = advance.targetTime
+            lastJumpFromIndex = advance.jumpFromIndex
         } else {
             lastJumped = false
             lastJumpTime = null
             lastJumpFromIndex = null
         }
 
-        currentBeatIndex = chosenIndex
-        val startTime = if (nextAudioTime == 0.0) audioTime else nextAudioTime
-        nextAudioTime = startTime + beats[currentBeatIndex].duration / getPlaybackRate()
+        currentBeatIndex = advance.chosenIndex
+        nextAudioTime = advance.boundaryAudioTime + targetBeat.duration / getPlaybackRate()
         beatsPlayed += 1
+    }
+
+    private fun clearPendingAdvance(cancelScheduledJump: Boolean) {
+        if (cancelScheduledJump && pendingAdvance?.targetTime != null) {
+            player.cancelScheduledJump()
+        }
+        pendingAdvance = null
+    }
+
+    private fun hasJumpScheduleLead(sourceBoundaryTime: Double): Boolean {
+        return sourceBoundaryTime - player.getCurrentTime() >= MIN_JUMP_SCHEDULE_LEAD_SECONDS
     }
 
     private fun getPlaybackRate(): Double {
@@ -435,4 +509,14 @@ data class VisualizationData(
     val anchorEdgeId: Int? = null
 )
 
+private data class PendingAdvance(
+    val boundaryAudioTime: Double,
+    val chosenIndex: Int,
+    val shouldJump: Boolean,
+    val targetTime: Double?,
+    val jumpFromIndex: Int?,
+    val sourceBoundaryTime: Double?
+)
+
+private const val MIN_JUMP_SCHEDULE_LEAD_SECONDS = 0.08
 private const val TICK_INTERVAL_MS = 50L

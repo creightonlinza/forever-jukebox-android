@@ -56,8 +56,8 @@ class PlaybackController {
             lastPlayStamp = null
         }
         val started = runCatching {
-            engine.startJukebox(resetState = resetFromStart)
             engine.play()
+            engine.startJukebox(resetState = resetFromStart)
             player.isPlaying()
         }.getOrElse {
             false
