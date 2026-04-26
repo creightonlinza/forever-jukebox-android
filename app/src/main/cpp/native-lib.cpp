@@ -18,6 +18,8 @@ constexpr const char* kPlaybackAttributionTag = "audio_playback";
 constexpr double kPi = 3.14159265358979323846;
 constexpr float kBiquadQ = 0.70710678f;
 constexpr double kPanRadiansPerSecond = 0.42;
+constexpr double kJumpFrameEpsilon = 2.0;
+constexpr double kMaxLateJumpFrames = 8.0;
 
 enum class AudioMode {
     Off = 0,
@@ -267,6 +269,9 @@ public:
         }
         mReadFrame.store(0.0);
         mAudioFrame.store(0);
+        mJumpAtSourceFrame.store(0.0);
+        mJumpToFrame.store(0.0);
+        mHasJump.store(false);
         resetDspState();
         mIsPlaying.store(false);
     }
@@ -305,7 +310,7 @@ public:
         }
         mReadFrame.store(0.0);
         mAudioFrame.store(0);
-        mJumpAtAudioFrame.store(0);
+        mJumpAtSourceFrame.store(0.0);
         mJumpToFrame.store(0.0);
         mHasJump.store(false);
         resetDspState();
@@ -318,14 +323,20 @@ public:
         resetDspState();
     }
 
-    void scheduleJump(double targetTime, double audioStartTime) {
+    void scheduleJump(double targetTime, double sourceStartTime) {
         const int64_t targetFrame =
             static_cast<int64_t>(targetTime * static_cast<double>(mSampleRate));
-        const int64_t transitionFrame =
-            static_cast<int64_t>(audioStartTime * static_cast<double>(mSampleRate));
+        const int64_t sourceFrame =
+            static_cast<int64_t>(sourceStartTime * static_cast<double>(mSampleRate));
         mJumpToFrame.store(targetFrame < 0 ? 0.0 : static_cast<double>(targetFrame));
-        mJumpAtAudioFrame.store(transitionFrame < 0 ? 0 : transitionFrame);
+        mJumpAtSourceFrame.store(sourceFrame < 0 ? 0.0 : static_cast<double>(sourceFrame));
         mHasJump.store(true);
+    }
+
+    void cancelScheduledJump() {
+        mHasJump.store(false);
+        mJumpAtSourceFrame.store(0.0);
+        mJumpToFrame.store(0.0);
     }
 
     double getCurrentTimeSeconds() const {
@@ -358,37 +369,8 @@ public:
         double currentFrame = mReadFrame.load();
         int64_t audioFrame = mAudioFrame.load();
 
-        if (mHasJump.load()) {
-            const int64_t jumpAt = mJumpAtAudioFrame.load();
-            if (jumpAt <= audioFrame) {
-                currentFrame = mJumpToFrame.load();
-                mHasJump.store(false);
-            }
-        }
-
-        int32_t framesRemaining = numFrames;
-        while (framesRemaining > 0) {
-            int32_t chunkFrames = framesRemaining;
-            if (mHasJump.load()) {
-                const int64_t jumpAt = mJumpAtAudioFrame.load();
-                if (jumpAt >= audioFrame && jumpAt < audioFrame + framesRemaining) {
-                    chunkFrames = static_cast<int32_t>(jumpAt - audioFrame);
-                }
-            }
-
-            currentFrame = renderFrames(output, currentFrame, chunkFrames);
-            audioFrame += chunkFrames;
-            output += chunkFrames * mChannelCount;
-            framesRemaining -= chunkFrames;
-
-            if (mHasJump.load()) {
-                const int64_t jumpAt = mJumpAtAudioFrame.load();
-                if (jumpAt == audioFrame) {
-                    currentFrame = mJumpToFrame.load();
-                    mHasJump.store(false);
-                }
-            }
-        }
+        currentFrame = renderFrames(output, currentFrame, numFrames);
+        audioFrame += numFrames;
 
         mReadFrame.store(currentFrame);
         mAudioFrame.store(audioFrame);
@@ -471,6 +453,7 @@ private:
         std::lock_guard<std::mutex> lock(mDataMutex);
         const int64_t totalFrames = mTotalFrames;
         for (int32_t frame = 0; frame < frames; frame += 1) {
+            sourceFrame = applyScheduledJump(sourceFrame);
             if (sourceFrame >= static_cast<double>(totalFrames) || mAudioData.empty()) {
                 std::fill(output, output + channels, 0);
                 output += channels;
@@ -497,6 +480,21 @@ private:
             mReverb.advanceFrame();
         }
         return sourceFrame;
+    }
+
+    double applyScheduledJump(double sourceFrame) {
+        if (!mHasJump.load()) {
+            return sourceFrame;
+        }
+        const double jumpAt = mJumpAtSourceFrame.load();
+        if (sourceFrame + kJumpFrameEpsilon < jumpAt) {
+            return sourceFrame;
+        }
+        mHasJump.store(false);
+        if (sourceFrame - jumpAt > kMaxLateJumpFrames) {
+            return sourceFrame;
+        }
+        return mJumpToFrame.load();
     }
 
     AudioModeSettings updateDspModeIfNeeded() {
@@ -580,7 +578,7 @@ private:
     int64_t mTotalFrames = 0;
     std::atomic<double> mReadFrame{0.0};
     std::atomic<int64_t> mAudioFrame{0};
-    std::atomic<int64_t> mJumpAtAudioFrame{0};
+    std::atomic<double> mJumpAtSourceFrame{0.0};
     std::atomic<double> mJumpToFrame{0.0};
     std::atomic<bool> mHasJump{false};
     std::atomic<bool> mIsPlaying{false};
@@ -658,6 +656,13 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeScheduleJump(
     JNIEnv*, jobject, jlong handle, jdouble targetTime, jdouble audioStart) {
     auto* player = toPlayer(handle);
     if (player) player->scheduleJump(targetTime, audioStart);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCancelScheduledJump(
+    JNIEnv*, jobject, jlong handle) {
+    auto* player = toPlayer(handle);
+    if (player) player->cancelScheduledJump();
 }
 
 extern "C" JNIEXPORT jdouble JNICALL

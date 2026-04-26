@@ -443,9 +443,11 @@ class PathReproParityFixtureTest {
 
         override fun seek(time: Double) = Unit
 
-        override fun scheduleJump(targetTime: Double, audioStart: Double) {
-            scheduleJumpCalls.add(targetTime to audioStart)
+        override fun scheduleJump(targetTime: Double, sourceStartTime: Double) {
+            scheduleJumpCalls.add(targetTime to sourceStartTime)
         }
+
+        override fun cancelScheduledJump() = Unit
 
         override fun getCurrentTime(): Double = 0.0
 
