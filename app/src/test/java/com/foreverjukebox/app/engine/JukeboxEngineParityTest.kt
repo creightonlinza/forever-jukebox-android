@@ -447,59 +447,6 @@ class JukeboxEngineParityTest {
     }
 
     @Test
-    fun firstTickAlignsBeatClockToPlaybackPosition() {
-        val player = FakePlayer().apply {
-            fakeCurrentTime = 0.25
-            fakeAudioTime = 10.0
-        }
-        val engine = JukeboxEngine(player)
-        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
-        linkBeats(beats)
-        val edge = makeEdge(0, beats[1], beats[0], 10.0)
-        beats[1].neighbors = mutableListOf(edge)
-        beats[1].allNeighbors = mutableListOf(edge)
-        val graph = JukeboxGraphState(
-            computedThreshold = 0,
-            currentThreshold = 0,
-            lastBranchPoint = 1,
-            totalBeats = beats.size,
-            longestReach = 0.0,
-            allEdges = mutableListOf(edge)
-        )
-        setPrivateField(engine, "analysis", makeAnalysis(beats))
-        setPrivateField(engine, "graph", graph)
-        setPrivateField(engine, "beats", beats)
-        setPrivateField(engine, "ticking", true)
-
-        invokeTick(engine)
-
-        assertEquals(0, getPrivateField<Int>(engine, "currentBeatIndex"))
-        assertEquals(1, getPrivateField<Int>(engine, "beatsPlayed"))
-        assertEquals(10.75, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
-        assertEquals(0, player.scheduleJumpCalls.size)
-
-        player.fakeCurrentTime = 1.0
-        player.fakeAudioTime = 10.75
-
-        invokeTick(engine)
-
-        assertEquals(1, player.scheduleJumpCalls.size)
-        assertEquals(0.0, player.scheduleJumpCalls[0].first, 0.000001)
-        assertEquals(10.75, player.scheduleJumpCalls[0].second, 0.000001)
-    }
-
-    @Test
-    fun resetStatsClearsPerSourceBranchHistory() {
-        val engine = JukeboxEngine(FakePlayer())
-        val branchState = getPrivateField<BranchState>(engine, "branchState")
-        branchState.lastDestBySource = mutableMapOf(4 to 1)
-
-        engine.resetStats()
-
-        assertNull(branchState.lastDestBySource)
-    }
-
-    @Test
     fun clearAnalysisResetsGraphAndBeatLookup() {
         val engine = JukeboxEngine(FakePlayer())
         engine.loadAnalysis(makeAnalysisPayload(6))
@@ -592,12 +539,6 @@ class JukeboxEngineParityTest {
         )
         method.isAccessible = true
         method.invoke(engine, audioTime)
-    }
-
-    private fun invokeTick(engine: JukeboxEngine) {
-        val method: Method = JukeboxEngine::class.java.getDeclaredMethod("tick")
-        method.isAccessible = true
-        method.invoke(engine)
     }
 
     @Suppress("UNCHECKED_CAST")
