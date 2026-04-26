@@ -447,7 +447,7 @@ class JukeboxEngineParityTest {
     }
 
     @Test
-    fun firstTickAlignsBeatClockToPlaybackPosition() {
+    fun schedulesPendingJumpAtSourceBeatBoundary() {
         val player = FakePlayer().apply {
             fakeCurrentTime = 0.25
             fakeAudioTime = 10.0
@@ -469,25 +469,17 @@ class JukeboxEngineParityTest {
         setPrivateField(engine, "analysis", makeAnalysis(beats))
         setPrivateField(engine, "graph", graph)
         setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 0)
+        setPrivateField(engine, "nextAudioTime", 10.75)
         setPrivateField(engine, "ticking", true)
 
         invokeTick(engine)
 
         assertEquals(0, getPrivateField<Int>(engine, "currentBeatIndex"))
-        assertEquals(1, getPrivateField<Int>(engine, "beatsPlayed"))
         assertEquals(10.75, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
         assertEquals(1, player.scheduleJumpCalls.size)
         assertEquals(0.0, player.scheduleJumpCalls[0].first, 0.000001)
         assertEquals(1.0, player.scheduleJumpCalls[0].second, 0.000001)
-
-        player.fakeCurrentTime = 1.0
-        player.fakeAudioTime = 10.75
-
-        invokeTick(engine)
-
-        assertEquals(1, player.scheduleJumpCalls.size)
-        assertEquals(0, getPrivateField<Int>(engine, "currentBeatIndex"))
-        assertEquals(2, getPrivateField<Int>(engine, "beatsPlayed"))
     }
 
     @Test
@@ -524,6 +516,8 @@ class JukeboxEngineParityTest {
         setPrivateField(engine, "analysis", makeAnalysis(beats))
         setPrivateField(engine, "graph", graph)
         setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 0)
+        setPrivateField(engine, "nextAudioTime", 10.75)
         setPrivateField(engine, "ticking", true)
         invokeTick(engine)
         assertEquals(1, player.scheduleJumpCalls.size)

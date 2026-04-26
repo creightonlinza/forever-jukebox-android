@@ -272,9 +272,7 @@ class JukeboxEngine(
 
         val audioTime = player.getAudioTime()
         lastTickTime = audioTime
-        if (currentBeatIndex < 0 && nextAudioTime == 0.0) {
-            initializeBeatClock(audioTime)
-        } else if (nextAudioTime == 0.0) {
+        if (nextAudioTime == 0.0) {
             nextAudioTime = audioTime
         }
         var guard = beats.size
@@ -290,21 +288,6 @@ class JukeboxEngine(
         val remainingMs = ((nextAudioTime - player.getAudioTime()) * 1000.0 - 10.0)
             .coerceAtLeast(0.0)
         return remainingMs.toLong()
-    }
-
-    private fun initializeBeatClock(audioTime: Double) {
-        val trackTime = player.getCurrentTime()
-        val beatIndex = findBeatIndexByTime(trackTime)
-        if (beatIndex !in beats.indices) {
-            nextAudioTime = audioTime
-            return
-        }
-        val beat = beats[beatIndex]
-        val elapsedInBeat = (trackTime - beat.start).coerceIn(0.0, beat.duration)
-        val remainingInBeat = (beat.duration - elapsedInBeat).coerceAtLeast(0.0)
-        currentBeatIndex = beatIndex
-        beatsPlayed = maxOf(beatsPlayed, beatIndex + 1)
-        nextAudioTime = audioTime + remainingInBeat / getPlaybackRate()
     }
 
     private fun advanceBeat(audioTime: Double) {
