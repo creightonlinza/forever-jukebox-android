@@ -6,7 +6,16 @@ import org.junit.Test
 class TuningCoordinatorCastPolicyTest {
 
     @Test
-    fun buildCastTuningUpdateUsesHighlightOnlyPayloadWhenOnlyHighlightChanges() {
+    fun buildCastTuningResetParamsIsEmptyExceptEnabledHighlight() {
+        val enabledResetParams = buildCastTuningResetParams(highlightAnchorBranch = true)
+        val disabledResetParams = buildCastTuningResetParams(highlightAnchorBranch = false)
+
+        assertEquals("ah=1", enabledResetParams)
+        assertEquals(null, disabledResetParams)
+    }
+
+    @Test
+    fun buildCastTuningUpdateUsesFullPayloadWhenOnlyHighlightChanges() {
         val current = TuningState(
             threshold = 22,
             minProb = 10,
@@ -32,7 +41,7 @@ class TuningCoordinatorCastPolicyTest {
         )
 
         assertEquals(current.copy(highlightAnchorBranch = true), update.nextTuning)
-        assertEquals("ah=1", update.castParams)
+        assertEquals(TuningParamsCodec.buildFromTuningState(update.nextTuning), update.castParams)
     }
 
     @Test
@@ -62,6 +71,42 @@ class TuningCoordinatorCastPolicyTest {
         )
 
         assertEquals(TuningParamsCodec.buildFromTuningState(update.nextTuning), update.castParams)
+    }
+
+    @Test
+    fun buildCastTuningUpdateKeepsAudioModeInPayload() {
+        val current = TuningState(
+            threshold = 22,
+            minProb = 10,
+            maxProb = 40,
+            ramp = 25,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            justLong = false,
+            removeSequential = true
+        )
+
+        val update = buildCastTuningUpdate(
+            currentTuning = current,
+            threshold = 22,
+            minProb = 0.10,
+            maxProb = 0.40,
+            ramp = 0.05,
+            highlightAnchorBranch = true,
+            justBackwards = true,
+            justLongBranches = false,
+            removeSequentialBranches = true,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Vaporwave
+        )
+
+        assertEquals(
+            TuningParamsCodec.buildFromTuningState(
+                update.nextTuning,
+                audioMode = JukeboxAudioMode.Vaporwave
+            ),
+            update.castParams
+        )
     }
 
     @Test

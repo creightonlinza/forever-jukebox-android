@@ -352,6 +352,69 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun seekToBeatUsesPlaybackRateForNextAudioTime() {
+        val player = FakePlayer().apply {
+            fakePlaybackRate = 2.0
+            fakeAudioTime = 10.0
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1))
+        linkBeats(beats)
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "beats", beats)
+
+        engine.seekToBeat(1)
+
+        assertEquals(10.5, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+    }
+
+    @Test
+    fun advanceBeatUsesPlaybackRateForNextAudioTime() {
+        val player = FakePlayer().apply {
+            fakePlaybackRate = 2.0
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1))
+        linkBeats(beats)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 0,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf()
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", -1)
+        setPrivateField(engine, "nextAudioTime", 0.0)
+
+        invokeAdvanceBeat(engine, 5.0)
+
+        assertEquals(5.5, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+    }
+
+    @Test
+    fun syncToPlaybackPositionUsesPlaybackRateForRemainingBeat() {
+        val player = FakePlayer().apply {
+            fakePlaybackRate = 2.0
+            fakeCurrentTime = 1.25
+            fakeAudioTime = 20.0
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "beats", beats)
+
+        engine.syncToPlaybackPosition()
+
+        assertEquals(1, getPrivateField<Int>(engine, "currentBeatIndex"))
+        assertEquals(20.375, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+    }
+
+    @Test
     fun forceBranchSettingForcesJump() {
         val player = FakePlayer()
         val engine = JukeboxEngine(player)
@@ -495,6 +558,9 @@ class JukeboxEngineParityTest {
         var playCalls = 0
         var pauseCalls = 0
         var stopCalls = 0
+        var fakeCurrentTime = 0.0
+        var fakeAudioTime = 0.0
+        var fakePlaybackRate = 1.0
         val scheduleJumpCalls = mutableListOf<Pair<Double, Double>>()
 
         override fun play() {
@@ -515,9 +581,11 @@ class JukeboxEngineParityTest {
             scheduleJumpCalls.add(targetTime to audioStart)
         }
 
-        override fun getCurrentTime(): Double = 0.0
+        override fun getCurrentTime(): Double = fakeCurrentTime
 
-        override fun getAudioTime(): Double = 0.0
+        override fun getAudioTime(): Double = fakeAudioTime
+
+        override fun getPlaybackRate(): Double = fakePlaybackRate
 
         override fun isPlaying(): Boolean = true
     }

@@ -12,6 +12,10 @@ internal data class CastTuningUpdate(
     val castParams: String
 )
 
+internal fun buildCastTuningResetParams(highlightAnchorBranch: Boolean): String? {
+    return if (highlightAnchorBranch) "ah=1" else null
+}
+
 internal fun buildCastTuningUpdate(
     currentTuning: TuningState,
     threshold: Int,
@@ -22,7 +26,8 @@ internal fun buildCastTuningUpdate(
     justBackwards: Boolean,
     justLongBranches: Boolean,
     removeSequentialBranches: Boolean,
-    randomBranchDeltaPercentScale: Double
+    randomBranchDeltaPercentScale: Double,
+    audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
 ): CastTuningUpdate {
     val nextTuning = currentTuning.copy(
         threshold = threshold.coerceAtLeast(2),
@@ -34,20 +39,7 @@ internal fun buildCastTuningUpdate(
         justLong = justLongBranches,
         removeSequential = removeSequentialBranches
     )
-    val onlyHighlightChanged =
-        nextTuning.threshold == currentTuning.threshold &&
-            nextTuning.minProb == currentTuning.minProb &&
-            nextTuning.maxProb == currentTuning.maxProb &&
-            nextTuning.ramp == currentTuning.ramp &&
-            nextTuning.justBackwards == currentTuning.justBackwards &&
-            nextTuning.justLong == currentTuning.justLong &&
-            nextTuning.removeSequential == currentTuning.removeSequential &&
-            nextTuning.highlightAnchorBranch != currentTuning.highlightAnchorBranch
-    val castParams = if (onlyHighlightChanged) {
-        if (nextTuning.highlightAnchorBranch) "ah=1" else "ah=0"
-    } else {
-        TuningParamsCodec.buildFromTuningState(nextTuning)
-    }
+    val castParams = TuningParamsCodec.buildFromTuningState(nextTuning, audioMode)
     return CastTuningUpdate(nextTuning = nextTuning, castParams = castParams)
 }
 
@@ -69,7 +61,8 @@ class TuningCoordinator(
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
         justLongBranches: Boolean,
-        removeSequentialBranches: Boolean
+        removeSequentialBranches: Boolean,
+        audioMode: JukeboxAudioMode
     ) {
         if (getState().playback.isCasting) {
             applyCastTuning(
@@ -80,7 +73,8 @@ class TuningCoordinator(
                 highlightAnchorBranch = highlightAnchorBranch,
                 justBackwards = justBackwards,
                 justLongBranches = justLongBranches,
-                removeSequentialBranches = removeSequentialBranches
+                removeSequentialBranches = removeSequentialBranches,
+                audioMode = audioMode
             )
             return
         }
@@ -112,7 +106,8 @@ class TuningCoordinator(
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
         justLongBranches: Boolean,
-        removeSequentialBranches: Boolean
+        removeSequentialBranches: Boolean,
+        audioMode: JukeboxAudioMode
     ) {
         val castUpdate = buildCastTuningUpdate(
             currentTuning = getState().tuning,
@@ -124,11 +119,12 @@ class TuningCoordinator(
             justBackwards = justBackwards,
             justLongBranches = justLongBranches,
             removeSequentialBranches = removeSequentialBranches,
-            randomBranchDeltaPercentScale = randomBranchDeltaPercentScale
+            randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
+            audioMode = audioMode
         )
-        updateState { it.copy(tuning = castUpdate.nextTuning) }
         preferences.setHighlightAnchorBranch(highlightAnchorBranch)
         castPlaybackCoordinator.sendCastTuningParams(castUpdate.castParams)
+        castPlaybackCoordinator.requestCastStatus()
     }
 
     private suspend fun applyLocalTuning(
@@ -171,25 +167,24 @@ class TuningCoordinator(
 
     private suspend fun resetCastTuningDefaults() {
         val preservedHighlight = getState().tuning.highlightAnchorBranch
-        updateState {
-            it.copy(
-                tuning = TuningState(highlightAnchorBranch = preservedHighlight)
-            )
-        }
-        castPlaybackCoordinator.sendCastTuningParams(null)
-        if (preservedHighlight) {
-            castPlaybackCoordinator.sendCastTuningParams("ah=1")
-        }
+        castPlaybackCoordinator.sendCastTuningParams(buildCastTuningResetParams(preservedHighlight))
+        castPlaybackCoordinator.requestCastStatus()
     }
 
     private suspend fun resetLocalTuningDefaults() {
+        val preservedHighlight = getState().tuning.highlightAnchorBranch
         val vizData = withContext(Dispatchers.Default) {
             engine.clearDeletedEdges()
             engine.updateConfig(defaultConfig.copy(currentThreshold = 0))
             engine.rebuildGraph()
             engine.getVisualizationData()
         }
-        updateState { it.copy(playback = it.playback.copy(vizData = vizData)) }
+        updateState {
+            it.copy(
+                playback = it.playback.copy(vizData = vizData),
+                tuning = TuningState(highlightAnchorBranch = preservedHighlight)
+            )
+        }
         playbackCoordinator.syncTuningState()
     }
 }

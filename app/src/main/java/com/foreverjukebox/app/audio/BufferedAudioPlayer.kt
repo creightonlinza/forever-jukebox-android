@@ -6,6 +6,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import com.foreverjukebox.app.engine.JukeboxPlayer
+import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -17,6 +18,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private var channelCount = 2
     private var nativeHandle: Long = 0
     private var durationSeconds: Double? = null
+    private var jukeboxAudioMode = JukeboxAudioMode.Off
 
     suspend fun loadFile(
         file: File,
@@ -73,11 +75,25 @@ class BufferedAudioPlayer : JukeboxPlayer {
         nativeSetGain(nativeHandle, gain.coerceIn(0.0, 1.0).toFloat())
     }
 
+    fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
+        jukeboxAudioMode = mode
+        if (nativeHandle == 0L) return
+        nativeSetJukeboxAudioMode(nativeHandle, mode.ordinal)
+    }
+
+    fun getJukeboxAudioMode(): JukeboxAudioMode = jukeboxAudioMode
+
+    override fun getPlaybackRate(): Double {
+        if (nativeHandle == 0L) return jukeboxAudioMode.playbackRate
+        return nativeGetPlaybackRate(nativeHandle)
+    }
+
     fun cloneAudioFrom(other: BufferedAudioPlayer): Boolean {
         if (!other.hasAudio()) return false
         sampleRate = other.sampleRate
         channelCount = other.channelCount
         durationSeconds = other.durationSeconds
+        jukeboxAudioMode = other.jukeboxAudioMode
         releaseNativePlayer()
         ensureNativePlayer()
         return nativeCloneAudioFrom(nativeHandle, other.nativeHandle)
@@ -138,6 +154,9 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private fun ensureNativePlayer() {
         if (nativeHandle != 0L) return
         nativeHandle = nativeCreatePlayer(sampleRate, channelCount)
+        if (nativeHandle != 0L) {
+            nativeSetJukeboxAudioMode(nativeHandle, jukeboxAudioMode.ordinal)
+        }
     }
 
     private fun releaseNativePlayer() {
@@ -310,6 +329,8 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeIsPlaying(handle: Long): Boolean
     private external fun nativeHasAudio(handle: Long): Boolean
     private external fun nativeSetGain(handle: Long, gain: Float)
+    private external fun nativeSetJukeboxAudioMode(handle: Long, mode: Int)
+    private external fun nativeGetPlaybackRate(handle: Long): Double
     private external fun nativeCloneAudioFrom(handle: Long, sourceHandle: Long): Boolean
     private external fun nativeRelease(handle: Long)
 

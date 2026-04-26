@@ -105,6 +105,25 @@ class AppModePolicyTest {
     }
 
     @Test
+    fun castReceiverDetailsFollowReceiverPlaybackReadiness() {
+        assertTrue(PlaybackState(isCasting = false).castReceiverDetailsReady())
+        assertFalse(
+            PlaybackState(
+                isCasting = true,
+                lastJobId = "job_1",
+                castPlaybackState = "loading"
+            ).castReceiverDetailsReady()
+        )
+        assertTrue(
+            PlaybackState(
+                isCasting = true,
+                lastJobId = "job_1",
+                castPlaybackState = "playing"
+            ).castReceiverDetailsReady()
+        )
+    }
+
+    @Test
     fun modeSwitchResetClearsRuntimeState() {
         val current = UiState(
             appMode = AppMode.Local,
@@ -118,6 +137,7 @@ class AppModePolicyTest {
             topSongsTab = TopSongsTab.Recent,
             search = SearchState(query = "abc", topSongsLoading = true),
             playback = PlaybackState(
+                jukeboxAudioMode = JukeboxAudioMode.Nightcore,
                 analysisInFlight = true,
                 analysisMessage = "Processing audio",
                 audioLoading = true,
@@ -143,6 +163,7 @@ class AppModePolicyTest {
         assertFalse(reset.playback.analysisInFlight)
         assertFalse(reset.playback.audioLoading)
         assertFalse(reset.playback.audioLoaded)
+        assertEquals(JukeboxAudioMode.Off, reset.playback.jukeboxAudioMode)
         assertNull(reset.localSelectedFileName)
         assertNull(reset.localAnalysisJsonPath)
         assertEquals(TuningState(), reset.tuning)

@@ -451,6 +451,8 @@ class PathReproParityFixtureTest {
 
         override fun getAudioTime(): Double = 0.0
 
+        override fun getPlaybackRate(): Double = 1.0
+
         override fun isPlaying(): Boolean = true
     }
 }

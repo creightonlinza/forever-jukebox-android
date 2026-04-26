@@ -37,6 +37,7 @@ import androidx.media.session.MediaButtonReceiver
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import com.foreverjukebox.app.ui.JukeboxAudioMode
 import com.foreverjukebox.app.MainActivity
 import com.foreverjukebox.app.R
 import com.foreverjukebox.app.ui.CastController
@@ -304,7 +305,13 @@ class ForegroundPlaybackService : Service() {
 
     private fun buildLocalNotificationState(isPlaying: Boolean): PlaybackNotificationState {
         val controller = PlaybackControllerHolder.get(this)
-        val title = controller.getTrackTitle().orEmpty().ifBlank { DEFAULT_NOTIFICATION_TITLE }
+        val baseTitle = controller.getTrackTitle().orEmpty()
+        val audioMode = controller.player.getJukeboxAudioMode()
+        val title = when {
+            baseTitle.isBlank() -> DEFAULT_NOTIFICATION_TITLE
+            audioMode != JukeboxAudioMode.Off -> "$baseTitle (${audioMode.wireValue})"
+            else -> baseTitle
+        }
         val artist = controller.getTrackArtist().orEmpty()
         val positionMs = controller.getPlaybackPositionMs().coerceAtLeast(0L)
         val durationMs = controller.getTrackDurationMs()?.coerceAtLeast(0L)

@@ -82,6 +82,7 @@ private fun PlaybackHeaderRow(
     inAutocanonizer: Boolean,
     showServerActions: Boolean,
     showControls: Boolean,
+    showTuningAndInfo: Boolean,
     isFavorite: Boolean,
     favoriteToggleInFlight: Boolean,
     onOpenTuning: () -> Unit,
@@ -136,7 +137,7 @@ private fun PlaybackHeaderRow(
                         }
                     }
                 }
-                if (!inAutocanonizer) {
+                if (!inAutocanonizer && showTuningAndInfo) {
                     SquareIconButton(
                         onClick = onOpenTuning,
                         modifier = Modifier.size(SmallButtonHeight)
@@ -217,6 +218,7 @@ internal fun ColumnScope.CastListenScreen(
     val hasCastTrack = playback.hasCastTrack()
     val canShowTransport = shouldShowPlaybackTransport(playback)
     val canSelectVisualization = playback.castControlsReady()
+    val canShowReceiverDetails = playback.castReceiverDetailsReady()
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
     val playActionLabel = playbackTransportContentDescription(playback)
     val showServerActions = shouldShowServerListenActions(appMode)
@@ -240,6 +242,7 @@ internal fun ColumnScope.CastListenScreen(
                 inAutocanonizer = inAutocanonizer,
                 showServerActions = showServerActions,
                 showControls = canShowTransport,
+                showTuningAndInfo = canShowReceiverDetails,
                 isFavorite = isFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,
@@ -395,6 +398,7 @@ internal fun ColumnScope.LocalListenScreen(
                 inAutocanonizer = inAutocanonizer,
                 showServerActions = showServerActions,
                 showControls = true,
+                showTuningAndInfo = true,
                 isFavorite = isFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,

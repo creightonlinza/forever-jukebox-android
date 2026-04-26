@@ -19,22 +19,22 @@ class PlayPanelCastPolicyTest {
     }
 
     @Test
-    fun castControlsReadyRequiresCastingTrackAndNoLoadOrError() {
+    fun castControlsReadyHidesOnlyForReceiverLoadingOrError() {
         val ready = PlaybackState(
             isCasting = true,
             lastYouTubeId = "abc123def45",
-            analysisInFlight = false,
+            castPlaybackState = "playing",
             analysisErrorMessage = null
         )
-        val loading = ready.copy(analysisInFlight = true)
-        val pending = ready.copy(isCastLoading = true)
+        val loading = ready.copy(castPlaybackState = "loading")
+        val legacyPending = ready.copy(isCastLoading = true, analysisInFlight = true)
         val errored = ready.copy(analysisErrorMessage = "load failed")
         val noTrack = ready.copy(lastYouTubeId = null)
         val notCasting = ready.copy(isCasting = false)
 
         assertTrue(ready.castControlsReady())
         assertFalse(loading.castControlsReady())
-        assertFalse(pending.castControlsReady())
+        assertTrue(legacyPending.castControlsReady())
         assertFalse(errored.castControlsReady())
         assertFalse(noTrack.castControlsReady())
         assertFalse(notCasting.castControlsReady())
@@ -46,12 +46,12 @@ class PlayPanelCastPolicyTest {
         val castingLoading = PlaybackState(
             isCasting = true,
             lastYouTubeId = "abc123def45",
-            analysisInFlight = true
+            castPlaybackState = "loading"
         )
         val castingReady = PlaybackState(
             isCasting = true,
             lastYouTubeId = "abc123def45",
-            analysisInFlight = false,
+            castPlaybackState = "playing",
             analysisErrorMessage = null
         )
 
@@ -64,7 +64,7 @@ class PlayPanelCastPolicyTest {
     fun resolvePlaybackHeaderTitleShowsCastLoadingLabel() {
         val castingLoading = PlaybackState(
             isCasting = true,
-            isCastLoading = true,
+            castPlaybackState = "loading",
             playTitle = "Old Title — Old Artist"
         )
         val normal = PlaybackState(

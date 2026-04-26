@@ -6,11 +6,31 @@ import com.foreverjukebox.app.data.buildSourceStableTrackId
 import com.foreverjukebox.app.visualization.visualizationCount
 import java.time.OffsetDateTime
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+
+data class CastBranchProbabilityStatus(
+    val minPercent: Int,
+    val maxPercent: Int,
+    val deltaPercent: Int
+)
+
+data class CastTuningStatus(
+    val justBackwards: Boolean,
+    val justLongBranches: Boolean,
+    val removeSequentialBranches: Boolean,
+    val threshold: Int?,
+    val computedThreshold: Int?,
+    val branchProbability: CastBranchProbabilityStatus,
+    val deletedEdgeIds: List<Int>,
+    val highlightAnchorBranch: Boolean,
+    val audioMode: JukeboxAudioMode
+)
 
 data class CastStatusMessage(
     val jobId: String? = null,
@@ -26,7 +46,7 @@ data class CastStatusMessage(
     val error: String,
     val errorCode: String? = null,
     val activeVizIndex: Int?,
-    val resolvedThreshold: Int?
+    val tuning: CastTuningStatus? = null
 )
 
 fun parseCastStatusMessage(message: String): CastStatusMessage? {
@@ -71,11 +91,7 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
         .map(::stringField)
         .firstOrNull { it.isNotBlank() }
     val activeVizIndex = json["activeVizIndex"]?.jsonPrimitive?.intOrNull
-    val resolvedThreshold = json["resolvedThreshold"]
-        ?.jsonPrimitive
-        ?.contentOrNull
-        ?.toIntOrNull()
-        ?.takeIf { it >= 2 }
+    val tuning = parseCastTuningStatus(json["tuning"] as? JsonObject)
     return CastStatusMessage(
         jobId = jobId,
         createdAt = createdAt,
@@ -90,8 +106,44 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
         error = error,
         errorCode = errorCode,
         activeVizIndex = activeVizIndex,
-        resolvedThreshold = resolvedThreshold
+        tuning = tuning
     )
+}
+
+private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
+    if (json == null) return null
+    val branchProbability = json["branchProbability"] as? JsonObject ?: return null
+    val audioMode = JukeboxAudioMode.fromWireValue(json.stringValue("audioMode")) ?: JukeboxAudioMode.Off
+    return CastTuningStatus(
+        justBackwards = json.booleanValue("justBackwards"),
+        justLongBranches = json.booleanValue("justLongBranches"),
+        removeSequentialBranches = json.booleanValue("removeSequentialBranches"),
+        threshold = json.intValue("threshold")?.takeIf { it >= 2 },
+        computedThreshold = json.intValue("computedThreshold")?.takeIf { it >= 2 },
+        branchProbability = CastBranchProbabilityStatus(
+            minPercent = branchProbability.intValue("minPercent")?.coerceIn(0, 100) ?: TuningState().minProb,
+            maxPercent = branchProbability.intValue("maxPercent")?.coerceIn(0, 100) ?: TuningState().maxProb,
+            deltaPercent = branchProbability.intValue("deltaPercent")?.coerceIn(0, 100) ?: TuningState().ramp
+        ),
+        deletedEdgeIds = json["deletedEdgeIds"]
+            ?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.intOrNull?.takeIf { id -> id >= 0 } }
+            ?: emptyList(),
+        highlightAnchorBranch = json.booleanValue("highlightAnchorBranch"),
+        audioMode = audioMode
+    )
+}
+
+private fun JsonObject.stringValue(name: String): String? {
+    return this[name]?.jsonPrimitive?.contentOrNull?.takeUnless { it == "null" }
+}
+
+private fun JsonObject.booleanValue(name: String): Boolean {
+    return this[name]?.jsonPrimitive?.booleanOrNull ?: false
+}
+
+private fun JsonObject.intValue(name: String): Int? {
+    return this[name]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
 }
 
 fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
@@ -119,16 +171,18 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         hasArtist && currentPlayback.trackArtist.isNullOrBlank() -> status.artist
         else -> currentPlayback.trackArtist
     }
+    val resolvedAudioMode = status.tuning?.audioMode
+        ?: currentPlayback.jukeboxAudioMode
     val metadataBackfilled = (hasTitle && currentPlayback.trackTitle.isNullOrBlank()) ||
         (hasArtist && currentPlayback.trackArtist.isNullOrBlank())
-    val displayTitle = if (metadataBackfilled || currentPlayback.playTitle.isBlank()) {
-        when {
-            !resolvedTrackArtist.isNullOrBlank() -> {
-                "${resolvedTrackTitle?.takeIf { it.isNotBlank() } ?: "Unknown"} — $resolvedTrackArtist"
-            }
-            !resolvedTrackTitle.isNullOrBlank() -> resolvedTrackTitle
-            else -> currentPlayback.playTitle
-        }
+    val audioModeChanged = resolvedAudioMode != currentPlayback.jukeboxAudioMode
+    val displayTitle = if (metadataBackfilled || currentPlayback.playTitle.isBlank() || audioModeChanged) {
+        buildCastPlaybackTitle(
+            title = resolvedTrackTitle,
+            artist = resolvedTrackArtist,
+            audioMode = resolvedAudioMode,
+            fallback = currentPlayback.playTitle
+        )
     } else {
         currentPlayback.playTitle
     }
@@ -197,11 +251,13 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         } else {
             currentPlayback.castTotalBranches
         },
+        jukeboxAudioMode = resolvedAudioMode,
         lastSourceProvider = resolvedSourceProvider,
         lastSourceId = resolvedSourceId,
         lastStableTrackId = normalizedStableTrackId,
         lastYouTubeId = resolvedYouTubeId,
         lastTrackCreatedAtEpochMs = resolvedCreatedAtEpochMs,
+        castPlaybackState = status.playbackState,
         lastJobId = resolvedLastJobId,
         analysisErrorMessage = if (status.error.isNotBlank()) status.error else currentPlayback.analysisErrorMessage,
         analysisInFlight = resolvedIsLoading,
@@ -215,12 +271,44 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
     )
     return current.copy(
         playback = nextPlayback,
-        tuning = if (status.resolvedThreshold != null) {
-            current.tuning.copy(threshold = status.resolvedThreshold)
-        } else {
-            current.tuning
-        }
+        tuning = resolveCastTuningState(current.tuning, status.tuning)
     )
+}
+
+private fun resolveCastTuningState(
+    current: TuningState,
+    tuning: CastTuningStatus?
+): TuningState {
+    if (tuning == null) return current
+    return current.copy(
+        threshold = tuning.threshold ?: current.threshold,
+        minProb = tuning.branchProbability.minPercent,
+        maxProb = tuning.branchProbability.maxPercent,
+        ramp = tuning.branchProbability.deltaPercent,
+        highlightAnchorBranch = tuning.highlightAnchorBranch,
+        justBackwards = tuning.justBackwards,
+        justLong = tuning.justLongBranches,
+        removeSequential = tuning.removeSequentialBranches
+    )
+}
+
+private fun buildCastPlaybackTitle(
+    title: String?,
+    artist: String?,
+    audioMode: JukeboxAudioMode,
+    fallback: String
+): String {
+    val baseTitle = title?.takeIf { it.isNotBlank() } ?: return fallback
+    val titledMode = if (audioMode == JukeboxAudioMode.Off) {
+        baseTitle
+    } else {
+        "$baseTitle (${audioMode.wireValue})"
+    }
+    return if (artist.isNullOrBlank()) {
+        titledMode
+    } else {
+        "$titledMode — $artist"
+    }
 }
 
 private fun parseCreatedAtEpochMs(createdAt: String?): Long? {
