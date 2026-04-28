@@ -107,8 +107,7 @@ internal fun hasBaseUrlServerChanged(previous: String?, next: String?): Boolean 
 internal fun shouldReuseLookupJob(response: AnalysisResponse?): Boolean {
     val jobId = response?.id
     return response != null &&
-        jobId != null &&
-        response.status != "failed"
+        jobId != null
 }
 
 internal fun sleepTimerOptionForDurationMs(durationMs: Long?): SleepTimerOption {

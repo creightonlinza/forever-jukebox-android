@@ -291,7 +291,7 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
-    fun shouldReuseLookupJobReturnsFalseForFailedLookupResponse() {
+    fun shouldReuseLookupJobReturnsTrueForFailedLookupResponse() {
         val failed = AnalysisResponse(
             id = "job_1",
             youtubeId = "dQw4w9WgXcQ",
@@ -299,7 +299,7 @@ class MainViewModelCastQueueTest {
             error = "Blocked"
         )
 
-        assertFalse(shouldReuseLookupJob(failed))
+        assertTrue(shouldReuseLookupJob(failed))
     }
 
     @Test

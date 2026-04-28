@@ -80,6 +80,7 @@ private object PlaybackServiceConstants {
     const val NOTIFICATION_ID = 2001
     const val ACTION_START = "com.foreverjukebox.app.playback.START"
     const val ACTION_UPDATE = "com.foreverjukebox.app.playback.UPDATE"
+    const val ACTION_STOP = "com.foreverjukebox.app.playback.STOP"
     const val ACTION_TOGGLE = "com.foreverjukebox.app.playback.TOGGLE"
     const val ACTION_SET_SLEEP_TIMER = "com.foreverjukebox.app.playback.SET_SLEEP_TIMER"
     const val ACTION_CLEAR_NOTIFICATION_KEEP_TIMER =
@@ -281,6 +282,10 @@ class ForegroundPlaybackService : Service() {
             PlaybackServiceConstants.ACTION_CLEAR_NOTIFICATION_KEEP_TIMER -> {
                 clearPlaybackNotificationKeepTimer()
             }
+            PlaybackServiceConstants.ACTION_STOP -> {
+                pendingForegroundStart = false
+                stopAfterPendingForegroundStart()
+            }
             PlaybackServiceConstants.ACTION_START, PlaybackServiceConstants.ACTION_UPDATE -> {
                 val castState = intent.toCastNotificationState()
                 if (castState != null) {
@@ -288,6 +293,7 @@ class ForegroundPlaybackService : Service() {
                 } else {
                     refreshNotificationForCurrentPlayback()
                 }
+                pendingForegroundStart = false
             }
         }
         return START_STICKY
@@ -664,6 +670,18 @@ class ForegroundPlaybackService : Service() {
         mediaSession.isActive = false
     }
 
+    private fun stopAfterPendingForegroundStart() {
+        if (!hasStartedForeground) {
+            updateNotification(buildLocalNotificationState(isPlaying = false))
+        }
+        activeNotificationState = null
+        if (hasStartedForeground) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            hasStartedForeground = false
+        }
+        stopSelf()
+    }
+
     private fun startSleepTimer(durationMs: Long) {
         sleepTimerJob?.cancel()
         val endRealtime = SystemClock.elapsedRealtime() + durationMs
@@ -782,6 +800,8 @@ class ForegroundPlaybackService : Service() {
         private const val TAG = "ForegroundPlaybackSvc"
         @Volatile
         private var isRunning: Boolean = false
+        @Volatile
+        private var pendingForegroundStart: Boolean = false
         private val _sleepTimerState = MutableStateFlow(SleepTimerStatus())
         val sleepTimerState: StateFlow<SleepTimerStatus> = _sleepTimerState
         const val ACTION_SLEEP_TIMER_EXPIRED: String =
@@ -798,6 +818,7 @@ class ForegroundPlaybackService : Service() {
             if (isRunning) {
                 context.startService(intent)
             } else if (canStartForegroundService(context)) {
+                pendingForegroundStart = true
                 context.startForegroundService(intent)
             }
         }
@@ -809,6 +830,7 @@ class ForegroundPlaybackService : Service() {
             if (isRunning) {
                 context.startService(intent)
             } else if (canStartForegroundService(context)) {
+                pendingForegroundStart = true
                 context.startForegroundService(intent)
             }
         }
@@ -842,6 +864,7 @@ class ForegroundPlaybackService : Service() {
             if (isRunning) {
                 context.startService(intent)
             } else if (canStartForegroundService(context)) {
+                pendingForegroundStart = true
                 context.startForegroundService(intent)
             }
         }
@@ -855,7 +878,14 @@ class ForegroundPlaybackService : Service() {
                     context.startService(intent)
                 }
                 ForegroundServiceStopCommand.StopService -> {
-                    context.stopService(Intent(context, ForegroundPlaybackService::class.java))
+                    if (pendingForegroundStart) {
+                        val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+                            action = PlaybackServiceConstants.ACTION_STOP
+                        }
+                        context.startForegroundService(intent)
+                    } else {
+                        context.stopService(Intent(context, ForegroundPlaybackService::class.java))
+                    }
                 }
             }
         }

@@ -31,6 +31,11 @@ class ServerTrackLoadCoordinator(
         playbackCoordinator.setLastJobId(jobId)
         playbackCoordinator.updateDeleteEligibility(response)
 
+        if (response.status == "failed") {
+            playbackCoordinator.setAnalysisError(response.error ?: "Loading failed.")
+            return true
+        }
+
         if (response.status == "complete" && response.result != null) {
             if (!getState().playback.audioLoaded) {
                 val loaded = playbackCoordinator.loadAudioFromJob(jobId)
