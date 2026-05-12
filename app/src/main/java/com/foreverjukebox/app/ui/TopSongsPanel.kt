@@ -59,6 +59,9 @@ import kotlinx.coroutines.launch
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.stableTrackIdFromTopSong
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +105,7 @@ fun TopSongsPanel(
     var pendingFavorites by remember { mutableStateOf<List<FavoriteTrack>>(emptyList()) }
     var pendingCode by remember { mutableStateOf("") }
     var showCreateButton by remember { mutableStateOf(true) }
+    var favoritesQuery by remember { mutableStateOf("") }
     var createHint by remember {
         mutableStateOf("Create a sync code to share your favorites between devices.")
     }
@@ -362,6 +366,8 @@ fun TopSongsPanel(
                     ) {
                         FavoritesListContent(
                             favorites = favorites,
+                            rawQuery = favoritesQuery,
+                            onQueryChange = { favoritesQuery = it },
                             loading = favoritesLoading,
                             showLoadingSpinner = false,
                             onSelect = onSelect,
@@ -371,6 +377,8 @@ fun TopSongsPanel(
                 } else {
                     FavoritesListContent(
                         favorites = favorites,
+                        rawQuery = favoritesQuery,
+                        onQueryChange = { favoritesQuery = it },
                         loading = favoritesLoading,
                         showLoadingSpinner = true,
                         onSelect = onSelect,
@@ -521,11 +529,18 @@ fun TopSongsPanel(
 @Composable
 private fun FavoritesListContent(
     favorites: List<FavoriteTrack>,
+    rawQuery: String,
+    onQueryChange: (String) -> Unit,
     loading: Boolean,
     showLoadingSpinner: Boolean,
     onSelect: (String, String?, String?, String?) -> Unit,
     onRemoveFavorite: (String) -> Unit
 ) {
+    val trimmedQuery = rawQuery.trim()
+    val filteredFavorites = filterFavorites(favorites, rawQuery)
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     if (loading) {
         if (showLoadingSpinner) {
             ListStatusMessage(
@@ -538,64 +553,117 @@ private fun FavoritesListContent(
     } else if (favorites.isEmpty()) {
         ListStatusMessage(text = "No favorites yet.")
     } else {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(favorites) { item ->
-                val title = item.title
-                val artist = item.artist
-                val displayTitle = title.ifBlank { "Untitled" }
-                val displayArtist = artist.ifBlank { "" }
-                val display = if (displayArtist.isNotBlank() && displayArtist != "Unknown") {
-                    "$displayTitle — $displayArtist"
-                } else {
-                    displayTitle
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            onSelect(
-                                item.uniqueSongId,
-                                title,
-                                artist,
-                                item.tuningParams
-                            )
-                        },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .alignByBaseline(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = display,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (!item.tuningParams.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.width(6.dp))
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = rawQuery,
+                onValueChange = onQueryChange,
+                label = { Text("Search favorites") },
+                textStyle = MaterialTheme.typography.bodySmall,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                trailingIcon = {
+                    if (trimmedQuery.isNotEmpty()) {
+                        SquareIconButton(
+                            onClick = {
+                                onQueryChange("")
+                                focusRequester.requestFocus()
+                                keyboardController?.show()
+                            }
+                        ) {
                             Icon(
-                                Icons.Outlined.Tune,
-                                contentDescription = "Custom tuning",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(14.dp)
+                                Icons.Default.Close,
+                                contentDescription = "Clear favorites search"
                             )
                         }
                     }
-                    SquareIconButton(
-                        onClick = { onRemoveFavorite(item.uniqueSongId) },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Remove favorite",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(12.dp)
-                            )
+                },
+                shape = SurfaceShape,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+            )
+            if (filteredFavorites.isEmpty()) {
+                ListStatusMessage(text = "No favorites match \"$trimmedQuery\".")
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(filteredFavorites) { item ->
+                        val title = item.title
+                        val artist = item.artist
+                        val displayTitle = title.ifBlank { "Untitled" }
+                        val displayArtist = artist.ifBlank { "" }
+                        val display = if (displayArtist.isNotBlank() && displayArtist != "Unknown") {
+                            "$displayTitle — $displayArtist"
+                        } else {
+                            displayTitle
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSelect(
+                                        item.uniqueSongId,
+                                        title,
+                                        artist,
+                                        item.tuningParams
+                                    )
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .alignByBaseline(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = display,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (!item.tuningParams.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(
+                                        Icons.Outlined.Tune,
+                                        contentDescription = "Custom tuning",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                            SquareIconButton(
+                                onClick = { onRemoveFavorite(item.uniqueSongId) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove favorite",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+internal fun filterFavorites(favorites: List<FavoriteTrack>, rawQuery: String): List<FavoriteTrack> {
+    val query = rawQuery.trim().lowercase()
+    if (query.isEmpty()) return favorites
+
+    return favorites.filter { favorite ->
+        listOf(
+            favorite.title,
+            favorite.artist,
+            favorite.uniqueSongId,
+            favorite.sourceType?.name
+        ).any { value ->
+            value.orEmpty().lowercase().contains(query)
         }
     }
 }
