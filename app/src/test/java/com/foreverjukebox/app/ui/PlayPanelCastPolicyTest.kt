@@ -8,12 +8,12 @@ import org.junit.Test
 class PlayPanelCastPolicyTest {
 
     @Test
-    fun hasCastTrackWhenEitherTrackIdIsAvailable() {
+    fun hasCastTrackWhenJobIdIsAvailable() {
         val withYoutube = PlaybackState(lastYouTubeId = "abc123def45")
         val withJob = PlaybackState(lastJobId = "job_1")
         val empty = PlaybackState()
 
-        assertTrue(withYoutube.hasCastTrack())
+        assertFalse(withYoutube.hasCastTrack())
         assertTrue(withJob.hasCastTrack())
         assertFalse(empty.hasCastTrack())
     }
@@ -22,6 +22,7 @@ class PlayPanelCastPolicyTest {
     fun castControlsReadyHidesOnlyForReceiverLoadingOrError() {
         val ready = PlaybackState(
             isCasting = true,
+            lastJobId = "job_1",
             lastYouTubeId = "abc123def45",
             castPlaybackState = "playing",
             analysisErrorMessage = null
@@ -29,7 +30,7 @@ class PlayPanelCastPolicyTest {
         val loading = ready.copy(castPlaybackState = "loading")
         val legacyPending = ready.copy(isCastLoading = true, analysisInFlight = true)
         val errored = ready.copy(analysisErrorMessage = "load failed")
-        val noTrack = ready.copy(lastYouTubeId = null)
+        val noTrack = ready.copy(lastJobId = null)
         val notCasting = ready.copy(isCasting = false)
 
         assertTrue(ready.castControlsReady())
@@ -45,11 +46,13 @@ class PlayPanelCastPolicyTest {
         val local = PlaybackState(isCasting = false)
         val castingLoading = PlaybackState(
             isCasting = true,
+            lastJobId = "job_1",
             lastYouTubeId = "abc123def45",
             castPlaybackState = "loading"
         )
         val castingReady = PlaybackState(
             isCasting = true,
+            lastJobId = "job_1",
             lastYouTubeId = "abc123def45",
             castPlaybackState = "playing",
             analysisErrorMessage = null

@@ -58,10 +58,10 @@ import android.widget.Toast
 import kotlinx.coroutines.launch
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.TopSongItem
-import com.foreverjukebox.app.data.stableTrackIdFromTopSong
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import com.foreverjukebox.app.data.trackIdFromTopSong
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -158,13 +158,13 @@ fun TopSongsPanel(
                                 val artist = item.artist
                                 val displayTitle = title ?: "Untitled"
                                 val displayArtist = artist ?: ""
-                                val stableId = stableTrackIdFromTopSong(item) ?: return@itemsIndexed
+                                val trackId = trackIdFromTopSong(item) ?: return@itemsIndexed
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             onSelect(
-                                                stableId,
+                                                trackId,
                                                 title,
                                                 artist,
                                                 null
@@ -214,13 +214,13 @@ fun TopSongsPanel(
                                 val artist = item.artist
                                 val displayTitle = title ?: "Untitled"
                                 val displayArtist = artist ?: ""
-                                val stableId = stableTrackIdFromTopSong(item) ?: return@itemsIndexed
+                                val trackId = trackIdFromTopSong(item) ?: return@itemsIndexed
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             onSelect(
-                                                stableId,
+                                                trackId,
                                                 title,
                                                 artist,
                                                 null
@@ -270,13 +270,13 @@ fun TopSongsPanel(
                                 val artist = item.artist
                                 val displayTitle = title ?: "Untitled"
                                 val displayArtist = artist ?: ""
-                                val stableId = stableTrackIdFromTopSong(item) ?: return@itemsIndexed
+                                val trackId = trackIdFromTopSong(item) ?: return@itemsIndexed
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             onSelect(
-                                                stableId,
+                                                trackId,
                                                 title,
                                                 artist,
                                                 null

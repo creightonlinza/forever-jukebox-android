@@ -2,11 +2,8 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.ApiClient
-import com.foreverjukebox.app.data.canonicalStableTrackId
+import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.FavoriteTrack
-import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
-import com.foreverjukebox.app.data.favoriteUniqueSongIdFromTrackId
-import com.foreverjukebox.app.data.parseTrackStableId
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -262,10 +259,10 @@ class FavoritesController(
         previous: List<FavoriteTrack>,
         next: List<FavoriteTrack>
     ): FavoritesDelta {
-        val prevMap = previous.associateBy { canonicalStableTrackId(it.uniqueSongId) ?: it.uniqueSongId }
-        val nextMap = next.associateBy { canonicalStableTrackId(it.uniqueSongId) ?: it.uniqueSongId }
+        val prevMap = previous.associateBy { canonicalTrackId(it.uniqueSongId) ?: it.uniqueSongId }
+        val nextMap = next.associateBy { canonicalTrackId(it.uniqueSongId) ?: it.uniqueSongId }
         val added = next.filter { item ->
-            val key = canonicalStableTrackId(item.uniqueSongId) ?: item.uniqueSongId
+            val key = canonicalTrackId(item.uniqueSongId) ?: item.uniqueSongId
             !prevMap.containsKey(key)
         }
         val removedIds = prevMap.keys.filterNot { nextMap.containsKey(it) }.toSet()
@@ -277,14 +274,14 @@ class FavoritesController(
         delta: FavoritesDelta
     ): List<FavoriteTrack> {
         val filtered = serverFavorites.filter { favorite ->
-            val canonical = canonicalStableTrackId(favorite.uniqueSongId) ?: favorite.uniqueSongId
+            val canonical = canonicalTrackId(favorite.uniqueSongId) ?: favorite.uniqueSongId
             canonical !in delta.removedIds
         }
         val merged = filtered + delta.added.filter { added ->
-            val addedCanonical = canonicalStableTrackId(added.uniqueSongId) ?: added.uniqueSongId
+            val addedCanonical = canonicalTrackId(added.uniqueSongId) ?: added.uniqueSongId
             filtered.none { existing ->
                 val existingCanonical =
-                    canonicalStableTrackId(existing.uniqueSongId) ?: existing.uniqueSongId
+                    canonicalTrackId(existing.uniqueSongId) ?: existing.uniqueSongId
                 existingCanonical == addedCanonical
             }
         }
@@ -293,19 +290,11 @@ class FavoritesController(
 
     fun normalizeFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
         val normalized = items.mapNotNull { item ->
-            val parsedIdentity = parseTrackStableId(item.uniqueSongId) ?: return@mapNotNull null
-            val uniqueSongId =
-                favoriteUniqueSongIdFromTrackId(parsedIdentity.stableId) ?: return@mapNotNull null
-            val resolvedSourceType = if (parsedIdentity.sourceProvider != null) {
-                favoriteSourceTypeFromProvider(parsedIdentity.sourceProvider)
-            } else {
-                item.sourceType
-            }
+            val uniqueSongId = canonicalTrackId(item.uniqueSongId) ?: return@mapNotNull null
             item.copy(
                 uniqueSongId = uniqueSongId,
                 title = item.title.ifBlank { "Untitled" },
                 artist = item.artist,
-                sourceType = resolvedSourceType,
                 tuningParams = TuningParamsCodec.stripHighlightAnchorParam(item.tuningParams)
             )
         }
@@ -364,7 +353,7 @@ class FavoritesController(
     }
 
     fun sortFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
-        val deduped = items.distinctBy { canonicalStableTrackId(it.uniqueSongId) ?: it.uniqueSongId }
+        val deduped = items.distinctBy { canonicalTrackId(it.uniqueSongId) ?: it.uniqueSongId }
         return deduped.sortedWith(
             compareBy<FavoriteTrack, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.artist }

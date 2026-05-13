@@ -144,17 +144,16 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
-    fun favoriteRemovalTrackIdsForDeletionIncludesSourceAndJobIdentity() {
+    fun favoriteRemovalTrackIdsForDeletionIncludesYoutubeAndJobIdentity() {
         val playback = PlaybackState(
-            lastSourceProvider = "youtube",
-            lastSourceId = "dQw4w9WgXcQ",
+            lastYouTubeId = "dQw4w9WgXcQ",
             lastJobId = "job_123"
         )
 
         val trackIds = favoriteRemovalTrackIdsForDeletion(playback)
 
-        assertTrue(trackIds.contains("src:youtube:dQw4w9WgXcQ"))
-        assertTrue(trackIds.contains("job:job_123"))
+        assertTrue(trackIds.contains("dQw4w9WgXcQ"))
+        assertTrue(trackIds.contains("job_123"))
     }
 
     @Test
@@ -166,28 +165,24 @@ class MainViewModelCastQueueTest {
             fallbackJobId = "job_fallback"
         )
 
-        assertEquals(setOf("job:job_fallback"), trackIds)
+        assertEquals(setOf("job_fallback"), trackIds)
     }
 
     @Test
-    fun removeFavoritesForTrackIdsRemovesCanonicalAndLegacyMatches() {
+    fun removeFavoritesForTrackIdsRemovesMatchingSimpleIds() {
         val favorites = listOf(
-            FavoriteTrack(uniqueSongId = "dQw4w9WgXcQ", title = "Legacy", artist = "Artist"),
-            FavoriteTrack(
-                uniqueSongId = "src:youtube:dQw4w9WgXcQ",
-                title = "Canonical",
-                artist = "Artist"
-            ),
-            FavoriteTrack(uniqueSongId = "job:other", title = "Other", artist = "Artist")
+            FavoriteTrack(uniqueSongId = "dQw4w9WgXcQ", title = "YouTube", artist = "Artist"),
+            FavoriteTrack(uniqueSongId = "job_123", title = "Job", artist = "Artist"),
+            FavoriteTrack(uniqueSongId = "other", title = "Other", artist = "Artist")
         )
 
         val filtered = removeFavoritesForTrackIds(
             favorites = favorites,
-            trackIds = setOf("src:youtube:dQw4w9WgXcQ")
+            trackIds = setOf("dQw4w9WgXcQ", "job_123")
         )
 
         assertEquals(1, filtered.size)
-        assertEquals("job:other", filtered.first().uniqueSongId)
+        assertEquals("other", filtered.first().uniqueSongId)
     }
 
     @Test

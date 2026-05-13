@@ -30,13 +30,13 @@ class ApiModelsContractTest {
         assertEquals("dQw4w9WgXcQ", response.sourceId)
         assertEquals("legacy", response.youtubeId)
         assertEquals(
-            "src:youtube:dQw4w9WgXcQ",
-            stableTrackIdFromAnalysis(response)
+            "dQw4w9WgXcQ",
+            trackIdFromAnalysis(response)
         )
     }
 
     @Test
-    fun topSongItemBuildsStableIdFromSourceOrJobFallback() {
+    fun topSongItemBuildsTrackIdFromYoutubeOrJobFallback() {
         val sourceBacked = TopSongItem(
             id = "job_1",
             sourceProvider = "soundcloud",
@@ -51,10 +51,10 @@ class ApiModelsContractTest {
         )
 
         assertEquals(
-            "src:soundcloud:sc%3Aabc%2F123",
-            stableTrackIdFromTopSong(sourceBacked)
+            "job_1",
+            trackIdFromTopSong(sourceBacked)
         )
-        assertEquals("job:job_2", stableTrackIdFromTopSong(jobBacked))
+        assertEquals("job_2", trackIdFromTopSong(jobBacked))
     }
 
     @Test
@@ -75,29 +75,29 @@ class ApiModelsContractTest {
     }
 
     @Test
-    fun parseTrackStableIdSupportsLegacyFallbacks() {
-        val parsedYoutube = parseTrackStableId("dQw4w9WgXcQ")
-        val parsedJob = parseTrackStableId("job_abc")
-        val parsedSource = parseTrackStableId("src:bandcamp:track%2F42")
+    fun parseTrackIdSupportsYoutubeAndJobIdsOnly() {
+        val parsedYoutube = parseTrackId("dQw4w9WgXcQ")
+        val parsedJob = parseTrackId("job_abc")
+        val parsedProvider = parseTrackId("soundcloud:abc123")
+        val parsedSource = parseTrackId("src:bandcamp:track%2F42")
 
-        assertEquals("src:youtube:dQw4w9WgXcQ", parsedYoutube?.stableId)
-        assertEquals("youtube", parsedYoutube?.sourceProvider)
-        assertEquals("dQw4w9WgXcQ", parsedYoutube?.sourceId)
+        assertEquals("dQw4w9WgXcQ", parsedYoutube?.trackId)
+        assertEquals("dQw4w9WgXcQ", parsedYoutube?.youtubeId)
 
-        assertEquals("job:job_abc", parsedJob?.stableId)
+        assertEquals("job_abc", parsedJob?.trackId)
         assertEquals("job_abc", parsedJob?.jobId)
 
-        assertEquals("bandcamp", parsedSource?.sourceProvider)
-        assertEquals("track/42", parsedSource?.sourceId)
-        assertNull(parsedSource?.jobId)
+        assertNull(parsedProvider?.youtubeId)
+        assertEquals("soundcloud:abc123", parsedProvider?.jobId)
+
+        assertNull(parsedSource?.youtubeId)
+        assertEquals("src:bandcamp:track%2F42", parsedSource?.jobId)
     }
 
     @Test
-    fun favoriteUniqueSongIdFromTrackIdReturnsLegacyIds() {
-        assertEquals("dQw4w9WgXcQ", favoriteUniqueSongIdFromTrackId("src:youtube:dQw4w9WgXcQ"))
-        assertEquals("job_abc", favoriteUniqueSongIdFromTrackId("job:job_abc"))
+    fun favoriteUniqueSongIdFromTrackIdReturnsSimpleIds() {
         assertEquals("dQw4w9WgXcQ", favoriteUniqueSongIdFromTrackId("dQw4w9WgXcQ"))
         assertEquals("job_abc", favoriteUniqueSongIdFromTrackId("job_abc"))
-        assertNull(favoriteUniqueSongIdFromTrackId("src:youtube:"))
+        assertEquals("src:youtube:", favoriteUniqueSongIdFromTrackId("src:youtube:"))
     }
 }

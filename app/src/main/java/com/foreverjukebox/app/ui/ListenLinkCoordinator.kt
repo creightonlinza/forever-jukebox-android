@@ -9,8 +9,8 @@ class ListenLinkCoordinator(
     private val buildTuningParamsString: () -> String?,
     private val getState: () -> UiState,
     private val setPlaybackMode: (PlaybackMode) -> Unit,
-    private val loadTrackByStableId: (
-        stableId: String,
+    private val loadTrackById: (
+        trackId: String,
         title: String?,
         artist: String?,
         tuningParams: String?
@@ -18,7 +18,7 @@ class ListenLinkCoordinator(
 ) {
     fun buildShareUrl(): String? {
         val playback = getState().playback
-        val trackId = playback.stableTrackIdOrNull() ?: return null
+        val trackId = playback.shareTrackIdOrNull() ?: return null
         val baseUrl = getState().baseUrl.trim().trimEnd('/')
         if (baseUrl.isBlank()) return null
         val encodedId = encodeUriComponent(trackId)
@@ -58,7 +58,7 @@ class ListenLinkCoordinator(
             } else {
                 null
             }
-            loadTrackByStableId(id, null, null, tuningParams)
+            loadTrackById(id, null, null, tuningParams)
         }
     }
 

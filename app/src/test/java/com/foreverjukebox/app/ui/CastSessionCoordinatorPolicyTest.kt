@@ -50,9 +50,6 @@ class CastSessionCoordinatorPolicyTest {
         assertEquals(
             PreservedCastTrack(
                 jobId = "job123",
-                sourceProvider = null,
-                sourceId = null,
-                stableTrackId = "src:youtube:yt123",
                 youtubeId = "yt123",
                 title = "Track",
                 artist = "Artist",

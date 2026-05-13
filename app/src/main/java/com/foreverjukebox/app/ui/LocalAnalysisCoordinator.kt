@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.core.net.toUri
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.AppMode
-import com.foreverjukebox.app.data.buildJobStableTrackId
 import com.foreverjukebox.app.local.LocalAnalysisArtifact
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.local.LocalAnalysisUpdate
@@ -196,10 +195,8 @@ class LocalAnalysisCoordinator(
                 playback = it.playback.copy(
                     audioLoaded = true,
                     audioLoading = false,
-                    lastSourceProvider = null,
-                    lastSourceId = null,
-                    lastStableTrackId = buildJobStableTrackId(artifact.localId),
-                    lastYouTubeId = artifact.localId,
+                    lastJobId = artifact.localId,
+                    lastYouTubeId = null,
                     trackTitle = artifact.title,
                     trackArtist = artifact.artist
                 )

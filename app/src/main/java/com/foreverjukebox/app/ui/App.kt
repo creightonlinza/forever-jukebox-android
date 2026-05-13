@@ -78,7 +78,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         onRefreshRecentSongs = viewModel::refreshRecentSongs,
                         onRefreshFavorites = viewModel::refreshFavoritesFromSync,
                         onSelect = { id, title, artist, tuningParams ->
-                            viewModel.loadTrackByStableId(id, title, artist, tuningParams)
+                            viewModel.loadTrackById(id, title, artist, tuningParams)
                         },
                         onRemoveFavorite = viewModel::removeFavorite,
                         favoritesSyncCode = state.favoritesSyncCode,
