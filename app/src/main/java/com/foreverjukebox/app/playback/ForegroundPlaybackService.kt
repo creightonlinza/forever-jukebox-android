@@ -18,8 +18,10 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.SystemClock
@@ -115,6 +117,47 @@ private enum class PlaybackAction {
     Toggle
 }
 
+internal enum class AudioFocusPlaybackCommand {
+    None,
+    PauseLocalPlayback,
+    PauseAndAbandonAudioFocus
+}
+
+internal fun isAudioFocusRequestGranted(result: Int): Boolean {
+    return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+}
+
+internal fun shouldRequestLocalAudioFocus(
+    targetPlayState: Boolean,
+    isLocalPlaybackRunning: Boolean,
+    isCastPlayback: Boolean
+): Boolean {
+    return targetPlayState && !isLocalPlaybackRunning && !isCastPlayback
+}
+
+internal fun audioFocusPlaybackCommand(
+    focusChange: Int,
+    isLocalPlayback: Boolean,
+    isPlaybackRunning: Boolean
+): AudioFocusPlaybackCommand {
+    if (!isLocalPlayback) {
+        return AudioFocusPlaybackCommand.None
+    }
+    return when (focusChange) {
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+            if (isPlaybackRunning) {
+                AudioFocusPlaybackCommand.PauseLocalPlayback
+            } else {
+                AudioFocusPlaybackCommand.None
+            }
+        }
+        AudioManager.AUDIOFOCUS_LOSS -> AudioFocusPlaybackCommand.PauseAndAbandonAudioFocus
+        AudioManager.AUDIOFOCUS_GAIN,
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> AudioFocusPlaybackCommand.None
+        else -> AudioFocusPlaybackCommand.None
+    }
+}
+
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
     return when (type) {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
@@ -183,9 +226,14 @@ class ForegroundPlaybackService : Service() {
     private var sleepTimerEndRealtimeMs: Long? = null
     private var hasStartedForeground = false
     private var audioManager: AudioManager? = null
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus = false
     private var bluetoothRouteMonitoringRegistered = false
     @Volatile
     private var lastBluetoothOutputDisconnectElapsedMs: Long? = null
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        handleAudioFocusChange(focusChange)
+    }
     private val bluetoothAudioDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesRemoved(removedDevices: Array<AudioDeviceInfo>) {
             if (removedDevices.any { device -> isBluetoothOutputDeviceType(device.type) }) {
@@ -306,7 +354,12 @@ class ForegroundPlaybackService : Service() {
             return
         }
         val controller = PlaybackControllerHolder.get(this)
-        updateNotification(buildLocalNotificationState(controller.isPlaying()))
+        val isPlaying = controller.isPlaying()
+        if (isPlaying && !requestLocalAudioFocus()) {
+            pauseLocalPlaybackForFocusLoss()
+            return
+        }
+        updateNotification(buildLocalNotificationState(isPlaying))
     }
 
     private fun buildLocalNotificationState(isPlaying: Boolean): PlaybackNotificationState {
@@ -351,6 +404,9 @@ class ForegroundPlaybackService : Service() {
     }
 
     private fun updateNotification(state: PlaybackNotificationState) {
+        if (state.mode == NotificationMode.Cast) {
+            abandonLocalAudioFocus()
+        }
         activeNotificationState = state
         createChannel()
         val contentText = state.contentText()
@@ -546,6 +602,18 @@ class ForegroundPlaybackService : Service() {
         val autocanonizer = controller.autocanonizer
         val autocanonizerRunning = autocanonizer.isRunning()
         val autocanonizerPaused = autocanonizer.isPaused()
+        val localPlaybackRunning = autocanonizerRunning || controller.isPlaying()
+        if (
+            shouldRequestLocalAudioFocus(
+                targetPlayState = targetPlayState,
+                isLocalPlaybackRunning = localPlaybackRunning,
+                isCastPlayback = false
+            ) &&
+            !requestLocalAudioFocus()
+        ) {
+            updateNotification(buildLocalNotificationState(false))
+            return
+        }
         when (action) {
             PlaybackAction.Play -> {
                 if (autocanonizerRunning) {
@@ -576,6 +644,7 @@ class ForegroundPlaybackService : Service() {
                 controller.stopPlayback()
                 autocanonizer.stop()
                 controller.stopExternalPlayback()
+                abandonLocalAudioFocus()
                 updateNotification(buildLocalNotificationState(false))
             }
             PlaybackAction.Toggle -> {
@@ -603,6 +672,70 @@ class ForegroundPlaybackService : Service() {
 
     private fun handleCastToggle() {
         handlePlaybackAction(PlaybackAction.Toggle)
+    }
+
+    private fun requestLocalAudioFocus(): Boolean {
+        if (hasAudioFocus) {
+            return true
+        }
+        val manager = audioManager ?: getSystemService(AudioManager::class.java)?.also {
+            audioManager = it
+        } ?: return false
+        val result = manager.requestAudioFocus(getOrCreateAudioFocusRequest())
+        hasAudioFocus = isAudioFocusRequestGranted(result)
+        return hasAudioFocus
+    }
+
+    private fun abandonLocalAudioFocus() {
+        if (!hasAudioFocus) {
+            return
+        }
+        val request = audioFocusRequest ?: return
+        audioManager?.abandonAudioFocusRequest(request)
+        hasAudioFocus = false
+    }
+
+    private fun getOrCreateAudioFocusRequest(): AudioFocusRequest {
+        return audioFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener(audioFocusChangeListener)
+            .build()
+            .also { audioFocusRequest = it }
+    }
+
+    private fun handleAudioFocusChange(focusChange: Int) {
+        val controller = PlaybackControllerHolder.get(this)
+        val command = audioFocusPlaybackCommand(
+            focusChange = focusChange,
+            isLocalPlayback = activeNotificationState?.mode != NotificationMode.Cast,
+            isPlaybackRunning = controller.isPlaying()
+        )
+        when (command) {
+            AudioFocusPlaybackCommand.None -> Unit
+            AudioFocusPlaybackCommand.PauseLocalPlayback -> pauseLocalPlaybackForFocusLoss()
+            AudioFocusPlaybackCommand.PauseAndAbandonAudioFocus -> {
+                pauseLocalPlaybackForFocusLoss()
+                abandonLocalAudioFocus()
+            }
+        }
+    }
+
+    private fun pauseLocalPlaybackForFocusLoss() {
+        val controller = PlaybackControllerHolder.get(this)
+        val autocanonizer = controller.autocanonizer
+        if (autocanonizer.isRunning()) {
+            autocanonizer.pause()
+            controller.pauseExternalPlayback()
+        } else if (controller.isPlaying()) {
+            controller.pausePlayback()
+        }
+        updateNotification(buildLocalNotificationState(false))
+        broadcastLocalPlaybackStateChanged()
     }
 
     private fun registerBluetoothRouteMonitoring() {
@@ -660,6 +793,7 @@ class ForegroundPlaybackService : Service() {
 
     private fun clearPlaybackNotificationKeepTimer() {
         activeNotificationState = null
+        abandonLocalAudioFocus()
         if (hasStartedForeground) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             hasStartedForeground = false
@@ -675,6 +809,7 @@ class ForegroundPlaybackService : Service() {
             updateNotification(buildLocalNotificationState(isPlaying = false))
         }
         activeNotificationState = null
+        abandonLocalAudioFocus()
         if (hasStartedForeground) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             hasStartedForeground = false
@@ -740,6 +875,7 @@ class ForegroundPlaybackService : Service() {
         controller.stopPlayback()
         controller.autocanonizer.stop()
         controller.stopExternalPlayback()
+        abandonLocalAudioFocus()
         if (activeMode == NotificationMode.Cast) {
             castController.sendCommand(PlaybackServiceConstants.CAST_COMMAND_NAMESPACE, "stop")
             activeNotificationState?.let { state ->
@@ -759,6 +895,7 @@ class ForegroundPlaybackService : Service() {
         activeNotificationState = null
         isRunning = false
         hasStartedForeground = false
+        abandonLocalAudioFocus()
         unregisterBluetoothRouteMonitoring()
         clearSleepTimer()
         serviceScope.cancel()
