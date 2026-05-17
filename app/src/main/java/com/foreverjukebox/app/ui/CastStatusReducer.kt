@@ -231,7 +231,11 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         lastTrackCreatedAtEpochMs = resolvedCreatedAtEpochMs,
         castPlaybackState = status.playbackState,
         lastJobId = resolvedLastJobId,
-        analysisErrorMessage = if (status.error.isNotBlank()) status.error else currentPlayback.analysisErrorMessage,
+        analysisErrorMessage = if (status.error.isNotBlank()) {
+            ErrorDisplay.clean(status.error)
+        } else {
+            currentPlayback.analysisErrorMessage
+        },
         analysisInFlight = resolvedIsLoading,
         isCastLoading = resolvedIsLoading,
         deleteEligible = resolvedDeleteEligible,

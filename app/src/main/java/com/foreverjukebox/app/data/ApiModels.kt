@@ -38,7 +38,9 @@ data class AnalysisStartResponse(
     val progress: Double? = null,
     val message: String? = null,
     @SerialName("source_id") val sourceId: String? = null,
-    @SerialName("source_provider") val sourceProvider: String? = null
+    @SerialName("source_provider") val sourceProvider: String? = null,
+    val error: String? = null,
+    @SerialName("error_code") val errorCode: String? = null
 )
 
 @Serializable

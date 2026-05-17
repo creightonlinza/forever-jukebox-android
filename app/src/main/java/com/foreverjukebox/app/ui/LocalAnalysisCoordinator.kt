@@ -75,27 +75,27 @@ class LocalAnalysisCoordinator(
                 applyActiveTab(TabId.Input, true)
             } catch (error: NativeLocalAnalysisNotReadyException) {
                 playbackCoordinator.setAnalysisError(
-                    error.message ?: "Native local analysis is unavailable."
+                    ErrorDisplay.clean(error.message, "Native local analysis is unavailable.")
                 )
                 applyActiveTab(TabId.Input, true)
             } catch (error: IOException) {
                 logError("Local analysis failed", error)
-                val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
+                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
                 playbackCoordinator.setAnalysisError(message)
                 applyActiveTab(TabId.Input, true)
             } catch (error: IllegalArgumentException) {
                 logError("Local analysis failed", error)
-                val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
+                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
                 playbackCoordinator.setAnalysisError(message)
                 applyActiveTab(TabId.Input, true)
             } catch (error: IllegalStateException) {
                 logError("Local analysis failed", error)
-                val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
+                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
                 playbackCoordinator.setAnalysisError(message)
                 applyActiveTab(TabId.Input, true)
             } catch (error: SecurityException) {
                 logError("Local analysis failed", error)
-                val message = error.message?.takeIf { it.isNotBlank() } ?: "Local analysis failed."
+                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
                 playbackCoordinator.setAnalysisError(message)
                 applyActiveTab(TabId.Input, true)
             } finally {
