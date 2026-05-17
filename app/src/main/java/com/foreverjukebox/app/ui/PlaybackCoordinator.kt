@@ -9,7 +9,6 @@ import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.sourceProviderFromRaw
-import com.foreverjukebox.app.data.stableTrackIdFromAnalysis
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.VisualizationData
@@ -302,8 +301,7 @@ class PlaybackCoordinator(
         setAudioLoading(true)
         setAnalysisProgress(0, "Loading audio")
         try {
-            val stableTrackId = getState().playback.lastStableTrackId
-            val target = audioFile(stableTrackId ?: jobId)
+            val target = audioFile(jobId)
             api.fetchAudioToFile(baseUrl, jobId, target)
             if (!isActiveJobId(jobId)) {
                 return false
@@ -362,12 +360,8 @@ class PlaybackCoordinator(
         val currentPlayback = getState().playback
         val responseSourceProvider = sourceProviderFromRaw(response.sourceProvider)
         val responseSourceId = response.sourceId?.trim().orEmpty().ifBlank { null }
-        val resolvedSourceProvider = responseSourceProvider ?: currentPlayback.lastSourceProvider
-        val resolvedSourceId = responseSourceId ?: currentPlayback.lastSourceId
-        val resolvedStableTrackId = currentPlayback.lastStableTrackId
-            ?: stableTrackIdFromAnalysis(response)
-        val resolvedYouTubeId = if (resolvedSourceProvider == SOURCE_PROVIDER_YOUTUBE) {
-            resolvedSourceId ?: currentPlayback.lastYouTubeId
+        val resolvedYouTubeId = if (responseSourceProvider == SOURCE_PROVIDER_YOUTUBE) {
+            responseSourceId ?: currentPlayback.lastYouTubeId
         } else {
             currentPlayback.lastYouTubeId
         }
@@ -388,9 +382,6 @@ class PlaybackCoordinator(
                     trackDurationSeconds = durationSeconds,
                     castTotalBeats = null,
                     castTotalBranches = null,
-                    lastSourceProvider = resolvedSourceProvider,
-                    lastSourceId = resolvedSourceId,
-                    lastStableTrackId = resolvedStableTrackId,
                     lastYouTubeId = resolvedYouTubeId,
                     trackTitle = title,
                     trackArtist = artist,
@@ -412,9 +403,8 @@ class PlaybackCoordinator(
         if (jobId != null) {
             recordPlay(jobId)
         }
-        val stableTrackId = getState().playback.stableTrackIdOrNull()
-        if (stableTrackId != null) {
-            cacheAnalysis(stableTrackId, response)
+        if (jobId != null) {
+            cacheAnalysis(jobId, response)
         }
         ForegroundPlaybackService.update(application)
         return true
@@ -465,9 +455,6 @@ class PlaybackCoordinator(
                     canonizerTileColorOverrides = emptyMap(),
                     jumpLine = null,
                     playTitle = "",
-                    lastSourceProvider = null,
-                    lastSourceId = null,
-                    lastStableTrackId = null,
                     lastYouTubeId = null,
                     lastTrackCreatedAtEpochMs = null,
                     lastJobId = null,
@@ -598,7 +585,7 @@ class PlaybackCoordinator(
             return true
         }
         val playback = getState().playback
-        val cachedId = playback.stableTrackIdOrNull() ?: lastJobId
+        val cachedId = playback.lastJobId ?: lastJobId
         if (cachedId.isNullOrBlank()) {
             return false
         }
@@ -841,9 +828,7 @@ class PlaybackCoordinator(
 
     private fun isActiveTrackKey(trackKey: String): Boolean {
         val playback = getState().playback
-        return playback.lastStableTrackId == trackKey ||
-            playback.lastYouTubeId == trackKey ||
-            playback.lastJobId == trackKey
+        return playback.lastYouTubeId == trackKey || playback.lastJobId == trackKey
     }
 
     private fun isActiveJobId(jobId: String): Boolean {

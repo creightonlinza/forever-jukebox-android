@@ -37,7 +37,7 @@ class ListenLinkCoordinatorTest {
         val shareUrl = coordinator.buildShareUrl()
 
         assertEquals(
-            "https://example.com/listen/src%3Ayoutube%3AdQw4w9WgXcQ?thresh=7&jb=1",
+            "https://example.com/listen/dQw4w9WgXcQ?thresh=7&jb=1",
             shareUrl
         )
     }
@@ -59,7 +59,7 @@ class ListenLinkCoordinatorTest {
         val shareUrl = coordinator.buildShareUrl()
 
         assertEquals(
-            "https://example.com/listen/src%3Ayoutube%3AdQw4w9WgXcQ?am=nightcore",
+            "https://example.com/listen/dQw4w9WgXcQ?am=nightcore",
             shareUrl
         )
     }
@@ -78,7 +78,7 @@ class ListenLinkCoordinatorTest {
 
         val shareUrl = coordinator.buildShareUrl()
 
-        assertEquals("https://example.com/listen/job%3Ajob_123?mode=autocanonizer", shareUrl)
+        assertEquals("https://example.com/listen/job_123?mode=autocanonizer", shareUrl)
     }
 
     @Test
@@ -88,20 +88,20 @@ class ListenLinkCoordinatorTest {
         val coordinator = createCoordinator(
             state = UiState(baseUrl = "https://example.com"),
             setPlaybackMode = { playbackModes += it },
-            loadTrackByStableId = { stableId, title, artist, tuningParams ->
-                loads += LoadRequest(stableId, title, artist, tuningParams)
+            loadTrackById = { trackId, title, artist, tuningParams ->
+                loads += LoadRequest(trackId, title, artist, tuningParams)
             }
         )
 
         coordinator.handleDeepLink(
-            "https://example.com/listen/src:youtube:yt123?mode=autocanonizer&thresh=9"
+            "https://example.com/listen/dQw4w9WgXcQ?mode=autocanonizer&thresh=9"
         )
 
         assertEquals(listOf(PlaybackMode.Autocanonizer), playbackModes)
         assertEquals(1, loads.size)
         assertEquals(
             LoadRequest(
-                stableId = "src:youtube:yt123",
+                trackId = "dQw4w9WgXcQ",
                 title = null,
                 artist = null,
                 tuningParams = null
@@ -117,8 +117,8 @@ class ListenLinkCoordinatorTest {
         val coordinator = createCoordinator(
             state = UiState(baseUrl = "https://example.com"),
             setPlaybackMode = { playbackModes += it },
-            loadTrackByStableId = { stableId, title, artist, tuningParams ->
-                loads += LoadRequest(stableId, title, artist, tuningParams)
+            loadTrackById = { trackId, title, artist, tuningParams ->
+                loads += LoadRequest(trackId, title, artist, tuningParams)
             }
         )
 
@@ -133,12 +133,12 @@ class ListenLinkCoordinatorTest {
         val loads = mutableListOf<LoadRequest>()
         val coordinator = createCoordinator(
             state = UiState(baseUrl = "https://example.com"),
-            loadTrackByStableId = { stableId, title, artist, tuningParams ->
-                loads += LoadRequest(stableId, title, artist, tuningParams)
+            loadTrackById = { trackId, title, artist, tuningParams ->
+                loads += LoadRequest(trackId, title, artist, tuningParams)
             }
         )
 
-        coordinator.handleDeepLink("https://example.com/listen/src:youtube:yt123?thresh=9")
+        coordinator.handleDeepLink("https://example.com/listen/dQw4w9WgXcQ?thresh=9")
 
         assertEquals(1, loads.size)
         assertEquals("thresh=9", loads.single().tuningParams)
@@ -149,12 +149,12 @@ class ListenLinkCoordinatorTest {
         val loads = mutableListOf<LoadRequest>()
         val coordinator = createCoordinator(
             state = UiState(baseUrl = "https://example.com"),
-            loadTrackByStableId = { stableId, title, artist, tuningParams ->
-                loads += LoadRequest(stableId, title, artist, tuningParams)
+            loadTrackById = { trackId, title, artist, tuningParams ->
+                loads += LoadRequest(trackId, title, artist, tuningParams)
             }
         )
 
-        coordinator.handleDeepLink("https://example.com/listen/src:youtube:yt123?am=lofi")
+        coordinator.handleDeepLink("https://example.com/listen/dQw4w9WgXcQ?am=lofi")
 
         assertEquals(1, loads.size)
         assertEquals("am=lofi", loads.single().tuningParams)
@@ -165,17 +165,17 @@ class ListenLinkCoordinatorTest {
         val loads = mutableListOf<LoadRequest>()
         val coordinator = createCoordinator(
             state = UiState(baseUrl = "https://api.foreverjukebox.internal"),
-            loadTrackByStableId = { stableId, title, artist, tuningParams ->
-                loads += LoadRequest(stableId, title, artist, tuningParams)
+            loadTrackById = { trackId, title, artist, tuningParams ->
+                loads += LoadRequest(trackId, title, artist, tuningParams)
             }
         )
 
         coordinator.handleDeepLink(
-            "https://foreverjukebox.com/listen/src:youtube:yt123?thresh=7&jb=1"
+            "https://foreverjukebox.com/listen/dQw4w9WgXcQ?thresh=7&jb=1"
         )
 
         assertEquals(1, loads.size)
-        assertEquals("src:youtube:yt123", loads.single().stableId)
+        assertEquals("dQw4w9WgXcQ", loads.single().trackId)
         assertEquals("thresh=7&jb=1", loads.single().tuningParams)
     }
 
@@ -183,18 +183,18 @@ class ListenLinkCoordinatorTest {
         state: UiState,
         tuningParams: String? = null,
         setPlaybackMode: (PlaybackMode) -> Unit = {},
-        loadTrackByStableId: (String, String?, String?, String?) -> Unit = { _, _, _, _ -> }
+        loadTrackById: (String, String?, String?, String?) -> Unit = { _, _, _, _ -> }
     ): ListenLinkCoordinator {
         return ListenLinkCoordinator(
             buildTuningParamsString = { tuningParams },
             getState = { state },
             setPlaybackMode = setPlaybackMode,
-            loadTrackByStableId = loadTrackByStableId
+            loadTrackById = loadTrackById
         )
     }
 
     private data class LoadRequest(
-        val stableId: String,
+        val trackId: String,
         val title: String?,
         val artist: String?,
         val tuningParams: String?

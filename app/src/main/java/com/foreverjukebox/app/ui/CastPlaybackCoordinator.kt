@@ -1,11 +1,5 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
-import com.foreverjukebox.app.data.buildJobStableTrackId
-import com.foreverjukebox.app.data.buildSourceStableTrackId
-import com.foreverjukebox.app.data.canonicalStableTrackId
-import com.foreverjukebox.app.data.parseTrackStableId
-import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.google.android.gms.cast.framework.CastSession
 
 class CastPlaybackCoordinator(
@@ -37,9 +31,7 @@ class CastPlaybackCoordinator(
         jobId: String,
         title: String? = null,
         artist: String? = null,
-        sourceProvider: String? = null,
-        sourceId: String? = null,
-        stableTrackId: String? = null,
+        youtubeId: String? = null,
         tuningParams: String? = null
     ) {
         if (!getState().castEnabled) {
@@ -65,25 +57,11 @@ class CastPlaybackCoordinator(
             raw = tuningParams,
             highlightAnchorBranch = currentState.tuning.highlightAnchorBranch
         )
-        val normalizedProvider = sourceProviderFromRaw(sourceProvider)
-        val normalizedSourceId = sourceId?.trim().orEmpty().ifBlank { null }
         val normalizedJobId = jobId.trim()
         if (normalizedJobId.isBlank()) {
             return
         }
-        val resolvedStableTrackId = canonicalStableTrackId(stableTrackId)
-            ?: when {
-                normalizedProvider != null && normalizedSourceId != null ->
-                    buildSourceStableTrackId(normalizedProvider, normalizedSourceId)
-                else -> buildJobStableTrackId(normalizedJobId)
-            }
-        val parsedIdentity = parseTrackStableId(resolvedStableTrackId)
-        val resolvedProvider = parsedIdentity?.sourceProvider
-        val resolvedSourceId = parsedIdentity?.sourceId
-        val resolvedYoutubeId = when {
-            resolvedProvider == SOURCE_PROVIDER_YOUTUBE -> resolvedSourceId
-            else -> null
-        }
+        val resolvedYoutubeId = youtubeId?.trim().orEmpty().ifBlank { null }
         updateState {
             it.copy(
                 playback = it.playback.copy(
@@ -95,9 +73,6 @@ class CastPlaybackCoordinator(
                     castTotalBeats = null,
                     castTotalBranches = null,
                     jukeboxAudioMode = JukeboxAudioMode.Off,
-                    lastSourceProvider = resolvedProvider,
-                    lastSourceId = resolvedSourceId,
-                    lastStableTrackId = resolvedStableTrackId,
                     lastYouTubeId = resolvedYoutubeId,
                     lastTrackCreatedAtEpochMs = null,
                     castPlaybackState = "loading",

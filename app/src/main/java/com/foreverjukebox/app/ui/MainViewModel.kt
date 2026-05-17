@@ -18,18 +18,16 @@ import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.AnalysisStartResponse
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.YoutubeSearchItem
-import com.foreverjukebox.app.data.buildJobStableTrackId
-import com.foreverjukebox.app.data.buildSourceStableTrackId
-import com.foreverjukebox.app.data.canonicalStableTrackId
-import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
-import com.foreverjukebox.app.data.favoriteUniqueSongIdFromTrackId
-import com.foreverjukebox.app.data.parseTrackStableId
-import com.foreverjukebox.app.data.stableTrackIdFromAnalysis
-import com.foreverjukebox.app.data.stableTrackIdFromTopSong
+import com.foreverjukebox.app.data.buildJobTrackId
+import com.foreverjukebox.app.data.canonicalTrackId
+import com.foreverjukebox.app.data.parseTrackId
+import com.foreverjukebox.app.data.trackIdFromAnalysis
+import com.foreverjukebox.app.data.trackIdFromTopSong
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
@@ -147,31 +145,22 @@ internal fun favoriteRemovalTrackIdsForDeletion(
     val trackIds = linkedSetOf<String>()
 
     fun addCanonical(raw: String?) {
-        val canonical = canonicalStableTrackId(raw) ?: return
+        val canonical = canonicalTrackId(raw) ?: return
         trackIds += canonical
-    }
-
-    addCanonical(playback.lastStableTrackId)
-    addCanonical(playback.stableTrackIdOrNull())
-
-    val provider = sourceProviderFromRaw(playback.lastSourceProvider)
-    val sourceId = playback.lastSourceId?.trim().orEmpty()
-    if (provider != null && sourceId.isNotBlank()) {
-        addCanonical(buildSourceStableTrackId(provider, sourceId))
     }
 
     val youtubeId = playback.lastYouTubeId?.trim().orEmpty()
     if (youtubeId.isNotBlank()) {
-        addCanonical(buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, youtubeId))
+        addCanonical(youtubeId)
     }
 
     val fallback = fallbackJobId?.trim().orEmpty()
     if (fallback.isNotBlank()) {
-        addCanonical(buildJobStableTrackId(fallback))
+        addCanonical(buildJobTrackId(fallback))
     }
     val lastJobId = playback.lastJobId?.trim().orEmpty()
     if (lastJobId.isNotBlank()) {
-        addCanonical(buildJobStableTrackId(lastJobId))
+        addCanonical(buildJobTrackId(lastJobId))
     }
 
     return trackIds
@@ -183,7 +172,7 @@ internal fun removeFavoritesForTrackIds(
 ): List<FavoriteTrack> {
     if (trackIds.isEmpty()) return favorites
     return favorites.filterNot { favorite ->
-        val canonical = canonicalStableTrackId(favorite.uniqueSongId)
+        val canonical = canonicalTrackId(favorite.uniqueSongId)
         canonical != null && canonical in trackIds
     }
 }
@@ -309,7 +298,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         buildTuningParamsString = playbackCoordinator::buildTuningParamsString,
         getState = { state.value },
         setPlaybackMode = ::setPlaybackMode,
-        loadTrackByStableId = ::loadTrackByStableId
+        loadTrackById = ::loadTrackById
     )
     private val appLifecycleCoordinator = AppLifecycleCoordinator(
         scope = viewModelScope,
@@ -650,12 +639,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteCachedLocalTrack(localId: String) {
-        val stableId = localId.trim()
+        val trackId = localId.trim()
             .takeIf { it.isNotBlank() }
-            ?.let(::buildJobStableTrackId)
-        if (stableId != null) {
+            ?.let(::buildJobTrackId)
+        if (trackId != null) {
             val favorites = state.value.favorites
-            val updated = removeFavoritesForTrackIds(favorites, setOf(stableId))
+            val updated = removeFavoritesForTrackIds(favorites, setOf(trackId))
             if (updated.size != favorites.size) {
                 favoritesController.updateFavorites(updated)
             }
@@ -854,16 +843,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(playback = transform(it.playback)) }
     }
 
-    private fun resolveTrackMeta(stableTrackId: String): Pair<String?, String?> {
-        val canonicalTarget = canonicalStableTrackId(stableTrackId) ?: stableTrackId
+    private fun resolveTrackMeta(trackId: String): Pair<String?, String?> {
+        val canonicalTarget = canonicalTrackId(trackId) ?: trackId
         val topMatch = state.value.search.topSongs.firstOrNull {
-            canonicalStableTrackId(stableTrackIdFromTopSong(it)) == canonicalTarget
+            canonicalTrackId(trackIdFromTopSong(it)) == canonicalTarget
         }
         if (topMatch != null) {
             return topMatch.title to topMatch.artist
         }
         val favoriteMatch = state.value.favorites.firstOrNull {
-            canonicalStableTrackId(it.uniqueSongId) == canonicalTarget
+            canonicalTrackId(it.uniqueSongId) == canonicalTarget
         }
         if (favoriteMatch != null) {
             return favoriteMatch.title to favoriteMatch.artist
@@ -874,23 +863,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleFavoriteForCurrent(): FavoriteToggleResult {
         val currentState = state.value
         val playback = currentState.playback
-        val currentStableId = playback.stableTrackIdOrNull() ?: return FavoriteToggleResult.NoTrack
+        val currentTrackId = playback.shareTrackIdOrNull() ?: return FavoriteToggleResult.NoTrack
         val currentCanonicalId =
-            canonicalStableTrackId(currentStableId) ?: return FavoriteToggleResult.NoTrack
-        val currentId =
-            favoriteUniqueSongIdFromTrackId(currentCanonicalId) ?: return FavoriteToggleResult.NoTrack
+            canonicalTrackId(currentTrackId) ?: return FavoriteToggleResult.NoTrack
+        val currentId = currentCanonicalId
         if (shouldBlockListenFavoriteToggle(currentState)) {
             return FavoriteToggleResult.BlockedInFlight
         }
         val favorites = currentState.favorites
         val syncFromListenToggle = hasRealFavoritesSyncPath(currentState)
         val existing = favorites.any {
-            canonicalStableTrackId(it.uniqueSongId) == currentCanonicalId
+            canonicalTrackId(it.uniqueSongId) == currentCanonicalId
         }
         return if (existing) {
             favoritesController.updateFavorites(
                 favorites.filterNot {
-                    canonicalStableTrackId(it.uniqueSongId) == currentCanonicalId
+                    canonicalTrackId(it.uniqueSongId) == currentCanonicalId
                 },
                 fromListenToggle = syncFromListenToggle
             )
@@ -906,7 +894,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     title = title,
                     artist = artist,
                     duration = playback.trackDurationSeconds,
-                    sourceType = favoriteSourceTypeFromProvider(playback.lastSourceProvider),
+                    sourceType = if (playback.lastYouTubeId.isNullOrBlank()) null else FavoriteSourceType.Youtube,
                     tuningParams = if (playback.playMode == PlaybackMode.Jukebox) {
                         playbackCoordinator.buildTuningParamsString()
                     } else {
@@ -924,8 +912,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun removeFavorite(uniqueSongId: String) {
         val favorites = state.value.favorites
-        val canonicalTarget = canonicalStableTrackId(uniqueSongId) ?: return
-        val filtered = favorites.filterNot { canonicalStableTrackId(it.uniqueSongId) == canonicalTarget }
+        val canonicalTarget = canonicalTrackId(uniqueSongId) ?: return
+        val filtered = favorites.filterNot { canonicalTrackId(it.uniqueSongId) == canonicalTarget }
         if (filtered.size == favorites.size) return
         favoritesController.updateFavorites(filtered)
     }
@@ -961,25 +949,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val response = api.getJobByTrack(baseUrl, name, artist)
                     if (shouldReuseLookupJob(response)) {
                         val jobId = response!!.id!!
-                        val stableId = stableTrackIdFromAnalysis(response)
-                            ?: buildJobStableTrackId(jobId)
-                        val parsedIdentity = parseTrackStableId(stableId)
+                        val trackId = trackIdFromAnalysis(response) ?: buildJobTrackId(jobId)
                         if (state.value.playback.isCasting) {
                             clearSearchSelectionState()
                             castPlaybackCoordinator.castTrackId(
                                 jobId = jobId,
                                 title = name,
                                 artist = artist,
-                                sourceProvider = parsedIdentity?.sourceProvider,
-                                sourceId = parsedIdentity?.sourceId,
-                                stableTrackId = stableId
+                                youtubeId = parseTrackId(trackId)?.youtubeId
                             )
                             applyActiveTab(TabId.Play, recordHistory = true)
                             return@launch
                         }
                         loadExistingJob(
                             jobId,
-                            stableId,
+                            trackId,
                             response,
                             name,
                             artist
@@ -1028,7 +1012,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (baseUrl.isBlank()) return
         val resolvedTitle = title ?: state.value.search.pendingTrackName.orEmpty()
         val resolvedArtist = artist ?: state.value.search.pendingTrackArtist.orEmpty()
-        val stableId = buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, youtubeId)
+        val trackId = youtubeId.trim()
+        if (trackId.isBlank()) return
         if (state.value.playback.isCasting) {
             clearSearchSelectionState()
             applyActiveTab(TabId.Play, recordHistory = true)
@@ -1043,9 +1028,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         jobId = knownJobId,
                         title = resolvedTitle,
                         artist = resolvedArtist,
-                        sourceProvider = SOURCE_PROVIDER_YOUTUBE,
-                        sourceId = youtubeId,
-                        stableTrackId = stableId
+                        youtubeId = trackId
                     )
                     return@launchCastSelection
                 }
@@ -1057,9 +1040,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             jobId = resolvedJobId,
                             title = resolvedTitle,
                             artist = resolvedArtist,
-                            sourceProvider = SOURCE_PROVIDER_YOUTUBE,
-                            sourceId = youtubeId,
-                            stableTrackId = stableId
+                            youtubeId = trackId
                         )
                         return@launchCastSelection
                     }
@@ -1089,9 +1070,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     jobId = resolvedJobId,
                     title = resolvedTitle,
                     artist = resolvedArtist,
-                    sourceProvider = SOURCE_PROVIDER_YOUTUBE,
-                    sourceId = youtubeId,
-                    stableTrackId = stableId
+                    youtubeId = trackId
                 )
             }
             return
@@ -1103,24 +1082,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 search = resetSearchStateAfterTrackSelection(current.search),
                 playback = current.playback.copy(
                     audioLoading = false,
-                    lastSourceProvider = SOURCE_PROVIDER_YOUTUBE,
-                    lastSourceId = youtubeId,
-                    lastStableTrackId = stableId,
-                    lastYouTubeId = youtubeId
+                    lastYouTubeId = trackId
                 )
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = stableId,
+            cacheKey = null,
             failureLogMessage = "Failed to start YouTube analysis"
         ) {
-            val existing = api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
+            val existing = api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
             if (existing != null) {
                 return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(existing)
             }
             val response = api.startYoutubeAnalysis(
                 baseUrl,
-                youtubeId,
+                trackId,
                 resolvedTitle,
                 resolvedArtist
             )
@@ -1132,22 +1108,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadTrackByStableId(
-        stableId: String,
+    fun loadTrackById(
+        trackId: String,
         title: String? = null,
         artist: String? = null,
         tuningParams: String? = null
     ) {
-        val parsed = parseTrackStableId(stableId) ?: return
+        val parsed = parseTrackId(trackId) ?: return
         when {
-            parsed.sourceProvider != null && parsed.sourceId != null -> {
-                loadTrackBySource(
-                    sourceProvider = parsed.sourceProvider,
-                    sourceId = parsed.sourceId,
+            parsed.youtubeId != null -> {
+                loadTrackByYoutubeId(
+                    youtubeId = parsed.youtubeId,
                     title = title,
                     artist = artist,
-                    tuningParams = tuningParams,
-                    stableTrackIdOverride = parsed.stableId
+                    tuningParams = tuningParams
                 )
             }
             parsed.jobId != null -> {
@@ -1155,8 +1129,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     jobId = parsed.jobId,
                     title = title,
                     artist = artist,
-                    tuningParams = tuningParams,
-                    stableTrackIdOverride = parsed.stableId
+                    tuningParams = tuningParams
                 )
             }
         }
@@ -1177,23 +1150,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    fun loadTrackBySource(
+    private fun loadTrackBySource(
         sourceProvider: String,
         sourceId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null,
-        stableTrackIdOverride: String? = null
+        tuningParams: String? = null
     ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         val provider = sourceProviderFromRaw(sourceProvider) ?: return
         val normalizedSourceId = sourceId.trim()
         if (normalizedSourceId.isBlank()) return
-        val stableId = stableTrackIdOverride
-            ?: buildSourceStableTrackId(provider, normalizedSourceId)
+        val youtubeId = if (provider == SOURCE_PROVIDER_YOUTUBE) normalizedSourceId else null
         val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
-            resolveTrackMeta(stableId)
+            youtubeId?.let(::resolveTrackMeta) ?: (null to null)
         } else {
             title to artist
         }
@@ -1210,9 +1181,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         jobId = knownJobId,
                         title = resolvedTitle,
                         artist = resolvedArtist,
-                        sourceProvider = provider,
-                        sourceId = normalizedSourceId,
-                        stableTrackId = stableId,
+                        youtubeId = youtubeId,
                         tuningParams = tuningParams
                     )
                     return@launchCastSelection
@@ -1227,9 +1196,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 jobId = resolvedJobId,
                                 title = resolvedTitle,
                                 artist = resolvedArtist,
-                                sourceProvider = provider,
-                                sourceId = normalizedSourceId,
-                                stableTrackId = stableId,
+                                youtubeId = youtubeId,
                                 tuningParams = tuningParams
                             )
                             return@launchCastSelection
@@ -1260,9 +1227,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         jobId = resolvedJobId,
                         title = resolvedTitle,
                         artist = resolvedArtist,
-                        sourceProvider = provider,
-                        sourceId = normalizedSourceId,
-                        stableTrackId = stableId,
+                        youtubeId = youtubeId,
                         tuningParams = tuningParams
                     )
                     return@launchCastSelection
@@ -1279,9 +1244,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         jobId = resolvedJobId,
                         title = resolvedTitle,
                         artist = resolvedArtist,
-                        sourceProvider = provider,
-                        sourceId = normalizedSourceId,
-                        stableTrackId = stableId,
                         tuningParams = tuningParams
                     )
                 } catch (cancel: CancellationException) {
@@ -1310,17 +1272,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(
                 playback = current.playback.copy(
                     audioLoading = false,
-                    lastSourceProvider = provider,
-                    lastSourceId = normalizedSourceId,
-                    lastStableTrackId = stableId,
-                    lastYouTubeId = if (provider == SOURCE_PROVIDER_YOUTUBE) normalizedSourceId else null,
+                    lastYouTubeId = youtubeId,
                     trackTitle = resolvedTitle,
                     trackArtist = resolvedArtist
                 )
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = stableId,
+            cacheKey = null,
             failureLogMessage = "Failed to load track by source"
         ) {
             val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
@@ -1348,17 +1307,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         jobId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null,
-        stableTrackIdOverride: String? = null
+        tuningParams: String? = null
     ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         val normalizedJobId = jobId.trim()
         if (normalizedJobId.isBlank()) return
-        val stableId = stableTrackIdOverride
-            ?: buildJobStableTrackId(normalizedJobId)
         val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
-            resolveTrackMeta(stableId)
+            resolveTrackMeta(normalizedJobId)
         } else {
             title to artist
         }
@@ -1367,7 +1323,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 jobId = normalizedJobId,
                 title = resolvedTitle,
                 artist = resolvedArtist,
-                stableTrackId = stableId,
                 tuningParams = tuningParams
             )
             applyActiveTab(TabId.Play, recordHistory = true)
@@ -1377,9 +1332,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(
                 playback = current.playback.copy(
                     audioLoading = false,
-                    lastSourceProvider = null,
-                    lastSourceId = null,
-                    lastStableTrackId = stableId,
                     lastYouTubeId = null,
                     lastJobId = normalizedJobId,
                     trackTitle = resolvedTitle,
@@ -1388,7 +1340,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = stableId,
+            cacheKey = normalizedJobId,
             failureLogMessage = "Failed to load track by job id"
         ) {
             val response = api.getAnalysis(baseUrl, normalizedJobId)
@@ -1398,20 +1350,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun loadExistingJob(
         jobId: String,
-        stableTrackId: String,
+        trackId: String,
         response: AnalysisResponse,
         title: String? = null,
         artist: String? = null
     ) {
-        val parsedIdentity = parseTrackStableId(stableTrackId)
+        val youtubeId = parseTrackId(trackId)?.youtubeId
         if (state.value.playback.isCasting) {
             castPlaybackCoordinator.castTrackId(
                 jobId = jobId,
                 title = title,
                 artist = artist,
-                sourceProvider = parsedIdentity?.sourceProvider,
-                sourceId = parsedIdentity?.sourceId,
-                stableTrackId = stableTrackId
+                youtubeId = youtubeId
             )
             applyActiveTab(TabId.Play, recordHistory = true)
             return
@@ -1421,14 +1371,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 search = resetSearchStateAfterTrackSelection(it.search),
                 playback = it.playback.copy(
-                    lastSourceProvider = parsedIdentity?.sourceProvider,
-                    lastSourceId = parsedIdentity?.sourceId,
-                    lastStableTrackId = stableTrackId,
-                    lastYouTubeId = if (parsedIdentity?.sourceProvider == SOURCE_PROVIDER_YOUTUBE) {
-                        parsedIdentity.sourceId
-                    } else {
-                        null
-                    },
+                    lastJobId = jobId,
+                    lastYouTubeId = youtubeId,
                     trackTitle = title,
                     trackArtist = artist
                 )
@@ -1468,12 +1412,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun launchServerTrackLoadWithCache(
-        cacheKey: String,
+        cacheKey: String?,
         failureLogMessage: String,
         request: suspend () -> Boolean
     ) {
         serverTrackLoadCoordinator.launch {
-            if (playbackCoordinator.tryLoadCachedTrack(cacheKey)) {
+            if (cacheKey != null && playbackCoordinator.tryLoadCachedTrack(cacheKey)) {
                 return@launch
             }
             playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
@@ -1516,10 +1460,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (hasAnalysis) {
             return true
         }
-        val stableTrackId = current.stableTrackIdOrNull()
-        if (!stableTrackId.isNullOrBlank()) {
+        val trackId = current.shareTrackIdOrNull()
+        if (!trackId.isNullOrBlank()) {
             playbackCoordinator.setAnalysisQueued(null, "Restoring track...")
-            loadTrackByStableId(stableTrackId, current.trackTitle, current.trackArtist)
+            loadTrackById(trackId, current.trackTitle, current.trackArtist)
             return false
         }
         playbackCoordinator.setAnalysisError("Analysis unavailable. Reload the track.")
@@ -1549,8 +1493,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             notifyCastUnavailable()
             return
         }
-        val trackId = current.stableTrackIdOrNull()
-        if (trackId.isNullOrBlank()) {
+        if (current.lastJobId.isNullOrBlank()) {
             viewModelScope.launch { showToast("Select a track before playing.") }
             return
         }
@@ -1842,8 +1785,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { showToast("Set a base URL first.") }
             return
         }
-        val stableId = state.value.playback.stableTrackIdOrNull()
-        if (stableId.isNullOrBlank()) {
+        val trackId = state.value.playback.shareTrackIdOrNull()
+        if (trackId.isNullOrBlank()) {
             viewModelScope.launch { showToast("Nothing to retry.") }
             return
         }
@@ -1851,7 +1794,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val artist = state.value.playback.trackArtist
         serverTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack()
-        loadTrackByStableId(stableId, title, artist)
+        loadTrackById(trackId, title, artist)
     }
 
     suspend fun deleteCurrentJob(): Boolean {

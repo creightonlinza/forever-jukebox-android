@@ -1,9 +1,6 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
-import com.foreverjukebox.app.data.buildSourceStableTrackId
-import com.foreverjukebox.app.data.buildJobStableTrackId
-import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.TopSongItem
@@ -158,9 +155,6 @@ data class PlaybackState(
     val lastJumpFromIndex: Int? = null,
     val jumpLine: JumpLine? = null,
     val lastJobId: String? = null,
-    val lastSourceProvider: String? = null,
-    val lastSourceId: String? = null,
-    val lastStableTrackId: String? = null,
     val lastYouTubeId: String? = null,
     val lastTrackCreatedAtEpochMs: Long? = null,
     val castPlaybackState: String? = null,
@@ -230,26 +224,17 @@ fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boole
 }
 
 fun PlaybackState.hasCastTrack(): Boolean {
-    return !stableTrackIdOrNull().isNullOrBlank()
+    return !lastJobId.isNullOrBlank()
 }
 
-fun PlaybackState.stableTrackIdOrNull(): String? {
-    val stable = lastStableTrackId?.trim().orEmpty()
-    if (stable.isNotBlank()) {
-        return stable
-    }
-    val provider = sourceProviderFromRaw(lastSourceProvider)
-    val sourceId = lastSourceId?.trim().orEmpty()
-    if (provider != null && sourceId.isNotBlank()) {
-        return buildSourceStableTrackId(provider, sourceId)
-    }
+fun PlaybackState.shareTrackIdOrNull(): String? {
     val youtubeId = lastYouTubeId?.trim().orEmpty()
     if (youtubeId.isNotBlank()) {
-        return buildSourceStableTrackId("youtube", youtubeId)
+        return youtubeId
     }
     val jobId = lastJobId?.trim().orEmpty()
     if (jobId.isNotBlank()) {
-        return buildJobStableTrackId(jobId)
+        return jobId
     }
     return null
 }
@@ -280,7 +265,7 @@ fun PlaybackState.shouldShowCastNotification(): Boolean {
     if (!isCasting) return false
     if (isRunning) return true
     if (!trackTitle.isNullOrBlank() || !trackArtist.isNullOrBlank()) return true
-    if (!stableTrackIdOrNull().isNullOrBlank()) return true
+    if (!shareTrackIdOrNull().isNullOrBlank()) return true
     return playTitle.isNotBlank()
 }
 

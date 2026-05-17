@@ -1,8 +1,5 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
-import com.foreverjukebox.app.data.buildJobStableTrackId
-import com.foreverjukebox.app.data.buildSourceStableTrackId
 import com.foreverjukebox.app.visualization.visualizationCount
 import java.time.OffsetDateTime
 import kotlinx.serialization.json.Json
@@ -202,29 +199,7 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         "playing", "loading", "idle", "error" -> false
         else -> !resolvedIsLoading && !resolvedIsRunning && current.playback.isPaused
     }
-    val fallbackStableTrackId = when {
-        status.jobId.isNullOrBlank() -> null
-        isLikelyJobId(status.jobId) -> buildJobStableTrackId(status.jobId)
-        else -> null
-    }
-    val resolvedStableTrackId = currentPlayback.lastStableTrackId ?: fallbackStableTrackId
-    val hasSourceIdentity = !currentPlayback.lastSourceProvider.isNullOrBlank() &&
-        !currentPlayback.lastSourceId.isNullOrBlank()
-    val resolvedSourceProvider = currentPlayback.lastSourceProvider
-    val resolvedSourceId = currentPlayback.lastSourceId
-    val resolvedYouTubeId = when {
-        !currentPlayback.lastYouTubeId.isNullOrBlank() -> currentPlayback.lastYouTubeId
-        hasSourceIdentity && currentPlayback.lastSourceProvider == SOURCE_PROVIDER_YOUTUBE ->
-            currentPlayback.lastSourceId
-        else -> null
-    }
-    val normalizedStableTrackId = when {
-        !resolvedStableTrackId.isNullOrBlank() -> resolvedStableTrackId
-        hasSourceIdentity && resolvedSourceProvider == SOURCE_PROVIDER_YOUTUBE -> {
-            buildSourceStableTrackId(SOURCE_PROVIDER_YOUTUBE, resolvedSourceId.orEmpty())
-        }
-        else -> null
-    }
+    val resolvedYouTubeId = currentPlayback.lastYouTubeId
     val resolvedDeleteEligible = computeDeleteEligibility(
         jobId = resolvedLastJobId,
         createdAtEpochMs = resolvedCreatedAtEpochMs
@@ -252,9 +227,6 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
             currentPlayback.castTotalBranches
         },
         jukeboxAudioMode = resolvedAudioMode,
-        lastSourceProvider = resolvedSourceProvider,
-        lastSourceId = resolvedSourceId,
-        lastStableTrackId = normalizedStableTrackId,
         lastYouTubeId = resolvedYouTubeId,
         lastTrackCreatedAtEpochMs = resolvedCreatedAtEpochMs,
         castPlaybackState = status.playbackState,
@@ -319,11 +291,6 @@ private fun parseCreatedAtEpochMs(createdAt: String?): Long? {
     return runCatching { OffsetDateTime.parse(raw).toInstant().toEpochMilli() }.getOrNull()
 }
 
-private fun isLikelyJobId(value: String): Boolean {
-    return value.length == CAST_JOB_ID_HEX_LENGTH &&
-        value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
-}
-
 private fun computeDeleteEligibility(jobId: String?, createdAtEpochMs: Long?): Boolean {
     if (jobId.isNullOrBlank() || createdAtEpochMs == null) {
         return false
@@ -332,5 +299,4 @@ private fun computeDeleteEligibility(jobId: String?, createdAtEpochMs: Long?): B
     return ageMs <= DELETE_ELIGIBILITY_WINDOW_MS
 }
 
-private const val CAST_JOB_ID_HEX_LENGTH = 32
 private const val DELETE_ELIGIBILITY_WINDOW_MS = 30L * 60L * 1000L

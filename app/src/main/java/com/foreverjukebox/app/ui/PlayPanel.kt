@@ -25,7 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
-import com.foreverjukebox.app.data.canonicalStableTrackId
+import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -36,9 +36,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val playback = state.playback
     val tuning = state.tuning
     val headerTitle = resolvePlaybackHeaderTitle(playback)
-    val favoriteTargetCanonical = canonicalStableTrackId(playback.stableTrackIdOrNull())
+    val favoriteTargetCanonical = canonicalTrackId(playback.shareTrackIdOrNull())
     val isFavorite = favoriteTargetCanonical != null && state.favorites.any { favorite ->
-        canonicalStableTrackId(favorite.uniqueSongId) == favoriteTargetCanonical
+        canonicalTrackId(favorite.uniqueSongId) == favoriteTargetCanonical
     }
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
@@ -67,7 +67,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         }
     }
     val onToggleFavorite: () -> Unit = {
-        if (playback.stableTrackIdOrNull() != null) {
+        if (playback.shareTrackIdOrNull() != null) {
             val result = viewModel.toggleFavoriteForCurrent()
             val message = when (result) {
                 FavoriteToggleResult.LimitReached -> "Maximum favorites reached (100)."

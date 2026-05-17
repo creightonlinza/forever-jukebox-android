@@ -9,9 +9,6 @@ import kotlinx.coroutines.launch
 
 internal data class PreservedCastTrack(
     val jobId: String,
-    val sourceProvider: String?,
-    val sourceId: String?,
-    val stableTrackId: String?,
     val youtubeId: String?,
     val title: String?,
     val artist: String?,
@@ -26,9 +23,6 @@ internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTr
     }
     return PreservedCastTrack(
         jobId = jobId,
-        sourceProvider = playback.lastSourceProvider,
-        sourceId = playback.lastSourceId,
-        stableTrackId = playback.stableTrackIdOrNull(),
         youtubeId = playback.lastYouTubeId,
         title = playback.trackTitle,
         artist = playback.trackArtist,
@@ -85,9 +79,7 @@ class CastSessionCoordinator(
             jobId = jobId,
             title = playback.trackTitle,
             artist = playback.trackArtist,
-            sourceProvider = playback.lastSourceProvider,
-            sourceId = playback.lastSourceId,
-            stableTrackId = playback.stableTrackIdOrNull(),
+            youtubeId = playback.lastYouTubeId,
             tuningParams = playbackCoordinator.buildTuningParamsString()
         )
     }
@@ -148,9 +140,6 @@ class CastSessionCoordinator(
             updateState {
                 it.copy(
                     playback = it.playback.copy(
-                        lastSourceProvider = preservedTrack.sourceProvider,
-                        lastSourceId = preservedTrack.sourceId,
-                        lastStableTrackId = preservedTrack.stableTrackId,
                         lastYouTubeId = preservedTrack.youtubeId,
                         lastJobId = preservedTrack.jobId,
                         trackTitle = preservedTrack.title,
@@ -162,9 +151,7 @@ class CastSessionCoordinator(
                 jobId = preservedTrack.jobId,
                 title = preservedTrack.title,
                 artist = preservedTrack.artist,
-                sourceProvider = preservedTrack.sourceProvider,
-                sourceId = preservedTrack.sourceId,
-                stableTrackId = preservedTrack.stableTrackId,
+                youtubeId = preservedTrack.youtubeId,
                 tuningParams = if (preservedTrack.audioMode == JukeboxAudioMode.Off) {
                     null
                 } else {
