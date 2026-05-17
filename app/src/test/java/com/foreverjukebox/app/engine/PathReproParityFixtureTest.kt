@@ -1,6 +1,5 @@
 package com.foreverjukebox.app.engine
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.doubleOrNull
@@ -12,7 +11,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
@@ -20,7 +18,7 @@ class PathReproParityFixtureTest {
 
     @Test
     fun reproducesIdenticalPathForIndependentSeededSessions() {
-        val root = loadFixtureRoot()
+        val root = loadEngineParityFixture("path-repro-cases.json")
         val cases = root["cases"]!!.jsonArray
 
         for (testCaseElement in cases) {
@@ -76,7 +74,7 @@ class PathReproParityFixtureTest {
 
     @Test
     fun engineAdvanceBeatMatchesSelectionLoopParity() {
-        val root = loadFixtureRoot()
+        val root = loadEngineParityFixture("path-repro-cases.json")
         val cases = root["cases"]!!.jsonArray
 
         for (testCaseElement in cases) {
@@ -299,21 +297,6 @@ class PathReproParityFixtureTest {
             "Deterministic" -> RandomMode.Deterministic
             else -> error("Unknown randomMode in fixture: $raw")
         }
-    }
-
-    private fun loadFixtureRoot() = run {
-        val userDir = File(System.getProperty("user.dir") ?: ".").absoluteFile
-        val candidates = mutableListOf<File>()
-        var cursor: File? = userDir
-        while (cursor != null) {
-            candidates.add(File(cursor, "test-fixtures/engine-parity/path-repro-cases.json"))
-            cursor = cursor.parentFile
-        }
-        val fixtureFile = candidates.firstOrNull { it.exists() } ?: error(
-            "Could not find path-repro-cases.json. Looked in: " +
-                candidates.joinToString(", ") { it.absolutePath }
-        )
-        Json.parseToJsonElement(fixtureFile.readText()).jsonObject
     }
 
     private fun makeAnalysisPayload(count: Int): kotlinx.serialization.json.JsonElement {

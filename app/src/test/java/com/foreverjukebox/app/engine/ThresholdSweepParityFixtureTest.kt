@@ -1,6 +1,5 @@
 package com.foreverjukebox.app.engine
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
@@ -9,13 +8,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import java.io.File
 
 class ThresholdSweepParityFixtureTest {
 
     @Test
     fun matchesExpectedAnchorSignatureAcrossThresholdSweeps() {
-        val root = loadFixtureRoot()
+        val root = loadEngineParityFixture("threshold-sweep-cases.json")
         val cases = root["cases"]!!.jsonArray
         for (testCaseElement in cases) {
             val testCase = testCaseElement.jsonObject
@@ -83,21 +81,6 @@ class ThresholdSweepParityFixtureTest {
                 )
             }
         }
-    }
-
-    private fun loadFixtureRoot() = run {
-        val userDir = File(System.getProperty("user.dir") ?: ".").absoluteFile
-        val candidates = mutableListOf<File>()
-        var cursor: File? = userDir
-        while (cursor != null) {
-            candidates.add(File(cursor, "test-fixtures/engine-parity/threshold-sweep-cases.json"))
-            cursor = cursor.parentFile
-        }
-        val fixtureFile = candidates.firstOrNull { it.exists() } ?: error(
-            "Could not find threshold-sweep-cases.json. Looked in: " +
-                candidates.joinToString(", ") { it.absolutePath }
-        )
-        Json.parseToJsonElement(fixtureFile.readText()).jsonObject
     }
 
     private fun defaultConfig(currentThreshold: Int, minLongBranch: Int): JukeboxConfig {

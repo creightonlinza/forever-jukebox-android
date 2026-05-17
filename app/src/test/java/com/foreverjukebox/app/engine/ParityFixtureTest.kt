@@ -1,6 +1,5 @@
 package com.foreverjukebox.app.engine
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
@@ -10,13 +9,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
-import java.io.File
 
 class ParityFixtureTest {
 
     @Test
     fun matchesExpectedAnchorSignaturesForSharedFixtureCases() {
-        val root = loadFixtureRoot()
+        val root = loadEngineParityFixture("anchor-cases.json")
         val cases = root["cases"]!!.jsonArray
         for (testCaseElement in cases) {
             val testCase = testCaseElement.jsonObject
@@ -97,21 +95,6 @@ class ParityFixtureTest {
                 jump.second
             )
         }
-    }
-
-    private fun loadFixtureRoot() = run {
-        val userDir = File(System.getProperty("user.dir") ?: ".").absoluteFile
-        val candidates = mutableListOf<File>()
-        var cursor: File? = userDir
-        while (cursor != null) {
-            candidates.add(File(cursor, "test-fixtures/engine-parity/anchor-cases.json"))
-            cursor = cursor.parentFile
-        }
-        val fixtureFile = candidates.firstOrNull { it.exists() } ?: error(
-            "Could not find anchor-cases.json. Looked in: " +
-                candidates.joinToString(", ") { it.absolutePath }
-        )
-        Json.parseToJsonElement(fixtureFile.readText()).jsonObject
     }
 
     private fun defaultConfig(
