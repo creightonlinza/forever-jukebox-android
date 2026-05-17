@@ -1100,6 +1100,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 resolvedTitle,
                 resolvedArtist
             )
+            if (response.status == "failed") {
+                playbackCoordinator.setAnalysisError(
+                    ErrorDisplay.format(
+                        raw = response.error,
+                        errorCode = response.errorCode,
+                        sourceProvider = response.sourceProvider ?: SOURCE_PROVIDER_YOUTUBE,
+                        fallback = "Loading failed."
+                    )
+                )
+                return@launchServerTrackLoadWithCache true
+            }
             val responseId = response.id ?: return@launchServerTrackLoadWithCache false
             playbackCoordinator.setAnalysisQueued(response.progress?.roundToInt(), response.message)
             playbackCoordinator.setLastJobId(responseId)
@@ -1295,6 +1306,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 title = resolvedTitle,
                 artist = resolvedArtist
             )
+            if (started.status == "failed") {
+                playbackCoordinator.setAnalysisError(
+                    ErrorDisplay.format(
+                        raw = started.error,
+                        errorCode = started.errorCode,
+                        sourceProvider = started.sourceProvider ?: provider,
+                        fallback = "Loading failed."
+                    )
+                )
+                return@launchServerTrackLoadWithCache true
+            }
             val responseId = started.id ?: return@launchServerTrackLoadWithCache false
             playbackCoordinator.setAnalysisQueued(started.progress?.roundToInt(), started.message)
             playbackCoordinator.setLastJobId(responseId)
@@ -1746,6 +1768,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 title = title,
                 artist = artist
             )
+            if (started.status == "failed") {
+                showToast(
+                    ErrorDisplay.format(
+                        raw = started.error,
+                        errorCode = started.errorCode,
+                        sourceProvider = started.sourceProvider ?: SOURCE_PROVIDER_YOUTUBE,
+                        fallback = "Unable to queue this track for casting."
+                    )
+                )
+                return null
+            }
             val resolvedJobId = started.id?.trim()?.ifBlank { null }
             resolvedJobId
         } catch (cancel: CancellationException) {

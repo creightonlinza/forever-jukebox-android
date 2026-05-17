@@ -32,7 +32,14 @@ class ServerTrackLoadCoordinator(
         playbackCoordinator.updateDeleteEligibility(response)
 
         if (response.status == "failed") {
-            playbackCoordinator.setAnalysisError(response.error ?: "Loading failed.")
+            playbackCoordinator.setAnalysisError(
+                ErrorDisplay.format(
+                    raw = response.error,
+                    errorCode = response.errorCode,
+                    sourceProvider = response.sourceProvider,
+                    fallback = "Loading failed."
+                )
+            )
             return true
         }
 

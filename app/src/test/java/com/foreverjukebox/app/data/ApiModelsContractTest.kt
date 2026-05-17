@@ -36,6 +36,25 @@ class ApiModelsContractTest {
     }
 
     @Test
+    fun analysisStartResponseDecodesFailedDisplayFields() {
+        val payload = """
+            {
+              "status": "failed",
+              "source_provider": "youtube",
+              "error": "Unable to download video data.",
+              "error_code": "download_unavailable"
+            }
+        """.trimIndent()
+
+        val response = json.decodeFromString(AnalysisStartResponse.serializer(), payload)
+
+        assertEquals("failed", response.status)
+        assertEquals("youtube", response.sourceProvider)
+        assertEquals("Unable to download video data.", response.error)
+        assertEquals("download_unavailable", response.errorCode)
+    }
+
+    @Test
     fun topSongItemBuildsTrackIdFromYoutubeOrJobFallback() {
         val sourceBacked = TopSongItem(
             id = "job_1",

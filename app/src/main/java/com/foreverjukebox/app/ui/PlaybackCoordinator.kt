@@ -772,7 +772,14 @@ class PlaybackCoordinator(
             updateDeleteEligibility(response)
             when {
                 response.status == "failed" -> {
-                    setAnalysisError(response.error ?: "Loading failed.")
+                    setAnalysisError(
+                        ErrorDisplay.format(
+                            raw = response.error,
+                            errorCode = response.errorCode,
+                            sourceProvider = response.sourceProvider,
+                            fallback = "Loading failed."
+                        )
+                    )
                     return
                 }
                 isAnalysisInProgressStatus(response.status) -> {
