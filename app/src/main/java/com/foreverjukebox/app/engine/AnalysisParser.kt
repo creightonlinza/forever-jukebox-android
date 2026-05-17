@@ -64,12 +64,28 @@ private fun parseSegments(element: JsonElement?, path: String): MutableList<Segm
     }.toMutableList()
 }
 
+private fun stringifyTrackMeta(element: JsonElement?): String? {
+    return when (element) {
+        null -> null
+        is JsonPrimitive -> element.content
+        else -> element.toString()
+    }
+}
+
 private fun parseTrackMeta(root: JsonObject): TrackMeta? {
     val track = root["track"] as? JsonObject ?: return null
     val duration = track["duration"]?.let { requireNumber(it, "track.duration") }
     val tempo = track["tempo"]?.let { requireNumber(it, "track.tempo") }
     val timeSignature = track["time_signature"]?.let { requireNumber(it, "track.time_signature") }
-    return TrackMeta(duration = duration, tempo = tempo, timeSignature = timeSignature)
+    val title = stringifyTrackMeta(track["title"])
+    val artist = stringifyTrackMeta(track["artist"])
+    return TrackMeta(
+        title = title,
+        artist = artist,
+        duration = duration,
+        tempo = tempo,
+        timeSignature = timeSignature
+    )
 }
 
 private fun resolveAnalysisRoot(data: JsonObject): JsonObject {

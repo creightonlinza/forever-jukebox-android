@@ -1,6 +1,8 @@
 package com.foreverjukebox.app.engine
 
 data class TrackMeta(
+    val title: String? = null,
+    val artist: String? = null,
     val duration: Double? = null,
     val tempo: Double? = null,
     val timeSignature: Double? = null

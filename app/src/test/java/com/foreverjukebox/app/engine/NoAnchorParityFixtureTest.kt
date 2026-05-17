@@ -1,6 +1,5 @@
 package com.foreverjukebox.app.engine
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -8,13 +7,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
-import java.io.File
 
 class NoAnchorParityFixtureTest {
 
     @Test
     fun usesNoForcedAnchorWhenNoEligibleAnchorSourceExists() {
-        val root = loadFixtureRoot()
+        val root = loadEngineParityFixture("no-anchor-cases.json")
         val cases = root["cases"]!!.jsonArray
         for (testCaseElement in cases) {
             val testCase = testCaseElement.jsonObject
@@ -64,21 +62,6 @@ class NoAnchorParityFixtureTest {
             assertEquals("$id: no-anchor next index", 0, forcedSelection.first)
             assertFalse("$id: no-anchor jumped", forcedSelection.second)
         }
-    }
-
-    private fun loadFixtureRoot() = run {
-        val userDir = File(System.getProperty("user.dir") ?: ".").absoluteFile
-        val candidates = mutableListOf<File>()
-        var cursor: File? = userDir
-        while (cursor != null) {
-            candidates.add(File(cursor, "test-fixtures/engine-parity/no-anchor-cases.json"))
-            cursor = cursor.parentFile
-        }
-        val fixtureFile = candidates.firstOrNull { it.exists() } ?: error(
-            "Could not find no-anchor-cases.json. Looked in: " +
-                candidates.joinToString(", ") { it.absolutePath }
-        )
-        Json.parseToJsonElement(fixtureFile.readText()).jsonObject
     }
 
     private fun defaultConfig(currentThreshold: Int, minLongBranch: Int): JukeboxConfig {
