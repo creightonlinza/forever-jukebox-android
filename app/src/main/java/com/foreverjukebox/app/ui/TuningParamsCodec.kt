@@ -14,13 +14,12 @@ data class ParsedTuningParams(
     val justLongBranches: Boolean?,
     val removeSequentialBranches: Boolean?,
     val deletedEdgeIds: List<Int>,
+    val anchorBeat: Int?,
     val audioMode: JukeboxAudioMode?
 )
 
 object TuningParamsCodec {
-    private val knownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ah", "am")
-    private val castKnownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ah", "am")
-
+    private val knownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ab", "ah", "am")
     fun parse(raw: String?, minThreshold: Int = 0): ParsedTuningParams? {
         if (raw.isNullOrBlank()) {
             return null
@@ -52,6 +51,9 @@ object TuningParamsCodec {
             ?.split(",")
             ?.mapNotNull { it.toIntOrNull()?.takeIf { id -> id >= 0 } }
             ?: emptyList()
+        val anchorBeat = params.firstValue("ab")
+            ?.toIntOrNull()
+            ?.takeIf { it >= 0 }
 
         return ParsedTuningParams(
             threshold = threshold,
@@ -63,37 +65,59 @@ object TuningParamsCodec {
             justLongBranches = parseStandardBoolean(params.firstValue("lg")),
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
             deletedEdgeIds = deletedEdgeIds,
+            anchorBeat = anchorBeat,
             audioMode = audioMode
         )
     }
 
-    fun buildCastLoadPayload(raw: String?, highlightAnchorBranch: Boolean): String? {
-        if (raw.isNullOrBlank()) {
-            return if (highlightAnchorBranch) "ah=1" else null
+    fun buildCastLoadPayload(
+        raw: String?,
+        highlightAnchorBranch: Boolean,
+        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
+    ): String? {
+        val params = if (raw.isNullOrBlank()) {
+            linkedMapOf()
+        } else {
+            parseQuery(raw)
         }
-        val params = parseQuery(raw).toMutableMap()
         val sanitized = linkedMapOf<String, String>()
         val hasHighlightParam = params.containsKey("ah")
         for ((name, values) in params) {
-            if (name !in castKnownKeys) {
-                continue
-            }
             val value = values.firstOrNull() ?: continue
-            if (name == "thresh") {
-                val threshold = value.toIntOrNull()
-                if (threshold == null || threshold < 2) {
-                    continue
+            when (name) {
+                "jb", "lg" -> parseStandardBoolean(value)?.let {
+                    sanitized[name] = if (it) "1" else "0"
+                }
+                "ah" -> if (parseStandardBoolean(value) != null) {
+                    sanitized[name] = if (highlightAnchorBranch) "1" else "0"
+                }
+                "sq" -> parseRemoveSequential(value)?.let {
+                    sanitized[name] = if (it) "0" else "1"
+                }
+                "thresh" -> value.toIntOrNull()
+                    ?.takeIf { it >= 2 }
+                    ?.let { sanitized[name] = it.toString() }
+                "bp" -> sanitizeTriplet(value)?.let {
+                    sanitized[name] = it
+                }
+                "d" -> sanitizeIdList(value)?.let {
+                    sanitized[name] = it
+                }
+                "ab" -> value.toIntOrNull()
+                    ?.takeIf { it >= 0 }
+                    ?.let { sanitized[name] = it.toString() }
+                "am" -> JukeboxAudioMode.fromWireValue(value)?.let {
+                    sanitized[name] = it.wireValue
                 }
             }
-            if (name == "am" && JukeboxAudioMode.fromWireValue(value) == null) {
-                continue
-            }
-            sanitized[name] = value
         }
         if (highlightAnchorBranch || hasHighlightParam) {
             sanitized["ah"] = if (highlightAnchorBranch) "1" else "0"
         }
-        return encodeQuery(sanitized).ifBlank { null }
+        if (!sanitized.containsKey("am") && audioMode != JukeboxAudioMode.Off) {
+            sanitized["am"] = audioMode.wireValue
+        }
+        return sanitized.entries.joinToString("&") { (key, value) -> "$key=$value" }.ifBlank { null }
     }
 
     fun buildFromTuningState(
@@ -113,6 +137,10 @@ object TuningParamsCodec {
             params.add("am=${audioMode.wireValue}")
         }
         return params.joinToString("&")
+    }
+
+    fun buildHighlightParam(enabled: Boolean): String {
+        return "ah=${if (enabled) 1 else 0}"
     }
 
     fun buildAudioModeParam(audioMode: JukeboxAudioMode): String {
@@ -169,6 +197,23 @@ object TuningParamsCodec {
             "1", "false" -> false
             else -> null
         }
+    }
+
+    private fun sanitizeTriplet(raw: String): String? {
+        val values = raw.split(",")
+        if (values.size != 3) {
+            return null
+        }
+        return values
+            .map { it.toIntOrNull()?.coerceIn(0, 100) ?: return null }
+            .joinToString(",")
+    }
+
+    private fun sanitizeIdList(raw: String): String? {
+        return raw.split(",")
+            .mapNotNull { it.toIntOrNull()?.takeIf { id -> id >= 0 } }
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(",")
     }
 
     private fun parseQuery(raw: String): LinkedHashMap<String, MutableList<String>> {
