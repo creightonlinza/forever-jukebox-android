@@ -236,6 +236,7 @@ class CastStatusReducerTest {
                 justBackwards = true,
                 removeSequentialBranches = true,
                 threshold = 31,
+                computedThreshold = 29,
                 minPercent = 12,
                 maxPercent = 45,
                 deltaPercent = 20,
@@ -249,6 +250,7 @@ class CastStatusReducerTest {
         assertEquals(JukeboxAudioMode.Daycore, next.playback.jukeboxAudioMode)
         assertEquals("Old Song (daycore) — New Artist", next.playback.playTitle)
         assertEquals(31, next.tuning.threshold)
+        assertEquals(29, next.tuning.computedThreshold)
         assertEquals(12, next.tuning.minProb)
         assertEquals(45, next.tuning.maxProb)
         assertEquals(20, next.tuning.ramp)

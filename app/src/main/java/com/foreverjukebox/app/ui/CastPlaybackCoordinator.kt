@@ -55,7 +55,8 @@ class CastPlaybackCoordinator(
         }
         val resolvedCastTuningParams = TuningParamsCodec.buildCastLoadPayload(
             raw = tuningParams,
-            highlightAnchorBranch = currentState.tuning.highlightAnchorBranch
+            highlightAnchorBranch = currentState.tuning.highlightAnchorBranch,
+            audioMode = currentState.playback.jukeboxAudioMode
         )
         val normalizedJobId = jobId.trim()
         if (normalizedJobId.isBlank()) {

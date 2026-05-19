@@ -9,15 +9,35 @@ import kotlinx.coroutines.withContext
 
 internal data class CastTuningUpdate(
     val nextTuning: TuningState,
-    val castParams: String
+    val castParams: String?
 )
 
-internal fun buildCastTuningResetParams(highlightAnchorBranch: Boolean): String? {
-    return if (highlightAnchorBranch) "ah=1" else null
+internal fun buildCastTuningResetParams(
+    defaultConfig: JukeboxConfig,
+    randomBranchDeltaPercentScale: Double,
+    resetThreshold: Int? = null,
+    audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
+): String {
+    val minProb = (defaultConfig.minRandomBranchChance * 100.0).roundToInt().coerceIn(0, 100)
+    val maxProb = (defaultConfig.maxRandomBranchChance * 100.0).roundToInt().coerceIn(0, 100)
+    val ramp = (defaultConfig.randomBranchChanceDelta * randomBranchDeltaPercentScale)
+        .roundToInt()
+        .coerceIn(0, 100)
+    val threshold = resetThreshold ?: defaultConfig.currentThreshold
+    return listOf(
+        "jb=${if (defaultConfig.justBackwards) 1 else 0}",
+        "lg=${if (defaultConfig.justLongBranches) 1 else 0}",
+        "sq=${if (defaultConfig.removeSequentialBranches) 0 else 1}",
+        "thresh=$threshold",
+        "bp=$minProb,$maxProb,$ramp",
+        "d=",
+        TuningParamsCodec.buildAudioModeParam(audioMode)
+    ).joinToString("&")
 }
 
 internal fun buildCastTuningUpdate(
     currentTuning: TuningState,
+    currentAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
     threshold: Int,
     minProb: Double,
     maxProb: Double,
@@ -39,8 +59,44 @@ internal fun buildCastTuningUpdate(
         justLong = justLongBranches,
         removeSequential = removeSequentialBranches
     )
-    val castParams = TuningParamsCodec.buildFromTuningState(nextTuning, audioMode)
+    val params = mutableListOf<String>()
+    if (currentTuning.justBackwards != nextTuning.justBackwards) {
+        params.add("jb=${if (nextTuning.justBackwards) 1 else 0}")
+    }
+    if (currentTuning.justLong != nextTuning.justLong) {
+        params.add("lg=${if (nextTuning.justLong) 1 else 0}")
+    }
+    if (currentTuning.removeSequential != nextTuning.removeSequential) {
+        params.add("sq=${if (nextTuning.removeSequential) 0 else 1}")
+    }
+    if (currentTuning.threshold != nextTuning.threshold) {
+        params.add("thresh=${nextTuning.threshold}")
+    }
+    if (currentTuning.branchProbabilityFields() != nextTuning.branchProbabilityFields()) {
+        params.add("bp=${nextTuning.minProb},${nextTuning.maxProb},${nextTuning.ramp}")
+    }
+    if (currentTuning.highlightAnchorBranch != nextTuning.highlightAnchorBranch) {
+        params.add(TuningParamsCodec.buildHighlightParam(nextTuning.highlightAnchorBranch))
+    }
+    if (currentAudioMode != audioMode) {
+        params.add(TuningParamsCodec.buildAudioModeParam(audioMode))
+    }
+    val castParams = params.joinToString("&").ifBlank { null }
     return CastTuningUpdate(nextTuning = nextTuning, castParams = castParams)
+}
+
+private data class CastBranchProbabilityFields(
+    val minProb: Int,
+    val maxProb: Int,
+    val ramp: Int
+)
+
+private fun TuningState.branchProbabilityFields(): CastBranchProbabilityFields {
+    return CastBranchProbabilityFields(
+        minProb = minProb,
+        maxProb = maxProb,
+        ramp = ramp
+    )
 }
 
 class TuningCoordinator(
@@ -109,8 +165,10 @@ class TuningCoordinator(
         removeSequentialBranches: Boolean,
         audioMode: JukeboxAudioMode
     ) {
+        val currentState = getState()
         val castUpdate = buildCastTuningUpdate(
-            currentTuning = getState().tuning,
+            currentTuning = currentState.tuning,
+            currentAudioMode = currentState.playback.jukeboxAudioMode,
             threshold = threshold,
             minProb = minProb,
             maxProb = maxProb,
@@ -123,7 +181,9 @@ class TuningCoordinator(
             audioMode = audioMode
         )
         preferences.setHighlightAnchorBranch(highlightAnchorBranch)
-        castPlaybackCoordinator.sendCastTuningParams(castUpdate.castParams)
+        if (castUpdate.castParams != null) {
+            castPlaybackCoordinator.sendCastTuningParams(castUpdate.castParams)
+        }
         castPlaybackCoordinator.requestCastStatus()
     }
 
@@ -166,8 +226,14 @@ class TuningCoordinator(
     }
 
     private suspend fun resetCastTuningDefaults() {
-        val preservedHighlight = getState().tuning.highlightAnchorBranch
-        castPlaybackCoordinator.sendCastTuningParams(buildCastTuningResetParams(preservedHighlight))
+        val currentState = getState()
+        castPlaybackCoordinator.sendCastTuningParams(
+            buildCastTuningResetParams(
+                defaultConfig = defaultConfig,
+                randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
+                resetThreshold = currentState.tuning.computedThreshold
+            )
+        )
         castPlaybackCoordinator.requestCastStatus()
     }
 

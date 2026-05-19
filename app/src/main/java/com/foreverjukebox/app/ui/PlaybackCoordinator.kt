@@ -646,6 +646,7 @@ class PlaybackCoordinator(
             state.copy(
                 tuning = state.tuning.copy(
                     threshold = thresholdValue,
+                    computedThreshold = null,
                     minProb = (config.minRandomBranchChance * 100).toInt(),
                     maxProb = (config.maxRandomBranchChance * 100).toInt(),
                     ramp = (config.randomBranchChanceDelta * RANDOM_BRANCH_DELTA_PERCENT_SCALE).toInt(),

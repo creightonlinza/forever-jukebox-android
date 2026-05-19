@@ -1,21 +1,24 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.JukeboxConfig
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TuningCoordinatorCastPolicyTest {
 
     @Test
-    fun buildCastTuningResetParamsIsEmptyExceptEnabledHighlight() {
-        val enabledResetParams = buildCastTuningResetParams(highlightAnchorBranch = true)
-        val disabledResetParams = buildCastTuningResetParams(highlightAnchorBranch = false)
+    fun buildCastTuningResetParamsResetsGraphAndAudioButOmitsHighlight() {
+        val params = buildCastTuningResetParams(
+            defaultConfig = JukeboxConfig(),
+            randomBranchDeltaPercentScale = 500.0,
+            resetThreshold = 34
+        )
 
-        assertEquals("ah=1", enabledResetParams)
-        assertEquals(null, disabledResetParams)
+        assertEquals("jb=0&lg=0&sq=1&thresh=34&bp=18,50,10&d=&am=off", params)
     }
 
     @Test
-    fun buildCastTuningUpdateUsesFullPayloadWhenOnlyHighlightChanges() {
+    fun buildCastTuningUpdateUsesHighlightOnlyPayloadWhenOnlyHighlightChanges() {
         val current = TuningState(
             threshold = 22,
             minProb = 10,
@@ -41,11 +44,57 @@ class TuningCoordinatorCastPolicyTest {
         )
 
         assertEquals(current.copy(highlightAnchorBranch = true), update.nextTuning)
-        assertEquals(TuningParamsCodec.buildFromTuningState(update.nextTuning), update.castParams)
+        assertEquals("ah=1", update.castParams)
     }
 
     @Test
-    fun buildCastTuningUpdateUsesFullPayloadWhenThresholdChanges() {
+    fun buildCastTuningUpdateUsesAudioOnlyPayloadWhenOnlyAudioModeChanges() {
+        val current = TuningState(
+            threshold = 22,
+            minProb = 10,
+            maxProb = 40,
+            ramp = 25,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            justLong = false,
+            removeSequential = true
+        )
+
+        val enabled = buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Off,
+            threshold = 22,
+            minProb = 0.10,
+            maxProb = 0.40,
+            ramp = 0.05,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            justLongBranches = false,
+            removeSequentialBranches = true,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Lofi
+        )
+        val disabled = buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Lofi,
+            threshold = 22,
+            minProb = 0.10,
+            maxProb = 0.40,
+            ramp = 0.05,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            justLongBranches = false,
+            removeSequentialBranches = true,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Off
+        )
+
+        assertEquals("am=lofi", enabled.castParams)
+        assertEquals("am=off", disabled.castParams)
+    }
+
+    @Test
+    fun buildCastTuningUpdateUsesChangedThresholdOnly() {
         val current = TuningState(
             threshold = 22,
             minProb = 10,
@@ -59,6 +108,7 @@ class TuningCoordinatorCastPolicyTest {
 
         val update = buildCastTuningUpdate(
             currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Lofi,
             threshold = 9,
             minProb = 0.10,
             maxProb = 0.40,
@@ -67,14 +117,15 @@ class TuningCoordinatorCastPolicyTest {
             justBackwards = true,
             justLongBranches = false,
             removeSequentialBranches = true,
-            randomBranchDeltaPercentScale = 500.0
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Lofi
         )
 
-        assertEquals(TuningParamsCodec.buildFromTuningState(update.nextTuning), update.castParams)
+        assertEquals("thresh=9", update.castParams)
     }
 
     @Test
-    fun buildCastTuningUpdateKeepsAudioModeInPayload() {
+    fun buildCastTuningUpdateUsesOnlyChangedTuningAndAudioKeys() {
         val current = TuningState(
             threshold = 22,
             minProb = 10,
@@ -88,10 +139,11 @@ class TuningCoordinatorCastPolicyTest {
 
         val update = buildCastTuningUpdate(
             currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Off,
             threshold = 22,
             minProb = 0.10,
             maxProb = 0.40,
-            ramp = 0.05,
+            ramp = 0.10,
             highlightAnchorBranch = true,
             justBackwards = true,
             justLongBranches = false,
@@ -100,13 +152,7 @@ class TuningCoordinatorCastPolicyTest {
             audioMode = JukeboxAudioMode.Vaporwave
         )
 
-        assertEquals(
-            TuningParamsCodec.buildFromTuningState(
-                update.nextTuning,
-                audioMode = JukeboxAudioMode.Vaporwave
-            ),
-            update.castParams
-        )
+        assertEquals("bp=10,40,50&ah=1&am=vaporwave", update.castParams)
     }
 
     @Test

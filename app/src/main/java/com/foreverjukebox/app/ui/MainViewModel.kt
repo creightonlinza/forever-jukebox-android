@@ -2056,10 +2056,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (current.isCasting) {
             castPlaybackCoordinator.sendCastTuningParams(
-                TuningParamsCodec.buildFromTuningState(
-                    tuning = state.value.tuning,
-                    audioMode = mode
-                )
+                TuningParamsCodec.buildAudioModeParam(mode)
             )
             castPlaybackCoordinator.requestCastStatus()
             return

@@ -257,7 +257,8 @@ private fun resolveCastTuningState(
 ): TuningState {
     if (tuning == null) return current
     return current.copy(
-        threshold = tuning.threshold ?: current.threshold,
+        threshold = tuning.threshold ?: tuning.computedThreshold ?: current.threshold,
+        computedThreshold = tuning.computedThreshold,
         minProb = tuning.branchProbability.minPercent,
         maxProb = tuning.branchProbability.maxPercent,
         ramp = tuning.branchProbability.deltaPercent,
