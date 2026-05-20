@@ -26,6 +26,7 @@ private class PlaybackControllerStopControls(
 }
 
 internal interface AutocanonizerTransportControls {
+    fun requestAudioFocus(): Boolean
     fun resetVisualization()
     fun startAtIndex(index: Int): Boolean
     fun startExternalPlayback(resetTimers: Boolean)
@@ -34,6 +35,10 @@ internal interface AutocanonizerTransportControls {
 private class PlaybackControllerAutocanonizerControls(
     private val controller: PlaybackController
 ) : AutocanonizerTransportControls {
+    override fun requestAudioFocus(): Boolean {
+        return controller.requestAudioFocusForLocalPlayback()
+    }
+
     override fun resetVisualization() {
         controller.autocanonizer.resetVisualization()
     }
@@ -85,6 +90,9 @@ internal fun startAutocanonizerTransport(
     index: Int,
     resetTimers: Boolean
 ): Boolean {
+    if (!controls.requestAudioFocus()) {
+        return false
+    }
     controls.resetVisualization()
     val started = controls.startAtIndex(index)
     if (!started) {

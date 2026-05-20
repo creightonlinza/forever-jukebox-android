@@ -20,6 +20,9 @@ constexpr float kBiquadQ = 0.70710678f;
 constexpr double kPanRadiansPerSecond = 0.42;
 constexpr double kJumpFrameEpsilon = 2.0;
 constexpr double kMaxLateJumpFrames = 8.0;
+constexpr float kNormalDuckingVolume = 1.0f;
+constexpr float kDuckedVolume = 0.1f;
+constexpr float kDuckingRampSpeed = 0.0002f;
 
 enum class AudioMode {
     Off = 0,
@@ -293,6 +296,10 @@ public:
         mGain.store(std::clamp(gain, 0.0f, 1.0f));
     }
 
+    void setDucking(bool active) {
+        mDuckingTargetVolume.store(active ? kDuckedVolume : kNormalDuckingVolume);
+    }
+
     void setJukeboxAudioMode(int32_t mode) {
         mAudioMode.store(std::clamp<int32_t>(mode, 0, 5));
     }
@@ -454,6 +461,7 @@ private:
         const int64_t totalFrames = mTotalFrames;
         for (int32_t frame = 0; frame < frames; frame += 1) {
             sourceFrame = applyScheduledJump(sourceFrame);
+            const float outputGain = mGain.load() * nextDuckingVolume();
             if (sourceFrame >= static_cast<double>(totalFrames) || mAudioData.empty()) {
                 std::fill(output, output + channels, 0);
                 output += channels;
@@ -472,7 +480,7 @@ private:
                 const float s1 = static_cast<float>(mAudioData[offset1]) / 32768.0f;
                 float sample = s0 + (s1 - s0) * frac;
                 sample = processDspSample(sample, channel, settings);
-                output[channel] = floatToInt16(sample * mGain.load());
+                output[channel] = floatToInt16(sample * outputGain);
             }
             applyPan(output, channels, settings);
             output += channels;
@@ -480,6 +488,12 @@ private:
             mReverb.advanceFrame();
         }
         return sourceFrame;
+    }
+
+    float nextDuckingVolume() {
+        const float target = mDuckingTargetVolume.load();
+        mCurrentDuckingVolume += (target - mCurrentDuckingVolume) * kDuckingRampSpeed;
+        return mCurrentDuckingVolume;
     }
 
     double applyScheduledJump(double sourceFrame) {
@@ -583,6 +597,8 @@ private:
     std::atomic<bool> mHasJump{false};
     std::atomic<bool> mIsPlaying{false};
     std::atomic<float> mGain{1.0f};
+    std::atomic<float> mDuckingTargetVolume{kNormalDuckingVolume};
+    float mCurrentDuckingVolume = kNormalDuckingVolume;
     std::atomic<int32_t> mAudioMode{0};
     int32_t mConfiguredAudioMode = -1;
     AudioModeSettings mConfiguredSettings;
@@ -698,6 +714,13 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSetGain(
     JNIEnv*, jobject, jlong handle, jfloat gain) {
     auto* player = toPlayer(handle);
     if (player) player->setGain(gain);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSetDucking(
+    JNIEnv*, jobject, jlong handle, jboolean active) {
+    auto* player = toPlayer(handle);
+    if (player) player->setDucking(active == JNI_TRUE);
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -1634,7 +1634,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!ensureAutocanonizerReady(current)) {
                 return@launch
             }
-            val resumed = controller.autocanonizer.resume()
+            val resumed = controller.requestAudioFocusForLocalPlayback() &&
+                controller.autocanonizer.resume()
             if (!resumed) {
                 val fallbackIndex = current.currentBeatIndex.takeIf { it >= 0 } ?: 0
                 val started = startAutocanonizerTransport(

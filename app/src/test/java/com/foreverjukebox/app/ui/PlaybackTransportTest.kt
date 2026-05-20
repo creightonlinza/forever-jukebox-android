@@ -29,6 +29,7 @@ class PlaybackTransportTest {
         )
 
         assertTrue(started)
+        assertEquals(1, controls.requestFocusCalls)
         assertEquals(1, controls.resetCalls)
         assertEquals(1, controls.startCalls)
         assertEquals(12, controls.lastStartIndex)
@@ -47,9 +48,27 @@ class PlaybackTransportTest {
         )
 
         assertFalse(started)
+        assertEquals(1, controls.requestFocusCalls)
         assertEquals(1, controls.resetCalls)
         assertEquals(1, controls.startCalls)
         assertEquals(7, controls.lastStartIndex)
+        assertEquals(0, controls.startExternalCalls)
+    }
+
+    @Test
+    fun startAutocanonizerTransportSkipsStartWhenFocusDenied() {
+        val controls = FakeAutocanonizerControls(startResult = true, focusResult = false)
+
+        val started = startAutocanonizerTransport(
+            controls = controls,
+            index = 7,
+            resetTimers = false
+        )
+
+        assertFalse(started)
+        assertEquals(1, controls.requestFocusCalls)
+        assertEquals(0, controls.resetCalls)
+        assertEquals(0, controls.startCalls)
         assertEquals(0, controls.startExternalCalls)
     }
 
@@ -154,13 +173,20 @@ private class FakeStopControls : TransportStopControls {
 }
 
 private class FakeAutocanonizerControls(
-    private val startResult: Boolean
+    private val startResult: Boolean,
+    private val focusResult: Boolean = true
 ) : AutocanonizerTransportControls {
+    var requestFocusCalls = 0
     var resetCalls = 0
     var startCalls = 0
     var startExternalCalls = 0
     var lastStartIndex: Int? = null
     var lastResetTimers: Boolean? = null
+
+    override fun requestAudioFocus(): Boolean {
+        requestFocusCalls += 1
+        return focusResult
+    }
 
     override fun resetVisualization() {
         resetCalls += 1
