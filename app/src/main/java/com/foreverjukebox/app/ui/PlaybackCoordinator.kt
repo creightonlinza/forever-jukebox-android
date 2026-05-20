@@ -406,7 +406,7 @@ class PlaybackCoordinator(
         if (jobId != null) {
             cacheAnalysis(jobId, response)
         }
-        ForegroundPlaybackService.update(application)
+        updateForegroundPlaybackService()
         return true
     }
 
@@ -415,7 +415,34 @@ class PlaybackCoordinator(
         val now = SystemClock.elapsedRealtime()
         if (now - lastNotificationUpdateMs < 500L) return
         lastNotificationUpdateMs = now
-        ForegroundPlaybackService.update(application)
+        updateForegroundPlaybackService()
+    }
+
+    private fun playlistNotificationSkipAvailability(): Pair<Boolean, Boolean> {
+        val current = getState()
+        val showPlaylistControls =
+            current.playback.playMode == PlaybackMode.Jukebox &&
+                shouldShowPlaylistControls(current.playlist)
+        return (showPlaylistControls && current.playlist.canSkipPrevious()) to
+            (showPlaylistControls && current.playlist.canSkipNext())
+    }
+
+    private fun startForegroundPlaybackService() {
+        val (canSkipPrevious, canSkipNext) = playlistNotificationSkipAvailability()
+        ForegroundPlaybackService.start(
+            context = application,
+            canSkipPrevious = canSkipPrevious,
+            canSkipNext = canSkipNext
+        )
+    }
+
+    private fun updateForegroundPlaybackService() {
+        val (canSkipPrevious, canSkipNext) = playlistNotificationSkipAvailability()
+        ForegroundPlaybackService.update(
+            context = application,
+            canSkipPrevious = canSkipPrevious,
+            canSkipNext = canSkipNext
+        )
     }
 
     fun resetForNewTrack() {
@@ -736,7 +763,7 @@ class PlaybackCoordinator(
             playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading
         if (shouldKeepAlive) {
             if (!loadingKeepAliveActive) {
-                ForegroundPlaybackService.start(application)
+                startForegroundPlaybackService()
                 loadingKeepAliveActive = true
             }
             return

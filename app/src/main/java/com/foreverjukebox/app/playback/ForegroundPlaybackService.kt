@@ -75,6 +75,41 @@ internal fun sleepTimerExpiryBroadcastActions(): List<String> {
     )
 }
 
+internal fun mediaSessionPlaybackActions(): Long {
+    return PlaybackStateCompat.ACTION_PLAY or
+        PlaybackStateCompat.ACTION_PAUSE or
+        PlaybackStateCompat.ACTION_STOP or
+        PlaybackStateCompat.ACTION_PLAY_PAUSE or
+        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+        PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+}
+
+internal enum class PlaybackNotificationActionSlot {
+    Previous,
+    Toggle,
+    Next
+}
+
+internal fun playbackNotificationActionSlots(
+    canSkipPrevious: Boolean,
+    canSkipNext: Boolean
+): List<PlaybackNotificationActionSlot> {
+    val actions = mutableListOf<PlaybackNotificationActionSlot>()
+    if (canSkipPrevious) {
+        actions += PlaybackNotificationActionSlot.Previous
+    }
+    actions += PlaybackNotificationActionSlot.Toggle
+    if (canSkipNext) {
+        actions += PlaybackNotificationActionSlot.Next
+    }
+    return actions
+}
+
+internal fun compactActionIndices(actionCount: Int): IntArray {
+    val visibleCount = actionCount.coerceIn(0, 3)
+    return IntArray(visibleCount) { it }
+}
+
 private object PlaybackServiceConstants {
     const val CHANNEL_ID = "fj_playback"
     const val NOTIFICATION_ID = 2001
@@ -88,12 +123,16 @@ private object PlaybackServiceConstants {
     const val ACTION_SLEEP_TIMER_EXPIRED = "com.foreverjukebox.app.playback.SLEEP_TIMER_EXPIRED"
     const val ACTION_PLAYBACK_STATE_CHANGED =
         "com.foreverjukebox.app.playback.PLAYBACK_STATE_CHANGED"
+    const val ACTION_PLAYLIST_PREVIOUS = "com.foreverjukebox.app.playback.PLAYLIST_PREVIOUS"
+    const val ACTION_PLAYLIST_NEXT = "com.foreverjukebox.app.playback.PLAYLIST_NEXT"
     const val ACTION_CLOSE_FULLSCREEN = "com.foreverjukebox.app.playback.CLOSE_FULLSCREEN"
     const val EXTRA_IS_CASTING = "com.foreverjukebox.app.playback.extra.IS_CASTING"
     const val EXTRA_CAST_IS_PLAYING = "com.foreverjukebox.app.playback.extra.CAST_IS_PLAYING"
     const val EXTRA_TRACK_TITLE = "com.foreverjukebox.app.playback.extra.TRACK_TITLE"
     const val EXTRA_TRACK_ARTIST = "com.foreverjukebox.app.playback.extra.TRACK_ARTIST"
     const val EXTRA_CAST_DEVICE_NAME = "com.foreverjukebox.app.playback.extra.CAST_DEVICE_NAME"
+    const val EXTRA_CAN_SKIP_PREVIOUS = "com.foreverjukebox.app.playback.extra.CAN_SKIP_PREVIOUS"
+    const val EXTRA_CAN_SKIP_NEXT = "com.foreverjukebox.app.playback.extra.CAN_SKIP_NEXT"
     const val EXTRA_SLEEP_TIMER_DURATION_MS = "com.foreverjukebox.app.playback.extra.SLEEP_TIMER_DURATION_MS"
     const val CAST_COMMAND_NAMESPACE = "urn:x-cast:com.foreverjukebox.app"
 }
@@ -153,7 +192,9 @@ private data class PlaybackNotificationState(
     val artist: String,
     val castDeviceName: String?,
     val positionMs: Long = 0L,
-    val durationMs: Long? = null
+    val durationMs: Long? = null,
+    val canSkipPrevious: Boolean = false,
+    val canSkipNext: Boolean = false
 ) {
     fun contentText(): String = artist
 
@@ -238,6 +279,14 @@ class ForegroundPlaybackService : Service() {
                             handlePlaybackAction(PlaybackAction.Stop)
                             return true
                         }
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                            broadcastPlaylistPreviousRequested()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                            broadcastPlaylistNextRequested()
+                            return true
+                        }
                     }
                     return super.onMediaButtonEvent(mediaButtonIntent)
                 }
@@ -252,6 +301,14 @@ class ForegroundPlaybackService : Service() {
 
                 override fun onStop() {
                     handlePlaybackAction(PlaybackAction.Stop)
+                }
+
+                override fun onSkipToPrevious() {
+                    broadcastPlaylistPreviousRequested()
+                }
+
+                override fun onSkipToNext() {
+                    broadcastPlaylistNextRequested()
                 }
             })
         }
@@ -291,7 +348,7 @@ class ForegroundPlaybackService : Service() {
                 if (castState != null) {
                     updateNotification(castState)
                 } else {
-                    refreshNotificationForCurrentPlayback()
+                    refreshNotificationForCurrentPlayback(intent.notificationSkipAvailability())
                 }
                 pendingForegroundStart = false
             }
@@ -299,17 +356,32 @@ class ForegroundPlaybackService : Service() {
         return START_STICKY
     }
 
-    private fun refreshNotificationForCurrentPlayback() {
+    private fun refreshNotificationForCurrentPlayback(
+        skipAvailability: NotificationSkipAvailability = activeNotificationSkipAvailability()
+    ) {
         val active = activeNotificationState
         if (active?.mode == NotificationMode.Cast) {
             updateNotification(active)
             return
         }
         val controller = PlaybackControllerHolder.get(this)
-        updateNotification(buildLocalNotificationState(controller.isPlaying()))
+        updateNotification(
+            buildLocalNotificationState(
+                isPlaying = controller.isPlaying(),
+                skipAvailability = skipAvailability
+            )
+        )
     }
 
-    private fun buildLocalNotificationState(isPlaying: Boolean): PlaybackNotificationState {
+    private data class NotificationSkipAvailability(
+        val canSkipPrevious: Boolean,
+        val canSkipNext: Boolean
+    )
+
+    private fun buildLocalNotificationState(
+        isPlaying: Boolean,
+        skipAvailability: NotificationSkipAvailability = activeNotificationSkipAvailability()
+    ): PlaybackNotificationState {
         val controller = PlaybackControllerHolder.get(this)
         val baseTitle = controller.getTrackTitle().orEmpty()
         val audioMode = controller.player.getJukeboxAudioMode()
@@ -328,7 +400,33 @@ class ForegroundPlaybackService : Service() {
             artist = artist,
             castDeviceName = null,
             positionMs = positionMs,
-            durationMs = durationMs
+            durationMs = durationMs,
+            canSkipPrevious = skipAvailability.canSkipPrevious,
+            canSkipNext = skipAvailability.canSkipNext
+        )
+    }
+
+    private fun activeNotificationSkipAvailability(): NotificationSkipAvailability {
+        val active = activeNotificationState
+        return NotificationSkipAvailability(
+            canSkipPrevious = active?.canSkipPrevious == true,
+            canSkipNext = active?.canSkipNext == true
+        )
+    }
+
+    private fun Intent.notificationSkipAvailability(): NotificationSkipAvailability {
+        val active = activeNotificationSkipAvailability()
+        return NotificationSkipAvailability(
+            canSkipPrevious = if (hasExtra(PlaybackServiceConstants.EXTRA_CAN_SKIP_PREVIOUS)) {
+                getBooleanExtra(PlaybackServiceConstants.EXTRA_CAN_SKIP_PREVIOUS, false)
+            } else {
+                active.canSkipPrevious
+            },
+            canSkipNext = if (hasExtra(PlaybackServiceConstants.EXTRA_CAN_SKIP_NEXT)) {
+                getBooleanExtra(PlaybackServiceConstants.EXTRA_CAN_SKIP_NEXT, false)
+            } else {
+                active.canSkipNext
+            }
         )
     }
 
@@ -346,7 +444,9 @@ class ForegroundPlaybackService : Service() {
             isPlaying = getBooleanExtra(PlaybackServiceConstants.EXTRA_CAST_IS_PLAYING, false),
             title = title,
             artist = artist,
-            castDeviceName = deviceName
+            castDeviceName = deviceName,
+            canSkipPrevious = notificationSkipAvailability().canSkipPrevious,
+            canSkipNext = notificationSkipAvailability().canSkipNext
         )
     }
 
@@ -375,6 +475,22 @@ class ForegroundPlaybackService : Service() {
             this,
             0,
             toggleIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val previousPendingIntent = PendingIntent.getBroadcast(
+            this,
+            1,
+            Intent(PlaybackServiceConstants.ACTION_PLAYLIST_PREVIOUS).apply {
+                setPackage(packageName)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val nextPendingIntent = PendingIntent.getBroadcast(
+            this,
+            2,
+            Intent(PlaybackServiceConstants.ACTION_PLAYLIST_NEXT).apply {
+                setPackage(packageName)
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -408,6 +524,18 @@ class ForegroundPlaybackService : Service() {
             NotificationMode.Local -> if (state.isPlaying) "Pause" else "Play"
         }
         val actionIcon = tintedIcon(actionIconRes, NOTIFICATION_ACCENT.toColorInt())
+        val previousIcon = tintedIcon(
+            android.R.drawable.ic_media_previous,
+            NOTIFICATION_ACCENT.toColorInt()
+        )
+        val nextIcon = tintedIcon(
+            android.R.drawable.ic_media_next,
+            NOTIFICATION_ACCENT.toColorInt()
+        )
+        val actionSlots = playbackNotificationActionSlots(
+            canSkipPrevious = state.canSkipPrevious,
+            canSkipNext = state.canSkipNext
+        )
 
         val builder = NotificationCompat.Builder(this, PlaybackServiceConstants.CHANNEL_ID)
             .setContentTitle(state.title)
@@ -418,13 +546,27 @@ class ForegroundPlaybackService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(activityPendingIntent)
             .setOngoing(true)
-            .addAction(
-                NotificationCompat.Action.Builder(
+
+        actionSlots.forEach { slot ->
+            val action = when (slot) {
+                PlaybackNotificationActionSlot.Previous -> NotificationCompat.Action.Builder(
+                    previousIcon,
+                    "Previous",
+                    previousPendingIntent
+                ).build()
+                PlaybackNotificationActionSlot.Toggle -> NotificationCompat.Action.Builder(
                     actionIcon,
                     actionLabel,
                     togglePendingIntent
                 ).build()
-            )
+                PlaybackNotificationActionSlot.Next -> NotificationCompat.Action.Builder(
+                    nextIcon,
+                    "Next",
+                    nextPendingIntent
+                ).build()
+            }
+            builder.addAction(action)
+        }
 
         if (contentText.isNotBlank()) {
             builder.setContentText(contentText)
@@ -440,10 +582,15 @@ class ForegroundPlaybackService : Service() {
                 state.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 state.durationMs == null
             )
+            val mediaStyle = MediaStyle()
+                .setMediaSession(mediaSession.sessionToken)
+            when (compactActionIndices(actionSlots.size).size) {
+                1 -> mediaStyle.setShowActionsInCompactView(0)
+                2 -> mediaStyle.setShowActionsInCompactView(0, 1)
+                3 -> mediaStyle.setShowActionsInCompactView(0, 1, 2)
+            }
             builder.setStyle(
-                MediaStyle()
-                    .setMediaSession(mediaSession.sessionToken)
-                    .setShowActionsInCompactView(0)
+                mediaStyle
             )
         }
 
@@ -486,12 +633,7 @@ class ForegroundPlaybackService : Service() {
         artwork: Bitmap?
     ) {
         val playbackState = PlaybackStateCompat.Builder()
-            .setActions(
-                PlaybackStateCompat.ACTION_PLAY or
-                    PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_STOP or
-                    PlaybackStateCompat.ACTION_PLAY_PAUSE
-            )
+            .setActions(mediaSessionPlaybackActions())
             .setState(
                 if (notificationState.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
                 notificationState.positionMs,
@@ -660,6 +802,18 @@ class ForegroundPlaybackService : Service() {
         })
     }
 
+    private fun broadcastPlaylistPreviousRequested() {
+        sendBroadcast(Intent(PlaybackServiceConstants.ACTION_PLAYLIST_PREVIOUS).apply {
+            setPackage(packageName)
+        })
+    }
+
+    private fun broadcastPlaylistNextRequested() {
+        sendBroadcast(Intent(PlaybackServiceConstants.ACTION_PLAYLIST_NEXT).apply {
+            setPackage(packageName)
+        })
+    }
+
     private fun clearPlaybackNotificationKeepTimer() {
         activeNotificationState = null
         if (hasStartedForeground) {
@@ -810,12 +964,21 @@ class ForegroundPlaybackService : Service() {
             PlaybackServiceConstants.ACTION_SLEEP_TIMER_EXPIRED
         const val ACTION_PLAYBACK_STATE_CHANGED: String =
             PlaybackServiceConstants.ACTION_PLAYBACK_STATE_CHANGED
+        const val ACTION_PLAYLIST_PREVIOUS: String =
+            PlaybackServiceConstants.ACTION_PLAYLIST_PREVIOUS
+        const val ACTION_PLAYLIST_NEXT: String =
+            PlaybackServiceConstants.ACTION_PLAYLIST_NEXT
         const val ACTION_CLOSE_FULLSCREEN: String =
             PlaybackServiceConstants.ACTION_CLOSE_FULLSCREEN
 
-        fun start(context: Context) {
+        fun start(
+            context: Context,
+            canSkipPrevious: Boolean? = null,
+            canSkipNext: Boolean? = null
+        ) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_START
+                putSkipAvailability(canSkipPrevious, canSkipNext)
             }
             if (isRunning) {
                 context.startService(intent)
@@ -825,9 +988,14 @@ class ForegroundPlaybackService : Service() {
             }
         }
 
-        fun update(context: Context) {
+        fun update(
+            context: Context,
+            canSkipPrevious: Boolean? = null,
+            canSkipNext: Boolean? = null
+        ) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_UPDATE
+                putSkipAvailability(canSkipPrevious, canSkipNext)
             }
             if (isRunning) {
                 context.startService(intent)
@@ -853,7 +1021,9 @@ class ForegroundPlaybackService : Service() {
             isPlaying: Boolean,
             title: String?,
             artist: String?,
-            deviceName: String?
+            deviceName: String?,
+            canSkipPrevious: Boolean? = null,
+            canSkipNext: Boolean? = null
         ) {
             val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_UPDATE
@@ -862,12 +1032,25 @@ class ForegroundPlaybackService : Service() {
                 putExtra(PlaybackServiceConstants.EXTRA_TRACK_TITLE, title)
                 putExtra(PlaybackServiceConstants.EXTRA_TRACK_ARTIST, artist)
                 putExtra(PlaybackServiceConstants.EXTRA_CAST_DEVICE_NAME, deviceName)
+                putSkipAvailability(canSkipPrevious, canSkipNext)
             }
             if (isRunning) {
                 context.startService(intent)
             } else if (canStartForegroundService(context)) {
                 pendingForegroundStart = true
                 context.startForegroundService(intent)
+            }
+        }
+
+        private fun Intent.putSkipAvailability(
+            canSkipPrevious: Boolean?,
+            canSkipNext: Boolean?
+        ) {
+            if (canSkipPrevious != null) {
+                putExtra(PlaybackServiceConstants.EXTRA_CAN_SKIP_PREVIOUS, canSkipPrevious)
+            }
+            if (canSkipNext != null) {
+                putExtra(PlaybackServiceConstants.EXTRA_CAN_SKIP_NEXT, canSkipNext)
             }
         }
 

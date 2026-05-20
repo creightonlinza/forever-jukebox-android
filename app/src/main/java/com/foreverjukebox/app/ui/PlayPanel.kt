@@ -6,13 +6,26 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,7 +35,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.canonicalTrackId
@@ -43,6 +58,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
+    var showPlaylist by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
@@ -116,6 +132,12 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         }
     }
 
+    LaunchedEffect(showPlaylist, state.playlist) {
+        if (showPlaylist && !shouldShowPlaylistControls(state.playlist)) {
+            showPlaylist = false
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -155,6 +177,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
+                playlist = state.playlist,
+                onOpenPlaylist = { showPlaylist = true },
+                onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
+                onSkipNext = viewModel::skipToNextPlaylistTrack,
                 onSelectVisualization = viewModel::setActiveVisualization
             )
             }
@@ -178,6 +204,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onSetVisualization = viewModel::setActiveVisualization,
                 onSetCanonizerFinishOutSong = viewModel::setCanonizerFinishOutSong,
                 onSelectBeat = viewModel::selectBeat,
+                playlist = state.playlist,
+                onOpenPlaylist = { showPlaylist = true },
+                onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
+                onSkipNext = viewModel::skipToNextPlaylistTrack,
                 onOpenFullscreen = {
                     val intent = Intent(context, FullscreenActivity::class.java)
                         .putExtra(FullscreenActivity.EXTRA_VIZ_INDEX, playback.activeVizIndex)
@@ -241,4 +271,101 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             onApply = viewModel::applyTuning
         )
     }
+
+    if (showPlaylist && shouldShowPlaylistControls(state.playlist)) {
+        PlaylistDialog(
+            playlist = state.playlist,
+            onSelect = { index ->
+                showPlaylist = false
+                viewModel.selectPlaylistTrack(index)
+            },
+            onRemove = viewModel::removePlaylistTrack,
+            onClose = { showPlaylist = false }
+        )
+    }
+}
+
+@Composable
+private fun PlaylistDialog(
+    playlist: JukeboxPlaylistState,
+    onSelect: (Int) -> Unit,
+    onRemove: (Int) -> Unit,
+    onClose: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Playlist") },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                itemsIndexed(playlist.tracks) { index, track ->
+                    val selected = index == playlist.currentIndex
+                    val displayTitle = track.title?.takeIf { it.isNotBlank() } ?: "Untitled"
+                    val displayArtist = track.artist?.takeIf { it.isNotBlank() }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(SurfaceShape)
+                            .background(
+                                if (selected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                }
+                            )
+                            .clickable { onSelect(index) }
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${index + 1}.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = displayTitle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (displayArtist != null) {
+                                Text(
+                                    text = displayArtist,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (playlist.canRemoveTrackAt(index)) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            SquareIconButton(
+                                onClick = { onRemove(index) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove from playlist",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onClose) {
+                Text("Close")
+            }
+        }
+    )
 }

@@ -58,7 +58,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     TabId.Input -> InputPanel(
                         state = state,
                         onOpenFile = viewModel::startLocalAnalysis,
-                        onOpenCachedTrack = viewModel::openCachedLocalTrack,
+                        onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
+                        onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
                         onDeleteCachedTrack = viewModel::deleteCachedLocalTrack
                     )
                     TabId.Top -> TopSongsPanel(
@@ -78,7 +79,10 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         onRefreshRecentSongs = viewModel::refreshRecentSongs,
                         onRefreshFavorites = viewModel::refreshFavoritesFromSync,
                         onSelect = { id, title, artist, tuningParams ->
-                            viewModel.loadTrackById(id, title, artist, tuningParams)
+                            viewModel.selectServerPlaylistTrack(id, title, artist, tuningParams)
+                        },
+                        onLongSelect = { id, title, artist, tuningParams ->
+                            viewModel.addServerTrackToPlaylist(id, title, artist, tuningParams)
                         },
                         onRemoveFavorite = viewModel::removeFavorite,
                         favoritesSyncCode = state.favoritesSyncCode,

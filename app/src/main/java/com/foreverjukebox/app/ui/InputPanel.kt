@@ -6,7 +6,8 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,11 +36,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun InputPanel(
     state: UiState,
     onOpenFile: (Uri, String?) -> Unit,
     onOpenCachedTrack: (String) -> Unit,
+    onAddCachedTrackToPlaylist: (String) -> Unit,
     onDeleteCachedTrack: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -128,7 +131,10 @@ fun InputPanel(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onOpenCachedTrack(track.localId) },
+                                    .combinedClickable(
+                                        onClick = { onOpenCachedTrack(track.localId) },
+                                        onLongClick = { onAddCachedTrackToPlaylist(track.localId) }
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {

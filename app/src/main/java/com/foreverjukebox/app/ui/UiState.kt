@@ -92,6 +92,7 @@ data class UiState(
     val versionUpdatePrompt: VersionUpdatePrompt? = null,
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
+    val playlist: JukeboxPlaylistState = JukeboxPlaylistState(),
     val tuning: TuningState = TuningState(),
     val sleepTimer: SleepTimerUiState = SleepTimerUiState()
 )
@@ -317,6 +318,7 @@ fun stateAfterModeChangeReset(
         topSongsTab = TopSongsTab.TopSongs,
         search = SearchState(),
         playback = PlaybackState(),
+        playlist = JukeboxPlaylistState(),
         tuning = TuningState(highlightAnchorBranch = current.tuning.highlightAnchorBranch)
     )
 }
