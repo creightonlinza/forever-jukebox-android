@@ -138,6 +138,7 @@ data class PlaybackState(
     val playTitle: String = "",
     val audioLoaded: Boolean = false,
     val analysisLoaded: Boolean = false,
+    val playAfterLoaded: Boolean = false,
     val isRunning: Boolean = false,
     val isPaused: Boolean = false,
     val beatsPlayed: Int = 0,
@@ -222,8 +223,26 @@ fun shouldShowServerListenActions(mode: AppMode?): Boolean = mode == AppMode.Ser
 fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boolean {
     return mode == AppMode.Local &&
         !playback.isCasting &&
-        (playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading)
+        playback.isLoading()
 }
+
+fun shouldShowPlayAfterLoadedOption(mode: AppMode?, playback: PlaybackState): Boolean {
+    return (mode == AppMode.Local || mode == AppMode.Server) &&
+        !playback.isCasting &&
+        playback.isLoading()
+}
+
+fun shouldStartPlayAfterLoaded(playback: PlaybackState): Boolean {
+    return playback.playAfterLoaded &&
+        !playback.isCasting &&
+        playback.audioLoaded &&
+        playback.analysisLoaded &&
+        !playback.isLoading() &&
+        playback.analysisErrorMessage.isNullOrBlank() &&
+        !playback.isRunning
+}
+
+fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading
 
 fun PlaybackState.hasCastTrack(): Boolean {
     return !lastJobId.isNullOrBlank()

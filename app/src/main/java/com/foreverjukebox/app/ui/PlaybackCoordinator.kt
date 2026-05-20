@@ -47,7 +47,8 @@ class PlaybackCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
-    private val applyActiveTab: (TabId, Boolean) -> Unit
+    private val applyActiveTab: (TabId, Boolean) -> Unit,
+    private val onStableTrackLoaded: () -> Unit = {}
 ) {
     private var listenTimerJob: Job? = null
     private var pollJob: Job? = null
@@ -407,6 +408,7 @@ class PlaybackCoordinator(
             cacheAnalysis(jobId, response)
         }
         updateForegroundPlaybackService()
+        onStableTrackLoaded()
         return true
     }
 
@@ -466,6 +468,7 @@ class PlaybackCoordinator(
                     canonizerFinishOutSong = it.playback.canonizerFinishOutSong,
                     audioLoaded = false,
                     analysisLoaded = false,
+                    playAfterLoaded = false,
                     beatsPlayed = 0,
                     listenTime = "00:00:00",
                     trackDurationSeconds = null,

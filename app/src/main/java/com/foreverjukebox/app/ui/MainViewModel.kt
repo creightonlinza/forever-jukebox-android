@@ -256,7 +256,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
-        applyActiveTab = ::applyActiveTab
+        applyActiveTab = ::applyActiveTab,
+        onStableTrackLoaded = ::maybeStartPlayAfterLoaded
     )
     private val serverTrackLoadCoordinator = ServerTrackLoadCoordinator(
         scope = viewModelScope,
@@ -855,6 +856,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun updatePlaybackState(transform: (PlaybackState) -> PlaybackState) {
         _state.update { it.copy(playback = transform(it.playback)) }
+    }
+
+    fun setPlayAfterLoaded(checked: Boolean) {
+        updatePlaybackState { it.copy(playAfterLoaded = checked) }
+    }
+
+    private fun maybeStartPlayAfterLoaded() {
+        if (!shouldStartPlayAfterLoaded(state.value.playback)) {
+            return
+        }
+        updatePlaybackState { it.copy(playAfterLoaded = false) }
+        togglePlayback()
     }
 
     private fun resolveTrackMeta(trackId: String): Pair<String?, String?> {

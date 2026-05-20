@@ -157,6 +157,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     playback.audioLoading -> "Fetching audio"
                     else -> null
                 },
+                playAfterLoaded = playback.playAfterLoaded,
+                showPlayAfterLoaded = shouldShowPlayAfterLoadedOption(state.appMode, playback),
+                onPlayAfterLoadedChange = viewModel::setPlayAfterLoaded,
                 showCancel = shouldShowLocalLoadingCancel(state.appMode, playback),
                 onCancel = viewModel::cancelLocalAnalysis
             )

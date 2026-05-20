@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -904,6 +905,9 @@ internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMod
 internal fun LoadingStatus(
     progress: Int?,
     label: String?,
+    playAfterLoaded: Boolean = false,
+    showPlayAfterLoaded: Boolean = false,
+    onPlayAfterLoadedChange: (Boolean) -> Unit = {},
     showCancel: Boolean = false,
     onCancel: () -> Unit = {}
 ) {
@@ -938,6 +942,22 @@ internal fun LoadingStatus(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        if (showPlayAfterLoaded) {
+            Row(
+                modifier = Modifier.padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = playAfterLoaded,
+                    onCheckedChange = onPlayAfterLoadedChange
+                )
+                Text(
+                    text = "Play after loaded",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         if (showCancel) {
             OutlinedButton(
