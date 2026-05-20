@@ -56,4 +56,36 @@ class PlaybackUiPolicyTest {
         assertFalse(shouldStartPlayAfterLoaded(ready.copy(audioLoaded = false)))
         assertFalse(shouldStartPlayAfterLoaded(ready.copy(analysisLoaded = false)))
     }
+
+    @Test
+    fun playlistSkipEnablesPlayAfterLoadedOnlyForActiveLocalPlayback() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(
+                PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
+                PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
+            ),
+            currentIndex = 0
+        )
+        val active = UiState(
+            playlist = playlist,
+            playback = PlaybackState(playMode = PlaybackMode.Jukebox)
+        )
+
+        assertTrue(shouldEnablePlayAfterLoadedForPlaylistSkip(active))
+        assertFalse(
+            shouldEnablePlayAfterLoadedForPlaylistSkip(
+                active.copy(playback = active.playback.copy(isCasting = true))
+            )
+        )
+        assertFalse(
+            shouldEnablePlayAfterLoadedForPlaylistSkip(
+                active.copy(playback = active.playback.copy(playMode = PlaybackMode.Autocanonizer))
+            )
+        )
+        assertFalse(
+            shouldEnablePlayAfterLoadedForPlaylistSkip(
+                active.copy(playlist = playlist.copy(tracks = playlist.tracks.take(1)))
+            )
+        )
+    }
 }

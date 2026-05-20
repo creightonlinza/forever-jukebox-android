@@ -35,7 +35,11 @@ class LocalAnalysisCoordinator(
 
     fun isAnalysisRunning(): Boolean = localAnalysisJob?.isActive == true
 
-    fun startLocalAnalysis(uri: Uri, displayName: String?) {
+    fun startLocalAnalysis(
+        uri: Uri,
+        displayName: String?,
+        playAfterLoaded: Boolean = false
+    ) {
         val state = getState()
         if (state.appMode != AppMode.Local) return
         if (shouldCancelLocalAnalysisOnInputChange(
@@ -54,6 +58,11 @@ class LocalAnalysisCoordinator(
             )
         }
         playbackCoordinator.resetForNewTrack()
+        if (playAfterLoaded) {
+            updateState {
+                it.copy(playback = it.playback.copy(playAfterLoaded = true))
+            }
+        }
         applyActiveTab(TabId.Play, true)
         playbackCoordinator.setAnalysisQueued(1, "Processing audio")
         localAnalysisJob = scope.launch {
@@ -104,7 +113,10 @@ class LocalAnalysisCoordinator(
         }
     }
 
-    fun openCachedLocalTrack(localId: String) {
+    fun openCachedLocalTrack(
+        localId: String,
+        playAfterLoaded: Boolean = false
+    ) {
         if (getState().appMode != AppMode.Local) return
         val cachedTrack = getState().localCachedTracks.firstOrNull { it.localId == localId } ?: return
         val sourceUri = cachedTrack.sourceUri
@@ -128,7 +140,11 @@ class LocalAnalysisCoordinator(
                 }
                 return@launch
             }
-            startLocalAnalysis(sourceUri.toUri(), cachedTrack.title)
+            startLocalAnalysis(
+                uri = sourceUri.toUri(),
+                displayName = cachedTrack.title,
+                playAfterLoaded = playAfterLoaded
+            )
         }
     }
 

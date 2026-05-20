@@ -977,15 +977,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(playlist = it.playlist.appendAndSelectTrack(track)) }
     }
 
-    private fun loadPlaylistTrack(track: PlaylistTrack) {
+    private fun loadPlaylistTrack(
+        track: PlaylistTrack,
+        playAfterLoaded: Boolean = false
+    ) {
         when (track.type) {
-            PlaylistTrackType.Server -> loadTrackById(
+            PlaylistTrackType.Server -> loadTrackByIdInternal(
                 track.id,
                 track.title,
                 track.artist,
-                track.tuningParams
+                track.tuningParams,
+                playAfterLoaded
             )
-            PlaylistTrackType.LocalCached -> openCachedLocalTrack(track.id)
+            PlaylistTrackType.LocalCached -> localAnalysisCoordinator.openCachedLocalTrack(
+                localId = track.id,
+                playAfterLoaded = playAfterLoaded
+            )
         }
     }
 
@@ -1303,6 +1310,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         artist: String? = null,
         tuningParams: String? = null
     ) {
+        loadTrackByIdInternal(trackId, title, artist, tuningParams, playAfterLoaded = false)
+    }
+
+    private fun loadTrackByIdInternal(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
+    ) {
         val parsed = parseTrackId(trackId) ?: return
         when {
             parsed.youtubeId != null -> {
@@ -1310,7 +1327,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     youtubeId = parsed.youtubeId,
                     title = title,
                     artist = artist,
-                    tuningParams = tuningParams
+                    tuningParams = tuningParams,
+                    playAfterLoaded = playAfterLoaded
                 )
             }
             parsed.jobId != null -> {
@@ -1318,7 +1336,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     jobId = parsed.jobId,
                     title = title,
                     artist = artist,
-                    tuningParams = tuningParams
+                    tuningParams = tuningParams,
+                    playAfterLoaded = playAfterLoaded
                 )
             }
         }
@@ -1328,14 +1347,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         youtubeId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
     ) {
         loadTrackBySource(
             sourceProvider = SOURCE_PROVIDER_YOUTUBE,
             sourceId = youtubeId,
             title = title,
             artist = artist,
-            tuningParams = tuningParams
+            tuningParams = tuningParams,
+            playAfterLoaded = playAfterLoaded
         )
     }
 
@@ -1344,7 +1365,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sourceId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
     ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
@@ -1463,7 +1485,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     audioLoading = false,
                     lastYouTubeId = youtubeId,
                     trackTitle = resolvedTitle,
-                    trackArtist = resolvedArtist
+                    trackArtist = resolvedArtist,
+                    playAfterLoaded = playAfterLoaded
                 )
             )
         }
@@ -1507,7 +1530,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         jobId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
     ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
@@ -1535,7 +1559,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lastYouTubeId = null,
                     lastJobId = normalizedJobId,
                     trackTitle = resolvedTitle,
-                    trackArtist = resolvedArtist
+                    trackArtist = resolvedArtist,
+                    playAfterLoaded = playAfterLoaded
                 )
             )
         }
@@ -2148,24 +2173,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         appLifecycleCoordinator.prepareForExit()
     }
 
-    fun selectPlaylistTrack(index: Int) {
+    fun selectPlaylistTrack(
+        index: Int,
+        playAfterLoaded: Boolean = false
+    ) {
         val track = state.value.playlist.tracks.getOrNull(index) ?: return
         _state.update {
             it.copy(playlist = it.playlist.selectTrackAt(index))
         }
-        loadPlaylistTrack(track)
+        loadPlaylistTrack(track, playAfterLoaded)
     }
 
     fun skipToPreviousPlaylistTrack() {
-        val playlist = state.value.playlist
+        val current = state.value
+        val playlist = current.playlist
         if (!playlist.canSkipPrevious()) return
-        selectPlaylistTrack(playlist.currentIndex - 1)
+        selectPlaylistTrack(
+            index = playlist.currentIndex - 1,
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current)
+        )
     }
 
     fun skipToNextPlaylistTrack() {
-        val playlist = state.value.playlist
+        val current = state.value
+        val playlist = current.playlist
         if (!playlist.canSkipNext()) return
-        selectPlaylistTrack(playlist.currentIndex + 1)
+        selectPlaylistTrack(
+            index = playlist.currentIndex + 1,
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current)
+        )
     }
 
     fun removePlaylistTrack(index: Int) {
