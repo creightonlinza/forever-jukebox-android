@@ -2181,7 +2181,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(playlist = it.playlist.selectTrackAt(index))
         }
-        loadPlaylistTrack(track, playAfterLoaded)
+        loadPlaylistTrack(
+            track = track,
+            playAfterLoaded = playAfterLoaded
+        )
+    }
+
+    fun selectPlaylistDialogTrack(index: Int) {
+        selectPlaylistTrack(
+            index = index,
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(state.value)
+        )
     }
 
     fun skipToPreviousPlaylistTrack() {

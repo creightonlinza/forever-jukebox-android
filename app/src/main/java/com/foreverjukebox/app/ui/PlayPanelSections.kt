@@ -953,7 +953,7 @@ internal fun LoadingStatus(
                     onCheckedChange = onPlayAfterLoadedChange
                 )
                 Text(
-                    text = "Play after loaded",
+                    text = "Play when ready",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
