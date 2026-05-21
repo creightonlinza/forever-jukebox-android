@@ -21,7 +21,7 @@ constexpr double kPanRadiansPerSecond = 0.42;
 constexpr double kJumpFrameEpsilon = 2.0;
 constexpr double kMaxLateJumpFrames = 8.0;
 constexpr float kNormalDuckingVolume = 1.0f;
-constexpr float kDuckedVolume = 0.1f;
+constexpr float kDuckedVolume = 0.2f;
 constexpr float kDuckingRampSpeed = 0.0002f;
 
 enum class AudioMode {
