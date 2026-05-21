@@ -20,6 +20,9 @@ class PlaybackController {
     private val autocanonizerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val autocanonizerPlayer = BufferedAutocanonizerPlayer(player)
     val autocanonizer = AutocanonizerController(autocanonizerPlayer, autocanonizerScope)
+    private var audioFocusController: PlaybackAudioFocusController =
+        NoOpPlaybackAudioFocusController
+    private var playbackStateChangedBroadcaster: (() -> Unit)? = null
 
     private var playTimerMs = 0L
     private var lastPlayStamp: Long? = null
@@ -33,6 +36,28 @@ class PlaybackController {
         Stopped
     }
 
+    fun attachAudioFocus(context: Context) {
+        val appContext = context.applicationContext
+        playbackStateChangedBroadcaster = {
+            ForegroundPlaybackService.update(appContext)
+            broadcastLocalPlaybackStateChanged(appContext)
+        }
+        audioFocusController = AndroidPlaybackAudioFocusController(
+            context = appContext,
+            onDuckingChanged = ::setDucking,
+            onPlaybackFocusLost = ::pauseForAudioFocusLoss
+        )
+    }
+
+    fun requestAudioFocusForLocalPlayback(): Boolean {
+        return audioFocusController.requestAudioFocus()
+    }
+
+    fun setDucking(active: Boolean) {
+        player.setDucking(active)
+        autocanonizer.setDucking(active)
+    }
+
     fun setTrackMeta(title: String?, artist: String?) {
         trackTitle = title
         trackArtist = artist
@@ -44,6 +69,10 @@ class PlaybackController {
 
     private fun beginPlayback(resetFromStart: Boolean): Boolean {
         if (!player.hasAudio()) {
+            transportState = TransportState.Stopped
+            return false
+        }
+        if (!requestAudioFocusForLocalPlayback()) {
             transportState = TransportState.Stopped
             return false
         }
@@ -68,6 +97,7 @@ class PlaybackController {
             return true
         }
         runCatching { engine.stopJukebox() }
+        audioFocusController.abandonAudioFocus()
         transportState = TransportState.Stopped
         return false
     }
@@ -85,11 +115,8 @@ class PlaybackController {
             return
         }
         engine.pauseJukebox()
-        if (lastPlayStamp != null) {
-            playTimerMs += SystemClock.elapsedRealtime() - lastPlayStamp!!
-            lastPlayStamp = null
-        }
-        transportState = TransportState.Paused
+        markTransportPaused()
+        audioFocusController.abandonAudioFocus()
     }
 
     fun togglePlayback(): Boolean {
@@ -108,11 +135,8 @@ class PlaybackController {
             return
         }
         engine.stopJukebox()
-        if (lastPlayStamp != null) {
-            playTimerMs += SystemClock.elapsedRealtime() - lastPlayStamp!!
-            lastPlayStamp = null
-        }
-        transportState = TransportState.Stopped
+        markTransportStopped()
+        audioFocusController.abandonAudioFocus()
     }
 
     fun resetTimers() {
@@ -129,6 +153,24 @@ class PlaybackController {
     }
 
     fun stopExternalPlayback() {
+        markTransportStopped()
+        audioFocusController.abandonAudioFocus()
+    }
+
+    fun pauseExternalPlayback() {
+        markTransportPaused()
+        audioFocusController.abandonAudioFocus()
+    }
+
+    private fun markTransportPaused() {
+        if (lastPlayStamp != null) {
+            playTimerMs += SystemClock.elapsedRealtime() - lastPlayStamp!!
+            lastPlayStamp = null
+        }
+        transportState = TransportState.Paused
+    }
+
+    private fun markTransportStopped() {
         if (lastPlayStamp != null) {
             playTimerMs += SystemClock.elapsedRealtime() - lastPlayStamp!!
             lastPlayStamp = null
@@ -136,12 +178,19 @@ class PlaybackController {
         transportState = TransportState.Stopped
     }
 
-    fun pauseExternalPlayback() {
-        if (lastPlayStamp != null) {
-            playTimerMs += SystemClock.elapsedRealtime() - lastPlayStamp!!
-            lastPlayStamp = null
+    private fun pauseForAudioFocusLoss() {
+        if (transportState != TransportState.Playing) {
+            setDucking(false)
+            return
         }
-        transportState = TransportState.Paused
+        if (autocanonizer.isRunning()) {
+            autocanonizer.pause()
+        } else {
+            engine.pauseJukebox()
+        }
+        markTransportPaused()
+        setDucking(false)
+        playbackStateChangedBroadcaster?.invoke()
     }
 
     fun isPlaying(): Boolean = transportState == TransportState.Playing
@@ -176,6 +225,7 @@ class PlaybackController {
     }
 
     fun release() {
+        audioFocusController.abandonAudioFocus()
         autocanonizer.release()
         player.release()
         autocanonizerScope.cancel()
@@ -189,7 +239,10 @@ object PlaybackControllerHolder {
     @Suppress("UNUSED_PARAMETER")
     fun get(context: Context): PlaybackController {
         return controller ?: synchronized(this) {
-            controller ?: PlaybackController().also { controller = it }
+            controller ?: PlaybackController().also {
+                it.attachAudioFocus(context)
+                controller = it
+            }
         }
     }
 }

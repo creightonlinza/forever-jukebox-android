@@ -7,6 +7,7 @@ interface AutocanonizerPlayer {
     fun isReady(): Boolean
     fun syncAudioFromMain(): Boolean
     fun setVolume(volume: Double)
+    fun setDucking(active: Boolean)
     fun reset()
     fun pause()
     fun resume()
@@ -41,6 +42,11 @@ class BufferedAutocanonizerPlayer(
     override fun setVolume(volume: Double) {
         baseVolume = volume.coerceIn(0.0, 1.0)
         applyGains()
+    }
+
+    override fun setDucking(active: Boolean) {
+        mainPlayer.setDucking(active)
+        secondaryPlayer.setDucking(active)
     }
 
     override fun reset() {

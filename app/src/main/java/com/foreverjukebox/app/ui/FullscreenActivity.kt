@@ -186,7 +186,8 @@ private fun FullscreenScreen(
                 controller.pauseExternalPlayback()
                 ForegroundPlaybackService.update(context)
             } else if (controller.autocanonizer.isPaused()) {
-                val resumed = controller.autocanonizer.resume()
+                val resumed = controller.requestAudioFocusForLocalPlayback() &&
+                    controller.autocanonizer.resume()
                 val running = if (resumed) {
                     controller.startExternalPlayback(resetTimers = false)
                     true

@@ -47,6 +47,10 @@ class AutocanonizerController(
         player.setVolume(volume)
     }
 
+    fun setDucking(active: Boolean) {
+        player.setDucking(active)
+    }
+
     fun setAnalysis(raw: JsonElement, durationOverride: Double? = null): AutocanonizerData? {
         val analysis = normalizeAnalysis(raw)
         val canonizerData = buildAutocanonizerData(analysis, durationOverride)

@@ -122,6 +122,8 @@ private class FakeAutocanonizerPlayer(
 
     override fun setVolume(volume: Double) = Unit
 
+    override fun setDucking(active: Boolean) = Unit
+
     override fun reset() = Unit
 
     override fun pause() {

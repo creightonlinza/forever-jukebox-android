@@ -551,7 +551,8 @@ class ForegroundPlaybackService : Service() {
                 if (autocanonizerRunning) {
                     updateNotification(buildLocalNotificationState(true))
                 } else if (autocanonizerPaused) {
-                    val resumed = autocanonizer.resume()
+                    val resumed = controller.requestAudioFocusForLocalPlayback() &&
+                        autocanonizer.resume()
                     if (resumed) {
                         controller.startExternalPlayback(resetTimers = false)
                     }
@@ -584,7 +585,8 @@ class ForegroundPlaybackService : Service() {
                     controller.pauseExternalPlayback()
                     updateNotification(buildLocalNotificationState(false))
                 } else if (autocanonizerPaused) {
-                    val resumed = autocanonizer.resume()
+                    val resumed = controller.requestAudioFocusForLocalPlayback() &&
+                        autocanonizer.resume()
                     if (resumed) {
                         controller.startExternalPlayback(resetTimers = false)
                     }

@@ -19,6 +19,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private var nativeHandle: Long = 0
     private var durationSeconds: Double? = null
     private var jukeboxAudioMode = JukeboxAudioMode.Off
+    private var duckingActive = false
 
     suspend fun loadFile(
         file: File,
@@ -75,6 +76,12 @@ class BufferedAudioPlayer : JukeboxPlayer {
         nativeSetGain(nativeHandle, gain.coerceIn(0.0, 1.0).toFloat())
     }
 
+    fun setDucking(active: Boolean) {
+        duckingActive = active
+        if (nativeHandle == 0L) return
+        nativeSetDucking(nativeHandle, active)
+    }
+
     fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
         jukeboxAudioMode = mode
         if (nativeHandle == 0L) return
@@ -94,6 +101,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
         channelCount = other.channelCount
         durationSeconds = other.durationSeconds
         jukeboxAudioMode = other.jukeboxAudioMode
+        duckingActive = other.duckingActive
         releaseNativePlayer()
         ensureNativePlayer()
         return nativeCloneAudioFrom(nativeHandle, other.nativeHandle)
@@ -162,6 +170,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
         nativeHandle = nativeCreatePlayer(sampleRate, channelCount)
         if (nativeHandle != 0L) {
             nativeSetJukeboxAudioMode(nativeHandle, jukeboxAudioMode.ordinal)
+            nativeSetDucking(nativeHandle, duckingActive)
         }
     }
 
@@ -336,6 +345,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeIsPlaying(handle: Long): Boolean
     private external fun nativeHasAudio(handle: Long): Boolean
     private external fun nativeSetGain(handle: Long, gain: Float)
+    private external fun nativeSetDucking(handle: Long, active: Boolean)
     private external fun nativeSetJukeboxAudioMode(handle: Long, mode: Int)
     private external fun nativeGetPlaybackRate(handle: Long): Double
     private external fun nativeCloneAudioFrom(handle: Long, sourceHandle: Long): Boolean
