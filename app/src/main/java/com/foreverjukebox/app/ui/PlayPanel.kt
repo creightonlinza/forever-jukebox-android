@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -233,6 +234,24 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         "No song selected.",
                         color = MaterialTheme.colorScheme.onBackground
                     )
+                    if (shouldShowSavedPlaylistButton(state)) {
+                        Button(
+                            onClick = { showPlaylist = true },
+                            colors = pillButtonColors(),
+                            border = pillButtonBorder(),
+                            shape = PillShape,
+                            contentPadding = SmallButtonPadding,
+                            modifier = Modifier.height(SmallButtonHeight)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Saved Playlist", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
             ListenContentMode.None -> Unit
@@ -284,6 +303,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 viewModel.selectPlaylistDialogTrack(index)
             },
             onRemove = viewModel::removePlaylistTrack,
+            onClear = viewModel::clearPlaylist,
             onClose = { showPlaylist = false }
         )
     }
@@ -294,6 +314,7 @@ private fun PlaylistDialog(
     playlist: JukeboxPlaylistState,
     onSelect: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    onClear: () -> Unit,
     onClose: () -> Unit
 ) {
     AlertDialog(
@@ -367,15 +388,31 @@ private fun PlaylistDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = onClose,
-                colors = pillButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Close", style = MaterialTheme.typography.labelSmall)
+                Button(
+                    onClick = onClear,
+                    colors = pillButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Clear", style = MaterialTheme.typography.labelSmall)
+                }
+                Button(
+                    onClick = onClose,
+                    colors = pillButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Close", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     )

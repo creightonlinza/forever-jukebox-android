@@ -61,25 +61,27 @@ class CastSessionCoordinatorPolicyTest {
     }
 
     @Test
-    fun clearPlaylistOnCastDisconnectClearsCastStateAndPlaylist() {
+    fun stateAfterCastDisconnectClearsCastStateAndDeactivatesPlaylist() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(
+                PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
+                PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
+            ),
+            currentIndex = 1
+        )
         val state = UiState(
             playback = PlaybackState(
                 isCasting = true,
                 castDeviceName = "Living Room"
             ),
-            playlist = JukeboxPlaylistState(
-                tracks = listOf(
-                    PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
-                    PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
-                ),
-                currentIndex = 1
-            )
+            playlist = playlist
         )
 
-        val updated = clearPlaylistOnCastDisconnect(state)
+        val updated = stateAfterCastDisconnect(state)
 
         assertFalse(updated.playback.isCasting)
         assertNull(updated.playback.castDeviceName)
-        assertEquals(JukeboxPlaylistState(), updated.playlist)
+        assertEquals(playlist.tracks, updated.playlist.tracks)
+        assertEquals(-1, updated.playlist.currentIndex)
     }
 }

@@ -245,7 +245,7 @@ fun shouldStartPlayAfterLoaded(playback: PlaybackState): Boolean {
 fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
     return state.playback.playMode == PlaybackMode.Jukebox &&
         !state.playback.isCasting &&
-        shouldShowPlaylistControls(state.playlist)
+        shouldShowActivePlaylistControls(state.playlist)
 }
 
 fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading

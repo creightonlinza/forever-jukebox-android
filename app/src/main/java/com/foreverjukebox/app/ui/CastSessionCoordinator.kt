@@ -30,13 +30,13 @@ internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTr
     )
 }
 
-internal fun clearPlaylistOnCastDisconnect(state: UiState): UiState {
+internal fun stateAfterCastDisconnect(state: UiState): UiState {
     return state.copy(
         playback = state.playback.copy(
             isCasting = false,
             castDeviceName = null
         ),
-        playlist = JukeboxPlaylistState()
+        playlist = state.playlist.deactivate()
     )
 }
 
@@ -176,7 +176,7 @@ class CastSessionCoordinator(
         if (!getState().playback.isCasting) {
             return
         }
-        updateState(::clearPlaylistOnCastDisconnect)
+        updateState(::stateAfterCastDisconnect)
         castPlaybackCoordinator.resetStatusListener()
         serverTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack()

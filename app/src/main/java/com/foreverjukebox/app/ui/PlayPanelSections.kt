@@ -389,7 +389,7 @@ internal fun ColumnScope.CastListenScreen(
                                     )
                                 }
                             }
-                            if (showPlaylistControls && shouldShowPlaylistControls(playlist)) {
+                            if (showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
                                 SquareIconButton(
                                     onClick = onOpenPlaylist,
                                     modifier = Modifier.size(SmallButtonHeight)
@@ -786,7 +786,7 @@ private fun BoxScope.LocalVisualizationBottomControls(
             .padding(6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        if (showPlaylistControls && shouldShowPlaylistControls(playlist)) {
+        if (showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
             SquareIconButton(
                 onClick = onOpenPlaylist,
                 modifier = Modifier.size(SmallButtonHeight)

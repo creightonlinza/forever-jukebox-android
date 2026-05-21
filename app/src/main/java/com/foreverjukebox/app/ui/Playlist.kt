@@ -1,5 +1,9 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.SavedPlaylistTrack
+import com.foreverjukebox.app.data.SavedPlaylistTrackType
+
 enum class PlaylistTrackType {
     Server,
     LocalCached
@@ -19,6 +23,14 @@ data class JukeboxPlaylistState(
 )
 
 internal fun JukeboxPlaylistState.isInitialized(): Boolean = tracks.isNotEmpty()
+
+internal fun JukeboxPlaylistState.isActive(): Boolean {
+    return currentIndex in tracks.indices
+}
+
+internal fun JukeboxPlaylistState.isInactiveSavedPlaylist(): Boolean {
+    return tracks.isNotEmpty() && currentIndex == -1
+}
 
 internal fun JukeboxPlaylistState.currentTrack(): PlaylistTrack? {
     return tracks.getOrNull(currentIndex)
@@ -67,6 +79,13 @@ internal fun JukeboxPlaylistState.selectTrackAt(index: Int): JukeboxPlaylistStat
     return copy(currentIndex = index)
 }
 
+internal fun JukeboxPlaylistState.deactivate(): JukeboxPlaylistState {
+    if (tracks.isEmpty()) {
+        return this
+    }
+    return copy(currentIndex = -1)
+}
+
 internal fun JukeboxPlaylistState.canRemoveTrackAt(index: Int): Boolean {
     return index in tracks.indices && index != currentIndex
 }
@@ -95,6 +114,60 @@ internal fun JukeboxPlaylistState.canSkipNext(): Boolean {
 
 internal fun shouldShowPlaylistControls(playlist: JukeboxPlaylistState): Boolean {
     return playlist.tracks.size > 1
+}
+
+internal fun shouldShowActivePlaylistControls(playlist: JukeboxPlaylistState): Boolean {
+    return shouldShowPlaylistControls(playlist) && playlist.isActive()
+}
+
+internal fun shouldShowSavedPlaylistButton(state: UiState): Boolean {
+    return resolveListenContentMode(state.playback) == ListenContentMode.Empty &&
+        state.playback.playMode == PlaybackMode.Jukebox &&
+        state.playlist.isInactiveSavedPlaylist() &&
+        shouldShowPlaylistControls(state.playlist)
+}
+
+internal fun PlaylistTrack.toSavedPlaylistTrack(): SavedPlaylistTrack {
+    return SavedPlaylistTrack(
+        id = id,
+        type = when (type) {
+            PlaylistTrackType.Server -> SavedPlaylistTrackType.Server
+            PlaylistTrackType.LocalCached -> SavedPlaylistTrackType.LocalCached
+        },
+        title = title,
+        artist = artist,
+        tuningParams = tuningParams
+    )
+}
+
+internal fun SavedPlaylistTrack.toPlaylistTrack(): PlaylistTrack? {
+    val normalizedId = id.trim()
+    if (normalizedId.isBlank()) return null
+    return PlaylistTrack(
+        id = normalizedId,
+        type = when (type) {
+            SavedPlaylistTrackType.Server -> PlaylistTrackType.Server
+            SavedPlaylistTrackType.LocalCached -> PlaylistTrackType.LocalCached
+        },
+        title = title,
+        artist = artist,
+        tuningParams = tuningParams
+    )
+}
+
+internal fun playablePlaylistTracks(
+    tracks: List<PlaylistTrack>,
+    appMode: AppMode?,
+    localCachedTracks: List<LocalCachedTrack>
+): List<PlaylistTrack> {
+    return when (appMode) {
+        AppMode.Server -> tracks.filter { it.type == PlaylistTrackType.Server }
+        AppMode.Local -> {
+            val cachedIds = localCachedTracks.mapTo(mutableSetOf()) { it.localId }
+            tracks.filter { it.type == PlaylistTrackType.LocalCached && it.id in cachedIds }
+        }
+        null -> emptyList()
+    }
 }
 
 private val PlaylistTrack.playlistKey: String

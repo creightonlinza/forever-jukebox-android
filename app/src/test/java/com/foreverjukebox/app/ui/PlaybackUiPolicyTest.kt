@@ -88,4 +88,48 @@ class PlaybackUiPolicyTest {
             )
         )
     }
+
+    @Test
+    fun savedPlaylistButtonShowsOnlyForInactivePlaylistOnEmptyListenScreen() {
+        val inactivePlaylist = JukeboxPlaylistState(
+            tracks = listOf(
+                PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
+                PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
+            ),
+            currentIndex = -1
+        )
+        val empty = UiState(playlist = inactivePlaylist, playback = PlaybackState())
+
+        assertTrue(shouldShowSavedPlaylistButton(empty))
+        assertFalse(
+            shouldShowSavedPlaylistButton(
+                empty.copy(playback = PlaybackState(audioLoaded = true, analysisLoaded = true))
+            )
+        )
+        assertFalse(
+            shouldShowSavedPlaylistButton(
+                empty.copy(playlist = inactivePlaylist.copy(currentIndex = 0))
+            )
+        )
+        assertFalse(
+            shouldShowSavedPlaylistButton(
+                empty.copy(playlist = inactivePlaylist.copy(tracks = inactivePlaylist.tracks.take(1)))
+            )
+        )
+    }
+
+    @Test
+    fun activePlaylistControlsHideForInactiveSavedPlaylist() {
+        val inactivePlaylist = JukeboxPlaylistState(
+            tracks = listOf(
+                PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
+                PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
+            ),
+            currentIndex = -1
+        )
+
+        assertTrue(shouldShowPlaylistControls(inactivePlaylist))
+        assertFalse(shouldShowActivePlaylistControls(inactivePlaylist))
+        assertTrue(shouldShowActivePlaylistControls(inactivePlaylist.copy(currentIndex = 0)))
+    }
 }
