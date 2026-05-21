@@ -36,15 +36,6 @@ internal fun isAnalysisInProgressStatus(status: String?): Boolean {
     return status == "downloading" || status == "queued" || status == "processing"
 }
 
-internal const val COMPLETE_AUDIO_LOAD_MAX_ATTEMPTS = 3
-
-internal fun shouldRetryCompleteAudioLoad(
-    failedAttempts: Int,
-    maxAttempts: Int = COMPLETE_AUDIO_LOAD_MAX_ATTEMPTS
-): Boolean {
-    return failedAttempts in 1 until maxAttempts
-}
-
 class PlaybackCoordinator(
     private val application: Application,
     private val scope: CoroutineScope,
@@ -801,7 +792,6 @@ class PlaybackCoordinator(
     private suspend fun pollAnalysis(jobId: String) {
         val baseUrl = getState().baseUrl
         val intervalMs = 3000L
-        var completeAudioLoadFailedAttempts = 0
         while (currentCoroutineContext().isActive) {
             if (!isActiveJobId(jobId)) {
                 return
@@ -859,21 +849,10 @@ class PlaybackCoordinator(
                             delay(intervalMs)
                             continue
                         }
-                        completeAudioLoadFailedAttempts += 1
-                        val loaded = loadCompleteAudioFromJob(
-                            jobId = jobId,
-                            attempt = completeAudioLoadFailedAttempts
-                        )
+                        val loaded = loadAudioFromJob(jobId)
                         if (!loaded) {
-                            if (!isActiveJobId(jobId)) {
-                                return
-                            }
-                            if (shouldRetryCompleteAudioLoad(completeAudioLoadFailedAttempts)) {
-                                delay(intervalMs)
-                                continue
-                            }
-                            setAnalysisError("Loading failed.")
-                            return
+                            delay(intervalMs)
+                            continue
                         }
                     }
                     if (applyAnalysisResult(response)) {
@@ -882,43 +861,6 @@ class PlaybackCoordinator(
                 }
             }
             delay(intervalMs)
-        }
-    }
-
-    private suspend fun loadCompleteAudioFromJob(jobId: String, attempt: Int): Boolean {
-        try {
-            val loaded = loadAudioFromJob(jobId)
-            if (!loaded && isActiveJobId(jobId)) {
-                handleCompleteAudioLoadFailure(jobId, attempt, null)
-            }
-            return loaded
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: IOException) {
-            handleCompleteAudioLoadFailure(jobId, attempt, error)
-        } catch (error: IllegalArgumentException) {
-            handleCompleteAudioLoadFailure(jobId, attempt, error)
-        } catch (error: IllegalStateException) {
-            handleCompleteAudioLoadFailure(jobId, attempt, error)
-        }
-        return false
-    }
-
-    private suspend fun handleCompleteAudioLoadFailure(
-        jobId: String,
-        attempt: Int,
-        error: Throwable?
-    ) {
-        if (error != null) {
-            Log.e(TAG, "Final audio load failed for $jobId on attempt $attempt", error)
-        }
-        audioLoadInFlight = false
-        updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-        syncLoadingKeepAliveService()
-        withContext(Dispatchers.IO) {
-            ignoreFailures {
-                audioFile(jobId).delete()
-            }
         }
     }
 
