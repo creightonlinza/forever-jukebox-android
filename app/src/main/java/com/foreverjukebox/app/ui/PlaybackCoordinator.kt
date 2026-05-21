@@ -301,19 +301,14 @@ class PlaybackCoordinator(
         val baseUrl = getState().baseUrl
         setAudioLoading(true)
         setAnalysisProgress(0, "Loading audio")
+        val target = audioFile(jobId)
         try {
-            val target = audioFile(jobId)
             api.fetchAudioToFile(baseUrl, jobId, target)
             if (!isActiveJobId(jobId)) {
                 return false
             }
-            withContext(Dispatchers.Default) {
-                controller.player.loadFile(target) { percent ->
-                    scope.launch(Dispatchers.Main) {
-                        setDecodeProgress(percent)
-                    }
-                }
-            }
+            val loaded = loadServerAudioFileWithRetry(jobId, target)
+            if (!loaded) return false
             if (!isActiveJobId(jobId)) {
                 return false
             }
@@ -322,19 +317,64 @@ class PlaybackCoordinator(
             syncLoadingKeepAliveService()
             return true
         } catch (err: HttpStatusException) {
-            audioLoadInFlight = false
-            updatePlaybackState { it.copy(audioLoading = false) }
-            syncLoadingKeepAliveService()
+            clearFailedAudioLoad()
             if (err.statusCode == 404) {
                 return false
             }
             throw err
         } catch (err: IOException) {
-            audioLoadInFlight = false
-            updatePlaybackState { it.copy(audioLoading = false) }
-            syncLoadingKeepAliveService()
+            clearFailedAudioLoad()
+            ignoreFailures { target.delete() }
             throw err
         }
+    }
+
+    private suspend fun loadServerAudioFileWithRetry(jobId: String, target: File): Boolean {
+        var attempt = 1
+        while (true) {
+            try {
+                withContext(Dispatchers.Default) {
+                    controller.player.loadFile(target) { percent ->
+                        scope.launch(Dispatchers.Main) {
+                            setDecodeProgress(percent)
+                        }
+                    }
+                }
+                return true
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: IllegalArgumentException) {
+                if (!handleServerAudioDecodeFailure(jobId, attempt, error)) return false
+                attempt += 1
+            } catch (error: IllegalStateException) {
+                if (!handleServerAudioDecodeFailure(jobId, attempt, error)) return false
+                attempt += 1
+            }
+        }
+    }
+
+    private suspend fun handleServerAudioDecodeFailure(
+        jobId: String,
+        attempt: Int,
+        error: Throwable
+    ): Boolean {
+        controller.player.clear()
+        if (!isActiveJobId(jobId)) {
+            return false
+        }
+        if (attempt >= SERVER_AUDIO_DECODE_MAX_ATTEMPTS) {
+            clearFailedAudioLoad()
+            throw error
+        }
+        setAnalysisProgress(0, "Loading audio")
+        delay(SERVER_AUDIO_DECODE_RETRY_DELAY_MS)
+        return isActiveJobId(jobId)
+    }
+
+    private fun clearFailedAudioLoad() {
+        audioLoadInFlight = false
+        updatePlaybackState { it.copy(audioLoading = false) }
+        syncLoadingKeepAliveService()
     }
 
     suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
@@ -918,6 +958,8 @@ class PlaybackCoordinator(
 
     private companion object {
         const val TAG = "PlaybackCoordinator"
+        const val SERVER_AUDIO_DECODE_MAX_ATTEMPTS = 3
+        const val SERVER_AUDIO_DECODE_RETRY_DELAY_MS = 500L
     }
 
     private fun parseTuningParams(raw: String?): ResolvedTuningParams? {

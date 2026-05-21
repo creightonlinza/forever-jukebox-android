@@ -307,7 +307,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
                 }
             }
         } finally {
-            decoder.stop()
+            runCatching { decoder.stop() }
             decoder.release()
             extractor.release()
             output.flush()
