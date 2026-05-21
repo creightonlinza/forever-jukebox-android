@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -57,5 +58,28 @@ class CastSessionCoordinatorPolicyTest {
             ),
             preserved
         )
+    }
+
+    @Test
+    fun clearPlaylistOnCastDisconnectClearsCastStateAndPlaylist() {
+        val state = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                castDeviceName = "Living Room"
+            ),
+            playlist = JukeboxPlaylistState(
+                tracks = listOf(
+                    PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
+                    PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
+                ),
+                currentIndex = 1
+            )
+        )
+
+        val updated = clearPlaylistOnCastDisconnect(state)
+
+        assertFalse(updated.playback.isCasting)
+        assertNull(updated.playback.castDeviceName)
+        assertEquals(JukeboxPlaylistState(), updated.playlist)
     }
 }
