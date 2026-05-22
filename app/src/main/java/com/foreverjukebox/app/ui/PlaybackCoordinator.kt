@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import com.foreverjukebox.app.data.ApiClient
@@ -298,6 +299,12 @@ class PlaybackCoordinator(
         if (!isActiveJobId(jobId)) {
             return false
         }
+        return withAudioLoadWakeLock {
+            loadAudioFromJobWithWakeLock(jobId)
+        }
+    }
+
+    private suspend fun loadAudioFromJobWithWakeLock(jobId: String): Boolean {
         val baseUrl = getState().baseUrl
         setAudioLoading(true)
         setAnalysisProgress(0, "Loading audio")
@@ -326,6 +333,23 @@ class PlaybackCoordinator(
             clearFailedAudioLoad()
             ignoreFailures { target.delete() }
             throw err
+        }
+    }
+
+    private suspend fun <T> withAudioLoadWakeLock(block: suspend () -> T): T {
+        val powerManager = application.getSystemService(PowerManager::class.java)
+        val wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            AUDIO_LOAD_WAKE_LOCK_TAG
+        )
+        wakeLock.setReferenceCounted(false)
+        return try {
+            wakeLock.acquire(AUDIO_LOAD_WAKE_LOCK_TIMEOUT_MS)
+            block()
+        } finally {
+            if (wakeLock.isHeld) {
+                wakeLock.release()
+            }
         }
     }
 
@@ -960,6 +984,8 @@ class PlaybackCoordinator(
         const val TAG = "PlaybackCoordinator"
         const val SERVER_AUDIO_DECODE_MAX_ATTEMPTS = 3
         const val SERVER_AUDIO_DECODE_RETRY_DELAY_MS = 500L
+        const val AUDIO_LOAD_WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L
+        const val AUDIO_LOAD_WAKE_LOCK_TAG = "ForeverJukebox:AudioLoad"
     }
 
     private fun parseTuningParams(raw: String?): ResolvedTuningParams? {
