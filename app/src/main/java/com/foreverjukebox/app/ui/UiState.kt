@@ -1,17 +1,18 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.autocanonizer.AutocanonizerData
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.DEFAULT_MAX_FAVORITES
+import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
-import com.foreverjukebox.app.data.FavoriteTrack
-import com.foreverjukebox.app.autocanonizer.AutocanonizerData
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
-import kotlinx.serialization.Serializable
 import java.net.URI
+import kotlinx.serialization.Serializable
 
 enum class TabId {
     Input,
@@ -85,6 +86,7 @@ data class UiState(
     val favorites: List<FavoriteTrack> = emptyList(),
     val favoritesSyncCode: String? = null,
     val allowFavoritesSync: Boolean = false,
+    val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     val maxTrackLengthMinutes: Double? = null,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,
@@ -94,7 +96,8 @@ data class UiState(
     val playback: PlaybackState = PlaybackState(),
     val playlist: JukeboxPlaylistState = JukeboxPlaylistState(),
     val tuning: TuningState = TuningState(),
-    val sleepTimer: SleepTimerUiState = SleepTimerUiState()
+    val sleepTimer: SleepTimerUiState = SleepTimerUiState(),
+    val fullscreenVisualizationVisible: Boolean = false
 )
 
 data class LocalCachedTrack(
@@ -249,6 +252,36 @@ fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
 }
 
 fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading
+
+fun shouldShowFullscreenVisualization(playback: PlaybackState): Boolean {
+    return !playback.isCasting &&
+        playback.audioLoaded &&
+        playback.analysisLoaded &&
+        playback.analysisErrorMessage.isNullOrBlank()
+}
+
+fun stateAfterFullscreenVisualizationOpen(current: UiState): UiState {
+    return if (shouldShowFullscreenVisualization(current.playback)) {
+        current.copy(fullscreenVisualizationVisible = true)
+    } else {
+        current
+    }
+}
+
+fun stateAfterFullscreenVisualizationClose(current: UiState): UiState {
+    return current.copy(fullscreenVisualizationVisible = false)
+}
+
+fun stateAfterFullscreenVisualizationSync(current: UiState): UiState {
+    return if (
+        current.fullscreenVisualizationVisible &&
+        !shouldShowFullscreenVisualization(current.playback)
+    ) {
+        stateAfterFullscreenVisualizationClose(current)
+    } else {
+        current
+    }
+}
 
 fun PlaybackState.hasCastTrack(): Boolean {
     return !lastJobId.isNullOrBlank()

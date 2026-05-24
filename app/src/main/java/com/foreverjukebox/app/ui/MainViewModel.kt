@@ -16,9 +16,9 @@ import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.AnalysisStartResponse
-import com.foreverjukebox.app.data.HttpStatusException
-import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.FavoriteSourceType
+import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.SavedPlaylistTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
@@ -27,6 +27,7 @@ import com.foreverjukebox.app.data.YoutubeSearchItem
 import com.foreverjukebox.app.data.buildJobTrackId
 import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.parseTrackId
+import com.foreverjukebox.app.data.sanitizeMaxFavorites
 import com.foreverjukebox.app.data.trackIdFromAnalysis
 import com.foreverjukebox.app.data.trackIdFromTopSong
 import com.foreverjukebox.app.data.sourceProviderFromRaw
@@ -334,6 +335,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ForegroundPlaybackService.ACTION_PLAYLIST_NEXT -> {
                     skipToNextPlaylistTrack()
                 }
+                ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN -> {
+                    closeFullscreenVisualization()
+                }
             }
         }
     }
@@ -344,6 +348,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             addAction(ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED)
             addAction(ForegroundPlaybackService.ACTION_PLAYLIST_PREVIOUS)
             addAction(ForegroundPlaybackService.ACTION_PLAYLIST_NEXT)
+            addAction(ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN)
         }
         ContextCompat.registerReceiver(
             getApplication<Application>(),
@@ -385,7 +390,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             preferences.favorites.collect { favorites ->
-                val normalized = favoritesController.normalizeFavorites(favorites).take(MAX_FAVORITES)
+                val normalized = favoritesController.normalizeFavorites(favorites)
                 if (normalized != favorites) {
                     favoritesController.updateFavorites(normalized, sync = false)
                 } else {
@@ -408,19 +413,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             preferences.appConfig.collect { config ->
                 if (config != null) {
+                    val maxFavorites = sanitizeMaxFavorites(config.maxFavorites)
+                    val currentFavorites = state.value.favorites
+                    val normalizedFavorites = favoritesController.normalizeFavorites(
+                        items = currentFavorites,
+                        maxFavorites = maxFavorites
+                    )
                     _state.update {
                         it.copy(
                             allowFavoritesSync = config.allowFavoritesSync,
+                            maxFavorites = maxFavorites,
+                            favorites = favoritesController.normalizeFavorites(
+                                items = it.favorites,
+                                maxFavorites = maxFavorites
+                            ),
                             maxTrackLengthMinutes = config.maxTrackLength
                         )
                     }
+                    if (normalizedFavorites != currentFavorites) {
+                        favoritesController.updateFavorites(normalizedFavorites, sync = false)
+                    }
                     favoritesController.maybeHydrateFavoritesFromSync()
                 } else {
+                    val maxFavorites = sanitizeMaxFavorites(null)
+                    val currentFavorites = state.value.favorites
+                    val normalizedFavorites = favoritesController.normalizeFavorites(
+                        items = currentFavorites,
+                        maxFavorites = maxFavorites
+                    )
                     _state.update {
                         it.copy(
                             allowFavoritesSync = false,
+                            maxFavorites = maxFavorites,
+                            favorites = favoritesController.normalizeFavorites(
+                                items = it.favorites,
+                                maxFavorites = maxFavorites
+                            ),
                             maxTrackLengthMinutes = null
                         )
+                    }
+                    if (normalizedFavorites != currentFavorites) {
+                        favoritesController.updateFavorites(normalizedFavorites, sync = false)
                     }
                 }
             }
@@ -1102,7 +1135,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             FavoriteToggleResult.Removed
         } else {
-            if (favorites.size >= MAX_FAVORITES) {
+            if (favorites.size >= sanitizeMaxFavorites(currentState.maxFavorites)) {
                 FavoriteToggleResult.LimitReached
             } else {
                 val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
@@ -2356,6 +2389,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playbackCoordinator.updateListenTimeDisplay()
     }
 
+    fun openFullscreenVisualization() {
+        _state.update(::stateAfterFullscreenVisualizationOpen)
+    }
+
+    fun closeFullscreenVisualization() {
+        _state.update(::stateAfterFullscreenVisualizationClose)
+    }
+
     fun setPlaybackMode(mode: PlaybackMode) {
         val current = state.value.playback
         if (current.playMode == mode) {
@@ -2646,7 +2687,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "MainViewModel"
-        private const val MAX_FAVORITES = 100
         private const val CAST_MAX_TRACK_DURATION_MINUTES = 7.0
         private const val GITHUB_REPO_OWNER = "creightonlinza"
         private const val GITHUB_REPO_NAME = "forever-jukebox-android"

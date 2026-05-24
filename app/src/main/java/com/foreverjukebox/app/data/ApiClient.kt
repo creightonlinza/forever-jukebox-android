@@ -119,10 +119,11 @@ class ApiClient(
 
     suspend fun createFavoritesSync(
         baseUrl: String,
-        favorites: List<FavoriteTrack>
+        favorites: List<FavoriteTrack>,
+        maxFavorites: Int = DEFAULT_MAX_FAVORITES
     ): FavoritesSyncResponse {
         val url = buildUrl(baseUrl, ApiPaths.FAVORITES_SYNC)
-        val trimmed = favorites.take(MAX_FAVORITES)
+        val trimmed = favorites.take(sanitizeMaxFavorites(maxFavorites))
         val payload = jsonWithDefaults.encodeToString(FavoritesSyncRequest(trimmed))
         return postJson(url, payload).let { json.decodeFromString(it) }
     }
@@ -130,10 +131,11 @@ class ApiClient(
     suspend fun updateFavoritesSync(
         baseUrl: String,
         code: String,
-        favorites: List<FavoriteTrack>
+        favorites: List<FavoriteTrack>,
+        maxFavorites: Int = DEFAULT_MAX_FAVORITES
     ): FavoritesSyncResponse {
         val url = buildUrl(baseUrl, ApiPaths.favoritesSync(code))
-        val trimmed = favorites.take(MAX_FAVORITES)
+        val trimmed = favorites.take(sanitizeMaxFavorites(maxFavorites))
         val payload = jsonWithDefaults.encodeToString(FavoritesSyncRequest(trimmed))
         return putJson(url, payload).let { json.decodeFromString(it) }
     }
@@ -323,7 +325,6 @@ class ApiClient(
 
     companion object {
         private const val DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com"
-        private const val MAX_FAVORITES = 100
         private const val TRENDING_LIMIT = 25
         private val sharedClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)

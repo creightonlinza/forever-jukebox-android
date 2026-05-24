@@ -1,10 +1,7 @@
 package com.foreverjukebox.app.ui
 
-import android.app.Activity
 import android.content.Intent
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -88,7 +85,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         if (playback.shareTrackIdOrNull() != null) {
             val result = viewModel.toggleFavoriteForCurrent()
             val message = when (result) {
-                FavoriteToggleResult.LimitReached -> "Maximum favorites reached (100)."
+                FavoriteToggleResult.LimitReached -> "Maximum favorites reached (${state.maxFavorites})."
                 FavoriteToggleResult.Removed -> "Removed from Favorites"
                 FavoriteToggleResult.Added -> "Added to Favorites"
                 FavoriteToggleResult.BlockedInFlight,
@@ -99,27 +96,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             }
         }
     }
-    val fullscreenLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode != Activity.RESULT_OK) {
-            return@rememberLauncherForActivityResult
-        }
-        val nextIndex = result.data?.getIntExtra(
-            FullscreenActivity.EXTRA_RESULT_VIZ_INDEX,
-            playback.activeVizIndex
-        ) ?: return@rememberLauncherForActivityResult
-        val nextModeRaw = result.data?.getStringExtra(FullscreenActivity.EXTRA_RESULT_MODE)
-        val nextMode = nextModeRaw?.let { raw ->
-            runCatching { PlaybackMode.valueOf(raw) }.getOrNull()
-        }
-        if (nextMode != null) {
-            viewModel.setPlaybackMode(nextMode)
-        }
-        viewModel.setActiveVisualization(nextIndex)
-        viewModel.refreshPlaybackFromController()
-    }
-
     LaunchedEffect(playback.jumpLine) {
         if (playback.jumpLine != null) {
             jumpLine = playback.jumpLine
@@ -213,12 +189,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onOpenPlaylist = { showPlaylist = true },
                 onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
                 onSkipNext = viewModel::skipToNextPlaylistTrack,
-                onOpenFullscreen = {
-                    val intent = Intent(context, FullscreenActivity::class.java)
-                        .putExtra(FullscreenActivity.EXTRA_VIZ_INDEX, playback.activeVizIndex)
-                        .putExtra(FullscreenActivity.EXTRA_MODE, playback.playMode.name)
-                    fullscreenLauncher.launch(intent)
-                }
+                onOpenFullscreen = viewModel::openFullscreenVisualization
             )
             }
             ListenContentMode.Empty -> {

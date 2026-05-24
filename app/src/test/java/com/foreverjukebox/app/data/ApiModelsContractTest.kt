@@ -82,7 +82,8 @@ class ApiModelsContractTest {
             {
               "allow_user_upload": true,
               "allow_user_url": true,
-              "allow_favorites_sync": false
+              "allow_favorites_sync": false,
+              "max_favorites": 175
             }
         """.trimIndent()
 
@@ -91,6 +92,22 @@ class ApiModelsContractTest {
         assertTrue(config.allowUserUpload)
         assertTrue(config.allowUserUrl)
         assertFalse(config.allowFavoritesSync)
+        assertEquals(175, config.maxFavorites)
+    }
+
+    @Test
+    fun appConfigDefaultsMaxFavoritesWhenMissing() {
+        val payload = """
+            {
+              "allow_user_upload": true,
+              "allow_user_url": true,
+              "allow_favorites_sync": false
+            }
+        """.trimIndent()
+
+        val config = json.decodeFromString(AppConfigResponse.serializer(), payload)
+
+        assertEquals(DEFAULT_MAX_FAVORITES, config.maxFavorites)
     }
 
     @Test

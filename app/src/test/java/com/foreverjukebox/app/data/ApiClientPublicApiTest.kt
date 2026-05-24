@@ -167,10 +167,10 @@ class ApiClientPublicApiTest {
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
-                .setBody("""{"code":"abc123","count":100,"favorites":[]}""")
+                .setBody("""{"code":"abc123","count":150,"favorites":[]}""")
         )
         val baseUrl = server.url("/api/").toString()
-        val favorites = (1..105).map { index ->
+        val favorites = (1..155).map { index ->
             FavoriteTrack(
                 uniqueSongId = "song_$index",
                 title = "Song $index",
@@ -185,9 +185,38 @@ class ApiClientPublicApiTest {
         assertEquals("/api/api/favorites/sync", request.path)
         val payload = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
         val payloadFavorites = payload.getValue("favorites").jsonArray
-        assertEquals(100, payloadFavorites.size)
+        assertEquals(150, payloadFavorites.size)
         assertEquals("song_1", payloadFavorites.first().jsonObject.getValue("uniqueSongId").toString().trim('"'))
         assertEquals("abc123", response.code)
+    }
+
+    @Test
+    fun createFavoritesSyncTrimsPayloadToConfiguredLimit() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"code":"abc123","count":2,"favorites":[]}""")
+        )
+        val baseUrl = server.url("/api/").toString()
+        val favorites = (1..3).map { index ->
+            FavoriteTrack(
+                uniqueSongId = "song_$index",
+                title = "Song $index",
+                artist = "Artist $index"
+            )
+        }
+
+        api.createFavoritesSync(
+            baseUrl = baseUrl,
+            favorites = favorites,
+            maxFavorites = 2
+        )
+
+        val request = server.takeRequest()
+        val payload = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+        val payloadFavorites = payload.getValue("favorites").jsonArray
+        assertEquals(2, payloadFavorites.size)
+        assertEquals("song_2", payloadFavorites.last().jsonObject.getValue("uniqueSongId").toString().trim('"'))
     }
 
     @Test
