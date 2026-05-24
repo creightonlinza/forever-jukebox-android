@@ -15,6 +15,7 @@ import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
+import com.foreverjukebox.app.playback.loadingNotificationProgressBucket
 import java.io.File
 import java.io.IOException
 import java.time.Duration
@@ -37,6 +38,13 @@ internal fun isAnalysisInProgressStatus(status: String?): Boolean {
     return status == "downloading" || status == "queued" || status == "processing"
 }
 
+internal fun shouldKeepPlaybackServiceAfterLoading(playback: PlaybackState): Boolean {
+    return playback.isRunning ||
+        playback.isPaused ||
+        playback.shouldShowCastNotification() ||
+        shouldStartPlayAfterLoaded(playback)
+}
+
 class PlaybackCoordinator(
     private val application: Application,
     private val scope: CoroutineScope,
@@ -56,6 +64,8 @@ class PlaybackCoordinator(
     private var backgroundAudioLoadJob: Job? = null
     private var audioLoadInFlight = false
     private var loadingKeepAliveActive = false
+    private var loadingNotificationActive = false
+    private var lastLoadingNotificationBucket: Int? = null
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
     private var deleteEligibilityJobId: String? = null
@@ -68,6 +78,7 @@ class PlaybackCoordinator(
         backgroundAudioLoadJob?.cancel()
         if (loadingKeepAliveActive) {
             loadingKeepAliveActive = false
+            resetLoadingNotificationTracking()
             val playback = getState().playback
             if (!playback.isRunning && !playback.isPaused && !playback.shouldShowCastNotification()) {
                 ForegroundPlaybackService.stop(application)
@@ -493,21 +504,31 @@ class PlaybackCoordinator(
             (showPlaylistControls && current.playlist.canSkipNext())
     }
 
-    private fun startForegroundPlaybackService() {
+    private fun startForegroundPlaybackService(
+        isLoading: Boolean = false,
+        loadingProgress: Int? = null
+    ) {
         val (canSkipPrevious, canSkipNext) = playlistNotificationSkipAvailability()
         ForegroundPlaybackService.start(
             context = application,
             canSkipPrevious = canSkipPrevious,
-            canSkipNext = canSkipNext
+            canSkipNext = canSkipNext,
+            isLoading = isLoading,
+            loadingProgress = loadingProgress
         )
     }
 
-    private fun updateForegroundPlaybackService() {
+    private fun updateForegroundPlaybackService(
+        isLoading: Boolean = false,
+        loadingProgress: Int? = null
+    ) {
         val (canSkipPrevious, canSkipNext) = playlistNotificationSkipAvailability()
         ForegroundPlaybackService.update(
             context = application,
             canSkipPrevious = canSkipPrevious,
-            canSkipNext = canSkipNext
+            canSkipNext = canSkipNext,
+            isLoading = isLoading,
+            loadingProgress = loadingProgress
         )
     }
 
@@ -522,6 +543,7 @@ class PlaybackCoordinator(
         controller.stopPlayback()
         controller.resetTimers()
         controller.setTrackMeta(null, null)
+        resetLoadingNotificationTracking()
         ForegroundPlaybackService.stop(application)
         stopListenTimer()
         updateState {
@@ -824,22 +846,47 @@ class PlaybackCoordinator(
         syncLoadingKeepAliveService()
     }
 
+    private fun resetLoadingNotificationTracking() {
+        loadingNotificationActive = false
+        lastLoadingNotificationBucket = null
+    }
+
+    private fun syncLoadingNotification(playback: PlaybackState) {
+        val progressBucket = loadingNotificationProgressBucket(playback.analysisProgress)
+        if (!loadingKeepAliveActive) {
+            startForegroundPlaybackService(
+                isLoading = true,
+                loadingProgress = playback.analysisProgress
+            )
+            loadingKeepAliveActive = true
+            loadingNotificationActive = true
+            lastLoadingNotificationBucket = progressBucket
+            return
+        }
+        if (!loadingNotificationActive || lastLoadingNotificationBucket != progressBucket) {
+            updateForegroundPlaybackService(
+                isLoading = true,
+                loadingProgress = playback.analysisProgress
+            )
+            loadingNotificationActive = true
+            lastLoadingNotificationBucket = progressBucket
+        }
+    }
+
     private fun syncLoadingKeepAliveService() {
         val playback = getState().playback
         val shouldKeepAlive =
             playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading
         if (shouldKeepAlive) {
-            if (!loadingKeepAliveActive) {
-                startForegroundPlaybackService()
-                loadingKeepAliveActive = true
-            }
+            syncLoadingNotification(playback)
             return
         }
         if (!loadingKeepAliveActive) {
             return
         }
         loadingKeepAliveActive = false
-        if (playback.isRunning || playback.isPaused || playback.shouldShowCastNotification()) {
+        resetLoadingNotificationTracking()
+        if (shouldKeepPlaybackServiceAfterLoading(playback)) {
             return
         }
         ForegroundPlaybackService.stop(application)
