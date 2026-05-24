@@ -199,11 +199,6 @@ private fun buildPlaybackTitle(
     }
 }
 
-private data class PlaylistNotificationSkipAvailability(
-    val canSkipPrevious: Boolean,
-    val canSkipNext: Boolean
-)
-
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val api = ApiClient()
@@ -538,7 +533,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
-            ForegroundPlaybackService.stop(getApplication())
+            syncPlaybackServiceSession()
         }
 
         playbackCoordinator.restorePlaybackState()
@@ -572,6 +567,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (state.value.playback.isCasting) {
             syncCastNotification(state.value.playback)
+        } else {
+            syncPlaybackServiceSession()
         }
     }
 
@@ -601,6 +598,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
+        syncPlaybackServiceSession()
     }
 
     fun onHostStarted() {
@@ -804,7 +802,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         engine.clearAnalysis()
         controller.player.clear()
         controller.setTrackMeta(null, null)
-        ForegroundPlaybackService.stop(getApplication())
 
         _state.update { current ->
             val resolvedAppId = CastAppIdResolver.resolve(getApplication(), current.baseUrl)
@@ -832,7 +829,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         engine.clearAnalysis()
         controller.player.clear()
         controller.setTrackMeta(null, null)
-        ForegroundPlaybackService.stop(getApplication())
 
         _state.update { current ->
             val mode = current.appMode
@@ -1043,7 +1039,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
             updatePlaylistState { initializePlaylist(current, track) }
-            updatePlaybackNotificationIfVisible()
+            syncPlaybackServiceSession()
             viewModelScope.launch { showToast("Added to playlist.") }
             return
         }
@@ -1052,7 +1048,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         updatePlaylistState { it.appendTrack(track) }
-        updatePlaybackNotificationIfVisible()
+        syncPlaybackServiceSession()
         viewModelScope.launch { showToast("Added to playlist.") }
     }
 
@@ -1684,7 +1680,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
-        playbackCoordinator.resetForNewTrack()
+        playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         _state.update {
             it.copy(
                 search = resetSearchStateAfterTrackSelection(it.search),
@@ -1723,7 +1719,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stateUpdate: (UiState) -> UiState
     ) {
         serverTrackLoadCoordinator.cancel()
-        playbackCoordinator.resetForNewTrack()
+        playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         playbackCoordinator.setPendingTuningParams(tuningParams)
         _state.update(stateUpdate)
         applyActiveTab(TabId.Play, recordHistory = true)
@@ -1859,11 +1855,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 when {
                     running -> {
                         playbackCoordinator.startListenTimer()
-                        startForegroundPlaybackService()
+                        syncPlaybackServiceSession()
                     }
                     paused -> {
                         playbackCoordinator.stopListenTimer()
-                        updateForegroundPlaybackService()
+                        syncPlaybackServiceSession()
                     }
                     else -> handleJukeboxPlaybackFailure()
                 }
@@ -1892,12 +1888,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
-        updateForegroundPlaybackService()
+        syncPlaybackServiceSession()
     }
 
     private fun handleJukeboxPlaybackFailure() {
         playbackCoordinator.stopListenTimer()
-        ForegroundPlaybackService.stop(getApplication())
+        hardStopPlaybackServiceSession()
         playbackCoordinator.setAnalysisError("Playback failed.")
     }
 
@@ -1916,7 +1912,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
-            updateForegroundPlaybackService()
+            syncPlaybackServiceSession()
         } else if (current.isPaused) {
             resumeAutocanonizerPlayback()
         } else {
@@ -1958,7 +1954,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             playbackCoordinator.startListenTimer()
-            startForegroundPlaybackService()
+            syncPlaybackServiceSession()
         }
     }
 
@@ -1993,7 +1989,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             playbackCoordinator.startListenTimer()
-            startForegroundPlaybackService()
+            syncPlaybackServiceSession()
         }
     }
 
@@ -2309,12 +2305,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun removePlaylistTrack(index: Int) {
         updatePlaylistState { it.removeTrackAt(index) }
-        updatePlaybackNotificationIfVisible()
+        syncPlaybackServiceSession()
     }
 
     fun clearPlaylist() {
         clearPlaylistState()
-        updatePlaybackNotificationIfVisible()
+        syncPlaybackServiceSession()
     }
 
     fun selectBeat(index: Int) {
@@ -2328,7 +2324,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (selection.startedPlayback) {
             playbackCoordinator.startListenTimer()
             playbackCoordinator.updateListenTimeDisplay()
-            startForegroundPlaybackService()
+            syncPlaybackServiceSession()
         }
         _state.update {
             it.copy(
@@ -2370,7 +2366,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (!current.isCasting) {
             stopTransportForModeChange(
-                context = getApplication(),
                 controller = controller,
                 previousMode = current.playMode,
                 isRunning = current.isRunning || current.isPaused,
@@ -2391,6 +2386,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (current.isCasting) {
             syncCastNotification(state.value.playback)
+        } else {
+            syncPlaybackServiceSession()
         }
     }
 
@@ -2426,7 +2423,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
-        updateForegroundPlaybackService()
+        syncPlaybackServiceSession()
     }
 
     fun setCanonizerFinishOutSong(enabled: Boolean) {
@@ -2499,7 +2496,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     )
                 }
-                updateForegroundPlaybackService()
+                syncPlaybackServiceSession()
             }
         }
     }
@@ -2532,7 +2529,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     )
                 }
-                updateForegroundPlaybackService()
+                syncPlaybackServiceSession()
             }
         }
     }
@@ -2628,58 +2625,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         appLifecycleCoordinator.checkForAppUpdateOnce()
     }
 
-    private fun playlistNotificationSkipAvailability(): PlaylistNotificationSkipAvailability {
-        val current = state.value
-        val showPlaylistControls =
-            current.playback.playMode == PlaybackMode.Jukebox &&
-                shouldShowPlaylistControls(current.playlist)
-        return PlaylistNotificationSkipAvailability(
-            canSkipPrevious = showPlaylistControls && current.playlist.canSkipPrevious(),
-            canSkipNext = showPlaylistControls && current.playlist.canSkipNext()
-        )
+    private fun syncPlaybackServiceSession() {
+        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
     }
 
-    private fun startForegroundPlaybackService() {
-        val skip = playlistNotificationSkipAvailability()
-        ForegroundPlaybackService.start(
-            context = getApplication(),
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext
-        )
+    private fun hardStopPlaybackServiceSession() {
+        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.HardStop)
     }
 
-    private fun updateForegroundPlaybackService() {
-        val skip = playlistNotificationSkipAvailability()
-        ForegroundPlaybackService.update(
-            context = getApplication(),
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext
-        )
-    }
-
-    private fun updatePlaybackNotificationIfVisible() {
-        val playback = state.value.playback
-        when {
-            playback.shouldShowCastNotification() -> syncCastNotification(playback)
-            playback.isRunning || playback.isPaused -> updateForegroundPlaybackService()
-        }
-    }
-
+    @Suppress("UNUSED_PARAMETER")
     private fun syncCastNotification(playback: PlaybackState) {
-        if (!playback.shouldShowCastNotification()) {
-            ForegroundPlaybackService.stop(getApplication())
-            return
-        }
-        val skip = playlistNotificationSkipAvailability()
-        ForegroundPlaybackService.updateCast(
-            context = getApplication(),
-            isPlaying = playback.isRunning,
-            title = playback.castNotificationTitle(),
-            artist = playback.trackArtist,
-            deviceName = playback.castDeviceName,
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext
-        )
+        syncPlaybackServiceSession()
     }
 
     private suspend fun showToast(message: String) {

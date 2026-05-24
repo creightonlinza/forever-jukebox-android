@@ -1,13 +1,10 @@
 package com.foreverjukebox.app.ui
 
-import android.content.Context
-import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
 
 internal data class ModeTransportPlan(
     val stopAllTransports: Boolean,
     val stopAutocanonizerWhileIdle: Boolean,
-    val stopForegroundNotification: Boolean,
     val invokeOnStopped: Boolean
 )
 
@@ -19,20 +16,17 @@ internal fun resolveModeTransportPlan(
         return ModeTransportPlan(
             stopAllTransports = true,
             stopAutocanonizerWhileIdle = false,
-            stopForegroundNotification = true,
             invokeOnStopped = true
         )
     }
     return ModeTransportPlan(
         stopAllTransports = false,
         stopAutocanonizerWhileIdle = previousMode == PlaybackMode.Autocanonizer,
-        stopForegroundNotification = false,
         invokeOnStopped = false
     )
 }
 
 internal fun stopTransportForModeChange(
-    context: Context,
     controller: PlaybackController,
     previousMode: PlaybackMode,
     isRunning: Boolean,
@@ -43,9 +37,6 @@ internal fun stopTransportForModeChange(
         stopAllPlaybackTransports(controller)
         if (plan.invokeOnStopped) {
             onStopped?.invoke()
-        }
-        if (plan.stopForegroundNotification) {
-            ForegroundPlaybackService.stop(context)
         }
         return
     }

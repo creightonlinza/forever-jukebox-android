@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.ui
 
 import android.app.Application
-import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
 import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.CoroutineScope
@@ -181,6 +180,5 @@ class CastSessionCoordinator(
         serverTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack()
         applyActiveTab(TabId.Top, true)
-        ForegroundPlaybackService.stop(application)
     }
 }

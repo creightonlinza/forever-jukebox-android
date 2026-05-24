@@ -57,7 +57,7 @@ class LocalAnalysisCoordinator(
                 localCachedTrackErrorMessage = null
             )
         }
-        playbackCoordinator.resetForNewTrack()
+        playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         if (playAfterLoaded) {
             updateState {
                 it.copy(playback = it.playback.copy(playAfterLoaded = true))

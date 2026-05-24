@@ -163,7 +163,6 @@ private fun FullscreenScreen(
             return
         }
         stopTransportForModeChange(
-            context = context,
             controller = controller,
             previousMode = playMode,
             isRunning = controller.isPlaying()

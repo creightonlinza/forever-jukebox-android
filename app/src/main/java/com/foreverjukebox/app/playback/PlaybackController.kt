@@ -39,7 +39,6 @@ class PlaybackController {
     fun attachAudioFocus(context: Context) {
         val appContext = context.applicationContext
         playbackStateChangedBroadcaster = {
-            ForegroundPlaybackService.update(appContext)
             broadcastLocalPlaybackStateChanged(appContext)
         }
         audioFocusController = AndroidPlaybackAudioFocusController(
