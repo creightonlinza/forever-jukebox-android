@@ -94,7 +94,8 @@ data class UiState(
     val playback: PlaybackState = PlaybackState(),
     val playlist: JukeboxPlaylistState = JukeboxPlaylistState(),
     val tuning: TuningState = TuningState(),
-    val sleepTimer: SleepTimerUiState = SleepTimerUiState()
+    val sleepTimer: SleepTimerUiState = SleepTimerUiState(),
+    val fullscreenVisualizationVisible: Boolean = false
 )
 
 data class LocalCachedTrack(
@@ -249,6 +250,36 @@ fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
 }
 
 fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading
+
+fun shouldShowFullscreenVisualization(playback: PlaybackState): Boolean {
+    return !playback.isCasting &&
+        playback.audioLoaded &&
+        playback.analysisLoaded &&
+        playback.analysisErrorMessage.isNullOrBlank()
+}
+
+fun stateAfterFullscreenVisualizationOpen(current: UiState): UiState {
+    return if (shouldShowFullscreenVisualization(current.playback)) {
+        current.copy(fullscreenVisualizationVisible = true)
+    } else {
+        current
+    }
+}
+
+fun stateAfterFullscreenVisualizationClose(current: UiState): UiState {
+    return current.copy(fullscreenVisualizationVisible = false)
+}
+
+fun stateAfterFullscreenVisualizationSync(current: UiState): UiState {
+    return if (
+        current.fullscreenVisualizationVisible &&
+        !shouldShowFullscreenVisualization(current.playback)
+    ) {
+        stateAfterFullscreenVisualizationClose(current)
+    } else {
+        current
+    }
+}
 
 fun PlaybackState.hasCastTrack(): Boolean {
     return !lastJobId.isNullOrBlank()

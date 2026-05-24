@@ -334,6 +334,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ForegroundPlaybackService.ACTION_PLAYLIST_NEXT -> {
                     skipToNextPlaylistTrack()
                 }
+                ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN -> {
+                    closeFullscreenVisualization()
+                }
             }
         }
     }
@@ -344,6 +347,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             addAction(ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED)
             addAction(ForegroundPlaybackService.ACTION_PLAYLIST_PREVIOUS)
             addAction(ForegroundPlaybackService.ACTION_PLAYLIST_NEXT)
+            addAction(ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN)
         }
         ContextCompat.registerReceiver(
             getApplication<Application>(),
@@ -2354,6 +2358,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshPlaybackFromController() {
         playbackCoordinator.restorePlaybackState()
         playbackCoordinator.updateListenTimeDisplay()
+    }
+
+    fun openFullscreenVisualization() {
+        _state.update(::stateAfterFullscreenVisualizationOpen)
+    }
+
+    fun closeFullscreenVisualization() {
+        _state.update(::stateAfterFullscreenVisualizationClose)
     }
 
     fun setPlaybackMode(mode: PlaybackMode) {
