@@ -2,8 +2,9 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.ApiClient
-import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.canonicalTrackId
+import com.foreverjukebox.app.data.sanitizeMaxFavorites
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -99,7 +100,11 @@ class FavoritesController(
             val snapshot = currentSyncSnapshot(requireCode = false) ?: return@launch
             try {
                 val favorites = state.favorites
-                val response = api.createFavoritesSync(baseUrl, favorites)
+                val response = api.createFavoritesSync(
+                    baseUrl = baseUrl,
+                    favorites = favorites,
+                    maxFavorites = state.maxFavorites
+                )
                 if (!isSnapshotCurrent(snapshot, requireCodeMatch = false)) {
                     return@launch
                 }
@@ -151,7 +156,7 @@ class FavoritesController(
         fromListenToggle: Boolean = false
     ) {
         val previous = getState().favorites
-        val normalized = normalizeFavorites(favorites).take(MAX_FAVORITES)
+        val normalized = normalizeFavorites(favorites)
         updateState { it.copy(favorites = normalized) }
         scope.launch {
             preferences.setFavorites(normalized)
@@ -226,7 +231,12 @@ class FavoritesController(
                 return
             }
             val merged = applyFavoritesDelta(serverFavorites, delta)
-            val response = api.updateFavoritesSync(snapshot.baseUrl, code, merged)
+            val response = api.updateFavoritesSync(
+                baseUrl = snapshot.baseUrl,
+                code = code,
+                favorites = merged,
+                maxFavorites = state.maxFavorites
+            )
             if (!isSnapshotCurrent(snapshot)) {
                 return
             }
@@ -285,10 +295,13 @@ class FavoritesController(
                 existingCanonical == addedCanonical
             }
         }
-        return normalizeFavorites(merged).take(MAX_FAVORITES)
+        return normalizeFavorites(merged)
     }
 
-    fun normalizeFavorites(items: List<FavoriteTrack>): List<FavoriteTrack> {
+    fun normalizeFavorites(
+        items: List<FavoriteTrack>,
+        maxFavorites: Int = sanitizeMaxFavorites(getState().maxFavorites)
+    ): List<FavoriteTrack> {
         val normalized = items.mapNotNull { item ->
             val uniqueSongId = canonicalTrackId(item.uniqueSongId) ?: return@mapNotNull null
             item.copy(
@@ -298,7 +311,7 @@ class FavoritesController(
                 tuningParams = TuningParamsCodec.stripHighlightAnchorParam(item.tuningParams)
             )
         }
-        return sortFavorites(normalized).take(MAX_FAVORITES)
+        return sortFavorites(normalized).take(sanitizeMaxFavorites(maxFavorites))
     }
 
     private suspend fun fetchFavoritesFromSync(snapshot: SyncSnapshot): List<FavoriteTrack>? {
@@ -358,10 +371,6 @@ class FavoritesController(
             compareBy<FavoriteTrack, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.artist }
         )
-    }
-
-    companion object {
-        private const val MAX_FAVORITES = 100
     }
 
     private data class SyncSnapshot(

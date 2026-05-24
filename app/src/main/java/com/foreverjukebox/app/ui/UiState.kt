@@ -1,17 +1,18 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.autocanonizer.AutocanonizerData
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.DEFAULT_MAX_FAVORITES
+import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
-import com.foreverjukebox.app.data.FavoriteTrack
-import com.foreverjukebox.app.autocanonizer.AutocanonizerData
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
-import kotlinx.serialization.Serializable
 import java.net.URI
+import kotlinx.serialization.Serializable
 
 enum class TabId {
     Input,
@@ -85,6 +86,7 @@ data class UiState(
     val favorites: List<FavoriteTrack> = emptyList(),
     val favoritesSyncCode: String? = null,
     val allowFavoritesSync: Boolean = false,
+    val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     val maxTrackLengthMinutes: Double? = null,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,

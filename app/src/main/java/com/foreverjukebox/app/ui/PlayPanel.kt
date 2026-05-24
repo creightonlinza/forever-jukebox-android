@@ -85,7 +85,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         if (playback.shareTrackIdOrNull() != null) {
             val result = viewModel.toggleFavoriteForCurrent()
             val message = when (result) {
-                FavoriteToggleResult.LimitReached -> "Maximum favorites reached (100)."
+                FavoriteToggleResult.LimitReached -> "Maximum favorites reached (${state.maxFavorites})."
                 FavoriteToggleResult.Removed -> "Removed from Favorites"
                 FavoriteToggleResult.Added -> "Added to Favorites"
                 FavoriteToggleResult.BlockedInFlight,
