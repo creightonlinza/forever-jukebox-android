@@ -20,6 +20,7 @@ import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
+import com.foreverjukebox.app.data.SavedPlaylistTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.YoutubeSearchItem
@@ -214,6 +215,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var foregroundRecoveryInFlight = false
     private var castSelectionJob: Job? = null
     private var pendingDeepLinkUriString: String? = null
+    private var savedPlaylistTracks: List<SavedPlaylistTrack> = emptyList()
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
@@ -251,7 +253,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
-        applyActiveTab = ::applyActiveTab
+        applyActiveTab = ::applyActiveTab,
+        onStableTrackLoaded = ::maybeStartPlayAfterLoaded
     )
     private val serverTrackLoadCoordinator = ServerTrackLoadCoordinator(
         scope = viewModelScope,
@@ -265,7 +268,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         controller = controller,
         playbackCoordinator = playbackCoordinator,
         getState = { state.value },
-        updateState = { updater -> _state.update(updater) },
+        updateState = { updater ->
+            _state.update(updater)
+            hydrateSavedPlaylistIfInactive()
+        },
         applyActiveTab = ::applyActiveTab,
         logError = { message, error -> Log.e(TAG, message, error) }
     )
@@ -322,6 +328,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED -> {
                     handleLocalPlaybackStateChanged()
                 }
+                ForegroundPlaybackService.ACTION_PLAYLIST_PREVIOUS -> {
+                    skipToPreviousPlaylistTrack()
+                }
+                ForegroundPlaybackService.ACTION_PLAYLIST_NEXT -> {
+                    skipToNextPlaylistTrack()
+                }
             }
         }
     }
@@ -330,6 +342,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val playbackServiceEvents = IntentFilter().apply {
             addAction(ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED)
             addAction(ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED)
+            addAction(ForegroundPlaybackService.ACTION_PLAYLIST_PREVIOUS)
+            addAction(ForegroundPlaybackService.ACTION_PLAYLIST_NEXT)
         }
         ContextCompat.registerReceiver(
             getApplication<Application>(),
@@ -350,6 +364,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         castEnabled = mode == AppMode.Server && !resolvedAppId.isNullOrBlank()
                     )
                 }
+                hydrateSavedPlaylistIfInactive()
                 maybeRefreshServerDataForCurrentState()
             }
         }
@@ -382,6 +397,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferences.favoritesSyncCode.collect { code ->
                 _state.update { it.copy(favoritesSyncCode = code) }
                 favoritesController.maybeHydrateFavoritesFromSync()
+            }
+        }
+        viewModelScope.launch {
+            preferences.savedPlaylist.collect { tracks ->
+                savedPlaylistTracks = tracks
+                hydrateSavedPlaylistIfInactive()
             }
         }
         viewModelScope.launch {
@@ -512,7 +533,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
-            ForegroundPlaybackService.stop(getApplication())
+            syncPlaybackServiceSession()
         }
 
         playbackCoordinator.restorePlaybackState()
@@ -546,6 +567,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (state.value.playback.isCasting) {
             syncCastNotification(state.value.playback)
+        } else {
+            syncPlaybackServiceSession()
         }
     }
 
@@ -575,6 +598,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
+        syncPlaybackServiceSession()
     }
 
     fun onHostStarted() {
@@ -631,10 +655,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startLocalAnalysis(uri: Uri, displayName: String?) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
         localAnalysisCoordinator.startLocalAnalysis(uri, displayName)
     }
 
     fun openCachedLocalTrack(localId: String) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
         localAnalysisCoordinator.openCachedLocalTrack(localId)
     }
 
@@ -776,7 +802,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         engine.clearAnalysis()
         controller.player.clear()
         controller.setTrackMeta(null, null)
-        ForegroundPlaybackService.stop(getApplication())
 
         _state.update { current ->
             val resolvedAppId = CastAppIdResolver.resolve(getApplication(), current.baseUrl)
@@ -797,13 +822,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tabHistory.clear()
 
         stopCasting()
+        clearPlaylistState()
         castPlaybackCoordinator.resetStatusListener()
         playbackCoordinator.resetForNewTrack()
         playbackCoordinator.clearCache()
         engine.clearAnalysis()
         controller.player.clear()
         controller.setTrackMeta(null, null)
-        ForegroundPlaybackService.stop(getApplication())
 
         _state.update { current ->
             val mode = current.appMode
@@ -822,7 +847,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 favoritesSyncLoading = false,
                 listenFavoriteToggleInFlight = false,
                 search = SearchState(),
-                playback = PlaybackState()
+                playback = PlaybackState(),
+                playlist = JukeboxPlaylistState()
             )
         }
     }
@@ -843,6 +869,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(playback = transform(it.playback)) }
     }
 
+    private fun persistSavedPlaylistTracks(tracks: List<PlaylistTrack>) {
+        val savedTracks = tracks.map { it.toSavedPlaylistTrack() }
+        savedPlaylistTracks = savedTracks
+        viewModelScope.launch {
+            preferences.setSavedPlaylist(savedTracks)
+        }
+    }
+
+    private fun savedPlaylistStateForCurrentMode(current: UiState): JukeboxPlaylistState {
+        val savedTracks = savedPlaylistTracks.mapNotNull { it.toPlaylistTrack() }
+        val playableTracks = playablePlaylistTracks(
+            tracks = savedTracks,
+            appMode = current.appMode,
+            localCachedTracks = current.localCachedTracks
+        )
+        if (playableTracks.size < 2) {
+            return JukeboxPlaylistState()
+        }
+        return JukeboxPlaylistState(tracks = playableTracks, currentIndex = -1)
+    }
+
+    private fun hydrateSavedPlaylistIfInactive() {
+        val current = state.value
+        if (current.playlist.isActive()) {
+            return
+        }
+        val savedPlaylist = savedPlaylistStateForCurrentMode(current)
+        if (current.playlist == savedPlaylist) {
+            return
+        }
+        _state.update {
+            it.copy(playlist = savedPlaylist)
+        }
+    }
+
+    private fun updatePlaylistState(
+        transform: (JukeboxPlaylistState) -> JukeboxPlaylistState
+    ) {
+        val before = state.value.playlist
+        val after = transform(before)
+        if (after == before) {
+            return
+        }
+        _state.update {
+            it.copy(playlist = after)
+        }
+        if (after.tracks != before.tracks) {
+            persistSavedPlaylistTracks(after.tracks)
+        }
+    }
+
+    private fun clearPlaylistState() {
+        val current = state.value.playlist
+        if (current == JukeboxPlaylistState() && savedPlaylistTracks.isEmpty()) {
+            return
+        }
+        savedPlaylistTracks = emptyList()
+        _state.update {
+            it.copy(playlist = JukeboxPlaylistState())
+        }
+        viewModelScope.launch {
+            preferences.setSavedPlaylist(emptyList())
+        }
+    }
+
+    private fun clearInactiveSavedPlaylistBeforeOutsideSelection() {
+        if (state.value.playlist.isInactiveSavedPlaylist()) {
+            clearPlaylistState()
+        }
+    }
+
+    fun setPlayAfterLoaded(checked: Boolean) {
+        updatePlaybackState { it.copy(playAfterLoaded = checked) }
+    }
+
+    private fun maybeStartPlayAfterLoaded() {
+        if (!shouldStartPlayAfterLoaded(state.value.playback)) {
+            return
+        }
+        updatePlaybackState { it.copy(playAfterLoaded = false) }
+        togglePlayback()
+    }
+
     private fun resolveTrackMeta(trackId: String): Pair<String?, String?> {
         val canonicalTarget = canonicalTrackId(trackId) ?: trackId
         val topMatch = state.value.search.topSongs.firstOrNull {
@@ -858,6 +967,115 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return favoriteMatch.title to favoriteMatch.artist
         }
         return null to null
+    }
+
+    private fun playlistTrackForServerTrack(
+        trackId: String,
+        title: String?,
+        artist: String?,
+        tuningParams: String?
+    ): PlaylistTrack? {
+        val canonical = canonicalTrackId(trackId) ?: return null
+        return PlaylistTrack(
+            id = canonical,
+            type = PlaylistTrackType.Server,
+            title = title,
+            artist = artist,
+            tuningParams = tuningParams?.takeIf { it.isNotBlank() }
+        )
+    }
+
+    private fun playlistTrackForLocalCached(localId: String): PlaylistTrack? {
+        val normalized = localId.trim()
+        if (normalized.isBlank()) return null
+        val cached = state.value.localCachedTracks.firstOrNull { it.localId == normalized } ?: return null
+        return PlaylistTrack(
+            id = normalized,
+            type = PlaylistTrackType.LocalCached,
+            title = cached.title,
+            artist = cached.artist
+        )
+    }
+
+    private fun currentPlaylistTrackOrNull(): PlaylistTrack? {
+        val currentState = state.value
+        val playback = currentState.playback
+        if (playback.playMode != PlaybackMode.Jukebox) return null
+        val hasLoadedTrack = (playback.audioLoaded && playback.analysisLoaded) || playback.hasCastTrack()
+        if (!hasLoadedTrack) return null
+        val trackId = playback.shareTrackIdOrNull() ?: return null
+        val type = if (currentState.appMode == AppMode.Local) {
+            PlaylistTrackType.LocalCached
+        } else {
+            PlaylistTrackType.Server
+        }
+        return PlaylistTrack(
+            id = canonicalTrackId(trackId) ?: trackId.trim(),
+            type = type,
+            title = playback.trackTitle,
+            artist = playback.trackArtist,
+            tuningParams = if (type == PlaylistTrackType.Server && playback.playMode == PlaybackMode.Jukebox) {
+                playbackCoordinator.buildTuningParamsString()
+            } else {
+                null
+            }
+        )
+    }
+
+    private fun addTrackToPlaylistFromLongPress(track: PlaylistTrack) {
+        val playlist = state.value.playlist
+        if (playlist.isInactiveSavedPlaylist()) {
+            viewModelScope.launch { showToast("Load a track before starting a playlist.") }
+            return
+        }
+        if (!playlist.isInitialized()) {
+            val current = currentPlaylistTrackOrNull()
+            if (current == null) {
+                viewModelScope.launch { showToast("Load a track before starting a playlist.") }
+                return
+            }
+            if (current == track || initializePlaylist(current, track).tracks.size < 2) {
+                viewModelScope.launch { showToast("Already in playlist.") }
+                return
+            }
+            updatePlaylistState { initializePlaylist(current, track) }
+            syncPlaybackServiceSession()
+            viewModelScope.launch { showToast("Added to playlist.") }
+            return
+        }
+        if (playlist.containsTrack(track)) {
+            viewModelScope.launch { showToast("Already in playlist.") }
+            return
+        }
+        updatePlaylistState { it.appendTrack(track) }
+        syncPlaybackServiceSession()
+        viewModelScope.launch { showToast("Added to playlist.") }
+    }
+
+    private fun maybeSelectPlaylistTrack(track: PlaylistTrack?) {
+        if (track == null || !state.value.playlist.isActive()) {
+            return
+        }
+        updatePlaylistState { it.appendAndSelectTrack(track) }
+    }
+
+    private fun loadPlaylistTrack(
+        track: PlaylistTrack,
+        playAfterLoaded: Boolean = false
+    ) {
+        when (track.type) {
+            PlaylistTrackType.Server -> loadTrackByIdInternal(
+                track.id,
+                track.title,
+                track.artist,
+                track.tuningParams,
+                playAfterLoaded
+            )
+            PlaylistTrackType.LocalCached -> localAnalysisCoordinator.openCachedLocalTrack(
+                localId = track.id,
+                playAfterLoaded = playAfterLoaded
+            )
+        }
     }
 
     fun toggleFavoriteForCurrent(): FavoriteToggleResult {
@@ -934,7 +1152,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         searchCoordinator.runSpotifySearch(query)
     }
 
+    fun selectServerPlaylistTrack(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null
+    ) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams) ?: return
+        if (state.value.playlist.isActive()) {
+            updatePlaylistState { it.appendAndSelectTrack(track) }
+        }
+        loadTrackById(track.id, track.title, track.artist, track.tuningParams)
+    }
+
+    fun addServerTrackToPlaylist(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null
+    ) {
+        val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams) ?: return
+        addTrackToPlaylistFromLongPress(track)
+    }
+
+    fun selectLocalCachedPlaylistTrack(localId: String) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        val track = playlistTrackForLocalCached(localId) ?: return
+        if (state.value.playlist.isActive()) {
+            updatePlaylistState { it.appendAndSelectTrack(track) }
+        }
+        openCachedLocalTrack(track.id)
+    }
+
+    fun addLocalCachedTrackToPlaylist(localId: String) {
+        val track = playlistTrackForLocalCached(localId) ?: return
+        addTrackToPlaylistFromLongPress(track)
+    }
+
     fun selectSpotifyTrack(item: SpotifySearchItem) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         val name = item.name ?: "Untitled"
@@ -952,6 +1209,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val trackId = trackIdFromAnalysis(response) ?: buildJobTrackId(jobId)
                         if (state.value.playback.isCasting) {
                             clearSearchSelectionState()
+                            maybeSelectPlaylistTrack(
+                                playlistTrackForServerTrack(trackId, name, artist, null)
+                            )
                             castPlaybackCoordinator.castTrackId(
                                 jobId = jobId,
                                 title = name,
@@ -961,6 +1221,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             applyActiveTab(TabId.Play, recordHistory = true)
                             return@launch
                         }
+                        maybeSelectPlaylistTrack(
+                            playlistTrackForServerTrack(trackId, name, artist, null)
+                        )
                         loadExistingJob(
                             jobId,
                             trackId,
@@ -995,10 +1258,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectYoutubeTrack(item: YoutubeSearchItem) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
         val youtubeId = item.id ?: return
         val duration = item.duration
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
+        }
+        if (state.value.playlist.isActive()) {
+            val title = item.title ?: state.value.search.pendingTrackName
+            val artist = state.value.search.pendingTrackArtist
+            maybeSelectPlaylistTrack(
+                playlistTrackForServerTrack(youtubeId, title, artist, null)
+            )
         }
         startYoutubeAnalysis(youtubeId)
     }
@@ -1008,6 +1279,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startYoutubeAnalysis(youtubeId: String, title: String? = null, artist: String? = null) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         val resolvedTitle = title ?: state.value.search.pendingTrackName.orEmpty()
@@ -1125,6 +1397,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         artist: String? = null,
         tuningParams: String? = null
     ) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        loadTrackByIdInternal(trackId, title, artist, tuningParams, playAfterLoaded = false)
+    }
+
+    private fun loadTrackByIdInternal(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
+    ) {
         val parsed = parseTrackId(trackId) ?: return
         when {
             parsed.youtubeId != null -> {
@@ -1132,7 +1415,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     youtubeId = parsed.youtubeId,
                     title = title,
                     artist = artist,
-                    tuningParams = tuningParams
+                    tuningParams = tuningParams,
+                    playAfterLoaded = playAfterLoaded
                 )
             }
             parsed.jobId != null -> {
@@ -1140,7 +1424,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     jobId = parsed.jobId,
                     title = title,
                     artist = artist,
-                    tuningParams = tuningParams
+                    tuningParams = tuningParams,
+                    playAfterLoaded = playAfterLoaded
                 )
             }
         }
@@ -1150,14 +1435,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         youtubeId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
     ) {
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
         loadTrackBySource(
             sourceProvider = SOURCE_PROVIDER_YOUTUBE,
             sourceId = youtubeId,
             title = title,
             artist = artist,
-            tuningParams = tuningParams
+            tuningParams = tuningParams,
+            playAfterLoaded = playAfterLoaded
         )
     }
 
@@ -1166,7 +1454,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sourceId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
     ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
@@ -1285,7 +1574,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     audioLoading = false,
                     lastYouTubeId = youtubeId,
                     trackTitle = resolvedTitle,
-                    trackArtist = resolvedArtist
+                    trackArtist = resolvedArtist,
+                    playAfterLoaded = playAfterLoaded
                 )
             )
         }
@@ -1329,7 +1619,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         jobId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
     ) {
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
@@ -1357,7 +1648,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lastYouTubeId = null,
                     lastJobId = normalizedJobId,
                     trackTitle = resolvedTitle,
-                    trackArtist = resolvedArtist
+                    trackArtist = resolvedArtist,
+                    playAfterLoaded = playAfterLoaded
                 )
             )
         }
@@ -1388,7 +1680,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             applyActiveTab(TabId.Play, recordHistory = true)
             return
         }
-        playbackCoordinator.resetForNewTrack()
+        playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         _state.update {
             it.copy(
                 search = resetSearchStateAfterTrackSelection(it.search),
@@ -1427,7 +1719,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stateUpdate: (UiState) -> UiState
     ) {
         serverTrackLoadCoordinator.cancel()
-        playbackCoordinator.resetForNewTrack()
+        playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         playbackCoordinator.setPendingTuningParams(tuningParams)
         _state.update(stateUpdate)
         applyActiveTab(TabId.Play, recordHistory = true)
@@ -1563,11 +1855,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 when {
                     running -> {
                         playbackCoordinator.startListenTimer()
-                        ForegroundPlaybackService.start(getApplication())
+                        syncPlaybackServiceSession()
                     }
                     paused -> {
                         playbackCoordinator.stopListenTimer()
-                        ForegroundPlaybackService.update(getApplication())
+                        syncPlaybackServiceSession()
                     }
                     else -> handleJukeboxPlaybackFailure()
                 }
@@ -1596,12 +1888,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
-        ForegroundPlaybackService.update(getApplication())
+        syncPlaybackServiceSession()
     }
 
     private fun handleJukeboxPlaybackFailure() {
         playbackCoordinator.stopListenTimer()
-        ForegroundPlaybackService.stop(getApplication())
+        hardStopPlaybackServiceSession()
         playbackCoordinator.setAnalysisError("Playback failed.")
     }
 
@@ -1620,7 +1912,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
-            ForegroundPlaybackService.update(getApplication())
+            syncPlaybackServiceSession()
         } else if (current.isPaused) {
             resumeAutocanonizerPlayback()
         } else {
@@ -1662,7 +1954,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             playbackCoordinator.startListenTimer()
-            ForegroundPlaybackService.start(getApplication())
+            syncPlaybackServiceSession()
         }
     }
 
@@ -1697,7 +1989,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             playbackCoordinator.startListenTimer()
-            ForegroundPlaybackService.start(getApplication())
+            syncPlaybackServiceSession()
         }
     }
 
@@ -1970,6 +2262,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         appLifecycleCoordinator.prepareForExit()
     }
 
+    fun selectPlaylistTrack(
+        index: Int,
+        playAfterLoaded: Boolean = false
+    ) {
+        val track = state.value.playlist.tracks.getOrNull(index) ?: return
+        _state.update {
+            it.copy(playlist = it.playlist.selectTrackAt(index))
+        }
+        loadPlaylistTrack(
+            track = track,
+            playAfterLoaded = playAfterLoaded
+        )
+    }
+
+    fun selectPlaylistDialogTrack(index: Int) {
+        selectPlaylistTrack(
+            index = index,
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(state.value)
+        )
+    }
+
+    fun skipToPreviousPlaylistTrack() {
+        val current = state.value
+        val playlist = current.playlist
+        if (!playlist.canSkipPrevious()) return
+        selectPlaylistTrack(
+            index = playlist.currentIndex - 1,
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current)
+        )
+    }
+
+    fun skipToNextPlaylistTrack() {
+        val current = state.value
+        val playlist = current.playlist
+        if (!playlist.canSkipNext()) return
+        selectPlaylistTrack(
+            index = playlist.currentIndex + 1,
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current)
+        )
+    }
+
+    fun removePlaylistTrack(index: Int) {
+        updatePlaylistState { it.removeTrackAt(index) }
+        syncPlaybackServiceSession()
+    }
+
+    fun clearPlaylist() {
+        clearPlaylistState()
+        syncPlaybackServiceSession()
+    }
+
     fun selectBeat(index: Int) {
         if (state.value.playback.playMode == PlaybackMode.Autocanonizer) {
             startAutocanonizerPlayback(index)
@@ -1981,7 +2324,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (selection.startedPlayback) {
             playbackCoordinator.startListenTimer()
             playbackCoordinator.updateListenTimeDisplay()
-            ForegroundPlaybackService.start(getApplication())
+            syncPlaybackServiceSession()
         }
         _state.update {
             it.copy(
@@ -2023,7 +2366,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (!current.isCasting) {
             stopTransportForModeChange(
-                context = getApplication(),
                 controller = controller,
                 previousMode = current.playMode,
                 isRunning = current.isRunning || current.isPaused,
@@ -2044,6 +2386,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (current.isCasting) {
             syncCastNotification(state.value.playback)
+        } else {
+            syncPlaybackServiceSession()
         }
     }
 
@@ -2079,7 +2423,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
-        ForegroundPlaybackService.update(getApplication())
+        syncPlaybackServiceSession()
     }
 
     fun setCanonizerFinishOutSong(enabled: Boolean) {
@@ -2152,7 +2496,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     )
                 }
-                ForegroundPlaybackService.update(getApplication())
+                syncPlaybackServiceSession()
             }
         }
     }
@@ -2185,7 +2529,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     )
                 }
-                ForegroundPlaybackService.update(getApplication())
+                syncPlaybackServiceSession()
             }
         }
     }
@@ -2281,18 +2625,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         appLifecycleCoordinator.checkForAppUpdateOnce()
     }
 
+    private fun syncPlaybackServiceSession() {
+        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+    }
+
+    private fun hardStopPlaybackServiceSession() {
+        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.HardStop)
+    }
+
+    @Suppress("UNUSED_PARAMETER")
     private fun syncCastNotification(playback: PlaybackState) {
-        if (!playback.shouldShowCastNotification()) {
-            ForegroundPlaybackService.stop(getApplication())
-            return
-        }
-        ForegroundPlaybackService.updateCast(
-            context = getApplication(),
-            isPlaying = playback.isRunning,
-            title = playback.castNotificationTitle(),
-            artist = playback.trackArtist,
-            deviceName = playback.castDeviceName
-        )
+        syncPlaybackServiceSession()
     }
 
     private suspend fun showToast(message: String) {

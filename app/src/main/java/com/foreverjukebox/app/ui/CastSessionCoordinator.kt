@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.ui
 
 import android.app.Application
-import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
 import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +26,16 @@ internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTr
         title = playback.trackTitle,
         artist = playback.trackArtist,
         audioMode = playback.jukeboxAudioMode
+    )
+}
+
+internal fun stateAfterCastDisconnect(state: UiState): UiState {
+    return state.copy(
+        playback = state.playback.copy(
+            isCasting = false,
+            castDeviceName = null
+        ),
+        playlist = state.playlist.deactivate()
     )
 }
 
@@ -166,18 +175,10 @@ class CastSessionCoordinator(
         if (!getState().playback.isCasting) {
             return
         }
-        updateState {
-            it.copy(
-                playback = it.playback.copy(
-                    isCasting = false,
-                    castDeviceName = null
-                )
-            )
-        }
+        updateState(::stateAfterCastDisconnect)
         castPlaybackCoordinator.resetStatusListener()
         serverTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack()
         applyActiveTab(TabId.Top, true)
-        ForegroundPlaybackService.stop(application)
     }
 }

@@ -92,6 +92,7 @@ data class UiState(
     val versionUpdatePrompt: VersionUpdatePrompt? = null,
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
+    val playlist: JukeboxPlaylistState = JukeboxPlaylistState(),
     val tuning: TuningState = TuningState(),
     val sleepTimer: SleepTimerUiState = SleepTimerUiState()
 )
@@ -137,6 +138,7 @@ data class PlaybackState(
     val playTitle: String = "",
     val audioLoaded: Boolean = false,
     val analysisLoaded: Boolean = false,
+    val playAfterLoaded: Boolean = false,
     val isRunning: Boolean = false,
     val isPaused: Boolean = false,
     val beatsPlayed: Int = 0,
@@ -221,8 +223,32 @@ fun shouldShowServerListenActions(mode: AppMode?): Boolean = mode == AppMode.Ser
 fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boolean {
     return mode == AppMode.Local &&
         !playback.isCasting &&
-        (playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading)
+        playback.isLoading()
 }
+
+fun shouldShowPlayAfterLoadedOption(mode: AppMode?, playback: PlaybackState): Boolean {
+    return (mode == AppMode.Local || mode == AppMode.Server) &&
+        !playback.isCasting &&
+        playback.isLoading()
+}
+
+fun shouldStartPlayAfterLoaded(playback: PlaybackState): Boolean {
+    return playback.playAfterLoaded &&
+        !playback.isCasting &&
+        playback.audioLoaded &&
+        playback.analysisLoaded &&
+        !playback.isLoading() &&
+        playback.analysisErrorMessage.isNullOrBlank() &&
+        !playback.isRunning
+}
+
+fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
+    return state.playback.playMode == PlaybackMode.Jukebox &&
+        !state.playback.isCasting &&
+        shouldShowActivePlaylistControls(state.playlist)
+}
+
+fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading
 
 fun PlaybackState.hasCastTrack(): Boolean {
     return !lastJobId.isNullOrBlank()
@@ -317,6 +343,7 @@ fun stateAfterModeChangeReset(
         topSongsTab = TopSongsTab.TopSongs,
         search = SearchState(),
         playback = PlaybackState(),
+        playlist = JukeboxPlaylistState(),
         tuning = TuningState(highlightAnchorBranch = current.tuning.highlightAnchorBranch)
     )
 }

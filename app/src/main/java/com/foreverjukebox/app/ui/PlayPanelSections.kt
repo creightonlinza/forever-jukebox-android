@@ -21,10 +21,13 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.Info
@@ -35,7 +38,9 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -213,6 +218,10 @@ internal fun ColumnScope.CastListenScreen(
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
     favoriteToggleInFlight: Boolean,
+    playlist: JukeboxPlaylistState,
+    onOpenPlaylist: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
     onSelectVisualization: (Int) -> Unit
 ) {
     val hasCastTrack = playback.hasCastTrack()
@@ -220,6 +229,7 @@ internal fun ColumnScope.CastListenScreen(
     val canSelectVisualization = playback.castControlsReady()
     val canShowReceiverDetails = playback.castReceiverDetailsReady()
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
+    val showPlaylistControls = !inAutocanonizer
     val playActionLabel = playbackTransportContentDescription(playback)
     val showServerActions = shouldShowServerListenActions(appMode)
     val themeTokens = LocalThemeTokens.current
@@ -330,24 +340,68 @@ internal fun ColumnScope.CastListenScreen(
                         }
                     }
                     if (canShowTransport) {
-                        Button(
-                            onClick = onTogglePlayback,
-                            colors = pillButtonColors(),
-                            border = pillButtonBorder(),
-                            shape = SurfaceShape,
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(SmallButtonHeight)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = if (playback.isRunning) {
-                                    Icons.Filled.Pause
-                                } else {
-                                    Icons.Filled.PlayArrow
-                                },
-                                contentDescription = playActionLabel,
-                                tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            if (showPlaylistControls && playlist.canSkipPrevious()) {
+                                SquareIconButton(
+                                    onClick = onSkipPrevious,
+                                    modifier = Modifier.size(SmallButtonHeight)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.SkipPrevious,
+                                        contentDescription = "Previous playlist track",
+                                        tint = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = onTogglePlayback,
+                                colors = pillButtonColors(),
+                                border = pillButtonBorder(),
+                                shape = SurfaceShape,
+                                contentPadding = PaddingValues(0.dp),
+                                modifier = Modifier.size(SmallButtonHeight)
+                            ) {
+                                Icon(
+                                    imageVector = if (playback.isRunning) {
+                                        Icons.Filled.Pause
+                                    } else {
+                                        Icons.Filled.PlayArrow
+                                    },
+                                    contentDescription = playActionLabel,
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            if (showPlaylistControls && playlist.canSkipNext()) {
+                                SquareIconButton(
+                                    onClick = onSkipNext,
+                                    modifier = Modifier.size(SmallButtonHeight)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.SkipNext,
+                                        contentDescription = "Next playlist track",
+                                        tint = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            if (showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
+                                SquareIconButton(
+                                    onClick = onOpenPlaylist,
+                                    modifier = Modifier.size(SmallButtonHeight)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.QueueMusic,
+                                        contentDescription = "Playlist",
+                                        tint = MaterialTheme.colorScheme.onBackground,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -376,6 +430,10 @@ internal fun ColumnScope.LocalListenScreen(
     onSetVisualization: (Int) -> Unit,
     onSetCanonizerFinishOutSong: (Boolean) -> Unit,
     onSelectBeat: (Int) -> Unit,
+    playlist: JukeboxPlaylistState,
+    onOpenPlaylist: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
     onOpenFullscreen: () -> Unit
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
@@ -418,6 +476,10 @@ internal fun ColumnScope.LocalListenScreen(
             onSetVisualization = onSetVisualization,
             onSetCanonizerFinishOutSong = onSetCanonizerFinishOutSong,
             onSelectBeat = onSelectBeat,
+            playlist = playlist,
+            onOpenPlaylist = onOpenPlaylist,
+            onSkipPrevious = onSkipPrevious,
+            onSkipNext = onSkipNext,
             onOpenFullscreen = onOpenFullscreen,
             onTogglePlayback = onTogglePlayback
         )
@@ -440,6 +502,10 @@ private fun ColumnScope.LocalVisualizationPanel(
     onSetVisualization: (Int) -> Unit,
     onSetCanonizerFinishOutSong: (Boolean) -> Unit,
     onSelectBeat: (Int) -> Unit,
+    playlist: JukeboxPlaylistState,
+    onOpenPlaylist: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
     onOpenFullscreen: () -> Unit,
     onTogglePlayback: () -> Unit
 ) {
@@ -506,7 +572,11 @@ private fun ColumnScope.LocalVisualizationPanel(
         )
         LocalVisualizationBottomControls(
             playback = playback,
+            playlist = playlist,
             playActionLabel = playActionLabel,
+            onOpenPlaylist = onOpenPlaylist,
+            onSkipPrevious = onSkipPrevious,
+            onSkipNext = onSkipNext,
             onOpenFullscreen = onOpenFullscreen,
             onTogglePlayback = onTogglePlayback
         )
@@ -701,47 +771,100 @@ private fun BoxScope.LocalVisualizationTopEndControls(
 @Composable
 private fun BoxScope.LocalVisualizationBottomControls(
     playback: PlaybackState,
+    playlist: JukeboxPlaylistState,
     playActionLabel: String,
+    onOpenPlaylist: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
     onOpenFullscreen: () -> Unit,
     onTogglePlayback: () -> Unit
 ) {
-    SquareIconButton(
-        onClick = onOpenFullscreen,
+    val showPlaylistControls = playback.playMode == PlaybackMode.Jukebox
+    Row(
         modifier = Modifier
             .align(Alignment.BottomEnd)
-            .padding(6.dp)
-            .size(SmallButtonHeight)
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Icon(
-            Icons.Default.Fullscreen,
-            contentDescription = "Fullscreen",
-            tint = MaterialTheme.colorScheme.onSurface
-        )
+        if (showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
+            SquareIconButton(
+                onClick = onOpenPlaylist,
+                modifier = Modifier.size(SmallButtonHeight)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.QueueMusic,
+                    contentDescription = "Playlist",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+        SquareIconButton(
+            onClick = onOpenFullscreen,
+            modifier = Modifier.size(SmallButtonHeight)
+        ) {
+            Icon(
+                Icons.Default.Fullscreen,
+                contentDescription = "Fullscreen",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
     if (!shouldShowPlaybackTransport(playback)) {
         return
     }
-    Button(
-        onClick = onTogglePlayback,
-        colors = pillButtonColors(),
-        border = pillButtonBorder(),
-        shape = SurfaceShape,
-        contentPadding = PaddingValues(0.dp),
+    Row(
         modifier = Modifier
             .align(Alignment.BottomStart)
             .padding(6.dp)
-            .size(SmallButtonHeight)
+            .wrapContentWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = if (playback.isRunning) {
-                Icons.Filled.Pause
-            } else {
-                Icons.Filled.PlayArrow
-            },
-            contentDescription = playActionLabel,
-            tint = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.size(20.dp)
-        )
+        if (showPlaylistControls && playlist.canSkipPrevious()) {
+            SquareIconButton(
+                onClick = onSkipPrevious,
+                modifier = Modifier.size(SmallButtonHeight)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.SkipPrevious,
+                    contentDescription = "Previous playlist track",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Button(
+            onClick = onTogglePlayback,
+            colors = pillButtonColors(),
+            border = pillButtonBorder(),
+            shape = SurfaceShape,
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.size(SmallButtonHeight)
+        ) {
+            Icon(
+                imageVector = if (playback.isRunning) {
+                    Icons.Filled.Pause
+                } else {
+                    Icons.Filled.PlayArrow
+                },
+                contentDescription = playActionLabel,
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        if (showPlaylistControls && playlist.canSkipNext()) {
+            SquareIconButton(
+                onClick = onSkipNext,
+                modifier = Modifier.size(SmallButtonHeight)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.SkipNext,
+                    contentDescription = "Next playlist track",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 
@@ -782,6 +905,9 @@ internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMod
 internal fun LoadingStatus(
     progress: Int?,
     label: String?,
+    playAfterLoaded: Boolean = false,
+    showPlayAfterLoaded: Boolean = false,
+    onPlayAfterLoadedChange: (Boolean) -> Unit = {},
     showCancel: Boolean = false,
     onCancel: () -> Unit = {}
 ) {
@@ -816,6 +942,22 @@ internal fun LoadingStatus(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        if (showPlayAfterLoaded) {
+            Row(
+                modifier = Modifier.padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = playAfterLoaded,
+                    onCheckedChange = onPlayAfterLoadedChange
+                )
+                Text(
+                    text = "Play when ready",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         if (showCancel) {
             OutlinedButton(

@@ -82,6 +82,7 @@ class CastPlaybackCoordinator(
                     analysisInFlight = true,
                     analysisErrorMessage = null,
                     deleteEligible = false,
+                    playAfterLoaded = false,
                     isRunning = true,
                     isPaused = false,
                     listenTime = "00:00:00",

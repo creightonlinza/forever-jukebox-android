@@ -1,13 +1,13 @@
 package com.foreverjukebox.app.data
 
 import android.content.Context
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -23,6 +23,40 @@ enum class ThemeMode {
     Dark
 }
 
+@Serializable
+enum class SavedPlaylistTrackType {
+    Server,
+    LocalCached
+}
+
+@Serializable
+data class SavedPlaylistTrack(
+    val id: String,
+    val type: SavedPlaylistTrackType,
+    val title: String? = null,
+    val artist: String? = null,
+    val tuningParams: String? = null
+)
+
+internal fun encodeSavedPlaylistTracks(
+    items: List<SavedPlaylistTrack>,
+    json: Json = Json { ignoreUnknownKeys = true }
+): String {
+    return json.encodeToString(ListSerializer(SavedPlaylistTrack.serializer()), items)
+}
+
+internal fun decodeSavedPlaylistTracks(
+    raw: String?,
+    json: Json = Json { ignoreUnknownKeys = true }
+): List<SavedPlaylistTrack> {
+    if (raw.isNullOrBlank()) return emptyList()
+    return try {
+        json.decodeFromString(ListSerializer(SavedPlaylistTrack.serializer()), raw)
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
 class AppPreferences(private val context: Context) {
     companion object {
         private val KEY_BASE_URL = stringPreferencesKey("base_url")
@@ -34,6 +68,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_APP_CONFIG = stringPreferencesKey("app_config")
         private val KEY_CANONIZER_FINISH = booleanPreferencesKey("canonizer_finish_out_song")
         private val KEY_HIGHLIGHT_ANCHOR_BRANCH = booleanPreferencesKey("highlight_anchor_branch")
+        private val KEY_SAVED_PLAYLIST = stringPreferencesKey("saved_playlist")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -73,6 +108,10 @@ class AppPreferences(private val context: Context) {
 
     val highlightAnchorBranch: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_HIGHLIGHT_ANCHOR_BRANCH] ?: false
+    }
+
+    val savedPlaylist: Flow<List<SavedPlaylistTrack>> = context.dataStore.data.map { prefs ->
+        decodeSavedPlaylistTracks(prefs[KEY_SAVED_PLAYLIST], json)
     }
 
     suspend fun setBaseUrl(url: String) {
@@ -137,6 +176,16 @@ class AppPreferences(private val context: Context) {
     suspend fun setHighlightAnchorBranch(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_HIGHLIGHT_ANCHOR_BRANCH] = enabled
+        }
+    }
+
+    suspend fun setSavedPlaylist(items: List<SavedPlaylistTrack>) {
+        context.dataStore.edit { prefs ->
+            if (items.isEmpty()) {
+                prefs.remove(KEY_SAVED_PLAYLIST)
+            } else {
+                prefs[KEY_SAVED_PLAYLIST] = encodeSavedPlaylistTracks(items, json)
+            }
         }
     }
 

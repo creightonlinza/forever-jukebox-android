@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,7 +64,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.foreverjukebox.app.data.trackIdFromTopSong
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TopSongsPanel(
     items: List<TopSongItem>,
@@ -82,6 +83,7 @@ fun TopSongsPanel(
     onRefreshRecentSongs: () -> Unit,
     onRefreshFavorites: () -> Unit,
     onSelect: (String, String?, String?, String?) -> Unit,
+    onLongSelect: (String, String?, String?, String?) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     favoritesSyncCode: String?,
     allowFavoritesSync: Boolean,
@@ -162,14 +164,24 @@ fun TopSongsPanel(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
-                                            onSelect(
-                                                trackId,
-                                                title,
-                                                artist,
-                                                null
-                                            )
-                                        },
+                                        .combinedClickable(
+                                            onClick = {
+                                                onSelect(
+                                                    trackId,
+                                                    title,
+                                                    artist,
+                                                    null
+                                                )
+                                            },
+                                            onLongClick = {
+                                                onLongSelect(
+                                                    trackId,
+                                                    title,
+                                                    artist,
+                                                    null
+                                                )
+                                            }
+                                        ),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
@@ -218,14 +230,24 @@ fun TopSongsPanel(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
-                                            onSelect(
-                                                trackId,
-                                                title,
-                                                artist,
-                                                null
-                                            )
-                                        },
+                                        .combinedClickable(
+                                            onClick = {
+                                                onSelect(
+                                                    trackId,
+                                                    title,
+                                                    artist,
+                                                    null
+                                                )
+                                            },
+                                            onLongClick = {
+                                                onLongSelect(
+                                                    trackId,
+                                                    title,
+                                                    artist,
+                                                    null
+                                                )
+                                            }
+                                        ),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
@@ -274,14 +296,24 @@ fun TopSongsPanel(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
-                                            onSelect(
-                                                trackId,
-                                                title,
-                                                artist,
-                                                null
-                                            )
-                                        },
+                                        .combinedClickable(
+                                            onClick = {
+                                                onSelect(
+                                                    trackId,
+                                                    title,
+                                                    artist,
+                                                    null
+                                                )
+                                            },
+                                            onLongClick = {
+                                                onLongSelect(
+                                                    trackId,
+                                                    title,
+                                                    artist,
+                                                    null
+                                                )
+                                            }
+                                        ),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
@@ -371,6 +403,7 @@ fun TopSongsPanel(
                             loading = favoritesLoading,
                             showLoadingSpinner = false,
                             onSelect = onSelect,
+                            onLongSelect = onLongSelect,
                             onRemoveFavorite = onRemoveFavorite
                         )
                     }
@@ -382,6 +415,7 @@ fun TopSongsPanel(
                         loading = favoritesLoading,
                         showLoadingSpinner = true,
                         onSelect = onSelect,
+                        onLongSelect = onLongSelect,
                         onRemoveFavorite = onRemoveFavorite
                     )
                 }
@@ -526,6 +560,7 @@ fun TopSongsPanel(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FavoritesListContent(
     favorites: List<FavoriteTrack>,
@@ -534,6 +569,7 @@ private fun FavoritesListContent(
     loading: Boolean,
     showLoadingSpinner: Boolean,
     onSelect: (String, String?, String?, String?) -> Unit,
+    onLongSelect: (String, String?, String?, String?) -> Unit,
     onRemoveFavorite: (String) -> Unit
 ) {
     val trimmedQuery = rawQuery.trim()
@@ -602,14 +638,24 @@ private fun FavoritesListContent(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    onSelect(
-                                        item.uniqueSongId,
-                                        title,
-                                        artist,
-                                        item.tuningParams
-                                    )
-                                },
+                                .combinedClickable(
+                                    onClick = {
+                                        onSelect(
+                                            item.uniqueSongId,
+                                            title,
+                                            artist,
+                                            item.tuningParams
+                                        )
+                                    },
+                                    onLongClick = {
+                                        onLongSelect(
+                                            item.uniqueSongId,
+                                            title,
+                                            artist,
+                                            item.tuningParams
+                                        )
+                                    }
+                                ),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(

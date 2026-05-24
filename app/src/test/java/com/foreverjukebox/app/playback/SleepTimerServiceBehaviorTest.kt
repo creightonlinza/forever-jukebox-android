@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.playback
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,7 +33,7 @@ class SleepTimerServiceBehaviorTest {
     @Test
     fun sleepTimerStatusIsActiveOnlyWhenRemainingAndEndRealtimeArePresent() {
         assertTrue(SleepTimerStatus(endRealtimeMs = 1234L, remainingMs = 1L).isActive)
-        assertTrue(!SleepTimerStatus(endRealtimeMs = null, remainingMs = 1L).isActive)
-        assertTrue(!SleepTimerStatus(endRealtimeMs = 1234L, remainingMs = 0L).isActive)
+        assertFalse(SleepTimerStatus(endRealtimeMs = null, remainingMs = 1L).isActive)
+        assertFalse(SleepTimerStatus(endRealtimeMs = 1234L, remainingMs = 0L).isActive)
     }
 }

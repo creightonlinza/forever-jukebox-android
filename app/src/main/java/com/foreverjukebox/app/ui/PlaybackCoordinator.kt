@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import com.foreverjukebox.app.data.ApiClient
@@ -14,6 +15,7 @@ import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
+import com.foreverjukebox.app.playback.loadingNotificationProgressBucket
 import java.io.File
 import java.io.IOException
 import java.time.Duration
@@ -47,13 +49,16 @@ class PlaybackCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
-    private val applyActiveTab: (TabId, Boolean) -> Unit
+    private val applyActiveTab: (TabId, Boolean) -> Unit,
+    private val onStableTrackLoaded: () -> Unit = {}
 ) {
     private var listenTimerJob: Job? = null
     private var pollJob: Job? = null
     private var backgroundAudioLoadJob: Job? = null
     private var audioLoadInFlight = false
-    private var loadingKeepAliveActive = false
+    private var playbackServiceSessionVisible = false
+    private var lastPlaybackServiceSessionKind: PlaybackServiceSessionKind? = null
+    private var lastLoadingNotificationBucket: Int? = null
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
     private var deleteEligibilityJobId: String? = null
@@ -64,12 +69,8 @@ class PlaybackCoordinator(
         listenTimerJob?.cancel()
         pollJob?.cancel()
         backgroundAudioLoadJob?.cancel()
-        if (loadingKeepAliveActive) {
-            loadingKeepAliveActive = false
-            val playback = getState().playback
-            if (!playback.isRunning && !playback.isPaused && !playback.shouldShowCastNotification()) {
-                ForegroundPlaybackService.stop(application)
-            }
+        if (playbackServiceSessionVisible) {
+            hardStopPlaybackServiceSession()
         }
     }
 
@@ -254,7 +255,7 @@ class PlaybackCoordinator(
                 analysisCalculating = false
             )
         }
-        syncLoadingKeepAliveService()
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
         setLastJobId(response.id)
         applyAnalysisResult(response)
         return true
@@ -297,43 +298,106 @@ class PlaybackCoordinator(
         if (!isActiveJobId(jobId)) {
             return false
         }
+        return withAudioLoadWakeLock {
+            loadAudioFromJobWithWakeLock(jobId)
+        }
+    }
+
+    private suspend fun loadAudioFromJobWithWakeLock(jobId: String): Boolean {
         val baseUrl = getState().baseUrl
         setAudioLoading(true)
         setAnalysisProgress(0, "Loading audio")
+        val target = audioFile(jobId)
         try {
-            val target = audioFile(jobId)
             api.fetchAudioToFile(baseUrl, jobId, target)
             if (!isActiveJobId(jobId)) {
                 return false
             }
-            withContext(Dispatchers.Default) {
-                controller.player.loadFile(target) { percent ->
-                    scope.launch(Dispatchers.Main) {
-                        setDecodeProgress(percent)
-                    }
-                }
-            }
+            val loaded = loadServerAudioFileWithRetry(jobId, target)
+            if (!loaded) return false
             if (!isActiveJobId(jobId)) {
                 return false
             }
             audioLoadInFlight = false
             updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-            syncLoadingKeepAliveService()
+            syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
             return true
         } catch (err: HttpStatusException) {
-            audioLoadInFlight = false
-            updatePlaybackState { it.copy(audioLoading = false) }
-            syncLoadingKeepAliveService()
+            clearFailedAudioLoad()
             if (err.statusCode == 404) {
                 return false
             }
             throw err
         } catch (err: IOException) {
-            audioLoadInFlight = false
-            updatePlaybackState { it.copy(audioLoading = false) }
-            syncLoadingKeepAliveService()
+            clearFailedAudioLoad()
+            ignoreFailures { target.delete() }
             throw err
         }
+    }
+
+    private suspend fun <T> withAudioLoadWakeLock(block: suspend () -> T): T {
+        val powerManager = application.getSystemService(PowerManager::class.java)
+        val wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            AUDIO_LOAD_WAKE_LOCK_TAG
+        )
+        wakeLock.setReferenceCounted(false)
+        return try {
+            wakeLock.acquire(AUDIO_LOAD_WAKE_LOCK_TIMEOUT_MS)
+            block()
+        } finally {
+            if (wakeLock.isHeld) {
+                wakeLock.release()
+            }
+        }
+    }
+
+    private suspend fun loadServerAudioFileWithRetry(jobId: String, target: File): Boolean {
+        var attempt = 1
+        while (true) {
+            try {
+                withContext(Dispatchers.Default) {
+                    controller.player.loadFile(target) { percent ->
+                        scope.launch(Dispatchers.Main) {
+                            setDecodeProgress(percent)
+                        }
+                    }
+                }
+                return true
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: IllegalArgumentException) {
+                if (!handleServerAudioDecodeFailure(jobId, attempt, error)) return false
+                attempt += 1
+            } catch (error: IllegalStateException) {
+                if (!handleServerAudioDecodeFailure(jobId, attempt, error)) return false
+                attempt += 1
+            }
+        }
+    }
+
+    private suspend fun handleServerAudioDecodeFailure(
+        jobId: String,
+        attempt: Int,
+        error: Throwable
+    ): Boolean {
+        controller.player.clear()
+        if (!isActiveJobId(jobId)) {
+            return false
+        }
+        if (attempt >= SERVER_AUDIO_DECODE_MAX_ATTEMPTS) {
+            clearFailedAudioLoad()
+            throw error
+        }
+        setAnalysisProgress(0, "Loading audio")
+        delay(SERVER_AUDIO_DECODE_RETRY_DELAY_MS)
+        return isActiveJobId(jobId)
+    }
+
+    private fun clearFailedAudioLoad() {
+        audioLoadInFlight = false
+        updatePlaybackState { it.copy(audioLoading = false) }
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
     }
 
     suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
@@ -398,7 +462,7 @@ class PlaybackCoordinator(
             )
         }
         applyActiveTab(TabId.Play, true)
-        syncLoadingKeepAliveService()
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
         val jobId = response.id ?: lastJobId
         if (jobId != null) {
             recordPlay(jobId)
@@ -406,7 +470,8 @@ class PlaybackCoordinator(
         if (jobId != null) {
             cacheAnalysis(jobId, response)
         }
-        ForegroundPlaybackService.update(application)
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+        onStableTrackLoaded()
         return true
     }
 
@@ -415,10 +480,101 @@ class PlaybackCoordinator(
         val now = SystemClock.elapsedRealtime()
         if (now - lastNotificationUpdateMs < 500L) return
         lastNotificationUpdateMs = now
-        ForegroundPlaybackService.update(application)
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.ProgressTick)
     }
 
-    fun resetForNewTrack() {
+    internal fun syncPlaybackServiceSession(reason: PlaybackServiceSyncReason) {
+        if (reason == PlaybackServiceSyncReason.HardStop) {
+            hardStopPlaybackServiceSession()
+            return
+        }
+        val current = getState()
+        val session = resolvePlaybackServiceSession(current.playback)
+        val skip = resolvePlaybackServiceSkipAvailability(current)
+        when (session) {
+            PlaybackServiceSession.Hidden -> syncHiddenPlaybackServiceSession()
+            is PlaybackServiceSession.Cast -> syncCastPlaybackServiceSession(session, skip)
+            is PlaybackServiceSession.LocalLoading -> syncLocalLoadingPlaybackServiceSession(
+                session,
+                skip
+            )
+            PlaybackServiceSession.LocalPaused,
+            PlaybackServiceSession.LocalPlaying,
+            PlaybackServiceSession.LocalReady -> syncLocalPlaybackServiceSession(skip)
+        }
+    }
+
+    private fun syncHiddenPlaybackServiceSession() {
+        resetPlaybackServiceSessionTracking()
+        playbackServiceSessionVisible = false
+        ForegroundPlaybackService.stop(application)
+    }
+
+    private fun syncCastPlaybackServiceSession(
+        session: PlaybackServiceSession.Cast,
+        skip: PlaybackServiceSkipAvailability
+    ) {
+        resetPlaybackServiceSessionTracking()
+        ForegroundPlaybackService.updateCast(
+            context = application,
+            isPlaying = session.isPlaying,
+            title = session.title,
+            artist = session.artist,
+            deviceName = session.deviceName,
+            canSkipPrevious = skip.canSkipPrevious,
+            canSkipNext = skip.canSkipNext
+        )
+        playbackServiceSessionVisible = true
+        lastPlaybackServiceSessionKind = session.kind
+    }
+
+    private fun syncLocalLoadingPlaybackServiceSession(
+        session: PlaybackServiceSession.LocalLoading,
+        skip: PlaybackServiceSkipAvailability
+    ) {
+        val progressBucket = loadingNotificationProgressBucket(session.progress)
+        if (
+            playbackServiceSessionVisible &&
+            lastPlaybackServiceSessionKind == session.kind &&
+            lastLoadingNotificationBucket == progressBucket
+        ) {
+            return
+        }
+        ForegroundPlaybackService.update(
+            context = application,
+            canSkipPrevious = skip.canSkipPrevious,
+            canSkipNext = skip.canSkipNext,
+            isLoading = true,
+            loadingProgress = session.progress
+        )
+        playbackServiceSessionVisible = true
+        lastPlaybackServiceSessionKind = session.kind
+        lastLoadingNotificationBucket = progressBucket
+    }
+
+    private fun syncLocalPlaybackServiceSession(skip: PlaybackServiceSkipAvailability) {
+        resetPlaybackServiceSessionTracking()
+        ForegroundPlaybackService.update(
+            context = application,
+            canSkipPrevious = skip.canSkipPrevious,
+            canSkipNext = skip.canSkipNext
+        )
+        playbackServiceSessionVisible = true
+        lastPlaybackServiceSessionKind = resolvePlaybackServiceSession(getState().playback).kind
+    }
+
+    private fun hardStopPlaybackServiceSession() {
+        resetPlaybackServiceSessionTracking()
+        playbackServiceSessionVisible = false
+        ForegroundPlaybackService.stop(application)
+    }
+
+    private fun resetPlaybackServiceSessionTracking() {
+        lastPlaybackServiceSessionKind = null
+        lastLoadingNotificationBucket = null
+    }
+
+    fun resetForNewTrack(stopPlaybackService: Boolean = true) {
         engine.clearDeletedEdges()
         pendingTuningParams = null
         audioLoadInFlight = false
@@ -429,7 +585,10 @@ class PlaybackCoordinator(
         controller.stopPlayback()
         controller.resetTimers()
         controller.setTrackMeta(null, null)
-        ForegroundPlaybackService.stop(application)
+        resetPlaybackServiceSessionTracking()
+        if (stopPlaybackService) {
+            hardStopPlaybackServiceSession()
+        }
         stopListenTimer()
         updateState {
             it.copy(
@@ -439,6 +598,7 @@ class PlaybackCoordinator(
                     canonizerFinishOutSong = it.playback.canonizerFinishOutSong,
                     audioLoaded = false,
                     analysisLoaded = false,
+                    playAfterLoaded = false,
                     beatsPlayed = 0,
                     listenTime = "00:00:00",
                     trackDurationSeconds = null,
@@ -478,7 +638,7 @@ class PlaybackCoordinator(
                 )
             )
         }
-        syncLoadingKeepAliveService()
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
         engine.stopJukebox()
         val emptyViz = VisualizationData(beats = emptyList(), edges = mutableListOf())
         updateState { it.copy(playback = it.playback.copy(vizData = emptyViz)) }
@@ -523,6 +683,7 @@ class PlaybackCoordinator(
             controller.stopPlayback()
             stopListenTimer()
             updatePlaybackState { it.copy(isRunning = false, isPaused = false) }
+            syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
             return
         }
         val totalSeconds = controller.getListenTimeSeconds()
@@ -578,6 +739,7 @@ class PlaybackCoordinator(
         if (controller.isPlaying()) {
             startListenTimer()
         }
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
     }
 
     suspend fun ensureAudioReady(): Boolean {
@@ -602,31 +764,31 @@ class PlaybackCoordinator(
                     }
                 }
                 updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-                syncLoadingKeepAliveService()
+                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return true
             } catch (_: OutOfMemoryError) {
                 withContext(Dispatchers.IO) {
                     cachedAudio.delete()
                 }
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-                syncLoadingKeepAliveService()
+                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
                 Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-                syncLoadingKeepAliveService()
+                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             } catch (error: IllegalArgumentException) {
                 Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-                syncLoadingKeepAliveService()
+                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             } catch (error: IllegalStateException) {
                 Log.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-                syncLoadingKeepAliveService()
+                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             }
         }
@@ -727,28 +889,7 @@ class PlaybackCoordinator(
                 }
             )
         }
-        syncLoadingKeepAliveService()
-    }
-
-    private fun syncLoadingKeepAliveService() {
-        val playback = getState().playback
-        val shouldKeepAlive =
-            playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading
-        if (shouldKeepAlive) {
-            if (!loadingKeepAliveActive) {
-                ForegroundPlaybackService.start(application)
-                loadingKeepAliveActive = true
-            }
-            return
-        }
-        if (!loadingKeepAliveActive) {
-            return
-        }
-        loadingKeepAliveActive = false
-        if (playback.isRunning || playback.isPaused || playback.shouldShowCastNotification()) {
-            return
-        }
-        ForegroundPlaybackService.stop(application)
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
     }
 
     private inline fun ignoreFailures(block: () -> Unit) {
@@ -888,6 +1029,10 @@ class PlaybackCoordinator(
 
     private companion object {
         const val TAG = "PlaybackCoordinator"
+        const val SERVER_AUDIO_DECODE_MAX_ATTEMPTS = 3
+        const val SERVER_AUDIO_DECODE_RETRY_DELAY_MS = 500L
+        const val AUDIO_LOAD_WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L
+        const val AUDIO_LOAD_WAKE_LOCK_TAG = "ForeverJukebox:AudioLoad"
     }
 
     private fun parseTuningParams(raw: String?): ResolvedTuningParams? {

@@ -7,7 +7,7 @@ import org.junit.Test
 class PlaybackModeChangePlanTest {
 
     @Test
-    fun runningPlanStopsAllAndNotification() {
+    fun runningPlanStopsAllTransports() {
         val plan = resolveModeTransportPlan(
             previousMode = PlaybackMode.Autocanonizer,
             isRunning = true
@@ -15,7 +15,6 @@ class PlaybackModeChangePlanTest {
 
         assertTrue(plan.stopAllTransports)
         assertFalse(plan.stopAutocanonizerWhileIdle)
-        assertTrue(plan.stopForegroundNotification)
         assertTrue(plan.invokeOnStopped)
     }
 
@@ -28,7 +27,6 @@ class PlaybackModeChangePlanTest {
 
         assertFalse(plan.stopAllTransports)
         assertTrue(plan.stopAutocanonizerWhileIdle)
-        assertFalse(plan.stopForegroundNotification)
         assertFalse(plan.invokeOnStopped)
     }
 
@@ -41,7 +39,6 @@ class PlaybackModeChangePlanTest {
 
         assertFalse(plan.stopAllTransports)
         assertFalse(plan.stopAutocanonizerWhileIdle)
-        assertFalse(plan.stopForegroundNotification)
         assertFalse(plan.invokeOnStopped)
     }
 }
