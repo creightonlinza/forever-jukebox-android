@@ -4,6 +4,8 @@ import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.SavedPlaylistTrack
 import com.foreverjukebox.app.data.SavedPlaylistTrackType
 
+internal const val MAX_PLAYLIST_TRACKS = 10
+
 enum class PlaylistTrackType {
     Server,
     LocalCached
@@ -55,21 +57,35 @@ internal fun initializePlaylist(
 }
 
 internal fun JukeboxPlaylistState.appendTrack(track: PlaylistTrack): JukeboxPlaylistState {
-    if (!isInitialized() || containsTrack(track)) {
+    if (!isInitialized() || containsTrack(track) || tracks.size >= MAX_PLAYLIST_TRACKS) {
         return this
     }
     return copy(tracks = tracks + track)
 }
 
-internal fun JukeboxPlaylistState.appendAndSelectTrack(track: PlaylistTrack): JukeboxPlaylistState {
-    val existingIndex = indexOfTrack(track)
-    if (existingIndex >= 0) {
-        return copy(currentIndex = existingIndex)
-    }
-    if (!isInitialized()) {
+internal fun JukeboxPlaylistState.replaceCurrentTrackWith(track: PlaylistTrack): JukeboxPlaylistState {
+    if (!isActive()) {
         return this
     }
-    return copy(tracks = tracks + track, currentIndex = tracks.size)
+    val existingIndex = indexOfTrack(track)
+    if (existingIndex == currentIndex) {
+        return this
+    }
+    if (existingIndex >= 0) {
+        val existingTrack = tracks[existingIndex]
+        val nextTracks = tracks.toMutableList()
+        nextTracks[currentIndex] = existingTrack
+        nextTracks.removeAt(existingIndex)
+        val nextCurrentIndex = if (existingIndex < currentIndex) {
+            currentIndex - 1
+        } else {
+            currentIndex
+        }.coerceIn(nextTracks.indices)
+        return copy(tracks = nextTracks, currentIndex = nextCurrentIndex)
+    }
+    val nextTracks = tracks.toMutableList()
+    nextTracks[currentIndex] = track
+    return copy(tracks = nextTracks)
 }
 
 internal fun JukeboxPlaylistState.selectTrackAt(index: Int): JukeboxPlaylistState {
