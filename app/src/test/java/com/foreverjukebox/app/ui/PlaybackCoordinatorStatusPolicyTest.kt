@@ -130,7 +130,6 @@ class PlaybackCoordinatorStatusPolicyTest {
     @Test
     fun playbackServiceSkipAvailabilityFollowsPlaylistState() {
         val state = UiState(
-            playback = PlaybackState(playMode = PlaybackMode.Jukebox),
             playlist = JukeboxPlaylistState(
                 tracks = listOf(
                     PlaylistTrack("one", PlaylistTrackType.Server, "One", null),

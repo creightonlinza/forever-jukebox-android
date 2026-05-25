@@ -136,9 +136,13 @@ internal fun shouldShowActivePlaylistControls(playlist: JukeboxPlaylistState): B
     return shouldShowPlaylistControls(playlist) && playlist.isActive()
 }
 
+internal fun shouldAdvancePlaylistOnAutocanonizerEnd(state: UiState): Boolean {
+    return state.playback.playMode == PlaybackMode.Autocanonizer &&
+        state.playlist.canSkipNext()
+}
+
 internal fun shouldShowSavedPlaylistButton(state: UiState): Boolean {
     return resolveListenContentMode(state.playback) == ListenContentMode.Empty &&
-        state.playback.playMode == PlaybackMode.Jukebox &&
         state.playlist.isInactiveSavedPlaylist() &&
         shouldShowPlaylistControls(state.playlist)
 }

@@ -558,6 +558,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             controller.stopExternalPlayback()
             playbackCoordinator.stopListenTimer()
             playbackCoordinator.updateListenTimeDisplay()
+            val current = state.value
+            if (shouldAdvancePlaylistOnAutocanonizerEnd(current)) {
+                selectPlaylistTrack(
+                    index = current.playlist.currentIndex + 1,
+                    playAfterLoaded = true
+                )
+                return@setOnEnded
+            }
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
@@ -1033,7 +1041,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun currentPlaylistTrackOrNull(): PlaylistTrack? {
         val currentState = state.value
         val playback = currentState.playback
-        if (playback.playMode != PlaybackMode.Jukebox) return null
         val hasLoadedTrack = (playback.audioLoaded && playback.analysisLoaded) || playback.hasCastTrack()
         if (!hasLoadedTrack) return null
         val trackId = playback.shareTrackIdOrNull() ?: return null

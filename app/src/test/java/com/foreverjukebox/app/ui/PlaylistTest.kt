@@ -162,6 +162,39 @@ class PlaylistTest {
     }
 
     @Test
+    fun shouldAdvancePlaylistOnAutocanonizerEndRequiresNextTrack() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("A"), track("B"), track("C")),
+            currentIndex = 1
+        )
+
+        assertTrue(
+            shouldAdvancePlaylistOnAutocanonizerEnd(
+                UiState(
+                    playback = PlaybackState(playMode = PlaybackMode.Autocanonizer),
+                    playlist = playlist
+                )
+            )
+        )
+        assertFalse(
+            shouldAdvancePlaylistOnAutocanonizerEnd(
+                UiState(
+                    playback = PlaybackState(playMode = PlaybackMode.Autocanonizer),
+                    playlist = playlist.copy(currentIndex = 2)
+                )
+            )
+        )
+        assertFalse(
+            shouldAdvancePlaylistOnAutocanonizerEnd(
+                UiState(
+                    playback = PlaybackState(playMode = PlaybackMode.Jukebox),
+                    playlist = playlist
+                )
+            )
+        )
+    }
+
+    @Test
     fun restoredSavedPlaylistIsInactiveWithNoSkipAvailability() {
         val playlist = JukeboxPlaylistState(
             tracks = listOf(track("one"), track("two", tuningParams = "jb=1&thresh=7")),

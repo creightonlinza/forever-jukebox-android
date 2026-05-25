@@ -246,8 +246,7 @@ fun shouldStartPlayAfterLoaded(playback: PlaybackState): Boolean {
 }
 
 fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
-    return state.playback.playMode == PlaybackMode.Jukebox &&
-        !state.playback.isCasting &&
+    return !state.playback.isCasting &&
         shouldShowActivePlaylistControls(state.playlist)
 }
 
