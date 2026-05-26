@@ -83,9 +83,7 @@ internal fun resolvePlaybackServiceSession(playback: PlaybackState): PlaybackSer
 internal fun resolvePlaybackServiceSkipAvailability(
     state: UiState
 ): PlaybackServiceSkipAvailability {
-    val showPlaylistControls =
-        state.playback.playMode == PlaybackMode.Jukebox &&
-            shouldShowPlaylistControls(state.playlist)
+    val showPlaylistControls = shouldShowPlaylistControls(state.playlist)
     return PlaybackServiceSkipAvailability(
         canSkipPrevious = showPlaylistControls && state.playlist.canSkipPrevious(),
         canSkipNext = showPlaylistControls && state.playlist.canSkipNext()

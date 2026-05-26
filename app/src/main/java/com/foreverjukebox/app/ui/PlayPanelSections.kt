@@ -774,7 +774,7 @@ private fun BoxScope.LocalVisualizationBottomControls(
     onOpenFullscreen: () -> Unit,
     onTogglePlayback: () -> Unit
 ) {
-    val showPlaylistControls = playback.playMode == PlaybackMode.Jukebox
+    val showPlaylistControls = shouldShowPlaylistControls(playlist)
     Row(
         modifier = Modifier
             .align(Alignment.BottomEnd)

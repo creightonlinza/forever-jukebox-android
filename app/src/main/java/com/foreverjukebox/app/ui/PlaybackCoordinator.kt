@@ -255,7 +255,6 @@ class PlaybackCoordinator(
                 analysisCalculating = false
             )
         }
-        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
         setLastJobId(response.id)
         applyAnalysisResult(response)
         return true
@@ -638,7 +637,9 @@ class PlaybackCoordinator(
                 )
             )
         }
-        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+        if (stopPlaybackService) {
+            syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+        }
         engine.stopJukebox()
         val emptyViz = VisualizationData(beats = emptyList(), edges = mutableListOf())
         updateState { it.copy(playback = it.playback.copy(vizData = emptyViz)) }

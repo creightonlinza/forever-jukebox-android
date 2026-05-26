@@ -558,6 +558,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             controller.stopExternalPlayback()
             playbackCoordinator.stopListenTimer()
             playbackCoordinator.updateListenTimeDisplay()
+            val current = state.value
+            if (shouldAdvancePlaylistOnAutocanonizerEnd(current)) {
+                selectPlaylistTrack(
+                    index = current.playlist.currentIndex + 1,
+                    playAfterLoaded = true
+                )
+                return@setOnEnded
+            }
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
@@ -1033,7 +1041,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun currentPlaylistTrackOrNull(): PlaylistTrack? {
         val currentState = state.value
         val playback = currentState.playback
-        if (playback.playMode != PlaybackMode.Jukebox) return null
         val hasLoadedTrack = (playback.audioLoaded && playback.analysisLoaded) || playback.hasCastTrack()
         if (!hasLoadedTrack) return null
         val trackId = playback.shareTrackIdOrNull() ?: return null
@@ -1080,6 +1087,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { showToast("Already in playlist.") }
             return
         }
+        if (playlist.tracks.size >= MAX_PLAYLIST_TRACKS) {
+            viewModelScope.launch { showToast("Playlist is full.") }
+            return
+        }
         updatePlaylistState { it.appendTrack(track) }
         syncPlaybackServiceSession()
         viewModelScope.launch { showToast("Added to playlist.") }
@@ -1089,7 +1100,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (track == null || !state.value.playlist.isActive()) {
             return
         }
-        updatePlaylistState { it.appendAndSelectTrack(track) }
+        updatePlaylistState { it.replaceCurrentTrackWith(track) }
     }
 
     private fun loadPlaylistTrack(
@@ -1194,7 +1205,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams) ?: return
         if (state.value.playlist.isActive()) {
-            updatePlaylistState { it.appendAndSelectTrack(track) }
+            updatePlaylistState { it.replaceCurrentTrackWith(track) }
         }
         loadTrackById(track.id, track.title, track.artist, track.tuningParams)
     }
@@ -1213,7 +1224,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         val track = playlistTrackForLocalCached(localId) ?: return
         if (state.value.playlist.isActive()) {
-            updatePlaylistState { it.appendAndSelectTrack(track) }
+            updatePlaylistState { it.replaceCurrentTrackWith(track) }
         }
         openCachedLocalTrack(track.id)
     }

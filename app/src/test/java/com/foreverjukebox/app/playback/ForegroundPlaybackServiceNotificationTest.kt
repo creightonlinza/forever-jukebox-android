@@ -134,4 +134,47 @@ class ForegroundPlaybackServiceNotificationTest {
             )
         )
     }
+
+    @Test
+    fun localNotificationArtistUsesAppNameWhileLoading() {
+        assertEquals(
+            "The Forever Jukebox",
+            localPlaybackNotificationArtist(
+                baseArtist = null,
+                isLoading = true
+            )
+        )
+        assertEquals(
+            "The Forever Jukebox",
+            localPlaybackNotificationArtist(
+                baseArtist = "Artist",
+                isLoading = true
+            )
+        )
+    }
+
+    @Test
+    fun localNotificationArtistUsesProvidedValueWhenNotLoading() {
+        assertEquals(
+            "",
+            localPlaybackNotificationArtist(
+                baseArtist = null,
+                isLoading = false
+            )
+        )
+        assertEquals(
+            "",
+            localPlaybackNotificationArtist(
+                baseArtist = "",
+                isLoading = false
+            )
+        )
+        assertEquals(
+            "Artist",
+            localPlaybackNotificationArtist(
+                baseArtist = "Artist",
+                isLoading = false
+            )
+        )
+    }
 }

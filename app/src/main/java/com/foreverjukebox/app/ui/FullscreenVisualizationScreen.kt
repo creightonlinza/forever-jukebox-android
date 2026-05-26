@@ -401,7 +401,7 @@ private fun FullscreenTransportButtons(
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit
 ) {
-    val showPlaylistControls = playback.playMode == PlaybackMode.Jukebox
+    val showPlaylistControls = shouldShowPlaylistControls(playlist)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (showPlaylistControls && playlist.canSkipPrevious()) {
             SquareIconButton(

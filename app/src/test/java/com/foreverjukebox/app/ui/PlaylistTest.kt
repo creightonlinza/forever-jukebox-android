@@ -59,28 +59,80 @@ class PlaylistTest {
     }
 
     @Test
-    fun appendAndSelectAddsNewTrackAtEnd() {
-        val current = track("current")
-        val next = track("next")
-        val extra = track("extra")
+    fun appendTrackDoesNotGrowBeyondMaxPlaylistTracks() {
+        val tracks = (1..MAX_PLAYLIST_TRACKS).map { track("track-$it") }
+        val playlist = JukeboxPlaylistState(tracks = tracks, currentIndex = 0)
 
-        val playlist = initializePlaylist(current, next).appendAndSelectTrack(extra)
+        val updated = playlist.appendTrack(track("extra"))
 
-        assertEquals(listOf(current, next, extra), playlist.tracks)
-        assertEquals(2, playlist.currentIndex)
-        assertEquals(extra, playlist.currentTrack())
+        assertEquals(tracks, updated.tracks)
+        assertEquals(0, updated.currentIndex)
     }
 
     @Test
-    fun appendAndSelectMovesCurrentIndexForDuplicate() {
-        val current = track("current")
-        val next = track("next")
+    fun replaceCurrentTrackWithNewTrackKeepsCurrentSlot() {
+        val first = track("A")
+        val current = track("B")
+        val last = track("C")
+        val replacement = track("D")
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(first, current, last),
+            currentIndex = 1
+        )
 
-        val playlist = initializePlaylist(current, next).appendAndSelectTrack(next)
+        val updated = playlist.replaceCurrentTrackWith(replacement)
 
-        assertEquals(listOf(current, next), playlist.tracks)
-        assertEquals(1, playlist.currentIndex)
-        assertEquals(next, playlist.currentTrack())
+        assertEquals(listOf(first, replacement, last), updated.tracks)
+        assertEquals(1, updated.currentIndex)
+        assertEquals(replacement, updated.currentTrack())
+    }
+
+    @Test
+    fun replaceCurrentTrackWithDuplicateAfterCurrentMergesIntoCurrentSlot() {
+        val first = track("A")
+        val current = track("B")
+        val middle = track("C")
+        val duplicate = track("D", tuningParams = "jb=duplicate")
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(first, current, middle, duplicate),
+            currentIndex = 1
+        )
+
+        val updated = playlist.replaceCurrentTrackWith(track("D", tuningParams = "ignored"))
+
+        assertEquals(listOf(first, duplicate, middle), updated.tracks)
+        assertEquals(1, updated.currentIndex)
+        assertEquals(duplicate, updated.currentTrack())
+    }
+
+    @Test
+    fun replaceCurrentTrackWithDuplicateBeforeCurrentPreservesValidCurrentIndex() {
+        val first = track("A")
+        val duplicate = track("D", tuningParams = "jb=duplicate")
+        val current = track("B")
+        val last = track("C")
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(first, duplicate, current, last),
+            currentIndex = 2
+        )
+
+        val updated = playlist.replaceCurrentTrackWith(track("D", tuningParams = "ignored"))
+
+        assertEquals(listOf(first, duplicate, last), updated.tracks)
+        assertEquals(1, updated.currentIndex)
+        assertEquals(duplicate, updated.currentTrack())
+    }
+
+    @Test
+    fun replaceCurrentTrackWithCurrentDuplicateLeavesPlaylistUnchanged() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("A"), track("B"), track("C")),
+            currentIndex = 1
+        )
+
+        val updated = playlist.replaceCurrentTrackWith(track("B"))
+
+        assertEquals(playlist, updated)
     }
 
     @Test
@@ -94,6 +146,52 @@ class PlaylistTest {
 
         assertTrue(selectedNext.canSkipPrevious())
         assertFalse(selectedNext.canSkipNext())
+    }
+
+    @Test
+    fun skipAvailabilityFollowsOrderAfterReplacement() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("A"), track("B"), track("C")),
+            currentIndex = 1
+        ).replaceCurrentTrackWith(track("D"))
+
+        assertTrue(playlist.canSkipPrevious())
+        assertTrue(playlist.canSkipNext())
+        assertEquals(track("A"), playlist.selectTrackAt(0).currentTrack())
+        assertEquals(track("C"), playlist.selectTrackAt(2).currentTrack())
+    }
+
+    @Test
+    fun shouldAdvancePlaylistOnAutocanonizerEndRequiresNextTrack() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("A"), track("B"), track("C")),
+            currentIndex = 1
+        )
+
+        assertTrue(
+            shouldAdvancePlaylistOnAutocanonizerEnd(
+                UiState(
+                    playback = PlaybackState(playMode = PlaybackMode.Autocanonizer),
+                    playlist = playlist
+                )
+            )
+        )
+        assertFalse(
+            shouldAdvancePlaylistOnAutocanonizerEnd(
+                UiState(
+                    playback = PlaybackState(playMode = PlaybackMode.Autocanonizer),
+                    playlist = playlist.copy(currentIndex = 2)
+                )
+            )
+        )
+        assertFalse(
+            shouldAdvancePlaylistOnAutocanonizerEnd(
+                UiState(
+                    playback = PlaybackState(playMode = PlaybackMode.Jukebox),
+                    playlist = playlist
+                )
+            )
+        )
     }
 
     @Test
@@ -163,8 +261,10 @@ class PlaylistTest {
         val current = track("current")
         val next = track("next")
         val extra = track("extra")
-        val playlist = initializePlaylist(current, next)
-            .appendAndSelectTrack(extra)
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(current, next, extra),
+            currentIndex = 2
+        )
 
         val updated = playlist.removeTrackAt(1)
 

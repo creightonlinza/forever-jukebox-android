@@ -137,6 +137,17 @@ internal fun localPlaybackNotificationTitle(
     }
 }
 
+internal fun localPlaybackNotificationArtist(
+    baseArtist: String?,
+    isLoading: Boolean
+): String {
+    return if (isLoading) {
+        DEFAULT_NOTIFICATION_TITLE
+    } else {
+        baseArtist.orEmpty()
+    }
+}
+
 private object PlaybackServiceConstants {
     const val CHANNEL_ID = "fj_playback"
     const val NOTIFICATION_ID = 2001
@@ -430,11 +441,10 @@ class ForegroundPlaybackService : Service() {
             isLoading = loadingNotification != null,
             loadingProgressBucket = loadingNotification?.progressBucket
         )
-        val artist = if (loadingNotification != null) {
-            ""
-        } else {
-            controller.getTrackArtist().orEmpty()
-        }
+        val artist = localPlaybackNotificationArtist(
+            baseArtist = controller.getTrackArtist(),
+            isLoading = loadingNotification != null
+        )
         val positionMs = controller.getPlaybackPositionMs().coerceAtLeast(0L)
         val durationMs = controller.getTrackDurationMs()?.coerceAtLeast(0L)
         return PlaybackNotificationState(

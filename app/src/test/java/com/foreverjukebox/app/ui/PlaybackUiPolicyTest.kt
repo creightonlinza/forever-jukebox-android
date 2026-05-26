@@ -58,7 +58,7 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
-    fun playlistSkipEnablesPlayAfterLoadedOnlyForActiveLocalPlayback() {
+    fun playlistSkipEnablesPlayAfterLoadedForActiveLocalPlaylist() {
         val playlist = JukeboxPlaylistState(
             tracks = listOf(
                 PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
@@ -75,11 +75,6 @@ class PlaybackUiPolicyTest {
         assertFalse(
             shouldEnablePlayAfterLoadedForPlaylistSkip(
                 active.copy(playback = active.playback.copy(isCasting = true))
-            )
-        )
-        assertFalse(
-            shouldEnablePlayAfterLoadedForPlaylistSkip(
-                active.copy(playback = active.playback.copy(playMode = PlaybackMode.Autocanonizer))
             )
         )
         assertFalse(
