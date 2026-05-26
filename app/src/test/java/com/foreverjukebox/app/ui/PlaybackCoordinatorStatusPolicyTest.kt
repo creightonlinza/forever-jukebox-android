@@ -108,6 +108,36 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
+    fun playbackServiceSessionWouldHideIntermediateCachedAudioState() {
+        assertEquals(
+            PlaybackServiceSession.Hidden,
+            resolvePlaybackServiceSession(
+                PlaybackState(
+                    audioLoaded = true,
+                    analysisLoaded = false,
+                    audioLoading = false,
+                    analysisInFlight = false,
+                    analysisCalculating = false
+                )
+            )
+        )
+    }
+
+    @Test
+    fun playbackServiceSessionKeepsCachedAudioDecodeVisibleWhileLoading() {
+        assertEquals(
+            PlaybackServiceSession.LocalLoading(progress = null),
+            resolvePlaybackServiceSession(
+                PlaybackState(
+                    audioLoaded = true,
+                    analysisLoaded = false,
+                    audioLoading = true
+                )
+            )
+        )
+    }
+
+    @Test
     fun playbackServiceSessionMapsCastNotificationState() {
         assertEquals(
             PlaybackServiceSession.Cast(
