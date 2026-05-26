@@ -426,8 +426,9 @@ class PathReproParityFixtureTest {
 
         override fun seek(time: Double) = Unit
 
-        override fun scheduleJump(targetTime: Double, sourceStartTime: Double) {
+        override fun scheduleJump(targetTime: Double, sourceStartTime: Double): Boolean {
             scheduleJumpCalls.add(targetTime to sourceStartTime)
+            return true
         }
 
         override fun cancelScheduledJump() = Unit
