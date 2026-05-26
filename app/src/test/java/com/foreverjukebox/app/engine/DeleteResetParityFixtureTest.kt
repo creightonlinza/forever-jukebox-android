@@ -196,7 +196,7 @@ class DeleteResetParityFixtureTest {
         override fun pause() = Unit
         override fun stop() = Unit
         override fun seek(time: Double) = Unit
-        override fun scheduleJump(targetTime: Double, sourceStartTime: Double) = Unit
+        override fun scheduleJump(targetTime: Double, sourceStartTime: Double): Boolean = true
         override fun cancelScheduledJump() = Unit
         override fun getCurrentTime(): Double = 0.0
         override fun getAudioTime(): Double = 0.0

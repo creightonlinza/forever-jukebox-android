@@ -7,13 +7,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import java.util.concurrent.CopyOnWriteArraySet
+import kotlin.math.abs
 
 interface JukeboxPlayer {
     fun play()
     fun pause()
     fun stop()
     fun seek(time: Double)
-    fun scheduleJump(targetTime: Double, sourceStartTime: Double)
+    fun scheduleJump(targetTime: Double, sourceStartTime: Double): Boolean
     fun cancelScheduledJump()
     fun getCurrentTime(): Double
     fun getAudioTime(): Double
@@ -233,19 +234,7 @@ class JukeboxEngine(
     }
 
     fun syncToPlaybackPosition() {
-        if (analysis == null || beats.isEmpty()) return
-        val trackTime = player.getCurrentTime()
-        val beatIndex = findBeatIndexByTime(trackTime)
-        if (beatIndex !in beats.indices) return
-        val beat = beats[beatIndex]
-        val beatEnd = beat.start + beat.duration
-        val remainingInBeat = (beatEnd - trackTime).coerceAtLeast(0.0)
-        currentBeatIndex = beatIndex
-        nextAudioTime = player.getAudioTime() + remainingInBeat / getPlaybackRate()
-        lastJumped = false
-        lastJumpTime = null
-        lastJumpFromIndex = null
-        clearPendingAdvance(cancelScheduledJump = true)
+        snapToPlaybackPosition()
     }
 
     private fun resetState() {
@@ -283,7 +272,8 @@ class JukeboxEngine(
             guard -= 1
         }
 
-        emitState(lastJumped)
+        val snapped = verifyPlaybackSync()
+        emitState(if (snapped) false else lastJumped)
         lastJumped = false
         val remainingMs = ((nextAudioTime - player.getAudioTime()) * 1000.0 - 10.0)
             .coerceAtLeast(0.0)
@@ -320,12 +310,18 @@ class JukeboxEngine(
         var shouldJump = false
         var jumpFromIndex: Int? = null
         var sourceBoundaryTime: Double? = null
+        var selectedSeed: QuantumBase? = null
+        var previousRandomBranchChance = curRandomBranchChance
+        var previousLastDestBySource: MutableMap<Int, Int>? = null
+        var previousNeighbors: List<Edge> = emptyList()
 
         if (currentIndex >= 0) {
             val nextIndex = currentIndex + 1
             val wrappedIndex = if (nextIndex >= beatsCount) 0 else nextIndex
             val seed = beats[wrappedIndex]
             val wrappedToStart = wrappedIndex == 0 && currentIndex == beatsCount - 1
+            val fallbackIndex = if (wrappedToStart) currentIndex else wrappedIndex
+            selectedSeed = seed
             sourceBoundaryTime = if (wrappedToStart) {
                 beats[currentIndex].start + beats[currentIndex].duration
             } else {
@@ -334,13 +330,16 @@ class JukeboxEngine(
             if (!wrappedToStart && !hasJumpScheduleLead(sourceBoundaryTime)) {
                 return PendingAdvance(
                     boundaryAudioTime = boundaryAudioTime,
-                    chosenIndex = wrappedIndex,
+                    chosenIndex = fallbackIndex,
                     shouldJump = false,
                     targetTime = null,
                     jumpFromIndex = null,
                     sourceBoundaryTime = null
                 )
             }
+            previousRandomBranchChance = curRandomBranchChance
+            previousLastDestBySource = branchState.lastDestBySource?.toMutableMap()
+            previousNeighbors = seed.neighbors.toList()
             branchState.curRandomBranchChance = curRandomBranchChance
             val selection = selectNextBeatIndex(
                 seed,
@@ -366,7 +365,29 @@ class JukeboxEngine(
         val targetBeat = beats.getOrNull(chosenIndex) ?: return null
         val targetTime = if (shouldJump) targetBeat.start else null
         if (scheduleJump && targetTime != null && sourceBoundaryTime != null) {
-            player.scheduleJump(targetTime, sourceBoundaryTime)
+            if (!player.scheduleJump(targetTime, sourceBoundaryTime)) {
+                selectedSeed?.let { seed ->
+                    restoreRejectedBranchSelection(
+                        seed = seed,
+                        previousNeighbors = previousNeighbors,
+                        previousLastDestBySource = previousLastDestBySource,
+                        previousRandomBranchChance = previousRandomBranchChance
+                    )
+                }
+                val fallbackIndex = if (currentIndex == beats.lastIndex && chosenIndex == 0) {
+                    currentIndex
+                } else {
+                    (currentIndex + 1).coerceAtMost(beats.lastIndex)
+                }
+                return PendingAdvance(
+                    boundaryAudioTime = boundaryAudioTime,
+                    chosenIndex = fallbackIndex,
+                    shouldJump = false,
+                    targetTime = null,
+                    jumpFromIndex = null,
+                    sourceBoundaryTime = null
+                )
+            }
         }
         return PendingAdvance(
             boundaryAudioTime = boundaryAudioTime,
@@ -376,6 +397,18 @@ class JukeboxEngine(
             jumpFromIndex = jumpFromIndex,
             sourceBoundaryTime = sourceBoundaryTime
         )
+    }
+
+    private fun restoreRejectedBranchSelection(
+        seed: QuantumBase,
+        previousNeighbors: List<Edge>,
+        previousLastDestBySource: MutableMap<Int, Int>?,
+        previousRandomBranchChance: Double
+    ) {
+        seed.neighbors = previousNeighbors.toMutableList()
+        branchState.lastDestBySource = previousLastDestBySource
+        curRandomBranchChance = previousRandomBranchChance
+        branchState.curRandomBranchChance = previousRandomBranchChance
     }
 
     private fun commitAdvance(advance: PendingAdvance) {
@@ -409,6 +442,64 @@ class JukeboxEngine(
     private fun getPlaybackRate(): Double {
         val rate = player.getPlaybackRate()
         return if (rate.isFinite() && rate > 0.0) rate else 1.0
+    }
+
+    private fun verifyPlaybackSync(): Boolean {
+        if (analysis == null || beats.isEmpty()) return false
+        val trackTime = player.getCurrentTime()
+        val beatIndex = findBeatIndexByTime(trackTime)
+        if (beatIndex !in beats.indices) return false
+        val expectedNextAudioTime = nextAudioTimeForBeatAt(
+            beatIndex = beatIndex,
+            trackTime = trackTime,
+            audioTime = player.getAudioTime()
+        )
+        val beatMismatch = currentBeatIndex != beatIndex
+        val boundaryMismatch = abs(nextAudioTime - expectedNextAudioTime) > SYNC_TOLERANCE_SECONDS
+        if (!beatMismatch && !boundaryMismatch) return false
+        snapToPlaybackPosition(
+            beatIndex = beatIndex,
+            nextBoundaryAudioTime = expectedNextAudioTime
+        )
+        return true
+    }
+
+    private fun snapToPlaybackPosition() {
+        if (analysis == null || beats.isEmpty()) return
+        val trackTime = player.getCurrentTime()
+        val beatIndex = findBeatIndexByTime(trackTime)
+        if (beatIndex !in beats.indices) return
+        snapToPlaybackPosition(
+            beatIndex = beatIndex,
+            nextBoundaryAudioTime = nextAudioTimeForBeatAt(
+                beatIndex = beatIndex,
+                trackTime = trackTime,
+                audioTime = player.getAudioTime()
+            )
+        )
+    }
+
+    private fun snapToPlaybackPosition(
+        beatIndex: Int,
+        nextBoundaryAudioTime: Double
+    ) {
+        currentBeatIndex = beatIndex
+        nextAudioTime = nextBoundaryAudioTime
+        lastJumped = false
+        lastJumpTime = null
+        lastJumpFromIndex = null
+        clearPendingAdvance(cancelScheduledJump = true)
+    }
+
+    private fun nextAudioTimeForBeatAt(
+        beatIndex: Int,
+        trackTime: Double,
+        audioTime: Double
+    ): Double {
+        val beat = beats[beatIndex]
+        val beatEnd = beat.start + beat.duration
+        val remainingInBeat = (beatEnd - trackTime).coerceAtLeast(0.0)
+        return audioTime + remainingInBeat / getPlaybackRate()
     }
 
     private fun findBeatIndexByTime(time: Double): Int {
@@ -519,4 +610,5 @@ private data class PendingAdvance(
 )
 
 private const val MIN_JUMP_SCHEDULE_LEAD_SECONDS = 0.08
+private const val SYNC_TOLERANCE_SECONDS = 0.075
 private const val TICK_INTERVAL_MS = 50L

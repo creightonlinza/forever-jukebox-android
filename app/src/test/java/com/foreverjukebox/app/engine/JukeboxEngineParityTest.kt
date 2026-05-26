@@ -569,6 +569,112 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun rejectedScheduledJumpAdvancesSequentiallyAndRestoresBranchSelection() {
+        val player = FakePlayer().apply {
+            fakeCurrentTime = 0.0
+            scheduleJumpResult = false
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val preferredEdge = makeEdge(0, beats[1], beats[0], 10.0)
+        val fallbackEdge = makeEdge(1, beats[1], beats[2], 99.0)
+        beats[1].neighbors = mutableListOf(preferredEdge, fallbackEdge)
+        beats[1].allNeighbors = mutableListOf(preferredEdge, fallbackEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(preferredEdge, fallbackEdge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 0)
+        setPrivateField(engine, "nextAudioTime", 1.0)
+        setPrivateField(engine, "curRandomBranchChance", engine.getConfig().minRandomBranchChance)
+
+        invokeAdvanceBeat(engine, 1.0)
+
+        assertEquals(1, getPrivateField<Int>(engine, "currentBeatIndex"))
+        assertEquals(false, getPrivateField<Boolean>(engine, "lastJumped"))
+        assertNull(getPrivateField<Int?>(engine, "lastJumpFromIndex"))
+        assertEquals(1, player.scheduleJumpCalls.size)
+        assertEquals(listOf(0, 1), beats[1].neighbors.map { it.id })
+        val branchState = getPrivateField<BranchState>(engine, "branchState")
+        assertNull(branchState.lastDestBySource)
+    }
+
+    @Test
+    fun tickSnapsCurrentBeatToAudioPositionAfterLateTimer() {
+        val player = FakePlayer().apply {
+            fakeCurrentTime = 2.25
+            fakeAudioTime = 20.0
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf()
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 0)
+        setPrivateField(engine, "nextAudioTime", 20.75)
+        setPrivateField(engine, "ticking", true)
+
+        invokeTick(engine)
+
+        assertEquals(2, getPrivateField<Int>(engine, "currentBeatIndex"))
+        assertEquals(20.75, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(false, getPrivateField<Boolean>(engine, "lastJumped"))
+    }
+
+    @Test
+    fun tickRecomputesStaleNextAudioTimeAndCancelsPendingJump() {
+        val player = FakePlayer().apply {
+            fakeCurrentTime = 0.25
+            fakeAudioTime = 10.0
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val edge = makeEdge(0, beats[1], beats[0], 10.0)
+        beats[1].neighbors = mutableListOf(edge)
+        beats[1].allNeighbors = mutableListOf(edge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(edge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 0)
+        setPrivateField(engine, "nextAudioTime", 11.5)
+        setPrivateField(engine, "ticking", true)
+
+        invokeTick(engine)
+
+        assertEquals(0, getPrivateField<Int>(engine, "currentBeatIndex"))
+        assertEquals(10.75, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(1, player.scheduleJumpCalls.size)
+        assertEquals(1, player.cancelScheduledJumpCalls)
+        assertEquals(false, getPrivateField<Boolean>(engine, "lastJumped"))
+    }
+
+    @Test
     fun clearAnalysisResetsGraphAndBeatLookup() {
         val engine = JukeboxEngine(FakePlayer())
         engine.loadAnalysis(makeAnalysisPayload(6))
@@ -689,6 +795,7 @@ class JukeboxEngineParityTest {
         var fakeCurrentTime = 0.0
         var fakeAudioTime = 0.0
         var fakePlaybackRate = 1.0
+        var scheduleJumpResult = true
         var cancelScheduledJumpCalls = 0
         val scheduleJumpCalls = mutableListOf<Pair<Double, Double>>()
 
@@ -706,8 +813,9 @@ class JukeboxEngineParityTest {
 
         override fun seek(time: Double) = Unit
 
-        override fun scheduleJump(targetTime: Double, sourceStartTime: Double) {
+        override fun scheduleJump(targetTime: Double, sourceStartTime: Double): Boolean {
             scheduleJumpCalls.add(targetTime to sourceStartTime)
+            return scheduleJumpResult
         }
 
         override fun cancelScheduledJump() {

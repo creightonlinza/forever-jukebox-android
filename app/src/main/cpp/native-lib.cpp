@@ -20,6 +20,7 @@ constexpr float kBiquadQ = 0.70710678f;
 constexpr double kPanRadiansPerSecond = 0.42;
 constexpr double kJumpFrameEpsilon = 2.0;
 constexpr double kMaxLateJumpFrames = 8.0;
+constexpr double kMinJumpScheduleLeadFrames = kMaxLateJumpFrames;
 constexpr float kNormalDuckingVolume = 1.0f;
 constexpr float kDuckedVolume = 0.2f;
 constexpr float kDuckingRampSpeed = 0.0002f;
@@ -330,14 +331,35 @@ public:
         resetDspState();
     }
 
-    void scheduleJump(double targetTime, double sourceStartTime) {
-        const int64_t targetFrame =
-            static_cast<int64_t>(targetTime * static_cast<double>(mSampleRate));
-        const int64_t sourceFrame =
-            static_cast<int64_t>(sourceStartTime * static_cast<double>(mSampleRate));
-        mJumpToFrame.store(targetFrame < 0 ? 0.0 : static_cast<double>(targetFrame));
-        mJumpAtSourceFrame.store(sourceFrame < 0 ? 0.0 : static_cast<double>(sourceFrame));
+    bool scheduleJump(double targetTime, double sourceStartTime) {
+        if (!std::isfinite(targetTime) || !std::isfinite(sourceStartTime)) {
+            return false;
+        }
+        const double targetFrameRaw = targetTime * static_cast<double>(mSampleRate);
+        const double sourceFrameRaw = sourceStartTime * static_cast<double>(mSampleRate);
+        const int64_t targetFrame = static_cast<int64_t>(targetFrameRaw);
+        const int64_t sourceFrame = static_cast<int64_t>(sourceFrameRaw);
+        {
+            std::lock_guard<std::mutex> lock(mDataMutex);
+            if (mAudioData.empty() || mTotalFrames <= 0) {
+                return false;
+            }
+            if (targetFrame < 0 || targetFrame >= mTotalFrames) {
+                return false;
+            }
+            if (sourceFrame < 0 ||
+                sourceFrameRaw > static_cast<double>(mTotalFrames) + kJumpFrameEpsilon) {
+                return false;
+            }
+        }
+        const double currentFrame = mReadFrame.load();
+        if (sourceFrameRaw - currentFrame <= kMinJumpScheduleLeadFrames) {
+            return false;
+        }
+        mJumpToFrame.store(static_cast<double>(targetFrame));
+        mJumpAtSourceFrame.store(static_cast<double>(sourceFrame));
         mHasJump.store(true);
+        return true;
     }
 
     void cancelScheduledJump() {
@@ -667,11 +689,11 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSeek(
     if (player) player->seekSeconds(timeSeconds);
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeScheduleJump(
     JNIEnv*, jobject, jlong handle, jdouble targetTime, jdouble audioStart) {
     auto* player = toPlayer(handle);
-    if (player) player->scheduleJump(targetTime, audioStart);
+    return player && player->scheduleJump(targetTime, audioStart);
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -134,4 +134,60 @@ class ForegroundPlaybackServiceNotificationTest {
             )
         )
     }
+
+    @Test
+    fun notificationArtistFallsBackOnlyWhenTitleIsPresent() {
+        assertEquals(
+            "The Forever Jukebox",
+            playbackNotificationArtist(
+                baseTitle = "Track",
+                baseArtist = null,
+                isLoading = false
+            )
+        )
+        assertEquals(
+            "The Forever Jukebox",
+            playbackNotificationArtist(
+                baseTitle = "Track",
+                baseArtist = "",
+                isLoading = false
+            )
+        )
+        assertEquals(
+            "Artist",
+            playbackNotificationArtist(
+                baseTitle = "Track",
+                baseArtist = "Artist",
+                isLoading = false
+            )
+        )
+    }
+
+    @Test
+    fun notificationArtistIsBlankWhenTitleIsMissingOrLoading() {
+        assertEquals(
+            "",
+            playbackNotificationArtist(
+                baseTitle = null,
+                baseArtist = "Artist",
+                isLoading = false
+            )
+        )
+        assertEquals(
+            "",
+            playbackNotificationArtist(
+                baseTitle = "",
+                baseArtist = "Artist",
+                isLoading = false
+            )
+        )
+        assertEquals(
+            "",
+            playbackNotificationArtist(
+                baseTitle = "Track",
+                baseArtist = null,
+                isLoading = true
+            )
+        )
+    }
 }
