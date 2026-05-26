@@ -1830,6 +1830,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun togglePlayback() {
         val current = state.value.playback
+        if (current.isTrackLoading()) return
         if (current.isCasting) {
             toggleCastPlayback(current)
             return
@@ -2329,6 +2330,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipToPreviousPlaylistTrack() {
         val current = state.value
+        if (current.playback.isTrackLoading()) return
         val playlist = current.playlist
         if (!playlist.canSkipPrevious()) return
         selectPlaylistTrack(
@@ -2339,6 +2341,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipToNextPlaylistTrack() {
         val current = state.value
+        if (current.playback.isTrackLoading()) return
         val playlist = current.playlist
         if (!playlist.canSkipNext()) return
         selectPlaylistTrack(

@@ -252,6 +252,10 @@ fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
 
 fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading
 
+fun PlaybackState.isTrackLoading(): Boolean {
+    return isLoading() || isCastLoading || castPlaybackState == "loading"
+}
+
 fun shouldShowFullscreenVisualization(playback: PlaybackState): Boolean {
     return !playback.isCasting &&
         playback.audioLoaded &&

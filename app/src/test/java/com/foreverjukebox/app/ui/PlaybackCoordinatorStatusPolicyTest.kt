@@ -175,4 +175,24 @@ class PlaybackCoordinatorStatusPolicyTest {
             resolvePlaybackServiceSkipAvailability(state)
         )
     }
+
+    @Test
+    fun playbackServiceSkipAvailabilityDisablesWhileTrackLoading() {
+        val state = UiState(
+            playback = PlaybackState(audioLoading = true),
+            playlist = JukeboxPlaylistState(
+                tracks = listOf(
+                    PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
+                    PlaylistTrack("two", PlaylistTrackType.Server, "Two", null),
+                    PlaylistTrack("three", PlaylistTrackType.Server, "Three", null)
+                ),
+                currentIndex = 1
+            )
+        )
+
+        assertEquals(
+            PlaybackServiceSkipAvailability(canSkipPrevious = false, canSkipNext = false),
+            resolvePlaybackServiceSkipAvailability(state)
+        )
+    }
 }

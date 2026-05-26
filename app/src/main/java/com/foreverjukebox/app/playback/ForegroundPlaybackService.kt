@@ -92,8 +92,12 @@ internal enum class PlaybackNotificationActionSlot {
 
 internal fun playbackNotificationActionSlots(
     canSkipPrevious: Boolean,
-    canSkipNext: Boolean
+    canSkipNext: Boolean,
+    isLoading: Boolean = false
 ): List<PlaybackNotificationActionSlot> {
+    if (isLoading) {
+        return emptyList()
+    }
     val actions = mutableListOf<PlaybackNotificationActionSlot>()
     if (canSkipPrevious) {
         actions += PlaybackNotificationActionSlot.Previous
@@ -235,7 +239,8 @@ private data class PlaybackNotificationState(
     val positionMs: Long = 0L,
     val durationMs: Long? = null,
     val canSkipPrevious: Boolean = false,
-    val canSkipNext: Boolean = false
+    val canSkipNext: Boolean = false,
+    val isLoading: Boolean = false
 ) {
     fun contentText(): String = artist
 
@@ -435,15 +440,16 @@ class ForegroundPlaybackService : Service() {
     ): PlaybackNotificationState {
         val controller = PlaybackControllerHolder.get(this)
         val audioMode = controller.player.getJukeboxAudioMode()
+        val isLoading = loadingNotification != null
         val title = localPlaybackNotificationTitle(
             baseTitle = controller.getTrackTitle(),
             audioMode = audioMode,
-            isLoading = loadingNotification != null,
+            isLoading = isLoading,
             loadingProgressBucket = loadingNotification?.progressBucket
         )
         val artist = localPlaybackNotificationArtist(
             baseArtist = controller.getTrackArtist(),
-            isLoading = loadingNotification != null
+            isLoading = isLoading
         )
         val positionMs = controller.getPlaybackPositionMs().coerceAtLeast(0L)
         val durationMs = controller.getTrackDurationMs()?.coerceAtLeast(0L)
@@ -455,8 +461,9 @@ class ForegroundPlaybackService : Service() {
             castDeviceName = null,
             positionMs = positionMs,
             durationMs = durationMs,
-            canSkipPrevious = skipAvailability.canSkipPrevious,
-            canSkipNext = skipAvailability.canSkipNext
+            canSkipPrevious = !isLoading && skipAvailability.canSkipPrevious,
+            canSkipNext = !isLoading && skipAvailability.canSkipNext,
+            isLoading = isLoading
         )
     }
 
@@ -600,7 +607,8 @@ class ForegroundPlaybackService : Service() {
         )
         val actionSlots = playbackNotificationActionSlots(
             canSkipPrevious = state.canSkipPrevious,
-            canSkipNext = state.canSkipNext
+            canSkipNext = state.canSkipNext,
+            isLoading = state.isLoading
         )
 
         val builder = NotificationCompat.Builder(this, PlaybackServiceConstants.CHANNEL_ID)
@@ -724,6 +732,9 @@ class ForegroundPlaybackService : Service() {
 
     private fun handlePlaybackAction(action: PlaybackAction) {
         val activeState = activeNotificationState
+        if (activeState?.isLoading == true) {
+            return
+        }
         val targetPlayState = when (action) {
             PlaybackAction.Play -> true
             PlaybackAction.Pause,
@@ -869,12 +880,18 @@ class ForegroundPlaybackService : Service() {
     }
 
     private fun broadcastPlaylistPreviousRequested() {
+        if (activeNotificationState?.isLoading == true) {
+            return
+        }
         sendBroadcast(Intent(PlaybackServiceConstants.ACTION_PLAYLIST_PREVIOUS).apply {
             setPackage(packageName)
         })
     }
 
     private fun broadcastPlaylistNextRequested() {
+        if (activeNotificationState?.isLoading == true) {
+            return
+        }
         sendBroadcast(Intent(PlaybackServiceConstants.ACTION_PLAYLIST_NEXT).apply {
             setPackage(packageName)
         })
