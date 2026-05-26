@@ -137,17 +137,6 @@ internal fun localPlaybackNotificationTitle(
     }
 }
 
-internal fun playbackNotificationArtist(
-    baseTitle: String?,
-    baseArtist: String?,
-    isLoading: Boolean
-): String {
-    if (isLoading || baseTitle.isNullOrBlank()) {
-        return ""
-    }
-    return baseArtist?.takeIf { it.isNotBlank() } ?: DEFAULT_NOTIFICATION_TITLE
-}
-
 private object PlaybackServiceConstants {
     const val CHANNEL_ID = "fj_playback"
     const val NOTIFICATION_ID = 2001
@@ -435,19 +424,17 @@ class ForegroundPlaybackService : Service() {
     ): PlaybackNotificationState {
         val controller = PlaybackControllerHolder.get(this)
         val audioMode = controller.player.getJukeboxAudioMode()
-        val baseTitle = controller.getTrackTitle()
-        val baseArtist = controller.getTrackArtist()
         val title = localPlaybackNotificationTitle(
-            baseTitle = baseTitle,
+            baseTitle = controller.getTrackTitle(),
             audioMode = audioMode,
             isLoading = loadingNotification != null,
             loadingProgressBucket = loadingNotification?.progressBucket
         )
-        val artist = playbackNotificationArtist(
-            baseTitle = baseTitle,
-            baseArtist = baseArtist,
-            isLoading = loadingNotification != null
-        )
+        val artist = if (loadingNotification != null) {
+            ""
+        } else {
+            controller.getTrackArtist().orEmpty()
+        }
         val positionMs = controller.getPlaybackPositionMs().coerceAtLeast(0L)
         val durationMs = controller.getTrackDurationMs()?.coerceAtLeast(0L)
         return PlaybackNotificationState(
@@ -503,16 +490,10 @@ class ForegroundPlaybackService : Service() {
         if (!getBooleanExtra(PlaybackServiceConstants.EXTRA_IS_CASTING, false)) {
             return null
         }
-        val baseTitle = getStringExtra(PlaybackServiceConstants.EXTRA_TRACK_TITLE)
-        val baseArtist = getStringExtra(PlaybackServiceConstants.EXTRA_TRACK_ARTIST)
-        val title = baseTitle
+        val title = getStringExtra(PlaybackServiceConstants.EXTRA_TRACK_TITLE)
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_NOTIFICATION_TITLE
-        val artist = playbackNotificationArtist(
-            baseTitle = baseTitle,
-            baseArtist = baseArtist,
-            isLoading = false
-        )
+        val artist = getStringExtra(PlaybackServiceConstants.EXTRA_TRACK_ARTIST).orEmpty()
         val deviceName = getStringExtra(PlaybackServiceConstants.EXTRA_CAST_DEVICE_NAME)
         return PlaybackNotificationState(
             mode = NotificationMode.Cast,
