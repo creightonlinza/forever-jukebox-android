@@ -59,7 +59,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         onClearCache = viewModel::clearCache,
                         onTabSelected = viewModel::setActiveTab,
                         onCastSessionStarted = {},
-                        onOpenSleepTimer = { showSleepTimer = true }
+                        onOpenSleepTimer = { showSleepTimer = true },
+                        onOpenWhatsNew = viewModel::showWhatsNewFromSettings
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -132,6 +133,12 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                             }
                         },
                         onClose = viewModel::dismissVersionUpdatePrompt
+                    )
+                }
+                state.whatsNewPrompt?.let { prompt ->
+                    WhatsNewDialog(
+                        prompt = prompt,
+                        onClose = viewModel::dismissWhatsNew
                     )
                 }
                 state.trackLengthLimitErrorMessage?.let { message ->

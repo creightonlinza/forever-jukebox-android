@@ -69,6 +69,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_CANONIZER_FINISH = booleanPreferencesKey("canonizer_finish_out_song")
         private val KEY_HIGHLIGHT_ANCHOR_BRANCH = booleanPreferencesKey("highlight_anchor_branch")
         private val KEY_SAVED_PLAYLIST = stringPreferencesKey("saved_playlist")
+        private val KEY_WHATS_NEW_VERSION_CODE = intPreferencesKey("whats_new_version_code")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -112,6 +113,10 @@ class AppPreferences(private val context: Context) {
 
     val savedPlaylist: Flow<List<SavedPlaylistTrack>> = context.dataStore.data.map { prefs ->
         decodeSavedPlaylistTracks(prefs[KEY_SAVED_PLAYLIST], json)
+    }
+
+    val whatsNewVersionCode: Flow<Int?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_WHATS_NEW_VERSION_CODE]
     }
 
     suspend fun setBaseUrl(url: String) {
@@ -186,6 +191,12 @@ class AppPreferences(private val context: Context) {
             } else {
                 prefs[KEY_SAVED_PLAYLIST] = encodeSavedPlaylistTracks(items, json)
             }
+        }
+    }
+
+    suspend fun setWhatsNewVersionCode(versionCode: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_WHATS_NEW_VERSION_CODE] = versionCode
         }
     }
 

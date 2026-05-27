@@ -423,6 +423,51 @@ fun VersionUpdateDialog(
 }
 
 @Composable
+fun WhatsNewDialog(
+    prompt: WhatsNewPrompt,
+    onClose: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        confirmButton = {
+            Button(
+                onClick = onClose,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("OK", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text(prompt.title) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                prompt.bullets.forEach { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("-", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            item,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
 fun ErrorMessageDialog(
     message: String,
     onClose: () -> Unit

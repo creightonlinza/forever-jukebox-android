@@ -92,6 +92,9 @@ data class UiState(
     val favoritesSyncLoading: Boolean = false,
     val listenFavoriteToggleInFlight: Boolean = false,
     val versionUpdatePrompt: VersionUpdatePrompt? = null,
+    val whatsNewVersionCodeLoaded: Boolean = false,
+    val lastShownWhatsNewVersionCode: Int? = null,
+    val whatsNewPrompt: WhatsNewPrompt? = null,
     val search: SearchState = SearchState(),
     val playback: PlaybackState = PlaybackState(),
     val playlist: JukeboxPlaylistState = JukeboxPlaylistState(),
@@ -110,6 +113,12 @@ data class LocalCachedTrack(
 data class VersionUpdatePrompt(
     val latestVersion: String,
     val downloadUrl: String
+)
+
+data class WhatsNewPrompt(
+    val versionCode: Int,
+    val title: String,
+    val bullets: List<String>
 )
 
 data class SearchState(
