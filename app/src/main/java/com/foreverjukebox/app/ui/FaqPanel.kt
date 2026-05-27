@@ -89,6 +89,11 @@ fun FaqPanel() {
             BulletListItem("Adjust branch probability min/max and ramp speed to shape how often jumps happen.")
             BulletListItem("Use the checkboxes to allow or restrict certain branch types.")
 
+            Text("How do Playlists work?", fontWeight = FontWeight.Bold)
+            BulletListItem("Playlists let you queue up multiple tracks and move between them from the Listen screen.")
+            BulletListItem("First load a track, then long-press another track to add it to the playlist. A short tap continues to swap the track in and start loading it.")
+            BulletListItem("Tap the playlist icon on the Listen screen to pick, remove, or clear tracks. Previous and next controls skip through the playlist, and playlists are automatically saved.")
+
             Text("How do Favorites work? (server mode only)", fontWeight = FontWeight.Bold)
             BulletListItem("Favorites are saved/unsaved by clicking the star icon on a song. They are stored locally in your browser and can optionally be synced across devices using a sync code obtained from the Favorites sync menu.")
             BulletListItem("When you favorite a song, its tuning is saved too, so future loads restore your chosen parameters.")
