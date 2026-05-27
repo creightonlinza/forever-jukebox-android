@@ -59,7 +59,19 @@ class ForegroundPlaybackServiceNotificationTest {
     }
 
     @Test
+    fun notificationActionsAreHiddenWhileLoading() {
+        val actions = playbackNotificationActionSlots(
+            canSkipPrevious = true,
+            canSkipNext = true,
+            isLoading = true
+        )
+
+        assertEquals(emptyList<PlaybackNotificationActionSlot>(), actions)
+    }
+
+    @Test
     fun compactActionIndicesUseAllVisibleNotificationActions() {
+        assertEquals(emptyList<Int>(), compactActionIndices(0).toList())
         assertEquals(listOf(0), compactActionIndices(1).toList())
         assertEquals(listOf(0, 1), compactActionIndices(2).toList())
         assertEquals(listOf(0, 1, 2), compactActionIndices(3).toList())

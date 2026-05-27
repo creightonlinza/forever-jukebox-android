@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -79,7 +80,8 @@ fun HeaderBar(
     onClearCache: () -> Unit,
     onTabSelected: (TabId) -> Unit,
     onCastSessionStarted: () -> Unit,
-    onOpenSleepTimer: () -> Unit
+    onOpenSleepTimer: () -> Unit,
+    onOpenWhatsNew: () -> Unit
 ) {
     val context = LocalContext.current
     var showSettings by remember { mutableStateOf(false) }
@@ -140,6 +142,10 @@ fun HeaderBar(
             onOpenSleepTimer = {
                 showSettings = false
                 onOpenSleepTimer()
+            },
+            onOpenWhatsNew = {
+                showSettings = false
+                onOpenWhatsNew()
             },
             onThemeChange = onThemeChange,
             onAppModeChange = onAppModeChange,
@@ -332,6 +338,7 @@ private fun SettingsDialog(
     state: UiState,
     onDismiss: () -> Unit,
     onOpenSleepTimer: () -> Unit,
+    onOpenWhatsNew: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
@@ -381,12 +388,27 @@ private fun SettingsDialog(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Settings")
-                    Text(
-                        versionLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        maxLines = 1
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            versionLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            maxLines = 1
+                        )
+                        OutlinedButton(
+                            onClick = onOpenWhatsNew,
+                            colors = pillOutlinedButtonColors(),
+                            border = pillButtonBorder(),
+                            shape = PillShape,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(24.dp)
+                        ) {
+                            Text("What's New", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 SquareIconButton(onClick = onOpenSleepTimer) {

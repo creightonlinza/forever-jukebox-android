@@ -58,6 +58,16 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun trackLoadingCoversLocalAndCastLoadingStates() {
+        assertTrue(PlaybackState(analysisInFlight = true).isTrackLoading())
+        assertTrue(PlaybackState(analysisCalculating = true).isTrackLoading())
+        assertTrue(PlaybackState(audioLoading = true).isTrackLoading())
+        assertTrue(PlaybackState(isCastLoading = true).isTrackLoading())
+        assertTrue(PlaybackState(castPlaybackState = "loading").isTrackLoading())
+        assertFalse(PlaybackState().isTrackLoading())
+    }
+
+    @Test
     fun playlistSkipEnablesPlayAfterLoadedForActiveLocalPlaylist() {
         val playlist = JukeboxPlaylistState(
             tracks = listOf(

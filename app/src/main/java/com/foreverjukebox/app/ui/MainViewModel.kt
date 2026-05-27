@@ -371,6 +371,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 hydrateSavedPlaylistIfInactive()
                 maybeRefreshServerDataForCurrentState()
+                maybeShowAutomaticWhatsNew()
             }
         }
         viewModelScope.launch {
@@ -408,6 +409,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferences.savedPlaylist.collect { tracks ->
                 savedPlaylistTracks = tracks
                 hydrateSavedPlaylistIfInactive()
+            }
+        }
+        viewModelScope.launch {
+            preferences.whatsNewVersionCode.collect { versionCode ->
+                _state.update {
+                    it.copy(
+                        whatsNewVersionCodeLoaded = true,
+                        lastShownWhatsNewVersionCode = versionCode
+                    )
+                }
+                maybeShowAutomaticWhatsNew()
             }
         }
         viewModelScope.launch {
@@ -1830,6 +1842,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun togglePlayback() {
         val current = state.value.playback
+        if (current.isTrackLoading()) return
         if (current.isCasting) {
             toggleCastPlayback(current)
             return
@@ -2329,6 +2342,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipToPreviousPlaylistTrack() {
         val current = state.value
+        if (current.playback.isTrackLoading()) return
         val playlist = current.playlist
         if (!playlist.canSkipPrevious()) return
         selectPlaylistTrack(
@@ -2339,6 +2353,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipToNextPlaylistTrack() {
         val current = state.value
+        if (current.playback.isTrackLoading()) return
         val playlist = current.playlist
         if (!playlist.canSkipNext()) return
         selectPlaylistTrack(
@@ -2607,6 +2622,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(versionUpdatePrompt = null) }
     }
 
+    fun showWhatsNewFromSettings() {
+        _state.update {
+            it.copy(
+                whatsNewPrompt = buildWhatsNewPrompt(
+                    versionCode = BuildConfig.VERSION_CODE,
+                    versionName = BuildConfig.VERSION_NAME
+                )
+            )
+        }
+    }
+
+    fun dismissWhatsNew() {
+        val dismissedVersionCode = state.value.whatsNewPrompt?.versionCode ?: BuildConfig.VERSION_CODE
+        _state.update {
+            stateAfterWhatsNewDismissed(
+                state = it,
+                dismissedVersionCode = dismissedVersionCode
+            )
+        }
+        viewModelScope.launch {
+            preferences.setWhatsNewVersionCode(dismissedVersionCode)
+        }
+    }
+
     private fun recoverLoadingStateOnForeground() {
         val current = state.value
         val playback = current.playback
@@ -2675,6 +2714,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun checkForAppUpdateOnce() {
         appLifecycleCoordinator.checkForAppUpdateOnce()
+    }
+
+    private fun maybeShowAutomaticWhatsNew() {
+        val prompt = buildWhatsNewPrompt(
+            versionCode = BuildConfig.VERSION_CODE,
+            versionName = BuildConfig.VERSION_NAME
+        )
+        _state.update { current ->
+            if (
+                shouldShowAutomaticWhatsNew(
+                    showAppModeGate = current.showAppModeGate,
+                    whatsNewVersionCodeLoaded = current.whatsNewVersionCodeLoaded,
+                    lastShownVersionCode = current.lastShownWhatsNewVersionCode,
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    currentPrompt = current.whatsNewPrompt
+                )
+            ) {
+                current.copy(whatsNewPrompt = prompt)
+            } else {
+                current
+            }
+        }
     }
 
     private fun syncPlaybackServiceSession() {
