@@ -6,6 +6,7 @@ import kotlin.math.abs
 interface AutocanonizerPlayer {
     fun isReady(): Boolean
     fun syncAudioFromMain(): Boolean
+    fun clearSyncedAudio()
     fun setVolume(volume: Double)
     fun setDucking(active: Boolean)
     fun reset()
@@ -37,6 +38,10 @@ class BufferedAutocanonizerPlayer(
 
     override fun syncAudioFromMain(): Boolean {
         return secondaryPlayer.cloneAudioFrom(mainPlayer)
+    }
+
+    override fun clearSyncedAudio() {
+        secondaryPlayer.clear()
     }
 
     override fun setVolume(volume: Double) {

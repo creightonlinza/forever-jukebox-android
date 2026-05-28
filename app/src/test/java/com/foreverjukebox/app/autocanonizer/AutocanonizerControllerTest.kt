@@ -95,6 +95,18 @@ class AutocanonizerControllerTest {
         assertEquals(1, player.resumeCalls)
     }
 
+    @Test
+    fun fullResetClearsSyncedAudio() = runTest {
+        val player = FakeAutocanonizerPlayer(ready = true)
+        val controller = AutocanonizerController(player, this)
+        controller.setData(sampleData())
+
+        controller.reset()
+
+        assertEquals(1, player.clearSyncedAudioCalls)
+        assertFalse(controller.isReady())
+    }
+
     private fun sampleData(): AutocanonizerData {
         val beats = listOf(
             AutocanonizerBeat(index = 0, start = 0.0, duration = 1.0, nextIndex = 1, section = 0, indexInParent = 0, overlappingSegments = emptyList(), otherIndex = 0),
@@ -115,10 +127,15 @@ private class FakeAutocanonizerPlayer(
 ) : AutocanonizerPlayer {
     var pauseCalls = 0
     var resumeCalls = 0
+    var clearSyncedAudioCalls = 0
 
     override fun isReady(): Boolean = ready
 
     override fun syncAudioFromMain(): Boolean = ready
+
+    override fun clearSyncedAudio() {
+        clearSyncedAudioCalls += 1
+    }
 
     override fun setVolume(volume: Double) = Unit
 

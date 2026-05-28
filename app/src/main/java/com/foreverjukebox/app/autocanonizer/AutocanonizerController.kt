@@ -68,6 +68,10 @@ class AutocanonizerController(
         return player.syncAudioFromMain()
     }
 
+    fun clearSyncedAudio() {
+        player.clearSyncedAudio()
+    }
+
     fun isReady(): Boolean {
         val beats = data?.beats
         return !beats.isNullOrEmpty() && player.isReady()
@@ -89,6 +93,7 @@ class AutocanonizerController(
 
     fun reset() {
         stop()
+        clearSyncedAudio()
         data = null
         resetVisualization()
     }

@@ -2432,15 +2432,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             controller.player.setJukeboxAudioMode(JukeboxAudioMode.Off)
         }
         if (!current.isCasting) {
-            stopTransportForModeChange(
+            val transportPlan = stopTransportForModeChange(
                 controller = controller,
                 previousMode = current.playMode,
+                targetMode = mode,
                 isRunning = current.isRunning || current.isPaused,
                 onStopped = {
                     playbackCoordinator.stopListenTimer()
                     playbackCoordinator.updateListenTimeDisplay()
                 }
             )
+            if (transportPlan.clearAutocanonizerAudio) {
+                controller.autocanonizer.clearSyncedAudio()
+            }
         }
         playbackCoordinator.applyPlaybackMode(mode)
         _state.update {
