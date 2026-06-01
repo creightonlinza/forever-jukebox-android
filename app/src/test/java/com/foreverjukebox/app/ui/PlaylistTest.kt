@@ -136,6 +136,37 @@ class PlaylistTest {
     }
 
     @Test
+    fun replaceCurrentTrackWithCurrentDuplicateRefreshesMissingMetadata() {
+        val current = track("B", title = null, artist = null)
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("A"), current, track("C")),
+            currentIndex = 1
+        )
+
+        val updated = playlist.replaceCurrentTrackWith(
+            track("B", title = "Resolved Title", artist = "Resolved Artist")
+        )
+
+        assertEquals("Resolved Title", updated.currentTrack()?.title)
+        assertEquals("Resolved Artist", updated.currentTrack()?.artist)
+    }
+
+    @Test
+    fun replaceCurrentTrackWithCurrentDuplicateKeepsMetadataWhenIncomingIsBlank() {
+        val current = track("B", title = "Existing Title", artist = "Existing Artist")
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("A"), current, track("C")),
+            currentIndex = 1
+        )
+
+        val updated = playlist.replaceCurrentTrackWith(
+            track("B", title = "  ", artist = "")
+        )
+
+        assertEquals(current, updated.currentTrack())
+    }
+
+    @Test
     fun skipAvailabilityTracksCurrentIndex() {
         val playlist = initializePlaylist(track("current"), track("next"))
 
@@ -327,13 +358,15 @@ class PlaylistTest {
     private fun track(
         id: String,
         type: PlaylistTrackType = PlaylistTrackType.Server,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        title: String? = id,
+        artist: String? = "Artist"
     ): PlaylistTrack {
         return PlaylistTrack(
             id = id,
             type = type,
-            title = id,
-            artist = "Artist",
+            title = title,
+            artist = artist,
             tuningParams = tuningParams
         )
     }

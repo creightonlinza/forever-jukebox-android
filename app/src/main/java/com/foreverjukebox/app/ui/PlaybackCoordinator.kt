@@ -38,6 +38,25 @@ internal fun isAnalysisInProgressStatus(status: String?): Boolean {
     return status == "downloading" || status == "queued" || status == "processing"
 }
 
+internal data class ResolvedLoadedTrackMeta(
+    val title: String?,
+    val artist: String?,
+    val durationSeconds: Double?
+)
+
+internal fun resolveLoadedTrackMeta(
+    backendTrackMeta: TrackMetaJson?,
+    currentPlayback: PlaybackState
+): ResolvedLoadedTrackMeta {
+    return ResolvedLoadedTrackMeta(
+        title = backendTrackMeta?.title.takeIfNotBlank()
+            ?: currentPlayback.trackTitle.takeIfNotBlank(),
+        artist = backendTrackMeta?.artist.takeIfNotBlank()
+            ?: currentPlayback.trackArtist.takeIfNotBlank(),
+        durationSeconds = backendTrackMeta?.duration
+    )
+}
+
 class PlaybackCoordinator(
     private val application: Application,
     private val scope: CoroutineScope,
@@ -409,18 +428,16 @@ class PlaybackCoordinator(
         val rootObj = result.jsonObject
         val trackElement = rootObj["track"] ?: rootObj["analysis"]?.jsonObject?.get("track")
         val trackMeta = trackElement?.let { json.decodeFromJsonElement(TrackMetaJson.serializer(), it) }
-        val title = trackMeta?.title
-        val artist = trackMeta?.artist
-        val durationSeconds = trackMeta?.duration
         val (vizData, autocanonizerData) = withContext(Dispatchers.Default) {
             engine.loadAnalysis(result)
             applyPendingTuningParams()
             val viz = engine.getVisualizationData()
-            val canonizer = controller.autocanonizer.setAnalysis(result, durationSeconds)
+            val canonizer = controller.autocanonizer.setAnalysis(result, trackMeta?.duration)
             viz to canonizer
         }
         syncTuningState()
         val currentPlayback = getState().playback
+        val loadedTrackMeta = resolveLoadedTrackMeta(trackMeta, currentPlayback)
         val responseSourceProvider = sourceProviderFromRaw(response.sourceProvider)
         val responseSourceId = response.sourceId?.trim().orEmpty().ifBlank { null }
         val resolvedYouTubeId = if (responseSourceProvider == SOURCE_PROVIDER_YOUTUBE) {
@@ -429,12 +446,12 @@ class PlaybackCoordinator(
             currentPlayback.lastYouTubeId
         }
         val playTitle = buildPlayTitle(
-            title,
-            artist,
+            loadedTrackMeta.title,
+            loadedTrackMeta.artist,
             currentPlayback.playMode,
             currentPlayback.jukeboxAudioMode
         )
-        controller.setTrackMeta(title, artist)
+        controller.setTrackMeta(loadedTrackMeta.title, loadedTrackMeta.artist)
         updateState {
             it.copy(
                 playback = it.playback.copy(
@@ -442,12 +459,12 @@ class PlaybackCoordinator(
                     vizData = vizData,
                     autocanonizerData = autocanonizerData,
                     playTitle = playTitle,
-                    trackDurationSeconds = durationSeconds,
+                    trackDurationSeconds = loadedTrackMeta.durationSeconds,
                     castTotalBeats = null,
                     castTotalBranches = null,
                     lastYouTubeId = resolvedYouTubeId,
-                    trackTitle = title,
-                    trackArtist = artist,
+                    trackTitle = loadedTrackMeta.title,
+                    trackArtist = loadedTrackMeta.artist,
                     canonizerOtherIndex = null,
                     canonizerTileColorOverrides = controller.autocanonizer.getTileColorOverrides(),
                     analysisProgress = null,
@@ -1147,6 +1164,8 @@ class PlaybackCoordinator(
 
     private fun shouldApplyTuningParams(): Boolean = true
 }
+
+private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
 private const val END_EPSILON_SECONDS = 0.02
 private const val MAX_RANDOM_BRANCH_DELTA = 0.2

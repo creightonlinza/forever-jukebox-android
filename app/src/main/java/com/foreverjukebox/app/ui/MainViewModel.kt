@@ -200,6 +200,8 @@ private fun buildPlaybackTitle(
     }
 }
 
+private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val api = ApiClient()
@@ -255,7 +257,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab,
-        onStableTrackLoaded = ::maybeStartPlayAfterLoaded
+        onStableTrackLoaded = ::handleStableTrackLoaded
     )
     private val serverTrackLoadCoordinator = ServerTrackLoadCoordinator(
         scope = viewModelScope,
@@ -1005,6 +1007,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         togglePlayback()
     }
 
+    private fun handleStableTrackLoaded() {
+        refreshActivePlaylistCurrentTrack()
+        maybeStartPlayAfterLoaded()
+    }
+
+    private fun refreshActivePlaylistCurrentTrack() {
+        maybeSelectPlaylistTrack(currentPlaylistTrackOrNull())
+    }
+
     private fun resolveTrackMeta(trackId: String): Pair<String?, String?> {
         val canonicalTarget = canonicalTrackId(trackId) ?: trackId
         val topMatch = state.value.search.topSongs.firstOrNull {
@@ -1032,8 +1043,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return PlaylistTrack(
             id = canonical,
             type = PlaylistTrackType.Server,
-            title = title,
-            artist = artist,
+            title = title.takeIfNotBlank(),
+            artist = artist.takeIfNotBlank(),
             tuningParams = tuningParams?.takeIf { it.isNotBlank() }
         )
     }
@@ -1320,14 +1331,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
         }
+        val title = item.title ?: state.value.search.pendingTrackName
+        val artist = state.value.search.pendingTrackArtist
         if (state.value.playlist.isActive()) {
-            val title = item.title ?: state.value.search.pendingTrackName
-            val artist = state.value.search.pendingTrackArtist
             maybeSelectPlaylistTrack(
                 playlistTrackForServerTrack(youtubeId, title, artist, null)
             )
         }
-        startYoutubeAnalysis(youtubeId)
+        startYoutubeAnalysis(youtubeId, title, artist)
     }
 
     fun fetchYoutubeMatches(name: String, artist: String, duration: Double) {
@@ -1338,8 +1349,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
-        val resolvedTitle = title ?: state.value.search.pendingTrackName.orEmpty()
-        val resolvedArtist = artist ?: state.value.search.pendingTrackArtist.orEmpty()
+        val resolvedTitle = title.takeIfNotBlank()
+            ?: state.value.search.pendingTrackName.takeIfNotBlank()
+        val resolvedArtist = artist.takeIfNotBlank()
+            ?: state.value.search.pendingTrackArtist.takeIfNotBlank()
         val trackId = youtubeId.trim()
         if (trackId.isBlank()) return
         if (state.value.playback.isCasting) {
@@ -1410,7 +1423,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 search = resetSearchStateAfterTrackSelection(current.search),
                 playback = current.playback.copy(
                     audioLoading = false,
-                    lastYouTubeId = trackId
+                    lastYouTubeId = trackId,
+                    trackTitle = resolvedTitle,
+                    trackArtist = resolvedArtist
                 )
             )
         }
