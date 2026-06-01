@@ -69,7 +69,13 @@ internal fun JukeboxPlaylistState.replaceCurrentTrackWith(track: PlaylistTrack):
     }
     val existingIndex = indexOfTrack(track)
     if (existingIndex == currentIndex) {
-        return this
+        val mergedTrack = tracks[currentIndex].withMetadataFrom(track)
+        if (mergedTrack == tracks[currentIndex]) {
+            return this
+        }
+        val nextTracks = tracks.toMutableList()
+        nextTracks[currentIndex] = mergedTrack
+        return copy(tracks = nextTracks)
     }
     if (existingIndex >= 0) {
         val existingTrack = tracks[existingIndex]
@@ -192,3 +198,13 @@ internal fun playablePlaylistTracks(
 
 private val PlaylistTrack.playlistKey: String
     get() = "${type.name}:${id.trim()}"
+
+private fun PlaylistTrack.withMetadataFrom(incoming: PlaylistTrack): PlaylistTrack {
+    return copy(
+        title = incoming.title.takeIfNotBlank() ?: title,
+        artist = incoming.artist.takeIfNotBlank() ?: artist,
+        tuningParams = incoming.tuningParams?.takeIf { it.isNotBlank() } ?: tuningParams
+    )
+}
+
+private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }

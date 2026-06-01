@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -20,6 +21,59 @@ class PlaybackCoordinatorStatusPolicyTest {
         assertFalse(isAnalysisInProgressStatus("complete"))
         assertFalse(isAnalysisInProgressStatus("unknown"))
         assertFalse(isAnalysisInProgressStatus(null))
+    }
+
+    @Test
+    fun resolveLoadedTrackMetaPrefersBackendMetadataWhenPresent() {
+        val resolved = resolveLoadedTrackMeta(
+            backendTrackMeta = TrackMetaJson(
+                title = " Backend Title ",
+                artist = " Backend Artist ",
+                duration = 123.0
+            ),
+            currentPlayback = PlaybackState(
+                trackTitle = "Selected Title",
+                trackArtist = "Selected Artist"
+            )
+        )
+
+        assertEquals("Backend Title", resolved.title)
+        assertEquals("Backend Artist", resolved.artist)
+        assertEquals(123.0, resolved.durationSeconds)
+    }
+
+    @Test
+    fun resolveLoadedTrackMetaFallsBackToExistingMetadataWhenBackendIsMissing() {
+        val resolved = resolveLoadedTrackMeta(
+            backendTrackMeta = TrackMetaJson(
+                title = " ",
+                artist = null,
+                duration = 45.0
+            ),
+            currentPlayback = PlaybackState(
+                trackTitle = "Selected Title",
+                trackArtist = "Selected Artist"
+            )
+        )
+
+        assertEquals("Selected Title", resolved.title)
+        assertEquals("Selected Artist", resolved.artist)
+        assertEquals(45.0, resolved.durationSeconds)
+    }
+
+    @Test
+    fun resolveLoadedTrackMetaReturnsNullWhenNoMetadataExists() {
+        val resolved = resolveLoadedTrackMeta(
+            backendTrackMeta = null,
+            currentPlayback = PlaybackState(
+                trackTitle = "",
+                trackArtist = "   "
+            )
+        )
+
+        assertNull(resolved.title)
+        assertNull(resolved.artist)
+        assertNull(resolved.durationSeconds)
     }
 
     @Test
