@@ -30,7 +30,7 @@ constexpr int32_t kEightBitCrushSampleRate = 8000;
 constexpr int32_t kBitcrusherLevels = 1 << kEightBitDepth;
 constexpr float kCathedralReverbSeconds = 4.75f;
 constexpr float kCathedralReverbDecay = 2.5f;
-constexpr int32_t kCathedralTapCount = 128;
+constexpr int32_t kCathedralTapCount = 64;
 
 enum class AudioMode {
     Off = 0,

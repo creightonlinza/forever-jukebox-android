@@ -45,8 +45,8 @@ enum class JukeboxAudioMode(
     Daycore("daycore", "Daycore", 0.8, 2),
     Vaporwave("vaporwave", "Vaporwave", 0.65, 3),
     EightD("eight_d", "8D Audio", 1.0, 4),
-    EightBit("eight_bit", "8-Bit", 1.0, 6),
     Lofi("lofi", "Lofi", 1.0, 5),
+    EightBit("eight_bit", "8-Bit", 1.0, 6),
     Underwater("underwater", "Underwater", 1.0, 7),
     Cathedral("cathedral", "Cathedral", 1.0, 8);
 
