@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Cloud
@@ -49,6 +51,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
@@ -574,8 +577,19 @@ private fun FavoritesListContent(
 ) {
     val trimmedQuery = rawQuery.trim()
     val filteredFavorites = filterFavorites(favorites, rawQuery)
+    var sortKey by remember { mutableStateOf(FavoriteSortKey.Title) }
+    var sortDirection by remember { mutableStateOf(FavoriteSortDirection.Ascending) }
+    val sortedFavorites = sortFavoritesForDisplay(filteredFavorites, sortKey, sortDirection)
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val onSortSelected: (FavoriteSortKey) -> Unit = { selectedKey ->
+        if (sortKey == selectedKey) {
+            sortDirection = sortDirection.toggled()
+        } else {
+            sortKey = selectedKey
+            sortDirection = FavoriteSortDirection.Ascending
+        }
+    }
 
     if (loading) {
         if (showLoadingSpinner) {
@@ -625,16 +639,18 @@ private fun FavoritesListContent(
                 ListStatusMessage(text = "No favorites match \"$trimmedQuery\".")
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(filteredFavorites) { item ->
+                    item {
+                        FavoritesTableHeader(
+                            sortKey = sortKey,
+                            sortDirection = sortDirection,
+                            onSortSelected = onSortSelected
+                        )
+                    }
+                    items(sortedFavorites) { item ->
                         val title = item.title
                         val artist = item.artist
                         val displayTitle = title.ifBlank { "Untitled" }
-                        val displayArtist = artist.ifBlank { "" }
-                        val display = if (displayArtist.isNotBlank() && displayArtist != "Unknown") {
-                            "$displayTitle — $displayArtist"
-                        } else {
-                            displayTitle
-                        }
+                        val displayArtist = favoriteDisplayArtist(artist)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -660,14 +676,15 @@ private fun FavoritesListContent(
                         ) {
                             Row(
                                 modifier = Modifier
-                                    .weight(1f)
+                                    .weight(1f, fill = true)
                                     .alignByBaseline(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = display,
+                                    text = displayTitle,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
                                 if (!item.tuningParams.isNullOrBlank()) {
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -679,9 +696,17 @@ private fun FavoritesListContent(
                                     )
                                 }
                             }
+                            Text(
+                                text = displayArtist,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(0.8f, fill = true)
+                                    .alignByBaseline()
+                            )
                             SquareIconButton(
                                 onClick = { onRemoveFavorite(item.uniqueSongId) },
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     Icons.Default.Close,
@@ -694,6 +719,87 @@ private fun FavoritesListContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FavoritesTableHeader(
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection,
+    onSortSelected: (FavoriteSortKey) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FavoritesSortHeaderCell(
+            text = "Title",
+            column = FavoriteSortKey.Title,
+            sortKey = sortKey,
+            sortDirection = sortDirection,
+            onSortSelected = onSortSelected,
+            modifier = Modifier.weight(1f, fill = true)
+        )
+        FavoritesSortHeaderCell(
+            text = "Artist",
+            column = FavoriteSortKey.Artist,
+            sortKey = sortKey,
+            sortDirection = sortDirection,
+            onSortSelected = onSortSelected,
+            modifier = Modifier.weight(0.8f, fill = true)
+        )
+        Spacer(modifier = Modifier.size(32.dp))
+    }
+}
+
+@Composable
+private fun FavoritesSortHeaderCell(
+    text: String,
+    column: FavoriteSortKey,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection,
+    onSortSelected: (FavoriteSortKey) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val active = sortKey == column
+    Row(
+        modifier = modifier
+            .clickable { onSortSelected(column) }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (active) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (active) {
+            Spacer(modifier = Modifier.width(2.dp))
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = if (sortDirection == FavoriteSortDirection.Ascending) {
+                    "Sorted ascending"
+                } else {
+                    "Sorted descending"
+                },
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .size(16.dp)
+                    .graphicsLayer {
+                        rotationZ = if (sortDirection == FavoriteSortDirection.Ascending) {
+                            180f
+                        } else {
+                            0f
+                        }
+                    }
+            )
         }
     }
 }
@@ -712,6 +818,85 @@ internal fun filterFavorites(favorites: List<FavoriteTrack>, rawQuery: String): 
             value.orEmpty().lowercase().contains(query)
         }
     }
+}
+
+internal enum class FavoriteSortKey {
+    Title,
+    Artist
+}
+
+internal enum class FavoriteSortDirection {
+    Ascending,
+    Descending;
+
+    fun toggled(): FavoriteSortDirection {
+        return when (this) {
+            Ascending -> Descending
+            Descending -> Ascending
+        }
+    }
+}
+
+internal fun sortFavoritesForDisplay(
+    favorites: List<FavoriteTrack>,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection
+): List<FavoriteTrack> {
+    if (favorites.size < 2) return favorites
+
+    return favorites.sortedWith { left, right ->
+        compareFavoritesForDisplay(left, right, sortKey, sortDirection)
+    }
+}
+
+internal fun favoriteDisplayArtist(rawArtist: String?): String {
+    val trimmed = rawArtist.orEmpty().trim()
+    return if (trimmed.equals("Unknown", ignoreCase = true)) "" else trimmed
+}
+
+private fun compareFavoritesForDisplay(
+    left: FavoriteTrack,
+    right: FavoriteTrack,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection
+): Int {
+    val secondarySortKey = when (sortKey) {
+        FavoriteSortKey.Title -> FavoriteSortKey.Artist
+        FavoriteSortKey.Artist -> FavoriteSortKey.Title
+    }
+    return compareFavoriteField(left, right, sortKey, sortDirection)
+        .takeIf { it != 0 }
+        ?: compareFavoriteField(left, right, secondarySortKey, sortDirection).takeIf { it != 0 }
+        ?: compareFavoriteIds(left.uniqueSongId, right.uniqueSongId)
+}
+
+private fun compareFavoriteField(
+    left: FavoriteTrack,
+    right: FavoriteTrack,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection
+): Int {
+    val result = String.CASE_INSENSITIVE_ORDER.compare(
+        favoriteDisplayValue(left, sortKey),
+        favoriteDisplayValue(right, sortKey)
+    )
+    return when (sortDirection) {
+        FavoriteSortDirection.Ascending -> result
+        FavoriteSortDirection.Descending -> -result
+    }
+}
+
+private fun favoriteDisplayValue(favorite: FavoriteTrack, sortKey: FavoriteSortKey): String {
+    return when (sortKey) {
+        FavoriteSortKey.Title -> favorite.title.ifBlank { "Untitled" }
+        FavoriteSortKey.Artist -> favoriteDisplayArtist(favorite.artist)
+    }
+}
+
+private fun compareFavoriteIds(leftId: String, rightId: String): Int {
+    return String.CASE_INSENSITIVE_ORDER.compare(leftId, rightId)
+        .takeIf { it != 0 }
+        ?: leftId.compareTo(rightId)
 }
 
 @Composable

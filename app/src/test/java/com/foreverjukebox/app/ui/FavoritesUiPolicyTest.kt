@@ -74,6 +74,105 @@ class FavoritesUiPolicyTest {
         )
     }
 
+    @Test
+    fun sortFavoritesForDisplayDefaultsToTitleAscending() {
+        val favorites = listOf(
+            favorite("song:b", title = "banana", artist = "Diane"),
+            favorite("song:u", title = "", artist = "Alice"),
+            favorite("song:a", title = "Apple", artist = "Carol")
+        )
+
+        val result = sortFavoritesForDisplay(
+            favorites,
+            FavoriteSortKey.Title,
+            FavoriteSortDirection.Ascending
+        )
+
+        assertEquals(
+            listOf("song:a", "song:b", "song:u"),
+            result.map { it.uniqueSongId }
+        )
+    }
+
+    @Test
+    fun sortFavoritesForDisplaySortsTitleDescending() {
+        val favorites = listOf(
+            favorite("song:b", title = "banana", artist = "Diane"),
+            favorite("song:u", title = "", artist = "Alice"),
+            favorite("song:a", title = "Apple", artist = "Carol")
+        )
+
+        val result = sortFavoritesForDisplay(
+            favorites,
+            FavoriteSortKey.Title,
+            FavoriteSortDirection.Descending
+        )
+
+        assertEquals(
+            listOf("song:u", "song:b", "song:a"),
+            result.map { it.uniqueSongId }
+        )
+    }
+
+    @Test
+    fun sortFavoritesForDisplaySortsArtistAscendingAndDescending() {
+        val favorites = listOf(
+            favorite("song:c", title = "C", artist = "Carol"),
+            favorite("song:a", title = "A", artist = "Alice"),
+            favorite("song:b", title = "B", artist = "bob")
+        )
+
+        val ascending = sortFavoritesForDisplay(
+            favorites,
+            FavoriteSortKey.Artist,
+            FavoriteSortDirection.Ascending
+        )
+        val descending = sortFavoritesForDisplay(
+            favorites,
+            FavoriteSortKey.Artist,
+            FavoriteSortDirection.Descending
+        )
+
+        assertEquals(listOf("song:a", "song:b", "song:c"), ascending.map { it.uniqueSongId })
+        assertEquals(listOf("song:c", "song:b", "song:a"), descending.map { it.uniqueSongId })
+    }
+
+    @Test
+    fun favoriteDisplayArtistHidesBlankAndUnknownArtists() {
+        assertEquals("", favoriteDisplayArtist(null))
+        assertEquals("", favoriteDisplayArtist(""))
+        assertEquals("", favoriteDisplayArtist("   "))
+        assertEquals("", favoriteDisplayArtist("Unknown"))
+        assertEquals("", favoriteDisplayArtist(" unknown "))
+        assertEquals("Alice", favoriteDisplayArtist(" Alice "))
+    }
+
+    @Test
+    fun sortFavoritesForDisplayUsesOtherColumnThenIdAsTieBreakers() {
+        val favorites = listOf(
+            favorite("song:c", title = "Same", artist = "Beta"),
+            favorite("song:b", title = "Same", artist = "Alpha"),
+            favorite("song:a", title = "Same", artist = "Alpha")
+        )
+
+        val result = sortFavoritesForDisplay(
+            favorites,
+            FavoriteSortKey.Title,
+            FavoriteSortDirection.Ascending
+        )
+
+        assertEquals(
+            listOf("song:a", "song:b", "song:c"),
+            result.map { it.uniqueSongId }
+        )
+    }
+
+    @Test
+    fun favoriteSortDirectionTogglesBetweenAscendingAndDescending() {
+        assertEquals(FavoriteSortDirection.Descending, FavoriteSortDirection.Ascending.toggled())
+        assertEquals(FavoriteSortDirection.Ascending, FavoriteSortDirection.Descending.toggled())
+    }
+
     private fun sampleFavorites(): List<FavoriteTrack> {
         return listOf(
             FavoriteTrack(
@@ -94,6 +193,18 @@ class FavoritesUiPolicyTest {
                 artist = "Shared Artist",
                 sourceType = FavoriteSourceType.Bandcamp
             )
+        )
+    }
+
+    private fun favorite(
+        uniqueSongId: String,
+        title: String,
+        artist: String
+    ): FavoriteTrack {
+        return FavoriteTrack(
+            uniqueSongId = uniqueSongId,
+            title = title,
+            artist = artist
         )
     }
 }
