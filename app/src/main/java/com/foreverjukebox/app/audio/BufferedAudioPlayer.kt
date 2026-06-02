@@ -85,7 +85,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
         jukeboxAudioMode = mode
         if (nativeHandle == 0L) return
-        nativeSetJukeboxAudioMode(nativeHandle, mode.ordinal)
+        nativeSetJukeboxAudioMode(nativeHandle, mode.nativeModeCode)
     }
 
     fun getJukeboxAudioMode(): JukeboxAudioMode = jukeboxAudioMode
@@ -168,7 +168,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
         if (nativeHandle != 0L) return
         nativeHandle = nativeCreatePlayer(sampleRate, channelCount)
         if (nativeHandle != 0L) {
-            nativeSetJukeboxAudioMode(nativeHandle, jukeboxAudioMode.ordinal)
+            nativeSetJukeboxAudioMode(nativeHandle, jukeboxAudioMode.nativeModeCode)
             nativeSetDucking(nativeHandle, duckingActive)
         }
     }
