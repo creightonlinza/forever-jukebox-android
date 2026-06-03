@@ -45,7 +45,6 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     .background(MaterialTheme.colorScheme.background)
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(16.dp)
             ) {
                 if (state.showAppModeGate) {
                     TitleOnlyHeaderBar()

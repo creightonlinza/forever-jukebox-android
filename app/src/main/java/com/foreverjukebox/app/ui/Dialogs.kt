@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -502,12 +503,16 @@ fun DeleteTrackDialog(
             Button(
                 onClick = onConfirm,
                 colors = pillButtonColors(),
-                border = pillButtonBorder(),
+                border = BorderStroke(1.dp, DeleteActionColor),
                 shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
-                Text("Delete", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    "Delete",
+                    color = DeleteActionColor,
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
         },
         dismissButton = {
