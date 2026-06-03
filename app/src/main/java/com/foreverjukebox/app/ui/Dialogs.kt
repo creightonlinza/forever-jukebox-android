@@ -581,7 +581,7 @@ fun TrackInfoDialog(
         title = { Text("Track Info") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Song Length: $durationText")
+                Text("Track Length: $durationText")
                 Text("Total Beats: $totalBeats")
                 Text("Total Branches: $totalBranches")
             }

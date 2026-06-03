@@ -133,8 +133,8 @@ fun FaqPanel() {
                 expanded = expandedSectionIndex == 4,
                 onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(4) }
             ) {
-                BulletListItem("Favorites are saved/unsaved by clicking the star icon on a song. They are stored locally in your browser and can optionally be synced across devices using a sync code obtained from the Favorites sync menu.")
-                BulletListItem("When you favorite a song, its tuning is saved too, so future loads restore your chosen parameters.")
+                BulletListItem("Favorites are saved/unsaved by clicking the star icon on a track. They are stored locally in your browser and can optionally be synced across devices using a sync code obtained from the Favorites sync menu.")
+                BulletListItem("When you favorite a track, its tuning is saved too, so future loads restore your chosen parameters.")
                 BulletListItem("Use Reset in the Tune panel to restore default tuning (must be re-favorited to save changes).")
             }
         }

@@ -283,7 +283,7 @@ internal fun ColumnScope.CastListenScreen(
                 )
                 if (!hasCastTrack) {
                     Text(
-                        text = "Choose a song to start casting.",
+                        text = "Choose a track to start casting.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
                     )
@@ -707,16 +707,16 @@ private fun BoxScope.LocalVisualizationTopEndControls(
                         Icons.Outlined.CheckBoxOutlineBlank
                     },
                     contentDescription = if (playback.canonizerFinishOutSong) {
-                        "Disable finish out the song"
+                        "Disable finish out the track"
                     } else {
-                        "Enable finish out the song"
+                        "Enable finish out the track"
                     },
                     tint = themeTokens.accent,
                     modifier = Modifier.size(20.dp)
                 )
             }
             Text(
-                "Finish out the song",
+                "Finish out the track",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onBackground
             )

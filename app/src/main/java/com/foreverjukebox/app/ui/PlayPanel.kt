@@ -67,7 +67,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             if (!deleted && viewModel.state.value.playback.deleteInFlight) {
                 return@launch
             }
-            val deletedText = if (!deleted) "Song can no longer be deleted" else "Song deleted"
+            val deletedText = if (!deleted) "Track can no longer be deleted" else "Track deleted"
             Toast.makeText(context, deletedText, Toast.LENGTH_SHORT).show()
         }
     }
@@ -202,7 +202,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        "No song selected.",
+                        "No track selected.",
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     if (shouldShowSavedPlaylistButton(state)) {
