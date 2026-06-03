@@ -76,6 +76,7 @@ data class SleepTimerUiState(
 data class UiState(
     val appMode: AppMode? = null,
     val baseUrl: String = "",
+    val adminKey: String = "",
     val castEnabled: Boolean = false,
     val showAppModeGate: Boolean = true,
     val showBaseUrlPrompt: Boolean = false,
@@ -235,6 +236,16 @@ fun shouldShowBaseUrlPrompt(mode: AppMode?, baseUrl: String): Boolean {
 }
 
 fun shouldShowServerListenActions(mode: AppMode?): Boolean = mode == AppMode.Server
+
+fun shouldShowDeleteTrackAction(
+    mode: AppMode?,
+    playback: PlaybackState,
+    adminKey: String
+): Boolean {
+    return mode == AppMode.Server &&
+        !playback.lastJobId.isNullOrBlank() &&
+        (playback.deleteEligible || adminKey.isNotBlank())
+}
 
 fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boolean {
     return mode == AppMode.Local &&

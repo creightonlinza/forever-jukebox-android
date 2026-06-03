@@ -83,6 +83,7 @@ private fun PlaybackHeaderRow(
     showServerActions: Boolean,
     showControls: Boolean,
     showTuningAndInfo: Boolean,
+    showDeleteTrackAction: Boolean,
     isFavorite: Boolean,
     favoriteToggleInFlight: Boolean,
     onOpenTuning: () -> Unit,
@@ -111,7 +112,7 @@ private fun PlaybackHeaderRow(
         }
         if (showControls) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (playback.deleteEligible) {
+                if (showDeleteTrackAction) {
                     SquareIconButton(
                         onClick = {
                             if (!playback.deleteInFlight) {
@@ -203,6 +204,7 @@ private fun PlaybackHeaderRow(
 internal fun ColumnScope.CastListenScreen(
     playback: PlaybackState,
     appMode: AppMode?,
+    adminKey: String,
     headerTitle: String?,
     vizLabels: List<String>,
     isFavorite: Boolean,
@@ -227,6 +229,7 @@ internal fun ColumnScope.CastListenScreen(
     val showPlaylistControls = !inAutocanonizer
     val playActionLabel = playbackTransportContentDescription(playback)
     val showServerActions = shouldShowServerListenActions(appMode)
+    val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
     val themeTokens = LocalThemeTokens.current
     var showVizMenu by remember(playback.activeVizIndex) { mutableStateOf(false) }
     val castLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to cast device"
@@ -248,6 +251,7 @@ internal fun ColumnScope.CastListenScreen(
                 showServerActions = showServerActions,
                 showControls = canShowTransport,
                 showTuningAndInfo = canShowReceiverDetails,
+                showDeleteTrackAction = showDeleteTrackAction,
                 isFavorite = isFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,
@@ -409,6 +413,7 @@ internal fun ColumnScope.CastListenScreen(
 internal fun ColumnScope.LocalListenScreen(
     playback: PlaybackState,
     appMode: AppMode?,
+    adminKey: String,
     tuning: TuningState,
     headerTitle: String?,
     vizLabels: List<String>,
@@ -432,6 +437,7 @@ internal fun ColumnScope.LocalListenScreen(
     onOpenFullscreen: () -> Unit
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
+    val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
     val showInlineTitleWithControls = shouldShowPlaybackTransport(playback)
 
@@ -452,6 +458,7 @@ internal fun ColumnScope.LocalListenScreen(
                 showServerActions = showServerActions,
                 showControls = true,
                 showTuningAndInfo = true,
+                showDeleteTrackAction = showDeleteTrackAction,
                 isFavorite = isFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,

@@ -390,6 +390,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            preferences.adminKey.collect { key ->
+                _state.update { current ->
+                    current.copy(adminKey = key.orEmpty())
+                }
+            }
+        }
+        viewModelScope.launch {
             preferences.favorites.collect { favorites ->
                 val normalized = favoritesController.normalizeFavorites(favorites)
                 if (normalized != favorites) {
@@ -698,6 +705,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(100)
                 refreshTopSongs()
             }
+        }
+    }
+
+    fun setAdminKey(key: String) {
+        val trimmedKey = key.trim()
+        _state.update { it.copy(adminKey = trimmedKey) }
+        viewModelScope.launch {
+            preferences.setAdminKey(trimmedKey)
         }
     }
 
@@ -2186,6 +2201,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val jobId = playbackCoordinator.getLastJobId() ?: return false
         val baseUrl = state.value.baseUrl
+        val adminKey = state.value.adminKey
         val playback = state.value.playback
         val trackIdsForRemoval = favoriteRemovalTrackIdsForDeletion(
             playback = playback,
@@ -2196,7 +2212,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         updatePlaybackState { it.copy(deleteInFlight = true) }
         return try {
-            api.deleteJob(baseUrl, jobId)
+            api.deleteJob(baseUrl, jobId, adminKey)
             if (playback.isCasting) {
                 sendCastCommand("reset")
             }
@@ -2224,24 +2240,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (error: HttpStatusException) {
-            Log.e(TAG, "Failed to delete current job", error)
-            playbackCoordinator.markDeleteEligibilityFailed(jobId)
-            false
+            handleDeleteCurrentJobFailure(error, jobId, adminKey)
         } catch (error: IOException) {
-            Log.e(TAG, "Failed to delete current job", error)
-            playbackCoordinator.markDeleteEligibilityFailed(jobId)
-            false
+            handleDeleteCurrentJobFailure(error, jobId, adminKey)
         } catch (error: IllegalArgumentException) {
-            Log.e(TAG, "Failed to delete current job", error)
-            playbackCoordinator.markDeleteEligibilityFailed(jobId)
-            false
+            handleDeleteCurrentJobFailure(error, jobId, adminKey)
         } catch (error: IllegalStateException) {
-            Log.e(TAG, "Failed to delete current job", error)
-            playbackCoordinator.markDeleteEligibilityFailed(jobId)
-            false
+            handleDeleteCurrentJobFailure(error, jobId, adminKey)
         } finally {
             updatePlaybackState { it.copy(deleteInFlight = false) }
         }
+    }
+
+    private fun handleDeleteCurrentJobFailure(
+        error: Exception,
+        jobId: String,
+        adminKey: String
+    ): Boolean {
+        Log.e(TAG, "Failed to delete current job", error)
+        if (adminKey.isBlank()) {
+            playbackCoordinator.markDeleteEligibilityFailed(jobId)
+        }
+        return false
     }
 
     fun dismissTrackLengthLimitErrorDialog() {

@@ -53,6 +53,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     HeaderBar(
                         state = state,
                         onEditBaseUrl = { viewModel.setBaseUrl(it) },
+                        onEditAdminKey = { viewModel.setAdminKey(it) },
                         onThemeChange = viewModel::setThemeMode,
                         onAppModeChange = viewModel::setAppMode,
                         onRefreshCacheSize = viewModel::refreshCacheSize,

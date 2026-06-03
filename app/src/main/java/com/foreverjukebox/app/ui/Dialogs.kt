@@ -492,6 +492,41 @@ fun ErrorMessageDialog(
 }
 
 @Composable
+fun DeleteTrackDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Delete", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text("Delete track?") }
+    )
+}
+
+@Composable
 fun AppModeDialog(
     initialMode: AppMode = AppMode.Local,
     initialValue: String = "",

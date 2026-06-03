@@ -160,9 +160,13 @@ class ApiClient(
         return getToFile(url, target)
     }
 
-    suspend fun deleteJob(baseUrl: String, jobId: String): DeleteJobResponse {
+    suspend fun deleteJob(
+        baseUrl: String,
+        jobId: String,
+        adminKey: String? = null
+    ): DeleteJobResponse {
         val url = buildUrl(baseUrl, ApiPaths.job(jobId))
-        return deleteJson(url).let { json.decodeFromString(it) }
+        return deleteJson(url, adminKey).let { json.decodeFromString(it) }
     }
 
     suspend fun fetchLatestGitHubRelease(
@@ -252,8 +256,16 @@ class ApiClient(
         }
     }
 
-    private suspend fun deleteJson(url: String): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).delete().build()
+    private suspend fun deleteJson(
+        url: String,
+        adminKey: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        val requestBuilder = Request.Builder().url(url).delete()
+        val trimmedAdminKey = adminKey?.trim()
+        if (!trimmedAdminKey.isNullOrBlank()) {
+            requestBuilder.header("X-Admin-Key", trimmedAdminKey)
+        }
+        val request = requestBuilder.build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throwHttpStatus(response)

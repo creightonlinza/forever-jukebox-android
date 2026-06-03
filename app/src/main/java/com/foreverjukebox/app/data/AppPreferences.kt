@@ -60,6 +60,7 @@ internal fun decodeSavedPlaylistTracks(
 class AppPreferences(private val context: Context) {
     companion object {
         private val KEY_BASE_URL = stringPreferencesKey("base_url")
+        private val KEY_ADMIN_KEY = stringPreferencesKey("admin_key")
         private val KEY_APP_MODE = stringPreferencesKey("app_mode")
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_VIZ_INDEX = intPreferencesKey("viz_index")
@@ -76,6 +77,10 @@ class AppPreferences(private val context: Context) {
 
     val baseUrl: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_BASE_URL]
+    }
+
+    val adminKey: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_ADMIN_KEY]
     }
 
     val appMode: Flow<AppMode?> = context.dataStore.data.map { prefs ->
@@ -122,6 +127,17 @@ class AppPreferences(private val context: Context) {
     suspend fun setBaseUrl(url: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_BASE_URL] = url
+        }
+    }
+
+    suspend fun setAdminKey(key: String) {
+        context.dataStore.edit { prefs ->
+            val trimmedKey = key.trim()
+            if (trimmedKey.isBlank()) {
+                prefs.remove(KEY_ADMIN_KEY)
+            } else {
+                prefs[KEY_ADMIN_KEY] = trimmedKey
+            }
         }
     }
 

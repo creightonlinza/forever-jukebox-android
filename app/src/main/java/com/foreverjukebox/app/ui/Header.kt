@@ -55,6 +55,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +75,7 @@ import kotlin.math.roundToInt
 fun HeaderBar(
     state: UiState,
     onEditBaseUrl: (String) -> Unit,
+    onEditAdminKey: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onRefreshCacheSize: () -> Unit,
@@ -150,6 +152,7 @@ fun HeaderBar(
             onThemeChange = onThemeChange,
             onAppModeChange = onAppModeChange,
             onEditBaseUrl = onEditBaseUrl,
+            onEditAdminKey = onEditAdminKey,
             onClearCache = onClearCache
         )
     }
@@ -342,11 +345,14 @@ private fun SettingsDialog(
     onThemeChange: (ThemeMode) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
+    onEditAdminKey: (String) -> Unit,
     onClearCache: () -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
+    var adminKeyInput by remember(state.adminKey) { mutableStateOf(state.adminKey) }
     var selectedMode by remember(state.appMode) { mutableStateOf(state.appMode ?: defaultOnboardingMode) }
     val trimmedUrl = urlInput.trim()
+    val trimmedAdminKey = adminKeyInput.trim()
     val requiresServerUrl = selectedMode == AppMode.Server
     val canSave = !requiresServerUrl || isValidBaseUrl(trimmedUrl)
     val cacheLabel = formatCacheSize(state.cacheSizeBytes)
@@ -364,6 +370,7 @@ private fun SettingsDialog(
                     onClick = {
                         if (selectedMode == AppMode.Server) {
                             onEditBaseUrl(trimmedUrl)
+                            onEditAdminKey(trimmedAdminKey)
                         }
                         if (selectedMode != state.appMode) {
                             onAppModeChange(selectedMode)
@@ -438,6 +445,20 @@ private fun SettingsDialog(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done
+                        ),
+                        shape = SurfaceShape,
+                        modifier = Modifier.heightIn(min = SmallFieldMinHeight)
+                    )
+                    OutlinedTextField(
+                        value = adminKeyInput,
+                        onValueChange = { adminKeyInput = it },
+                        label = { Text("Admin Key") },
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
                         ),
                         shape = SurfaceShape,
