@@ -68,6 +68,49 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun playbackChangeLoadingLockBlocksEveryLoadingPhase() {
+        assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisInFlight = true)))
+        assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisCalculating = true)))
+        assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(audioLoading = true)))
+        assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(isCastLoading = true)))
+        assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(castPlaybackState = "loading")))
+    }
+
+    @Test
+    fun playbackChangeLoadingLockAllowsStableAndFailedStates() {
+        assertFalse(shouldBlockPlaybackChangeWhileLoading(PlaybackState()))
+        assertFalse(
+            shouldBlockPlaybackChangeWhileLoading(
+                PlaybackState(
+                    audioLoaded = true,
+                    analysisLoaded = true
+                )
+            )
+        )
+        assertFalse(
+            shouldBlockPlaybackChangeWhileLoading(
+                PlaybackState(analysisErrorMessage = "Loading failed.")
+            )
+        )
+    }
+
+    @Test
+    fun playlistQueueEditsRemainAvailableWhilePlaybackChangesAreBlocked() {
+        val loading = PlaybackState(analysisInFlight = true)
+        val one = PlaylistTrack("one", PlaylistTrackType.Server, "One", null)
+        val two = PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
+        val three = PlaylistTrack("three", PlaylistTrackType.Server, "Three", null)
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(one, two),
+            currentIndex = 0
+        )
+
+        assertTrue(shouldBlockPlaybackChangeWhileLoading(loading))
+        assertEquals(listOf(one, two, three), playlist.appendTrack(three).tracks)
+        assertEquals(listOf(one, three), playlist.appendTrack(three).removeTrackAt(1).tracks)
+    }
+
+    @Test
     fun playlistSkipEnablesPlayAfterLoadedForActiveLocalPlaylist() {
         val playlist = JukeboxPlaylistState(
             tracks = listOf(

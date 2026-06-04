@@ -280,6 +280,10 @@ fun PlaybackState.isTrackLoading(): Boolean {
     return isLoading() || isCastLoading || castPlaybackState == "loading"
 }
 
+internal fun shouldBlockPlaybackChangeWhileLoading(playback: PlaybackState): Boolean {
+    return playback.isTrackLoading()
+}
+
 fun shouldShowFullscreenVisualization(playback: PlaybackState): Boolean {
     return !playback.isCasting &&
         playback.audioLoaded &&
