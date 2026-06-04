@@ -24,12 +24,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
@@ -55,6 +55,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +75,7 @@ import kotlin.math.roundToInt
 fun HeaderBar(
     state: UiState,
     onEditBaseUrl: (String) -> Unit,
+    onEditAdminKey: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onRefreshCacheSize: () -> Unit,
@@ -150,6 +152,7 @@ fun HeaderBar(
             onThemeChange = onThemeChange,
             onAppModeChange = onAppModeChange,
             onEditBaseUrl = onEditBaseUrl,
+            onEditAdminKey = onEditAdminKey,
             onClearCache = onClearCache
         )
     }
@@ -342,11 +345,15 @@ private fun SettingsDialog(
     onThemeChange: (ThemeMode) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
+    onEditAdminKey: (String) -> Unit,
     onClearCache: () -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
+    var adminKeyInput by remember(state.adminKey) { mutableStateOf(state.adminKey) }
     var selectedMode by remember(state.appMode) { mutableStateOf(state.appMode ?: defaultOnboardingMode) }
+    var showServerSettings by remember { mutableStateOf(false) }
     val trimmedUrl = urlInput.trim()
+    val trimmedAdminKey = adminKeyInput.trim()
     val requiresServerUrl = selectedMode == AppMode.Server
     val canSave = !requiresServerUrl || isValidBaseUrl(trimmedUrl)
     val cacheLabel = formatCacheSize(state.cacheSizeBytes)
@@ -364,6 +371,7 @@ private fun SettingsDialog(
                     onClick = {
                         if (selectedMode == AppMode.Server) {
                             onEditBaseUrl(trimmedUrl)
+                            onEditAdminKey(trimmedAdminKey)
                         }
                         if (selectedMode != state.appMode) {
                             onAppModeChange(selectedMode)
@@ -429,20 +437,23 @@ private fun SettingsDialog(
                     modifier = Modifier.height(SmallButtonHeight)
                 )
                 if (selectedMode == AppMode.Server) {
-                    Text("API Base URL")
-                    OutlinedTextField(
-                        value = urlInput,
-                        onValueChange = { urlInput = it },
-                        label = { Text("Example: http://192.168.1.100") },
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Uri,
-                            imeAction = ImeAction.Done
-                        ),
-                        shape = SurfaceShape,
-                        modifier = Modifier.heightIn(min = SmallFieldMinHeight)
-                    )
+                    OutlinedButton(
+                        onClick = { showServerSettings = true },
+                        colors = pillOutlinedButtonColors(),
+                        border = pillButtonBorder(),
+                        shape = PillShape,
+                        contentPadding = SmallButtonPadding,
+                        modifier = Modifier.height(SmallButtonHeight)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Server Settings", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
                 Text("Theme")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -489,6 +500,76 @@ private fun SettingsDialog(
                 ) {
                     Text("Clear $cacheLabel", style = MaterialTheme.typography.labelSmall)
                 }
+            }
+        }
+    )
+    if (showServerSettings) {
+        ServerSettingsDialog(
+            baseUrl = urlInput,
+            adminKey = adminKeyInput,
+            onBaseUrlChange = { urlInput = it },
+            onAdminKeyChange = { adminKeyInput = it },
+            onDone = { showServerSettings = false }
+        )
+    }
+}
+
+@Composable
+private fun ServerSettingsDialog(
+    baseUrl: String,
+    adminKey: String,
+    onBaseUrlChange: (String) -> Unit,
+    onAdminKeyChange: (String) -> Unit,
+    onDone: () -> Unit
+) {
+    val trimmedUrl = baseUrl.trim()
+    val isValidServerUrl = isValidBaseUrl(trimmedUrl)
+    AlertDialog(
+        onDismissRequest = onDone,
+        confirmButton = {
+            Button(
+                onClick = onDone,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Done", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text("Server Settings") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("API Base URL")
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = onBaseUrlChange,
+                    label = { Text("Example: http://192.168.1.100") },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    singleLine = true,
+                    isError = trimmedUrl.isNotEmpty() && !isValidServerUrl,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Done
+                    ),
+                    shape = SurfaceShape,
+                    modifier = Modifier.heightIn(min = SmallFieldMinHeight)
+                )
+                OutlinedTextField(
+                    value = adminKey,
+                    onValueChange = onAdminKeyChange,
+                    label = { Text("Admin Key") },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done
+                    ),
+                    shape = SurfaceShape,
+                    modifier = Modifier.heightIn(min = SmallFieldMinHeight)
+                )
             }
         }
     )

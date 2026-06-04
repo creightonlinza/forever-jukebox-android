@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -492,6 +493,45 @@ fun ErrorMessageDialog(
 }
 
 @Composable
+fun DeleteTrackDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = pillButtonColors(),
+                border = BorderStroke(1.dp, DeleteActionColor),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text(
+                    "Delete",
+                    color = DeleteActionColor,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text("Delete track?") }
+    )
+}
+
+@Composable
 fun AppModeDialog(
     initialMode: AppMode = AppMode.Local,
     initialValue: String = "",
@@ -581,7 +621,7 @@ fun TrackInfoDialog(
         title = { Text("Track Info") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Song Length: $durationText")
+                Text("Track Length: $durationText")
                 Text("Total Beats: $totalBeats")
                 Text("Total Branches: $totalBranches")
             }

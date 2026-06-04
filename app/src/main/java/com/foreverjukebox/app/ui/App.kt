@@ -45,7 +45,6 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     .background(MaterialTheme.colorScheme.background)
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(16.dp)
             ) {
                 if (state.showAppModeGate) {
                     TitleOnlyHeaderBar()
@@ -53,6 +52,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     HeaderBar(
                         state = state,
                         onEditBaseUrl = { viewModel.setBaseUrl(it) },
+                        onEditAdminKey = { viewModel.setAdminKey(it) },
                         onThemeChange = viewModel::setThemeMode,
                         onAppModeChange = viewModel::setAppMode,
                         onRefreshCacheSize = viewModel::refreshCacheSize,

@@ -278,7 +278,7 @@ fun TopSongsPanel(
                     } else if (trendingLoading || !hasAttemptedTrendingLoad) {
                         ListLoadingPlaceholder()
                     } else {
-                        ListStatusMessage(text = "No trending songs yet.")
+                        ListStatusMessage(text = "No trending tracks yet.")
                     }
                 }
             } else if (activeTab == TopSongsTab.Recent) {

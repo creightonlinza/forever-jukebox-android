@@ -57,7 +57,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -73,8 +72,6 @@ import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val DeleteActionColor = Color(0xFFE35A5A)
-
 @Composable
 private fun PlaybackHeaderRow(
     playback: PlaybackState,
@@ -83,6 +80,7 @@ private fun PlaybackHeaderRow(
     showServerActions: Boolean,
     showControls: Boolean,
     showTuningAndInfo: Boolean,
+    showDeleteTrackAction: Boolean,
     isFavorite: Boolean,
     favoriteToggleInFlight: Boolean,
     onOpenTuning: () -> Unit,
@@ -111,7 +109,7 @@ private fun PlaybackHeaderRow(
         }
         if (showControls) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (playback.deleteEligible) {
+                if (showDeleteTrackAction) {
                     SquareIconButton(
                         onClick = {
                             if (!playback.deleteInFlight) {
@@ -203,6 +201,7 @@ private fun PlaybackHeaderRow(
 internal fun ColumnScope.CastListenScreen(
     playback: PlaybackState,
     appMode: AppMode?,
+    adminKey: String,
     headerTitle: String?,
     vizLabels: List<String>,
     isFavorite: Boolean,
@@ -227,6 +226,7 @@ internal fun ColumnScope.CastListenScreen(
     val showPlaylistControls = !inAutocanonizer
     val playActionLabel = playbackTransportContentDescription(playback)
     val showServerActions = shouldShowServerListenActions(appMode)
+    val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
     val themeTokens = LocalThemeTokens.current
     var showVizMenu by remember(playback.activeVizIndex) { mutableStateOf(false) }
     val castLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to cast device"
@@ -248,6 +248,7 @@ internal fun ColumnScope.CastListenScreen(
                 showServerActions = showServerActions,
                 showControls = canShowTransport,
                 showTuningAndInfo = canShowReceiverDetails,
+                showDeleteTrackAction = showDeleteTrackAction,
                 isFavorite = isFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,
@@ -283,7 +284,7 @@ internal fun ColumnScope.CastListenScreen(
                 )
                 if (!hasCastTrack) {
                     Text(
-                        text = "Choose a song to start casting.",
+                        text = "Choose a track to start casting.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
                     )
@@ -409,6 +410,7 @@ internal fun ColumnScope.CastListenScreen(
 internal fun ColumnScope.LocalListenScreen(
     playback: PlaybackState,
     appMode: AppMode?,
+    adminKey: String,
     tuning: TuningState,
     headerTitle: String?,
     vizLabels: List<String>,
@@ -432,6 +434,7 @@ internal fun ColumnScope.LocalListenScreen(
     onOpenFullscreen: () -> Unit
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
+    val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
     val showInlineTitleWithControls = shouldShowPlaybackTransport(playback)
 
@@ -452,6 +455,7 @@ internal fun ColumnScope.LocalListenScreen(
                 showServerActions = showServerActions,
                 showControls = true,
                 showTuningAndInfo = true,
+                showDeleteTrackAction = showDeleteTrackAction,
                 isFavorite = isFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,
@@ -707,16 +711,16 @@ private fun BoxScope.LocalVisualizationTopEndControls(
                         Icons.Outlined.CheckBoxOutlineBlank
                     },
                     contentDescription = if (playback.canonizerFinishOutSong) {
-                        "Disable finish out the song"
+                        "Disable finish out the track"
                     } else {
-                        "Enable finish out the song"
+                        "Enable finish out the track"
                     },
                     tint = themeTokens.accent,
                     modifier = Modifier.size(20.dp)
                 )
             }
             Text(
-                "Finish out the song",
+                "Finish out the track",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onBackground
             )

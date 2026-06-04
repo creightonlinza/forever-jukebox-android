@@ -89,6 +89,59 @@ class AppModePolicyTest {
     }
 
     @Test
+    fun deleteTrackActionRequiresServerModeAndCurrentJob() {
+        val eligiblePlayback = PlaybackState(
+            lastJobId = "job_123",
+            deleteEligible = true
+        )
+
+        assertTrue(
+            shouldShowDeleteTrackAction(
+                mode = AppMode.Server,
+                playback = eligiblePlayback,
+                adminKey = ""
+            )
+        )
+        assertFalse(
+            shouldShowDeleteTrackAction(
+                mode = AppMode.Local,
+                playback = eligiblePlayback,
+                adminKey = "admin-secret"
+            )
+        )
+        assertFalse(
+            shouldShowDeleteTrackAction(
+                mode = AppMode.Server,
+                playback = eligiblePlayback.copy(lastJobId = null),
+                adminKey = "admin-secret"
+            )
+        )
+    }
+
+    @Test
+    fun deleteTrackActionAllowsAdminPastNormalEligibility() {
+        val ineligiblePlayback = PlaybackState(
+            lastJobId = "job_123",
+            deleteEligible = false
+        )
+
+        assertFalse(
+            shouldShowDeleteTrackAction(
+                mode = AppMode.Server,
+                playback = ineligiblePlayback,
+                adminKey = ""
+            )
+        )
+        assertTrue(
+            shouldShowDeleteTrackAction(
+                mode = AppMode.Server,
+                playback = ineligiblePlayback,
+                adminKey = "admin-secret"
+            )
+        )
+    }
+
+    @Test
     fun cancelButtonOnlyShowsOnLocalLoadingScreen() {
         val loadingPlayback = PlaybackState(analysisInFlight = true)
         val idlePlayback = PlaybackState()

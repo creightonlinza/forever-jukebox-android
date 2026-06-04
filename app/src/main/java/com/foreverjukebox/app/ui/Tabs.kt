@@ -47,7 +47,7 @@ fun TabBar(state: UiState, onTabSelected: (TabId) -> Unit) {
 private fun tabLabel(tabId: TabId): String {
     return when (tabId) {
         TabId.Input -> "Input"
-        TabId.Top -> "Top Songs"
+        TabId.Top -> "Top Tracks"
         TabId.Search -> "Search"
         TabId.Play -> "Listen"
         TabId.Faq -> "FAQ"

@@ -508,9 +508,62 @@ class ApiClientPublicApiTest {
         val request = server.takeRequest()
         assertEquals("DELETE", request.method)
         assertEquals("/base/api/jobs/job_delete", request.path)
+        assertNull(request.getHeader("X-Admin-Key"))
         assertEquals("", request.body.readUtf8())
         assertEquals("deleted", response.status)
         assertEquals("job_delete", response.id)
+    }
+
+    @Test
+    fun deleteJobSendsAdminKeyHeaderWhenProvided() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "status": "deleted",
+                      "id": "job_delete"
+                    }
+                    """.trimIndent()
+                )
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        api.deleteJob(
+            baseUrl = baseUrl,
+            jobId = "job_delete",
+            adminKey = " admin-secret "
+        )
+
+        val request = server.takeRequest()
+        assertEquals("admin-secret", request.getHeader("X-Admin-Key"))
+    }
+
+    @Test
+    fun deleteJobIgnoresBlankAdminKeyHeader() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "status": "deleted",
+                      "id": "job_delete"
+                    }
+                    """.trimIndent()
+                )
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        api.deleteJob(
+            baseUrl = baseUrl,
+            jobId = "job_delete",
+            adminKey = "   "
+        )
+
+        val request = server.takeRequest()
+        assertNull(request.getHeader("X-Admin-Key"))
     }
 
     @Test

@@ -58,18 +58,22 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
     var showPlaylist by remember { mutableStateOf(false) }
+    var showDeleteTrackConfirm by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
-    val onDeleteCurrentTrack: () -> Unit = {
+    val confirmDeleteCurrentTrack: () -> Unit = {
         coroutineScope.launch {
             val deleted = viewModel.deleteCurrentJob()
             if (!deleted && viewModel.state.value.playback.deleteInFlight) {
                 return@launch
             }
-            val deletedText = if (!deleted) "Song can no longer be deleted" else "Song deleted"
+            val deletedText = if (!deleted) "Track can no longer be deleted" else "Track deleted"
             Toast.makeText(context, deletedText, Toast.LENGTH_SHORT).show()
         }
+    }
+    val onDeleteCurrentTrack: () -> Unit = {
+        showDeleteTrackConfirm = true
     }
     val onShare: () -> Unit = {
         val url = viewModel.buildShareUrl()
@@ -148,6 +152,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             CastListenScreen(
                 playback = playback,
                 appMode = state.appMode,
+                adminKey = state.adminKey,
                 headerTitle = headerTitle,
                 vizLabels = vizLabels,
                 isFavorite = isFavorite,
@@ -169,6 +174,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             LocalListenScreen(
                 playback = playback,
                 appMode = state.appMode,
+                adminKey = state.adminKey,
                 tuning = tuning,
                 headerTitle = headerTitle,
                 vizLabels = vizLabels,
@@ -202,7 +208,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        "No song selected.",
+                        "No track selected.",
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     if (shouldShowSavedPlaylistButton(state)) {
@@ -276,6 +282,16 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             onRemove = viewModel::removePlaylistTrack,
             onClear = viewModel::clearPlaylist,
             onClose = { showPlaylist = false }
+        )
+    }
+
+    if (showDeleteTrackConfirm) {
+        DeleteTrackDialog(
+            onDismiss = { showDeleteTrackConfirm = false },
+            onConfirm = {
+                showDeleteTrackConfirm = false
+                confirmDeleteCurrentTrack()
+            }
         )
     }
 }
