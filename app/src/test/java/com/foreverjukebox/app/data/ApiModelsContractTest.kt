@@ -12,7 +12,7 @@ class ApiModelsContractTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun analysisResponsePrefersSourceIdentityFields() {
+    fun analysisResponsePrefersJobIdForReusableTrackIdentity() {
         val payload = """
             {
               "id": "job_1",
@@ -30,9 +30,20 @@ class ApiModelsContractTest {
         assertEquals("dQw4w9WgXcQ", response.sourceId)
         assertEquals("legacy", response.youtubeId)
         assertEquals(
-            "dQw4w9WgXcQ",
+            "job_1",
             trackIdFromAnalysis(response)
         )
+    }
+
+    @Test
+    fun analysisResponseFallsBackToYoutubeIdentityWhenJobIdMissing() {
+        val response = AnalysisResponse(
+            sourceProvider = "youtube",
+            sourceId = "dQw4w9WgXcQ",
+            youtubeId = "legacy"
+        )
+
+        assertEquals("dQw4w9WgXcQ", trackIdFromAnalysis(response))
     }
 
     @Test
@@ -55,7 +66,14 @@ class ApiModelsContractTest {
     }
 
     @Test
-    fun topSongItemBuildsTrackIdFromYoutubeOrJobFallback() {
+    fun topSongItemPrefersJobIdWhenPresent() {
+        val youtubeBacked = TopSongItem(
+            id = "job_youtube",
+            sourceProvider = "youtube",
+            sourceId = "dQw4w9WgXcQ",
+            youtubeId = "legacy",
+            title = "Track"
+        )
         val sourceBacked = TopSongItem(
             id = "job_1",
             sourceProvider = "soundcloud",
@@ -69,11 +87,49 @@ class ApiModelsContractTest {
             title = "Upload"
         )
 
+        assertEquals("job_youtube", trackIdFromTopSong(youtubeBacked))
         assertEquals(
             "job_1",
             trackIdFromTopSong(sourceBacked)
         )
         assertEquals("job_2", trackIdFromTopSong(jobBacked))
+    }
+
+    @Test
+    fun topSongItemFallsBackToYoutubeIdentityWhenJobIdMissing() {
+        val sourceBacked = TopSongItem(
+            sourceProvider = "youtube",
+            sourceId = "dQw4w9WgXcQ",
+            youtubeId = "legacy",
+            title = "Track"
+        )
+        val legacyBacked = TopSongItem(
+            youtubeId = "legacy12345",
+            title = "Legacy Track"
+        )
+
+        assertEquals("dQw4w9WgXcQ", trackIdFromTopSong(sourceBacked))
+        assertEquals("legacy12345", trackIdFromTopSong(legacyBacked))
+    }
+
+    @Test
+    fun youtubeTrackIdFromTopSongIgnoresJobIdAndReturnsYoutubeIdentityOnly() {
+        val youtubeBacked = TopSongItem(
+            id = "job_youtube",
+            sourceProvider = "youtube",
+            sourceId = "dQw4w9WgXcQ",
+            youtubeId = "legacy",
+            title = "Track"
+        )
+        val nonYoutubeBacked = TopSongItem(
+            id = "job_soundcloud",
+            sourceProvider = "soundcloud",
+            sourceId = "sc:abc/123",
+            title = "Track"
+        )
+
+        assertEquals("dQw4w9WgXcQ", youtubeTrackIdFromTopSong(youtubeBacked))
+        assertNull(youtubeTrackIdFromTopSong(nonYoutubeBacked))
     }
 
     @Test

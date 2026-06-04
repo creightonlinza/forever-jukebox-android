@@ -51,6 +51,10 @@ fun favoriteUniqueSongIdFromTrackId(raw: String?): String? {
 }
 
 fun trackIdFromAnalysis(response: AnalysisResponse): String? {
+    val jobId = response.id?.trim().orEmpty().ifBlank { null }
+    if (jobId != null) {
+        return buildJobTrackId(jobId)
+    }
     val provider = sourceProviderFromRaw(response.sourceProvider)
     val sourceId = response.sourceId?.trim().orEmpty().ifBlank { null }
     if (provider == SOURCE_PROVIDER_YOUTUBE && sourceId != null) {
@@ -60,11 +64,18 @@ fun trackIdFromAnalysis(response: AnalysisResponse): String? {
     if (youtubeId != null) {
         return youtubeId
     }
-    val jobId = response.id?.trim().orEmpty().ifBlank { null } ?: return null
-    return buildJobTrackId(jobId)
+    return null
 }
 
 fun trackIdFromTopSong(item: TopSongItem): String? {
+    val jobId = item.id?.trim().orEmpty().ifBlank { null }
+    if (jobId != null) {
+        return buildJobTrackId(jobId)
+    }
+    return youtubeTrackIdFromTopSong(item)
+}
+
+fun youtubeTrackIdFromTopSong(item: TopSongItem): String? {
     val provider = sourceProviderFromRaw(item.sourceProvider)
     val sourceId = item.sourceId?.trim().orEmpty().ifBlank { null }
     if (provider == SOURCE_PROVIDER_YOUTUBE && sourceId != null) {
@@ -74,8 +85,7 @@ fun trackIdFromTopSong(item: TopSongItem): String? {
     if (youtubeId != null) {
         return youtubeId
     }
-    val jobId = item.id?.trim().orEmpty().ifBlank { null } ?: return null
-    return buildJobTrackId(jobId)
+    return null
 }
 
 fun isYoutubeLikeSourceId(value: String?): Boolean {

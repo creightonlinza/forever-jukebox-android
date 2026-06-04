@@ -1,11 +1,10 @@
 package com.foreverjukebox.app.ui
 
 private val currentWhatsNewBullets = listOf(
-    "A new Playlists feature was added to queue up multiple tracks.",
-    "First load a track, then long-press another track to add it to the playlist. A short tap continues to swap the track in and start loading it.",
-    "Tap the playlist icon on the Listen screen to pick, remove, or clear tracks. Previous and next controls skip through the playlist, and playlists are automatically saved.",
-    "Added a 'Play when ready' toggle on loading screen to automatically start the track once finished loading.",
-    "Implemented audio ducking for notifications."
+    "Favorites search and sorting added, with maximum saved favorites bumped to 150 tracks.",
+    "A few more Audio Mode options introduced: 8-bit, Underwater, Cathedral.",
+    "Misc fixes and improvements.",
+    "Please report any bugs to GitHub/Reddit/Discord."
 )
 
 internal fun normalizedDisplayVersion(versionName: String): String {

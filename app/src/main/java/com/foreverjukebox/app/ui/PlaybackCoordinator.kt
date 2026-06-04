@@ -223,14 +223,14 @@ class PlaybackCoordinator(
         }
     }
 
-    suspend fun tryLoadCachedTrack(trackKey: String): Boolean {
-        if (!isActiveTrackKey(trackKey)) {
+    suspend fun tryLoadCachedTrack(jobId: String): Boolean {
+        if (!isActiveJobId(jobId)) {
             return false
         }
         val cached = withContext(Dispatchers.IO) {
-            val analysisPath = analysisFile(trackKey)
-            val audioPath = audioFile(trackKey)
-            if (!analysisPath.exists() || !audioPath.exists()) {
+            val analysisPath = analysisFile(jobId)
+            val audioPath = audioFile(jobId)
+            if (!hasCompleteServerTrackCache(cacheDir(), jobId)) {
                 return@withContext null
             }
             val analysisText = analysisPath.readText()
@@ -241,7 +241,7 @@ class PlaybackCoordinator(
             return false
         }
         val (response, audioPath) = cached
-        if (!isActiveTrackKey(trackKey)) {
+        if (!isActiveJobId(jobId)) {
             return false
         }
         setAnalysisProgress(0, "Loading audio")
@@ -254,13 +254,13 @@ class PlaybackCoordinator(
                 }
             }
         } catch (err: OutOfMemoryError) {
-            Log.e(TAG, "Out of memory while loading cached track audio for $trackKey", err)
+            Log.e(TAG, "Out of memory while loading cached track audio for $jobId", err)
             withContext(Dispatchers.IO) {
-                audioFile(trackKey).delete()
+                audioFile(jobId).delete()
             }
             return false
         }
-        if (!isActiveTrackKey(trackKey)) {
+        if (!isActiveJobId(jobId)) {
             return false
         }
         audioLoadInFlight = false
@@ -274,15 +274,16 @@ class PlaybackCoordinator(
                 analysisCalculating = false
             )
         }
-        setLastJobId(response.id)
+        val resolvedJobId = response.id ?: getState().playback.lastJobId
+        setLastJobId(resolvedJobId)
         applyAnalysisResult(response)
         return true
     }
 
-    suspend fun clearCachedTrack(trackKey: String) {
+    suspend fun clearCachedTrack(jobId: String) {
         withContext(Dispatchers.IO) {
-            ignoreFailures { analysisFile(trackKey).delete() }
-            ignoreFailures { audioFile(trackKey).delete() }
+            ignoreFailures { analysisFile(jobId).delete() }
+            ignoreFailures { audioFile(jobId).delete() }
         }
     }
 
@@ -993,11 +994,6 @@ class PlaybackCoordinator(
         }
     }
 
-    private fun isActiveTrackKey(trackKey: String): Boolean {
-        val playback = getState().playback
-        return playback.lastYouTubeId == trackKey || playback.lastJobId == trackKey
-    }
-
     private fun isActiveJobId(jobId: String): Boolean {
         return getState().playback.lastJobId == jobId
     }
@@ -1010,19 +1006,19 @@ class PlaybackCoordinator(
         return dir
     }
 
-    private fun analysisFile(trackKey: String): File =
-        File(cacheDir(), "$trackKey.analysis.json")
+    private fun analysisFile(jobId: String): File =
+        serverTrackAnalysisFile(cacheDir(), jobId)
 
-    private fun audioFile(trackKey: String): File = File(cacheDir(), "$trackKey.audio")
+    private fun audioFile(jobId: String): File = serverTrackAudioFile(cacheDir(), jobId)
 
     private fun cacheAnalysis(
-        trackKey: String,
+        jobId: String,
         response: AnalysisResponse
     ) {
         scope.launch(Dispatchers.IO) {
             ignoreFailures {
                 val payload = json.encodeToString(response)
-                analysisFile(trackKey).writeText(payload)
+                analysisFile(jobId).writeText(payload)
             }
         }
     }

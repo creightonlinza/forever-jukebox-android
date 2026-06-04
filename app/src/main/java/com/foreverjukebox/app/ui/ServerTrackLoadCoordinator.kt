@@ -30,6 +30,9 @@ class ServerTrackLoadCoordinator(
         val jobId = response.id ?: fallbackJobId ?: return false
         playbackCoordinator.setLastJobId(jobId)
         playbackCoordinator.updateDeleteEligibility(response)
+        if (!getState().playback.audioLoaded && playbackCoordinator.tryLoadCachedTrack(jobId)) {
+            return true
+        }
 
         if (response.status == "failed") {
             playbackCoordinator.setAnalysisError(
