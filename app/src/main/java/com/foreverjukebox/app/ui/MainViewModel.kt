@@ -1440,7 +1440,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = null,
+            cachedJobId = null,
             failureLogMessage = "Failed to start YouTube analysis"
         ) {
             val existing = api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
@@ -1698,7 +1698,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = null,
+            cachedJobId = null,
             failureLogMessage = "Failed to load track by source"
         ) {
             val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
@@ -1792,7 +1792,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         launchServerTrackLoadWithCache(
-            cacheKey = normalizedJobId,
+            cachedJobId = normalizedJobId,
             failureLogMessage = "Failed to load track by job id"
         ) {
             val response = api.getAnalysis(baseUrl, normalizedJobId)
@@ -1865,12 +1865,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun launchServerTrackLoadWithCache(
-        cacheKey: String?,
+        cachedJobId: String?,
         failureLogMessage: String,
         request: suspend () -> Boolean
     ) {
         serverTrackLoadCoordinator.launch {
-            if (cacheKey != null && playbackCoordinator.tryLoadCachedTrack(cacheKey)) {
+            if (cachedJobId != null && playbackCoordinator.tryLoadCachedTrack(cachedJobId)) {
                 return@launch
             }
             playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
@@ -2291,9 +2291,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 sendCastCommand("reset")
             }
             if (trackIdsForRemoval.isNotEmpty()) {
-                trackIdsForRemoval.forEach { trackId ->
-                    playbackCoordinator.clearCachedTrack(trackId)
-                }
+                playbackCoordinator.clearCachedTrack(jobId)
                 val favorites = state.value.favorites
                 val updatedFavorites = removeFavoritesForTrackIds(favorites, trackIdsForRemoval)
                 if (updatedFavorites.size != favorites.size) {

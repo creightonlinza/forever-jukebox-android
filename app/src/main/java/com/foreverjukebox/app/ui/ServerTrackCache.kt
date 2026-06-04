@@ -2,13 +2,13 @@ package com.foreverjukebox.app.ui
 
 import java.io.File
 
-internal fun serverTrackAnalysisFile(cacheDir: File, trackKey: String): File =
-    File(cacheDir, "$trackKey.analysis.json")
+internal fun serverTrackAnalysisFile(cacheDir: File, jobId: String): File =
+    File(cacheDir, "$jobId.analysis.json")
 
-internal fun serverTrackAudioFile(cacheDir: File, trackKey: String): File =
-    File(cacheDir, "$trackKey.audio")
+internal fun serverTrackAudioFile(cacheDir: File, jobId: String): File =
+    File(cacheDir, "$jobId.audio")
 
-internal fun hasCompleteServerTrackCache(cacheDir: File, trackKey: String): Boolean {
-    return serverTrackAnalysisFile(cacheDir, trackKey).exists() &&
-        serverTrackAudioFile(cacheDir, trackKey).exists()
+internal fun hasCompleteServerTrackCache(cacheDir: File, jobId: String): Boolean {
+    return serverTrackAnalysisFile(cacheDir, jobId).exists() &&
+        serverTrackAudioFile(cacheDir, jobId).exists()
 }

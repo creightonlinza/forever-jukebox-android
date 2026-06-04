@@ -21,4 +21,17 @@ class ServerTrackCacheTest {
         assertTrue(hasCompleteServerTrackCache(cacheDir, jobId))
         assertFalse(hasCompleteServerTrackCache(cacheDir, "dQw4w9WgXcQ"))
     }
+
+    @Test
+    fun sourceNamedFilesDoNotSatisfyJobIdCacheLookup() {
+        val cacheDir = Files.createTempDirectory("fj-server-track-cache").toFile()
+        val youtubeId = "dQw4w9WgXcQ"
+        val jobId = "job_123"
+
+        serverTrackAudioFile(cacheDir, youtubeId).writeBytes(byteArrayOf(1, 2, 3))
+        serverTrackAnalysisFile(cacheDir, youtubeId).writeText("{}")
+
+        assertTrue(hasCompleteServerTrackCache(cacheDir, youtubeId))
+        assertFalse(hasCompleteServerTrackCache(cacheDir, jobId))
+    }
 }
