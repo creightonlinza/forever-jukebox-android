@@ -145,22 +145,14 @@ class TuningParamsCodecTest {
     fun buildCastLoadPayloadReturnsSparsePrefsOnlyWhenRawIsMissing() {
         val highlighted = TuningParamsCodec.buildCastLoadPayload(
             raw = null,
-            highlightAnchorBranch = true,
-            audioMode = JukeboxAudioMode.Off
-        )
-        val audioMode = TuningParamsCodec.buildCastLoadPayload(
-            raw = null,
-            highlightAnchorBranch = false,
-            audioMode = JukeboxAudioMode.Lofi
+            highlightAnchorBranch = true
         )
         val empty = TuningParamsCodec.buildCastLoadPayload(
             raw = null,
-            highlightAnchorBranch = false,
-            audioMode = JukeboxAudioMode.Off
+            highlightAnchorBranch = false
         )
 
         assertEquals("ah=1", highlighted)
-        assertEquals("am=lofi", audioMode)
         assertNull(empty)
     }
 
@@ -168,8 +160,7 @@ class TuningParamsCodecTest {
     fun buildCastLoadPayloadKeepsSparseRawTuning() {
         val payload = TuningParamsCodec.buildCastLoadPayload(
             raw = "thresh=35&jb=1&ah=0&bp=1,2,3&d=4,9&ab=22&am=lofi",
-            highlightAnchorBranch = true,
-            audioMode = JukeboxAudioMode.Off
+            highlightAnchorBranch = true
         )
 
         assertEquals("thresh=35&jb=1&ah=1&bp=1,2,3&d=4,9&ab=22&am=lofi", payload)
@@ -204,19 +195,17 @@ class TuningParamsCodecTest {
     fun buildCastLoadPayloadDropsInvalidThresholdAndAudioMode() {
         val payload = TuningParamsCodec.buildCastLoadPayload(
             raw = "thresh=0&jb=1&am=chipmunk",
-            highlightAnchorBranch = true,
-            audioMode = JukeboxAudioMode.EightD
+            highlightAnchorBranch = true
         )
 
-        assertEquals("jb=1&ah=1&am=eight_d", payload)
+        assertEquals("jb=1&ah=1", payload)
     }
 
     @Test
     fun buildCastLoadPayloadDropsUnknownKeys() {
         val payload = TuningParamsCodec.buildCastLoadPayload(
             raw = "jb=1&foo=bar&d=2&am=nightcore",
-            highlightAnchorBranch = false,
-            audioMode = JukeboxAudioMode.Off
+            highlightAnchorBranch = false
         )
 
         assertEquals("jb=1&d=2&am=nightcore", payload)
@@ -226,8 +215,7 @@ class TuningParamsCodecTest {
     fun buildCastLoadPayloadKeepsExplicitOffAudioMode() {
         val payload = TuningParamsCodec.buildCastLoadPayload(
             raw = "am=off",
-            highlightAnchorBranch = false,
-            audioMode = JukeboxAudioMode.Lofi
+            highlightAnchorBranch = false
         )
 
         assertEquals("am=off", payload)

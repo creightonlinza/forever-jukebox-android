@@ -72,8 +72,7 @@ object TuningParamsCodec {
 
     fun buildCastLoadPayload(
         raw: String?,
-        highlightAnchorBranch: Boolean,
-        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
+        highlightAnchorBranch: Boolean
     ): String? {
         val params = if (raw.isNullOrBlank()) {
             linkedMapOf()
@@ -113,9 +112,6 @@ object TuningParamsCodec {
         }
         if (highlightAnchorBranch || hasHighlightParam) {
             sanitized["ah"] = if (highlightAnchorBranch) "1" else "0"
-        }
-        if (!sanitized.containsKey("am") && audioMode != JukeboxAudioMode.Off) {
-            sanitized["am"] = audioMode.wireValue
         }
         return sanitized.entries.joinToString("&") { (key, value) -> "$key=$value" }.ifBlank { null }
     }
