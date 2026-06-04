@@ -76,6 +76,26 @@ class TuningParamsCodecTest {
     }
 
     @Test
+    fun parseExtractsLatestAudioModes() {
+        assertEquals(JukeboxAudioMode.EightBit, TuningParamsCodec.parse("am=eight_bit")?.audioMode)
+        assertEquals(JukeboxAudioMode.Underwater, TuningParamsCodec.parse("am=underwater")?.audioMode)
+        assertEquals(JukeboxAudioMode.Cathedral, TuningParamsCodec.parse("am=cathedral")?.audioMode)
+    }
+
+    @Test
+    fun audioModesUseExplicitNativeCodes() {
+        assertEquals(0, JukeboxAudioMode.Off.nativeModeCode)
+        assertEquals(1, JukeboxAudioMode.Nightcore.nativeModeCode)
+        assertEquals(2, JukeboxAudioMode.Daycore.nativeModeCode)
+        assertEquals(3, JukeboxAudioMode.Vaporwave.nativeModeCode)
+        assertEquals(4, JukeboxAudioMode.EightD.nativeModeCode)
+        assertEquals(5, JukeboxAudioMode.Lofi.nativeModeCode)
+        assertEquals(6, JukeboxAudioMode.EightBit.nativeModeCode)
+        assertEquals(7, JukeboxAudioMode.Underwater.nativeModeCode)
+        assertEquals(8, JukeboxAudioMode.Cathedral.nativeModeCode)
+    }
+
+    @Test
     fun parseIgnoresInvalidAudioMode() {
         assertNull(TuningParamsCodec.parse("am=chipmunk"))
 
@@ -153,6 +173,31 @@ class TuningParamsCodecTest {
         )
 
         assertEquals("thresh=35&jb=1&ah=1&bp=1,2,3&d=4,9&ab=22&am=lofi", payload)
+    }
+
+    @Test
+    fun buildCastLoadPayloadKeepsLatestAudioModes() {
+        assertEquals(
+            "am=eight_bit",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "am=eight_bit",
+                highlightAnchorBranch = false
+            )
+        )
+        assertEquals(
+            "am=underwater",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "am=underwater",
+                highlightAnchorBranch = false
+            )
+        )
+        assertEquals(
+            "am=cathedral",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "am=cathedral",
+                highlightAnchorBranch = false
+            )
+        )
     }
 
     @Test
@@ -242,6 +287,18 @@ class TuningParamsCodecTest {
     fun buildAudioModeParamSupportsOff() {
         assertEquals("am=off", TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Off))
         assertEquals("am=lofi", TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Lofi))
+        assertEquals(
+            "am=eight_bit",
+            TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.EightBit)
+        )
+        assertEquals(
+            "am=underwater",
+            TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Underwater)
+        )
+        assertEquals(
+            "am=cathedral",
+            TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Cathedral)
+        )
     }
 
     @Test

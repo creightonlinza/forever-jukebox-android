@@ -94,6 +94,28 @@ class TuningCoordinatorCastPolicyTest {
     }
 
     @Test
+    fun buildCastTuningUpdateEmitsLatestAudioModes() {
+        val current = TuningState(
+            threshold = 22,
+            minProb = 10,
+            maxProb = 40,
+            ramp = 25,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            justLong = false,
+            removeSequential = true
+        )
+
+        val eightBit = buildAudioOnlyCastUpdate(current, JukeboxAudioMode.EightBit)
+        val underwater = buildAudioOnlyCastUpdate(current, JukeboxAudioMode.Underwater)
+        val cathedral = buildAudioOnlyCastUpdate(current, JukeboxAudioMode.Cathedral)
+
+        assertEquals("am=eight_bit", eightBit.castParams)
+        assertEquals("am=underwater", underwater.castParams)
+        assertEquals("am=cathedral", cathedral.castParams)
+    }
+
+    @Test
     fun buildCastTuningUpdateUsesChangedThresholdOnly() {
         val current = TuningState(
             threshold = 22,
@@ -174,5 +196,25 @@ class TuningCoordinatorCastPolicyTest {
         assertEquals(0, update.nextTuning.minProb)
         assertEquals(100, update.nextTuning.maxProb)
         assertEquals(100, update.nextTuning.ramp)
+    }
+
+    private fun buildAudioOnlyCastUpdate(
+        current: TuningState,
+        audioMode: JukeboxAudioMode
+    ): CastTuningUpdate {
+        return buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Off,
+            threshold = current.threshold,
+            minProb = current.minProb / 100.0,
+            maxProb = current.maxProb / 100.0,
+            ramp = current.ramp / 500.0,
+            highlightAnchorBranch = current.highlightAnchorBranch,
+            justBackwards = current.justBackwards,
+            justLongBranches = current.justLong,
+            removeSequentialBranches = current.removeSequential,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = audioMode
+        )
     }
 }

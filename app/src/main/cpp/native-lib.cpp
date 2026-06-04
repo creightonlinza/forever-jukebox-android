@@ -24,6 +24,13 @@ constexpr double kMinJumpScheduleLeadFrames = kMaxLateJumpFrames;
 constexpr float kNormalDuckingVolume = 1.0f;
 constexpr float kDuckedVolume = 0.2f;
 constexpr float kDuckingRampSpeed = 0.0002f;
+constexpr int32_t kMaxAudioModeCode = 8;
+constexpr int32_t kEightBitDepth = 8;
+constexpr int32_t kEightBitCrushSampleRate = 8000;
+constexpr int32_t kBitcrusherLevels = 1 << kEightBitDepth;
+constexpr float kCathedralReverbSeconds = 4.75f;
+constexpr float kCathedralReverbDecay = 2.5f;
+constexpr int32_t kCathedralTapCount = 128;
 
 enum class AudioMode {
     Off = 0,
@@ -31,7 +38,10 @@ enum class AudioMode {
     Daycore = 2,
     Vaporwave = 3,
     EightD = 4,
-    Lofi = 5
+    Lofi = 5,
+    EightBit = 6,
+    Underwater = 7,
+    Cathedral = 8
 };
 
 struct AudioModeSettings {
@@ -39,26 +49,86 @@ struct AudioModeSettings {
     float highPassFrequency = 0.0f;
     float lowPassFrequency = 0.0f;
     bool useBandPass = false;
+    bool useEightBitBuffer = false;
+    bool bitCrush = false;
+    float dryMix = 1.0f;
     float reverbMix = 0.0f;
+    bool cathedralReverb = false;
     bool pan = false;
 };
 
 AudioModeSettings settingsForMode(int32_t mode) {
     switch (static_cast<AudioMode>(mode)) {
         case AudioMode::Nightcore:
-            return {1.2, 150.0f, 0.0f, false, 0.0f, false};
+            return {1.2, 150.0f, 0.0f, false, false, false, 1.0f, 0.0f, false, false};
         case AudioMode::Daycore:
-            return {0.8, 0.0f, 0.0f, false, 0.4f, false};
+            return {0.8, 0.0f, 0.0f, false, false, false, 1.0f, 0.4f, false, false};
         case AudioMode::Vaporwave:
-            return {0.65, 0.0f, 1000.0f, false, 0.6f, false};
+            return {0.65, 0.0f, 1000.0f, false, false, false, 1.0f, 0.6f, false, false};
         case AudioMode::EightD:
-            return {1.0, 0.0f, 0.0f, false, 0.5f, true};
+            return {1.0, 0.0f, 0.0f, false, false, false, 1.0f, 0.5f, false, true};
         case AudioMode::Lofi:
-            return {1.0, 0.0f, 2000.0f, true, 0.1f, false};
+            return {1.0, 0.0f, 2000.0f, true, false, false, 1.0f, 0.1f, false, false};
+        case AudioMode::EightBit:
+            return {1.0, 0.0f, 0.0f, false, true, true, 1.0f, 0.0f, false, false};
+        case AudioMode::Underwater:
+            return {1.0, 0.0f, 400.0f, false, false, false, 1.0f, 0.0f, false, false};
+        case AudioMode::Cathedral:
+            return {1.0, 150.0f, 5500.0f, false, false, false, 0.70f, 0.90f, true, false};
         case AudioMode::Off:
         default:
             return {};
     }
+}
+
+int32_t sanitizeAudioModeCode(int32_t mode) {
+    if (mode < 0 || mode > kMaxAudioModeCode) {
+        return static_cast<int32_t>(AudioMode::Off);
+    }
+    return mode;
+}
+
+int16_t floatToInt16Sample(float sample) {
+    const float clamped = std::clamp(sample, -1.0f, 0.9999695f);
+    return static_cast<int16_t>(std::lrint(clamped * 32768.0f));
+}
+
+float quantizeEightBitSample(float sample) {
+    const float clamped = std::clamp(sample, -1.0f, 1.0f);
+    const float normalized = (clamped + 1.0f) * 0.5f;
+    const float quantized = std::round(normalized * (kBitcrusherLevels - 1)) /
+                            static_cast<float>(kBitcrusherLevels - 1);
+    return quantized * 2.0f - 1.0f;
+}
+
+std::vector<int16_t> renderEightBitPcm(
+    const std::vector<int16_t>& source,
+    int32_t sampleRate,
+    int32_t channelCount) {
+    if (source.empty() || sampleRate <= 0 || channelCount <= 0) {
+        return {};
+    }
+    std::vector<int16_t> output(source.size(), 0);
+    const int64_t totalFrames =
+        static_cast<int64_t>(source.size() / static_cast<size_t>(channelCount));
+    const int32_t holdFrames = std::max(
+        1,
+        static_cast<int32_t>(std::lround(
+            static_cast<double>(sampleRate) / static_cast<double>(kEightBitCrushSampleRate))));
+    for (int32_t channel = 0; channel < channelCount; channel += 1) {
+        for (int64_t frame = 0; frame < totalFrames; frame += holdFrames) {
+            const size_t sourceOffset = static_cast<size_t>(frame * channelCount + channel);
+            const float sample = static_cast<float>(source[sourceOffset]) / 32768.0f;
+            const int16_t quantized = floatToInt16Sample(quantizeEightBitSample(sample));
+            const int64_t endFrame = std::min<int64_t>(totalFrames, frame + holdFrames);
+            for (int64_t heldFrame = frame; heldFrame < endFrame; heldFrame += 1) {
+                const size_t targetOffset =
+                    static_cast<size_t>(heldFrame * channelCount + channel);
+                output[targetOffset] = quantized;
+            }
+        }
+    }
+    return output;
 }
 
 class BiquadFilter {
@@ -216,6 +286,116 @@ private:
     std::vector<float> mBuffer;
 };
 
+class CathedralReverb {
+public:
+    CathedralReverb(int32_t sampleRate, int32_t channelCount)
+        : mSampleRate(sampleRate), mChannelCount(channelCount) {
+        resize();
+        buildTaps();
+    }
+
+    void reset() {
+        std::fill(mBuffer.begin(), mBuffer.end(), 0.0f);
+        mIndex = 0;
+    }
+
+    void setActive(bool active) {
+        if (mActive == active) {
+            return;
+        }
+        mActive = active;
+        reset();
+    }
+
+    float processWet(float input, int32_t channel) {
+        if (!mActive || mDelayFrames <= 1) {
+            return 0.0f;
+        }
+        const int32_t safeChannel = channel % std::max(1, mChannelCount);
+        float wet = 0.0f;
+        const auto& taps = mTaps[static_cast<size_t>(safeChannel) % mTaps.size()];
+        for (const Tap& tap : taps) {
+            int32_t readIndex = mIndex - tap.offset;
+            if (readIndex < 0) {
+                readIndex += mDelayFrames;
+            }
+            const size_t readOffset =
+                static_cast<size_t>(readIndex * mChannelCount + safeChannel);
+            wet += mBuffer[readOffset] * tap.gain;
+        }
+        const size_t writeOffset = static_cast<size_t>(mIndex * mChannelCount + safeChannel);
+        mBuffer[writeOffset] = input;
+        return wet;
+    }
+
+    void advanceFrame() {
+        if (!mActive || mDelayFrames <= 1) {
+            return;
+        }
+        mIndex += 1;
+        if (mIndex >= mDelayFrames) {
+            mIndex = 0;
+        }
+    }
+
+private:
+    struct Tap {
+        int32_t offset = 1;
+        float gain = 0.0f;
+    };
+
+    void resize() {
+        mDelayFrames = std::max(
+            1,
+            static_cast<int32_t>(std::floor(
+                static_cast<float>(mSampleRate) * kCathedralReverbSeconds)));
+        mBuffer.assign(static_cast<size_t>(mDelayFrames * mChannelCount), 0.0f);
+        mTaps.resize(static_cast<size_t>(std::max(1, mChannelCount)));
+    }
+
+    static float nextRandom(uint32_t& seed) {
+        seed += 0x6d2b79f5u;
+        uint32_t x = seed;
+        x = (x ^ (x >> 15u)) * (x | 1u);
+        x ^= x + ((x ^ (x >> 7u)) * (x | 61u));
+        return static_cast<float>((x ^ (x >> 14u)) & 0x00ffffffu) /
+               static_cast<float>(0x01000000u);
+    }
+
+    void buildTaps() {
+        const float scale = 1.0f / std::sqrt(static_cast<float>(kCathedralTapCount));
+        for (int32_t channel = 0; channel < static_cast<int32_t>(mTaps.size()); channel += 1) {
+            auto& taps = mTaps[static_cast<size_t>(channel)];
+            taps.clear();
+            taps.reserve(static_cast<size_t>(kCathedralTapCount));
+            uint32_t seed = 123456789u + static_cast<uint32_t>(channel) * 1013904223u;
+            for (int32_t index = 0; index < kCathedralTapCount; index += 1) {
+                const float jitter = nextRandom(seed) * 0.85f;
+                const float position =
+                    (static_cast<float>(index) + jitter) /
+                    static_cast<float>(kCathedralTapCount);
+                const int32_t offset = std::clamp(
+                    static_cast<int32_t>(std::floor(
+                        position * static_cast<float>(mDelayFrames - 1))) + 1,
+                    1,
+                    std::max(1, mDelayFrames - 1));
+                const float t = static_cast<float>(offset) / static_cast<float>(mDelayFrames);
+                const float decay = std::pow(1.0f - t, kCathedralReverbDecay);
+                const float noise = nextRandom(seed) * 2.0f - 1.0f;
+                taps.push_back({offset, noise * decay * scale});
+            }
+        }
+    }
+
+    int32_t mSampleRate = 44100;
+    int32_t mChannelCount = 2;
+    int32_t mDelayFrames = 0;
+    int32_t mIndex = 0;
+    bool mActive = false;
+    std::vector<float> mBuffer;
+    std::vector<std::vector<Tap>> mTaps;
+};
+
 class OboePlayer : public oboe::AudioStreamDataCallback,
                    public oboe::AudioStreamErrorCallback {
 public:
@@ -224,7 +404,8 @@ public:
           mChannelCount(channelCount),
           mHighPass(channelCount),
           mToneFilter(channelCount),
-          mReverb(sampleRate, channelCount) {}
+          mReverb(sampleRate, channelCount),
+          mCathedralReverb(sampleRate, channelCount) {}
 
     bool open() {
         std::lock_guard<std::mutex> lock(mStreamMutex);
@@ -284,6 +465,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(mDataMutex);
             mAudioData = std::move(data);
+            mEightBitAudioData = renderEightBitPcm(mAudioData, mSampleRate, mChannelCount);
             mTotalFrames =
                 static_cast<int64_t>(mAudioData.size() / static_cast<size_t>(mChannelCount));
         }
@@ -302,7 +484,7 @@ public:
     }
 
     void setJukeboxAudioMode(int32_t mode) {
-        mAudioMode.store(std::clamp<int32_t>(mode, 0, 5));
+        mAudioMode.store(sanitizeAudioModeCode(mode));
     }
 
     double getPlaybackRate() const {
@@ -314,6 +496,7 @@ public:
         {
             std::scoped_lock lock(mDataMutex, source.mDataMutex);
             mAudioData = source.mAudioData;
+            mEightBitAudioData = source.mEightBitAudioData;
             mTotalFrames = source.mTotalFrames;
         }
         mReadFrame.store(0.0);
@@ -480,15 +663,20 @@ private:
         if (frames <= 0) return sourceFrame;
 
         std::lock_guard<std::mutex> lock(mDataMutex);
-        const int64_t totalFrames = mTotalFrames;
+        const std::vector<int16_t>& audioData =
+            settings.useEightBitBuffer && !mEightBitAudioData.empty()
+                ? mEightBitAudioData
+                : mAudioData;
+        const int64_t totalFrames =
+            static_cast<int64_t>(audioData.size() / static_cast<size_t>(channels));
         for (int32_t frame = 0; frame < frames; frame += 1) {
             sourceFrame = applyScheduledJump(sourceFrame);
             const float outputGain = mGain.load() * nextDuckingVolume();
-            if (sourceFrame >= static_cast<double>(totalFrames) || mAudioData.empty()) {
+            if (sourceFrame >= static_cast<double>(totalFrames) || audioData.empty()) {
                 std::fill(output, output + channels, 0);
                 output += channels;
                 sourceFrame += settings.rate;
-                mReverb.advanceFrame();
+                advanceDspFrame(settings);
                 continue;
             }
 
@@ -498,8 +686,8 @@ private:
             for (int32_t channel = 0; channel < channels; channel += 1) {
                 const size_t offset0 = static_cast<size_t>(frame0 * channels + channel);
                 const size_t offset1 = static_cast<size_t>(frame1 * channels + channel);
-                const float s0 = static_cast<float>(mAudioData[offset0]) / 32768.0f;
-                const float s1 = static_cast<float>(mAudioData[offset1]) / 32768.0f;
+                const float s0 = static_cast<float>(audioData[offset0]) / 32768.0f;
+                const float s1 = static_cast<float>(audioData[offset1]) / 32768.0f;
                 float sample = s0 + (s1 - s0) * frac;
                 sample = processDspSample(sample, channel, settings);
                 output[channel] = floatToInt16(sample * outputGain);
@@ -507,7 +695,7 @@ private:
             applyPan(output, channels, settings);
             output += channels;
             sourceFrame += settings.rate;
-            mReverb.advanceFrame();
+            advanceDspFrame(settings);
         }
         return sourceFrame;
     }
@@ -534,7 +722,7 @@ private:
     }
 
     AudioModeSettings updateDspModeIfNeeded() {
-        const int32_t mode = mAudioMode.load();
+        const int32_t mode = sanitizeAudioModeCode(mAudioMode.load());
         if (mode == mConfiguredAudioMode) {
             return mConfiguredSettings;
         }
@@ -554,22 +742,38 @@ private:
                 mConfiguredSettings.lowPassFrequency,
                 mSampleRate);
         }
-        mReverb.setMix(mConfiguredSettings.reverbMix);
+        mReverb.setMix(mConfiguredSettings.cathedralReverb ? 0.0f : mConfiguredSettings.reverbMix);
+        mCathedralReverb.setActive(mConfiguredSettings.cathedralReverb);
         return mConfiguredSettings;
     }
 
     float processDspSample(float input, int32_t channel, const AudioModeSettings& settings) {
         float sample = input;
+        if (settings.bitCrush) {
+            sample = quantizeEightBitSample(sample);
+        }
         if (settings.highPassFrequency > 0.0f) {
             sample = mHighPass.process(sample, channel);
         }
         if (settings.lowPassFrequency > 0.0f) {
             sample = mToneFilter.process(sample, channel);
         }
+        if (settings.cathedralReverb) {
+            const float wet = mCathedralReverb.processWet(sample, channel);
+            return sample * settings.dryMix + wet * settings.reverbMix;
+        }
         if (settings.reverbMix > 0.0f) {
             sample = mReverb.process(sample, channel);
         }
         return sample;
+    }
+
+    void advanceDspFrame(const AudioModeSettings& settings) {
+        if (settings.cathedralReverb) {
+            mCathedralReverb.advanceFrame();
+        } else {
+            mReverb.advanceFrame();
+        }
     }
 
     void applyPan(int16_t* frame, int32_t channels, const AudioModeSettings& settings) {
@@ -589,8 +793,7 @@ private:
     }
 
     int16_t floatToInt16(float sample) {
-        const float clamped = std::clamp(sample, -1.0f, 0.9999695f);
-        return static_cast<int16_t>(std::lrint(clamped * 32768.0f));
+        return floatToInt16Sample(sample);
     }
 
     void resetDspState() {
@@ -602,6 +805,7 @@ private:
         mHighPass.reset();
         mToneFilter.reset();
         mReverb.reset();
+        mCathedralReverb.reset();
         mPanAngle = 0.0;
     }
 
@@ -610,6 +814,7 @@ private:
     std::shared_ptr<oboe::AudioStream> mStream;
     std::mutex mStreamMutex;
     std::vector<int16_t> mAudioData;
+    std::vector<int16_t> mEightBitAudioData;
     std::mutex mDataMutex;
     int64_t mTotalFrames = 0;
     std::atomic<double> mReadFrame{0.0};
@@ -628,6 +833,7 @@ private:
     BiquadFilter mHighPass;
     BiquadFilter mToneFilter;
     SimpleReverb mReverb;
+    CathedralReverb mCathedralReverb;
     double mPanAngle = 0.0;
 };
 

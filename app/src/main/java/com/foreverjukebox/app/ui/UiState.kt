@@ -37,14 +37,18 @@ enum class PlaybackMode {
 enum class JukeboxAudioMode(
     val wireValue: String,
     val label: String,
-    val playbackRate: Double
+    val playbackRate: Double,
+    val nativeModeCode: Int
 ) {
-    Off("off", "Off", 1.0),
-    Nightcore("nightcore", "Nightcore", 1.2),
-    Daycore("daycore", "Daycore", 0.8),
-    Vaporwave("vaporwave", "Vaporwave", 0.65),
-    EightD("eight_d", "8D Audio", 1.0),
-    Lofi("lofi", "Lofi", 1.0);
+    Off("off", "Off", 1.0, 0),
+    Nightcore("nightcore", "Nightcore", 1.2, 1),
+    Daycore("daycore", "Daycore", 0.8, 2),
+    Vaporwave("vaporwave", "Vaporwave", 0.65, 3),
+    EightD("eight_d", "8D Audio", 1.0, 4),
+    EightBit("eight_bit", "8-Bit", 1.0, 6),
+    Lofi("lofi", "Lofi", 1.0, 5),
+    Underwater("underwater", "Underwater", 1.0, 7),
+    Cathedral("cathedral", "Cathedral", 1.0, 8);
 
     companion object {
         fun fromWireValue(value: String?): JukeboxAudioMode? {
