@@ -255,7 +255,8 @@ class PlaybackCoordinator(
                 analysisCalculating = false
             )
         }
-        setLastJobId(response.id)
+        val resolvedJobId = response.id ?: getState().playback.lastJobId
+        setLastJobId(resolvedJobId)
         applyAnalysisResult(response)
         return true
     }

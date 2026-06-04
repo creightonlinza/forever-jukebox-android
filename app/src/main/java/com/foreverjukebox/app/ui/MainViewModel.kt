@@ -30,6 +30,7 @@ import com.foreverjukebox.app.data.parseTrackId
 import com.foreverjukebox.app.data.sanitizeMaxFavorites
 import com.foreverjukebox.app.data.trackIdFromAnalysis
 import com.foreverjukebox.app.data.trackIdFromTopSong
+import com.foreverjukebox.app.data.youtubeTrackIdFromTopSong
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
@@ -1025,7 +1026,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun resolveTrackMeta(trackId: String): Pair<String?, String?> {
         val canonicalTarget = canonicalTrackId(trackId) ?: trackId
         val topMatch = state.value.search.topSongs.firstOrNull {
-            canonicalTrackId(trackIdFromTopSong(it)) == canonicalTarget
+            canonicalTrackId(trackIdFromTopSong(it)) == canonicalTarget ||
+                canonicalTrackId(youtubeTrackIdFromTopSong(it)) == canonicalTarget
         }
         if (topMatch != null) {
             return topMatch.title to topMatch.artist

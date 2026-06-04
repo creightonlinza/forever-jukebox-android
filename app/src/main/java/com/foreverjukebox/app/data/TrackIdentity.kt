@@ -72,6 +72,10 @@ fun trackIdFromTopSong(item: TopSongItem): String? {
     if (jobId != null) {
         return buildJobTrackId(jobId)
     }
+    return youtubeTrackIdFromTopSong(item)
+}
+
+fun youtubeTrackIdFromTopSong(item: TopSongItem): String? {
     val provider = sourceProviderFromRaw(item.sourceProvider)
     val sourceId = item.sourceId?.trim().orEmpty().ifBlank { null }
     if (provider == SOURCE_PROVIDER_YOUTUBE && sourceId != null) {

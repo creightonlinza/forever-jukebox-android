@@ -113,6 +113,26 @@ class ApiModelsContractTest {
     }
 
     @Test
+    fun youtubeTrackIdFromTopSongIgnoresJobIdAndReturnsYoutubeIdentityOnly() {
+        val youtubeBacked = TopSongItem(
+            id = "job_youtube",
+            sourceProvider = "youtube",
+            sourceId = "dQw4w9WgXcQ",
+            youtubeId = "legacy",
+            title = "Track"
+        )
+        val nonYoutubeBacked = TopSongItem(
+            id = "job_soundcloud",
+            sourceProvider = "soundcloud",
+            sourceId = "sc:abc/123",
+            title = "Track"
+        )
+
+        assertEquals("dQw4w9WgXcQ", youtubeTrackIdFromTopSong(youtubeBacked))
+        assertNull(youtubeTrackIdFromTopSong(nonYoutubeBacked))
+    }
+
+    @Test
     fun appConfigDecodesAllowUserUrl() {
         val payload = """
             {
