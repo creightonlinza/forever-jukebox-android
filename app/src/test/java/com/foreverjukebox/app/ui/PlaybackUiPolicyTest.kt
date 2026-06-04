@@ -68,6 +68,33 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun shareTrackIdPrefersJobIdForReusableServerIdentity() {
+        val playback = PlaybackState(
+            lastYouTubeId = "dQw4w9WgXcQ",
+            lastJobId = "job_123"
+        )
+
+        assertEquals("job_123", playback.shareTrackIdOrNull())
+    }
+
+    @Test
+    fun shareTrackIdFallsBackToYoutubeIdForLegacySourceOnlyTracks() {
+        val playback = PlaybackState(lastYouTubeId = "dQw4w9WgXcQ")
+
+        assertEquals("dQw4w9WgXcQ", playback.shareTrackIdOrNull())
+    }
+
+    @Test
+    fun reusableTrackIdsForMatchingIncludesJobAndYoutubeAliases() {
+        val playback = PlaybackState(
+            lastYouTubeId = "dQw4w9WgXcQ",
+            lastJobId = "job_123"
+        )
+
+        assertEquals(setOf("job_123", "dQw4w9WgXcQ"), playback.reusableTrackIdsForMatching())
+    }
+
+    @Test
     fun playbackChangeLoadingLockBlocksEveryLoadingPhase() {
         assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisInFlight = true)))
         assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisCalculating = true)))

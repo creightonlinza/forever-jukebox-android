@@ -211,7 +211,7 @@ class PlaybackCoordinator(
         val cached = withContext(Dispatchers.IO) {
             val analysisPath = analysisFile(trackKey)
             val audioPath = audioFile(trackKey)
-            if (!analysisPath.exists() || !audioPath.exists()) {
+            if (!hasCompleteServerTrackCache(cacheDir(), trackKey)) {
                 return@withContext null
             }
             val analysisText = analysisPath.readText()
@@ -994,9 +994,9 @@ class PlaybackCoordinator(
     }
 
     private fun analysisFile(trackKey: String): File =
-        File(cacheDir(), "$trackKey.analysis.json")
+        serverTrackAnalysisFile(cacheDir(), trackKey)
 
-    private fun audioFile(trackKey: String): File = File(cacheDir(), "$trackKey.audio")
+    private fun audioFile(trackKey: String): File = serverTrackAudioFile(cacheDir(), trackKey)
 
     private fun cacheAnalysis(
         trackKey: String,

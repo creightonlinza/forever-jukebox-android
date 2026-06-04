@@ -1163,13 +1163,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val favorites = currentState.favorites
         val syncFromListenToggle = hasRealFavoritesSyncPath(currentState)
+        val currentTrackIds = playback.reusableTrackIdsForMatching()
         val existing = favorites.any {
-            canonicalTrackId(it.uniqueSongId) == currentCanonicalId
+            canonicalTrackId(it.uniqueSongId) in currentTrackIds
         }
         return if (existing) {
             favoritesController.updateFavorites(
                 favorites.filterNot {
-                    canonicalTrackId(it.uniqueSongId) == currentCanonicalId
+                    canonicalTrackId(it.uniqueSongId) in currentTrackIds
                 },
                 fromListenToggle = syncFromListenToggle
             )

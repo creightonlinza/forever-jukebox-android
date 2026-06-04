@@ -8,6 +8,7 @@ import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
+import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
@@ -319,15 +320,22 @@ fun PlaybackState.hasCastTrack(): Boolean {
 }
 
 fun PlaybackState.shareTrackIdOrNull(): String? {
-    val youtubeId = lastYouTubeId?.trim().orEmpty()
-    if (youtubeId.isNotBlank()) {
-        return youtubeId
-    }
     val jobId = lastJobId?.trim().orEmpty()
     if (jobId.isNotBlank()) {
         return jobId
     }
+    val youtubeId = lastYouTubeId?.trim().orEmpty()
+    if (youtubeId.isNotBlank()) {
+        return youtubeId
+    }
     return null
+}
+
+fun PlaybackState.reusableTrackIdsForMatching(): Set<String> {
+    val ids = linkedSetOf<String>()
+    canonicalTrackId(lastJobId)?.let(ids::add)
+    canonicalTrackId(lastYouTubeId)?.let(ids::add)
+    return ids
 }
 
 fun PlaybackState.castControlsReady(): Boolean {

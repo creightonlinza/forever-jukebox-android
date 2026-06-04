@@ -50,9 +50,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val playback = state.playback
     val tuning = state.tuning
     val headerTitle = resolvePlaybackHeaderTitle(playback)
-    val favoriteTargetCanonical = canonicalTrackId(playback.shareTrackIdOrNull())
-    val isFavorite = favoriteTargetCanonical != null && state.favorites.any { favorite ->
-        canonicalTrackId(favorite.uniqueSongId) == favoriteTargetCanonical
+    val favoriteTargetIds = playback.reusableTrackIdsForMatching()
+    val isFavorite = favoriteTargetIds.isNotEmpty() && state.favorites.any { favorite ->
+        canonicalTrackId(favorite.uniqueSongId) in favoriteTargetIds
     }
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
