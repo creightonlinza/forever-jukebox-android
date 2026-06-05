@@ -97,6 +97,73 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
+    fun resolveYoutubeTrackSelectionPrefersPendingSpotifyMetadata() {
+        val selection = resolveYoutubeTrackSelection(
+            item = YoutubeSearchItem(
+                id = "yt1",
+                title = "Official Video With Extra Words"
+            ),
+            search = SearchState(
+                pendingTrackName = "Spotify Track",
+                pendingTrackArtist = "Spotify Artist"
+            )
+        )
+
+        assertEquals("yt1", selection?.youtubeId)
+        assertEquals("Spotify Track", selection?.title)
+        assertEquals("Spotify Artist", selection?.artist)
+    }
+
+    @Test
+    fun resolveYoutubeTrackSelectionNormalizesPendingSpotifyMetadata() {
+        val selection = resolveYoutubeTrackSelection(
+            item = YoutubeSearchItem(
+                id = " yt1 ",
+                title = "YouTube Title"
+            ),
+            search = SearchState(
+                pendingTrackName = " Spotify Track ",
+                pendingTrackArtist = "   "
+            )
+        )
+
+        assertEquals("yt1", selection?.youtubeId)
+        assertEquals("Spotify Track", selection?.title)
+        assertNull(selection?.artist)
+    }
+
+    @Test
+    fun resolveYoutubeTrackSelectionUsesYoutubeTitleWithoutPendingMetadata() {
+        val selection = resolveYoutubeTrackSelection(
+            item = YoutubeSearchItem(
+                id = "yt1",
+                title = " YouTube Title "
+            ),
+            search = SearchState()
+        )
+
+        assertEquals("yt1", selection?.youtubeId)
+        assertEquals("YouTube Title", selection?.title)
+        assertNull(selection?.artist)
+    }
+
+    @Test
+    fun resolveYoutubeTrackSelectionRejectsBlankYoutubeId() {
+        val selection = resolveYoutubeTrackSelection(
+            item = YoutubeSearchItem(
+                id = "   ",
+                title = "YouTube Title"
+            ),
+            search = SearchState(
+                pendingTrackName = "Spotify Track",
+                pendingTrackArtist = "Spotify Artist"
+            )
+        )
+
+        assertNull(selection)
+    }
+
+    @Test
     fun resetSearchStateAfterTrackSelectionClearsTransientSelectionFields() {
         val original = SearchState(
             query = "daft punk",

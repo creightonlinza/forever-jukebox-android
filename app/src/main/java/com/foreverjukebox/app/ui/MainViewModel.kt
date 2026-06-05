@@ -83,6 +83,93 @@ internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchSta
     )
 }
 
+internal data class YoutubeTrackSelection(
+    val youtubeId: String,
+    val title: String?,
+    val artist: String?
+)
+
+internal data class TrackMetadata(
+    val title: String? = null,
+    val artist: String? = null
+)
+
+internal fun resolveYoutubeTrackSelection(
+    item: YoutubeSearchItem,
+    search: SearchState
+): YoutubeTrackSelection? {
+    val youtubeId = item.id.takeIfNotBlank() ?: return null
+    val pendingTitle = search.pendingTrackName.takeIfNotBlank()
+    val pendingArtist = search.pendingTrackArtist.takeIfNotBlank()
+    val hasPendingTrackMeta = pendingTitle != null || pendingArtist != null
+    val title = if (hasPendingTrackMeta) {
+        pendingTitle
+    } else {
+        item.title.takeIfNotBlank()
+    }
+    val artist = if (hasPendingTrackMeta) pendingArtist else null
+    return YoutubeTrackSelection(
+        youtubeId = youtubeId,
+        title = title,
+        artist = artist
+    )
+}
+
+internal fun resolveTrackMeta(
+    trackId: String,
+    search: SearchState,
+    favorites: List<FavoriteTrack>
+): TrackMetadata {
+    val canonicalTarget = canonicalTrackId(trackId) ?: trackId.trim().ifBlank {
+        return TrackMetadata()
+    }
+    val feedMatch = sequenceOf(
+        search.topSongs,
+        search.trendingSongs,
+        search.recentSongs
+    )
+        .flatten()
+        .firstOrNull { item ->
+            canonicalTrackId(trackIdFromTopSong(item)) == canonicalTarget ||
+                canonicalTrackId(youtubeTrackIdFromTopSong(item)) == canonicalTarget
+        }
+    if (feedMatch != null) {
+        return TrackMetadata(
+            title = feedMatch.title.takeIfNotBlank(),
+            artist = feedMatch.artist.takeIfNotBlank()
+        )
+    }
+    val favoriteMatch = favorites.firstOrNull {
+        canonicalTrackId(it.uniqueSongId) == canonicalTarget
+    }
+    if (favoriteMatch != null) {
+        return TrackMetadata(
+            title = favoriteMatch.title.takeIfNotBlank(),
+            artist = favoriteMatch.artist.takeIfNotBlank()
+        )
+    }
+    return TrackMetadata()
+}
+
+internal fun resolveTrackLoadMetadata(
+    trackId: String,
+    title: String?,
+    artist: String?,
+    search: SearchState,
+    favorites: List<FavoriteTrack>
+): TrackMetadata {
+    val normalizedTitle = title.takeIfNotBlank()
+    val normalizedArtist = artist.takeIfNotBlank()
+    return if (normalizedTitle != null || normalizedArtist != null) {
+        TrackMetadata(
+            title = normalizedTitle,
+            artist = normalizedArtist
+        )
+    } else {
+        resolveTrackMeta(trackId, search, favorites)
+    }
+}
+
 internal fun normalizedBaseUrlForComparison(value: String?): String {
     val trimmed = value?.trim().orEmpty()
     if (trimmed.isBlank()) {
@@ -1035,21 +1122,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resolveTrackMeta(trackId: String): Pair<String?, String?> {
-        val canonicalTarget = canonicalTrackId(trackId) ?: trackId
-        val topMatch = state.value.search.topSongs.firstOrNull {
-            canonicalTrackId(trackIdFromTopSong(it)) == canonicalTarget ||
-                canonicalTrackId(youtubeTrackIdFromTopSong(it)) == canonicalTarget
-        }
-        if (topMatch != null) {
-            return topMatch.title to topMatch.artist
-        }
-        val favoriteMatch = state.value.favorites.firstOrNull {
-            canonicalTrackId(it.uniqueSongId) == canonicalTarget
-        }
-        if (favoriteMatch != null) {
-            return favoriteMatch.title to favoriteMatch.artist
-        }
-        return null to null
+        val meta = resolveTrackMeta(
+            trackId = trackId,
+            search = state.value.search,
+            favorites = state.value.favorites
+        )
+        return meta.title to meta.artist
     }
 
     private fun playlistTrackForServerTrack(
@@ -1350,19 +1428,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectYoutubeTrack(item: YoutubeSearchItem) {
         if (blockPlaybackChangeWhileLoading()) return
         clearInactiveSavedPlaylistBeforeOutsideSelection()
-        val youtubeId = item.id ?: return
+        val selection = resolveYoutubeTrackSelection(item, state.value.search) ?: return
         val duration = item.duration
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
         }
-        val title = item.title ?: state.value.search.pendingTrackName
-        val artist = state.value.search.pendingTrackArtist
         if (state.value.playlist.isActive()) {
             maybeSelectPlaylistTrack(
-                playlistTrackForServerTrack(youtubeId, title, artist, null)
+                playlistTrackForServerTrack(
+                    selection.youtubeId,
+                    selection.title,
+                    selection.artist,
+                    null
+                )
             )
         }
-        startYoutubeAnalysis(youtubeId, title, artist)
+        startYoutubeAnalysis(selection.youtubeId, selection.title, selection.artist)
     }
 
     fun fetchYoutubeMatches(name: String, artist: String, duration: Double) {
@@ -1596,11 +1677,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val normalizedSourceId = sourceId.trim()
         if (normalizedSourceId.isBlank()) return
         val youtubeId = if (provider == SOURCE_PROVIDER_YOUTUBE) normalizedSourceId else null
-        val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
-            youtubeId?.let(::resolveTrackMeta) ?: (null to null)
-        } else {
-            title to artist
-        }
+        val metadata = resolveTrackLoadMetadata(
+            trackId = youtubeId ?: normalizedSourceId,
+            title = title,
+            artist = artist,
+            search = state.value.search,
+            favorites = state.value.favorites
+        )
+        val resolvedTitle = metadata.title
+        val resolvedArtist = metadata.artist
         if (state.value.playback.isCasting) {
             applyActiveTab(TabId.Play, recordHistory = true)
             launchCastSelection {
@@ -1779,11 +1864,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (baseUrl.isBlank()) return
         val normalizedJobId = jobId.trim()
         if (normalizedJobId.isBlank()) return
-        val (resolvedTitle, resolvedArtist) = if (title == null && artist == null) {
-            resolveTrackMeta(normalizedJobId)
-        } else {
-            title to artist
-        }
+        val metadata = resolveTrackLoadMetadata(
+            trackId = normalizedJobId,
+            title = title,
+            artist = artist,
+            search = state.value.search,
+            favorites = state.value.favorites
+        )
+        val resolvedTitle = metadata.title
+        val resolvedArtist = metadata.artist
         if (state.value.playback.isCasting) {
             castPlaybackCoordinator.castTrackId(
                 jobId = normalizedJobId,
