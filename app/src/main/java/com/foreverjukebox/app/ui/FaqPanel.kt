@@ -3,11 +3,13 @@ package com.foreverjukebox.app.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -17,6 +19,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -34,6 +39,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.foreverjukebox.app.R
 
 @Composable
 fun FaqPanel() {
@@ -56,6 +62,7 @@ fun FaqPanel() {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("FAQ", style = MaterialTheme.typography.labelLarge)
+            SocialLinksSection()
             FaqAccordionSection(
                 title = "What the what?",
                 expanded = expandedSectionIndex == 0,
@@ -179,6 +186,65 @@ private fun FaqAccordionSection(
     }
 }
 
+@Composable
+private fun SocialLinksSection() {
+    val uriHandler = LocalUriHandler.current
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SocialLinkButton(
+                label = "Reddit",
+                iconResId = R.drawable.ic_reddit,
+                onClick = { uriHandler.openUri(REDDIT_COMMUNITY_URL) },
+                modifier = Modifier.weight(1f)
+            )
+            SocialLinkButton(
+                label = "Discord",
+                iconResId = R.drawable.ic_discord,
+                onClick = { uriHandler.openUri(DISCORD_SERVER_URL) },
+                modifier = Modifier.weight(1f)
+            )
+            SocialLinkButton(
+                label = "GitHub",
+                iconResId = R.drawable.ic_github,
+                onClick = { uriHandler.openUri(GITHUB_PROJECT_URL) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun SocialLinkButton(
+    label: String,
+    iconResId: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        shape = SurfaceShape,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Icon(
+            painter = painterResource(id = iconResId),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = label,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
+
 private fun Int.nextAccordionIndex(index: Int): Int = if (this == index) -1 else index
 
 @Composable
@@ -193,3 +259,7 @@ private fun BulletListItem(text: String) {
         )
     }
 }
+
+private const val REDDIT_COMMUNITY_URL = "https://www.reddit.com/r/infinitejukebox/"
+private const val DISCORD_SERVER_URL = "https://discord.com/invite/KWN5BfD"
+private const val GITHUB_PROJECT_URL = "https://github.com/creightonlinza/forever-jukebox-android/"
