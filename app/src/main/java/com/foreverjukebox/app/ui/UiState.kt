@@ -49,7 +49,8 @@ enum class JukeboxAudioMode(
     Lofi("lofi", "Lofi", 1.0, 5),
     EightBit("eight_bit", "8-Bit", 1.0, 6),
     Underwater("underwater", "Underwater", 1.0, 7),
-    Cathedral("cathedral", "Cathedral", 1.0, 8);
+    Cathedral("cathedral", "Cathedral", 1.0, 8),
+    Cowbell("cowbell", "More Cowbell", 1.0, 9);
 
     companion object {
         fun fromWireValue(value: String?): JukeboxAudioMode? {

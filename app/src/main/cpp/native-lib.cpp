@@ -24,7 +24,7 @@ constexpr double kMinJumpScheduleLeadFrames = kMaxLateJumpFrames;
 constexpr float kNormalDuckingVolume = 1.0f;
 constexpr float kDuckedVolume = 0.2f;
 constexpr float kDuckingRampSpeed = 0.0002f;
-constexpr int32_t kMaxAudioModeCode = 8;
+constexpr int32_t kMaxAudioModeCode = 9;
 constexpr int32_t kEightBitDepth = 8;
 constexpr int32_t kEightBitCrushSampleRate = 8000;
 constexpr int32_t kBitcrusherLevels = 1 << kEightBitDepth;
@@ -41,7 +41,8 @@ enum class AudioMode {
     Lofi = 5,
     EightBit = 6,
     Underwater = 7,
-    Cathedral = 8
+    Cathedral = 8,
+    Cowbell = 9
 };
 
 struct AudioModeSettings {
@@ -75,6 +76,7 @@ AudioModeSettings settingsForMode(int32_t mode) {
             return {1.0, 0.0f, 400.0f, false, false, false, 1.0f, 0.0f, false, false};
         case AudioMode::Cathedral:
             return {1.0, 150.0f, 5500.0f, false, false, false, 0.70f, 0.90f, true, false};
+        case AudioMode::Cowbell:
         case AudioMode::Off:
         default:
             return {};
