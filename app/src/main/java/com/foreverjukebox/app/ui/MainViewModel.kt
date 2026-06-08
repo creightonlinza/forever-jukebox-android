@@ -2721,12 +2721,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         justBackwards: Boolean,
         justLongBranches: Boolean,
         removeSequentialBranches: Boolean,
-        audioMode: JukeboxAudioMode? = null
+        audioModeWireValue: String? = null
     ) {
         viewModelScope.launch {
             val currentPlayback = state.value.playback
+            val requestedAudioModeWireValue = audioModeWireValue
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: if (currentPlayback.isCasting) {
+                    currentPlayback.castAudioModeWireValue
+                } else {
+                    currentPlayback.jukeboxAudioMode.wireValue
+                }
             val requestedAudioMode = when (currentPlayback.playMode) {
-                PlaybackMode.Jukebox -> audioMode ?: currentPlayback.jukeboxAudioMode
+                PlaybackMode.Jukebox -> JukeboxAudioMode.fromWireValue(requestedAudioModeWireValue)
+                    ?: currentPlayback.jukeboxAudioMode
                 PlaybackMode.Autocanonizer -> JukeboxAudioMode.Off
             }
             val audioModeChanged = currentPlayback.playMode == PlaybackMode.Jukebox &&
@@ -2743,7 +2752,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 justBackwards = justBackwards,
                 justLongBranches = justLongBranches,
                 removeSequentialBranches = removeSequentialBranches,
-                audioMode = requestedAudioMode
+                audioMode = requestedAudioMode,
+                audioModeWireValue = requestedAudioModeWireValue
             )
             if (audioModeChanged && !currentPlayback.isCasting &&
                 (currentPlayback.isRunning || currentPlayback.isPaused)

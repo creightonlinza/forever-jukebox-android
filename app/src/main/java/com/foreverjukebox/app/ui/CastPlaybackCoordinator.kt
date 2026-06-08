@@ -73,6 +73,8 @@ class CastPlaybackCoordinator(
                     castTotalBeats = null,
                     castTotalBranches = null,
                     jukeboxAudioMode = JukeboxAudioMode.Off,
+                    castAudioModeWireValue = JukeboxAudioMode.Off.wireValue,
+                    castSupportedAudioModes = emptyList(),
                     lastYouTubeId = resolvedYoutubeId,
                     lastTrackCreatedAtEpochMs = null,
                     castPlaybackState = "loading",

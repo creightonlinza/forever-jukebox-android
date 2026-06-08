@@ -38,6 +38,7 @@ internal fun buildCastTuningResetParams(
 internal fun buildCastTuningUpdate(
     currentTuning: TuningState,
     currentAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
+    currentAudioModeWireValue: String = currentAudioMode.wireValue,
     threshold: Int,
     minProb: Double,
     maxProb: Double,
@@ -47,7 +48,8 @@ internal fun buildCastTuningUpdate(
     justLongBranches: Boolean,
     removeSequentialBranches: Boolean,
     randomBranchDeltaPercentScale: Double,
-    audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
+    audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
+    audioModeWireValue: String = audioMode.wireValue
 ): CastTuningUpdate {
     val nextTuning = currentTuning.copy(
         threshold = threshold.coerceAtLeast(2),
@@ -78,8 +80,10 @@ internal fun buildCastTuningUpdate(
     if (currentTuning.highlightAnchorBranch != nextTuning.highlightAnchorBranch) {
         params.add(TuningParamsCodec.buildHighlightParam(nextTuning.highlightAnchorBranch))
     }
-    if (currentAudioMode != audioMode) {
-        params.add(TuningParamsCodec.buildAudioModeParam(audioMode))
+    val currentCastAudioMode = currentAudioModeWireValue.trim()
+    val nextCastAudioMode = audioModeWireValue.trim()
+    if (currentCastAudioMode != nextCastAudioMode) {
+        TuningParamsCodec.buildAudioModeParam(nextCastAudioMode)?.let { params.add(it) }
     }
     val castParams = params.joinToString("&").ifBlank { null }
     return CastTuningUpdate(nextTuning = nextTuning, castParams = castParams)
@@ -118,7 +122,8 @@ class TuningCoordinator(
         justBackwards: Boolean,
         justLongBranches: Boolean,
         removeSequentialBranches: Boolean,
-        audioMode: JukeboxAudioMode
+        audioMode: JukeboxAudioMode,
+        audioModeWireValue: String = audioMode.wireValue
     ) {
         if (getState().playback.isCasting) {
             applyCastTuning(
@@ -130,7 +135,8 @@ class TuningCoordinator(
                 justBackwards = justBackwards,
                 justLongBranches = justLongBranches,
                 removeSequentialBranches = removeSequentialBranches,
-                audioMode = audioMode
+                audioMode = audioMode,
+                audioModeWireValue = audioModeWireValue
             )
             return
         }
@@ -163,12 +169,14 @@ class TuningCoordinator(
         justBackwards: Boolean,
         justLongBranches: Boolean,
         removeSequentialBranches: Boolean,
-        audioMode: JukeboxAudioMode
+        audioMode: JukeboxAudioMode,
+        audioModeWireValue: String
     ) {
         val currentState = getState()
         val castUpdate = buildCastTuningUpdate(
             currentTuning = currentState.tuning,
             currentAudioMode = currentState.playback.jukeboxAudioMode,
+            currentAudioModeWireValue = currentState.playback.castAudioModeWireValue,
             threshold = threshold,
             minProb = minProb,
             maxProb = maxProb,
@@ -178,7 +186,8 @@ class TuningCoordinator(
             justLongBranches = justLongBranches,
             removeSequentialBranches = removeSequentialBranches,
             randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
-            audioMode = audioMode
+            audioMode = audioMode,
+            audioModeWireValue = audioModeWireValue
         )
         preferences.setHighlightAnchorBranch(highlightAnchorBranch)
         if (castUpdate.castParams != null) {

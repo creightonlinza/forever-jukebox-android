@@ -33,7 +33,9 @@ internal fun stateAfterCastDisconnect(state: UiState): UiState {
     return state.copy(
         playback = state.playback.copy(
             isCasting = false,
-            castDeviceName = null
+            castDeviceName = null,
+            castAudioModeWireValue = JukeboxAudioMode.Off.wireValue,
+            castSupportedAudioModes = emptyList()
         ),
         playlist = state.playlist.deactivate()
     )

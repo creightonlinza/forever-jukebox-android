@@ -70,7 +70,9 @@ fun TuningDialog(
     initialJustBackwards: Boolean,
     initialJustLong: Boolean,
     initialRemoveSequential: Boolean,
-    initialAudioMode: JukeboxAudioMode,
+    initialAudioModeWireValue: String,
+    audioModeOptions: List<AudioModeOption>,
+    isAudioModePickerEnabled: Boolean,
     onDismiss: () -> Unit,
     onReset: () -> Unit,
     onApply: (
@@ -82,7 +84,7 @@ fun TuningDialog(
         justBackwards: Boolean,
         justLongBranches: Boolean,
         removeSequentialBranches: Boolean,
-        audioMode: JukeboxAudioMode
+        audioModeWireValue: String
     ) -> Unit
 ) {
     var threshold by remember(initialThreshold) { mutableFloatStateOf(initialThreshold.toFloat()) }
@@ -95,8 +97,14 @@ fun TuningDialog(
     var justBackwards by remember(initialJustBackwards) { mutableStateOf(initialJustBackwards) }
     var justLong by remember(initialJustLong) { mutableStateOf(initialJustLong) }
     var removeSequential by remember(initialRemoveSequential) { mutableStateOf(initialRemoveSequential) }
-    var audioMode by remember(initialAudioMode) { mutableStateOf(initialAudioMode) }
+    var audioModeWireValue by remember(initialAudioModeWireValue) {
+        mutableStateOf(initialAudioModeWireValue)
+    }
     var showAudioModeOptions by remember { mutableStateOf(false) }
+    val selectedAudioModeLabel = audioModeOptions
+        .firstOrNull { it.wireValue == audioModeWireValue }
+        ?.label
+        ?: "Unavailable"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -155,7 +163,7 @@ fun TuningDialog(
                                 justBackwards,
                                 justLong,
                                 removeSequential,
-                                audioMode
+                                audioModeWireValue
                             )
                             onDismiss()
                         },
@@ -211,6 +219,7 @@ fun TuningDialog(
                 Box {
                     OutlinedButton(
                         onClick = { showAudioModeOptions = true },
+                        enabled = isAudioModePickerEnabled,
                         colors = pillOutlinedButtonColors(),
                         border = pillButtonBorder(),
                         shape = PillShape,
@@ -219,7 +228,7 @@ fun TuningDialog(
                             .fillMaxWidth()
                             .height(SmallButtonHeight)
                     ) {
-                        Text(audioMode.label, style = MaterialTheme.typography.labelSmall)
+                        Text(selectedAudioModeLabel, style = MaterialTheme.typography.labelSmall)
                         Spacer(modifier = Modifier.weight(1f))
                         Icon(
                             imageVector = Icons.Filled.ArrowDropDown,
@@ -231,11 +240,11 @@ fun TuningDialog(
                         expanded = showAudioModeOptions,
                         onDismissRequest = { showAudioModeOptions = false }
                     ) {
-                        JukeboxAudioMode.entries.forEach { mode ->
+                        audioModeOptions.forEach { mode ->
                             DropdownMenuItem(
                                 text = { Text(mode.label) },
                                 onClick = {
-                                    audioMode = mode
+                                    audioModeWireValue = mode.wireValue
                                     showAudioModeOptions = false
                                 }
                             )
