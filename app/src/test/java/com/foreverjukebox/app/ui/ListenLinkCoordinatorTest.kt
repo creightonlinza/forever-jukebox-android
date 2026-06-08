@@ -43,6 +43,27 @@ class ListenLinkCoordinatorTest {
     }
 
     @Test
+    fun buildShareUrlPreservesAnchorBeatTuningParam() {
+        val coordinator = createCoordinator(
+            state = UiState(
+                baseUrl = "https://example.com/",
+                playback = PlaybackState(
+                    playMode = PlaybackMode.Jukebox,
+                    lastYouTubeId = "dQw4w9WgXcQ"
+                )
+            ),
+            tuningParams = "thresh=7&ab=22"
+        )
+
+        val shareUrl = coordinator.buildShareUrl()
+
+        assertEquals(
+            "https://example.com/listen/dQw4w9WgXcQ?thresh=7&ab=22",
+            shareUrl
+        )
+    }
+
+    @Test
     fun buildShareUrlIncludesAudioModeInJukeboxTuningParams() {
         val coordinator = createCoordinator(
             state = UiState(
@@ -142,6 +163,22 @@ class ListenLinkCoordinatorTest {
 
         assertEquals(1, loads.size)
         assertEquals("thresh=9", loads.single().tuningParams)
+    }
+
+    @Test
+    fun handleDeepLinkPreservesAnchorBeatTuningParam() {
+        val loads = mutableListOf<LoadRequest>()
+        val coordinator = createCoordinator(
+            state = UiState(baseUrl = "https://example.com"),
+            loadTrackById = { trackId, title, artist, tuningParams ->
+                loads += LoadRequest(trackId, title, artist, tuningParams)
+            }
+        )
+
+        coordinator.handleDeepLink("https://example.com/listen/dQw4w9WgXcQ?thresh=9&ab=22")
+
+        assertEquals(1, loads.size)
+        assertEquals("thresh=9&ab=22", loads.single().tuningParams)
     }
 
     @Test

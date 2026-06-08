@@ -167,8 +167,96 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun loadAnalysisArmsNativeAnchorJump() {
+        val player = FakePlayer()
+        val engine = JukeboxEngine(player)
+
+        engine.loadAnalysis(makeAnalysisPayload(8))
+
+        val graph = engine.getGraphState()
+        assertNotNull(graph)
+        requireNotNull(graph)
+        val anchorSource = engine.getVisualizationData()?.beats?.getOrNull(graph.lastBranchPoint)
+        assertNotNull(anchorSource)
+        requireNotNull(anchorSource)
+        val bestEdge = anchorSource.neighbors[getBestLastBranchNeighborIndex(anchorSource)]
+        assertEquals(1, player.anchorJumpCalls.size)
+        assertEquals(bestEdge.dest.start, player.anchorJumpCalls[0].first, 0.000001)
+        assertEquals(anchorSource.start, player.anchorJumpCalls[0].second, 0.000001)
+    }
+
+    @Test
+    fun rebuildGraphRefreshesNativeAnchorJump() {
+        val player = FakePlayer()
+        var sourceIndex = 1
+        val engine = JukeboxEngine(
+            player,
+            graphBuilder = { analysis, _ ->
+                analysis.beats.forEach { beat ->
+                    beat.neighbors = mutableListOf()
+                    beat.allNeighbors = mutableListOf()
+                }
+                val edge = makeEdge(sourceIndex, analysis.beats[sourceIndex], analysis.beats[0], 1.0)
+                analysis.beats[sourceIndex].neighbors = mutableListOf(edge)
+                analysis.beats[sourceIndex].allNeighbors = mutableListOf(edge)
+                JukeboxGraphState(
+                    computedThreshold = 0,
+                    currentThreshold = 0,
+                    lastBranchPoint = sourceIndex,
+                    totalBeats = analysis.beats.size,
+                    longestReach = 0.0,
+                    allEdges = mutableListOf(edge)
+                )
+            }
+        )
+        engine.loadAnalysis(makeAnalysisPayload(3))
+
+        sourceIndex = 2
+        engine.rebuildGraph()
+
+        assertEquals(2, player.anchorJumpCalls.size)
+        assertEquals(1.0, player.anchorJumpCalls[0].second, 0.000001)
+        assertEquals(2.0, player.anchorJumpCalls[1].second, 0.000001)
+    }
+
+    @Test
+    fun rebuildGraphWithPreferredAnchorBeatRefreshesNativeAnchorJump() {
+        val player = FakePlayer()
+        val engine = JukeboxEngine(
+            player,
+            graphBuilder = { analysis, config ->
+                val sourceIndex = config.preferredAnchorBeat ?: 1
+                analysis.beats.forEach { beat ->
+                    beat.neighbors = mutableListOf()
+                    beat.allNeighbors = mutableListOf()
+                }
+                val edge = makeEdge(sourceIndex, analysis.beats[sourceIndex], analysis.beats[0], 1.0)
+                analysis.beats[sourceIndex].neighbors = mutableListOf(edge)
+                analysis.beats[sourceIndex].allNeighbors = mutableListOf(edge)
+                JukeboxGraphState(
+                    computedThreshold = 0,
+                    currentThreshold = 0,
+                    lastBranchPoint = sourceIndex,
+                    totalBeats = analysis.beats.size,
+                    longestReach = 0.0,
+                    allEdges = mutableListOf(edge)
+                )
+            }
+        )
+        engine.loadAnalysis(makeAnalysisPayload(3))
+
+        engine.updateConfig(engine.getConfig().copy(preferredAnchorBeat = 2))
+        engine.rebuildGraph()
+
+        assertEquals(2, player.anchorJumpCalls.size)
+        assertEquals(1.0, player.anchorJumpCalls[0].second, 0.000001)
+        assertEquals(2.0, player.anchorJumpCalls[1].second, 0.000001)
+    }
+
+    @Test
     fun deletingAnchorEdgePromotesFallbackAnchorSource() {
-        val engine = JukeboxEngine(FakePlayer())
+        val player = FakePlayer()
+        val engine = JukeboxEngine(player)
         val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
         linkBeats(beats)
         val anchorEdge = makeEdge(0, beats[1], beats[0], 10.0)
@@ -197,11 +285,15 @@ class JukeboxEngineParityTest {
         val viz = engine.getVisualizationData()
         assertNotNull(viz)
         assertEquals(1, viz?.anchorEdgeId)
+        assertEquals(1, player.anchorJumpCalls.size)
+        assertEquals(0.0, player.anchorJumpCalls[0].first, 0.000001)
+        assertEquals(2.0, player.anchorJumpCalls[0].second, 0.000001)
     }
 
     @Test
     fun deletingOnlyAnchorEdgeFallsBackToNoForcedAnchor() {
-        val engine = JukeboxEngine(FakePlayer())
+        val player = FakePlayer()
+        val engine = JukeboxEngine(player)
         val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
         linkBeats(beats)
         val anchorEdge = makeEdge(0, beats[1], beats[0], 10.0)
@@ -227,6 +319,7 @@ class JukeboxEngineParityTest {
         val viz = engine.getVisualizationData()
         assertNotNull(viz)
         assertNull(viz?.anchorEdgeId)
+        assertEquals(1, player.clearAnchorJumpCalls)
     }
 
     @Test
@@ -676,7 +769,8 @@ class JukeboxEngineParityTest {
 
     @Test
     fun clearAnalysisResetsGraphAndBeatLookup() {
-        val engine = JukeboxEngine(FakePlayer())
+        val player = FakePlayer()
+        val engine = JukeboxEngine(player)
         engine.loadAnalysis(makeAnalysisPayload(6))
         assertNotNull(engine.getGraphState())
 
@@ -684,6 +778,7 @@ class JukeboxEngineParityTest {
 
         assertNull(engine.getGraphState())
         assertNull(engine.getBeatAtTime(1.0))
+        assertEquals(1, player.clearAnchorJumpCalls)
     }
 
     private fun makeAnalysisPayload(count: Int): JsonElement {
@@ -798,6 +893,8 @@ class JukeboxEngineParityTest {
         var scheduleJumpResult = true
         var cancelScheduledJumpCalls = 0
         val scheduleJumpCalls = mutableListOf<Pair<Double, Double>>()
+        val anchorJumpCalls = mutableListOf<Pair<Double, Double>>()
+        var clearAnchorJumpCalls = 0
 
         override fun play() {
             playCalls += 1
@@ -820,6 +917,15 @@ class JukeboxEngineParityTest {
 
         override fun cancelScheduledJump() {
             cancelScheduledJumpCalls += 1
+        }
+
+        override fun setAnchorJump(targetTime: Double, sourceStartTime: Double): Boolean {
+            anchorJumpCalls.add(targetTime to sourceStartTime)
+            return true
+        }
+
+        override fun clearAnchorJump() {
+            clearAnchorJumpCalls += 1
         }
 
         override fun getCurrentTime(): Double = fakeCurrentTime

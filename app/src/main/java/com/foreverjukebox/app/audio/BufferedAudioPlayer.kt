@@ -142,6 +142,17 @@ class BufferedAudioPlayer : JukeboxPlayer {
         }
     }
 
+    override fun setAnchorJump(targetTime: Double, sourceStartTime: Double): Boolean {
+        if (nativeHandle == 0L) return false
+        return nativeSetAnchorJump(nativeHandle, targetTime, sourceStartTime)
+    }
+
+    override fun clearAnchorJump() {
+        if (nativeHandle != 0L) {
+            nativeClearAnchorJump(nativeHandle)
+        }
+    }
+
     override fun getCurrentTime(): Double {
         if (nativeHandle == 0L) return 0.0
         return nativeGetCurrentTime(nativeHandle)
@@ -339,6 +350,8 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeSeek(handle: Long, timeSeconds: Double)
     private external fun nativeScheduleJump(handle: Long, targetTime: Double, audioStart: Double): Boolean
     private external fun nativeCancelScheduledJump(handle: Long)
+    private external fun nativeSetAnchorJump(handle: Long, targetTime: Double, audioStart: Double): Boolean
+    private external fun nativeClearAnchorJump(handle: Long)
     private external fun nativeGetCurrentTime(handle: Long): Double
     private external fun nativeGetAudioTime(handle: Long): Double
     private external fun nativeIsPlaying(handle: Long): Boolean

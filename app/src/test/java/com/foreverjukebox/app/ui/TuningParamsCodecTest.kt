@@ -11,7 +11,7 @@ class TuningParamsCodecTest {
 
     @Test
     fun parseExtractsKnownFields() {
-        val parsed = TuningParamsCodec.parse("jb=1&lg=0&sq=0&thresh=27&bp=12,34,56&d=3,8&ah=1")
+        val parsed = TuningParamsCodec.parse("jb=1&lg=0&sq=0&thresh=27&bp=12,34,56&d=3,8&ab=22&ah=1")
 
         assertNotNull(parsed)
         assertEquals(27, parsed?.threshold)
@@ -23,6 +23,7 @@ class TuningParamsCodecTest {
         assertFalse(parsed?.justLongBranches == true)
         assertTrue(parsed?.removeSequentialBranches == true)
         assertEquals(listOf(3, 8), parsed?.deletedEdgeIds)
+        assertEquals(22, parsed?.anchorBeat)
     }
 
     @Test
@@ -306,8 +307,8 @@ class TuningParamsCodecTest {
 
     @Test
     fun stripHighlightAnchorParamKeepsTrackSpecificTuning() {
-        val stripped = TuningParamsCodec.stripHighlightAnchorParam("jb=1&ah=1&d=3,9&am=lofi")
-        assertEquals("jb=1&d=3%2C9&am=lofi", stripped)
+        val stripped = TuningParamsCodec.stripHighlightAnchorParam("jb=1&ah=1&d=3,9&ab=22&am=lofi")
+        assertEquals("jb=1&d=3%2C9&ab=22&am=lofi", stripped)
     }
 
     @Test
