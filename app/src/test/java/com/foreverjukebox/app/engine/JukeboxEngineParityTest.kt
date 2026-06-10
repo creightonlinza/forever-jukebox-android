@@ -576,6 +576,38 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun schedulesWrapJumpToStartAtFinalBeatBoundary() {
+        val player = FakePlayer().apply {
+            fakeCurrentTime = 2.25
+            fakeAudioTime = 10.0
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf()
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 2)
+        setPrivateField(engine, "nextAudioTime", 10.75)
+        setPrivateField(engine, "ticking", true)
+
+        invokeTick(engine)
+
+        assertEquals(1, player.scheduleJumpCalls.size)
+        assertEquals(0.0, player.scheduleJumpCalls[0].first, 0.000001)
+        assertEquals(3.0, player.scheduleJumpCalls[0].second, 0.000001)
+        assertEquals(0, player.stopCalls)
+    }
+
+    @Test
     fun resetStatsClearsPerSourceBranchHistory() {
         val engine = JukeboxEngine(FakePlayer())
         val branchState = getPrivateField<BranchState>(engine, "branchState")

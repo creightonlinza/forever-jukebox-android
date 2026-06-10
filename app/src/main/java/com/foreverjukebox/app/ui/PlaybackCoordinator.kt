@@ -695,19 +695,6 @@ class PlaybackCoordinator(
     }
 
     fun updateListenTimeDisplay() {
-        val durationSeconds = controller.player.getDurationSeconds()
-        val playbackMode = getState().playback.playMode
-        if (
-            playbackMode == PlaybackMode.Jukebox &&
-            durationSeconds != null &&
-            controller.player.getCurrentTime() >= durationSeconds - END_EPSILON_SECONDS
-        ) {
-            controller.stopPlayback()
-            stopListenTimer()
-            updatePlaybackState { it.copy(isRunning = false, isPaused = false) }
-            syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-            return
-        }
         val totalSeconds = controller.getListenTimeSeconds()
         updatePlaybackState {
             it.copy(
@@ -1164,6 +1151,5 @@ class PlaybackCoordinator(
 
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
-private const val END_EPSILON_SECONDS = 0.02
 private const val MAX_RANDOM_BRANCH_DELTA = 0.2
 private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 100.0 / MAX_RANDOM_BRANCH_DELTA
