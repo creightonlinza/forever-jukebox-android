@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.visualization.visualizationCount
 import java.time.OffsetDateTime
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -26,7 +27,7 @@ data class CastTuningStatus(
     val branchProbability: CastBranchProbabilityStatus,
     val deletedEdgeIds: List<Int>,
     val highlightAnchorBranch: Boolean,
-    val audioMode: JukeboxAudioMode
+    val audioModeWireValue: String
 )
 
 data class CastStatusMessage(
@@ -43,6 +44,7 @@ data class CastStatusMessage(
     val error: String,
     val errorCode: String? = null,
     val activeVizIndex: Int?,
+    val supportedAudioModes: List<AudioModeOption> = emptyList(),
     val tuning: CastTuningStatus? = null
 )
 
@@ -88,6 +90,7 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
         .map(::stringField)
         .firstOrNull { it.isNotBlank() }
     val activeVizIndex = json["activeVizIndex"]?.jsonPrimitive?.intOrNull
+    val supportedAudioModes = parseSupportedAudioModes(json["supportedAudioModes"] as? JsonArray)
     val tuning = parseCastTuningStatus(json["tuning"] as? JsonObject)
     return CastStatusMessage(
         jobId = jobId,
@@ -103,14 +106,32 @@ fun parseCastStatusMessage(message: String): CastStatusMessage? {
         error = error,
         errorCode = errorCode,
         activeVizIndex = activeVizIndex,
+        supportedAudioModes = supportedAudioModes,
         tuning = tuning
     )
+}
+
+private fun parseSupportedAudioModes(json: JsonArray?): List<AudioModeOption> {
+    if (json == null) return emptyList()
+    val parsed = linkedMapOf<String, AudioModeOption>()
+    json.forEach { element ->
+        val option = element as? JsonObject ?: return@forEach
+        val wireValue = option.stringValue("wireValue")?.trim()?.takeIf { it.isNotBlank() }
+            ?: return@forEach
+        val label = option.stringValue("label")?.trim()?.takeIf { it.isNotBlank() }
+            ?: return@forEach
+        parsed.putIfAbsent(wireValue, AudioModeOption(wireValue = wireValue, label = label))
+    }
+    return parsed.values.toList()
 }
 
 private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
     if (json == null) return null
     val branchProbability = json["branchProbability"] as? JsonObject ?: return null
-    val audioMode = JukeboxAudioMode.fromWireValue(json.stringValue("audioMode")) ?: JukeboxAudioMode.Off
+    val audioModeWireValue = json.stringValue("audioMode")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: JukeboxAudioMode.Off.wireValue
     return CastTuningStatus(
         justBackwards = json.booleanValue("justBackwards"),
         justLongBranches = json.booleanValue("justLongBranches"),
@@ -127,7 +148,7 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
             ?.mapNotNull { it.jsonPrimitive.intOrNull?.takeIf { id -> id >= 0 } }
             ?: emptyList(),
         highlightAnchorBranch = json.booleanValue("highlightAnchorBranch"),
-        audioMode = audioMode
+        audioModeWireValue = audioModeWireValue
     )
 }
 
@@ -168,16 +189,30 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         hasArtist && currentPlayback.trackArtist.isNullOrBlank() -> status.artist
         else -> currentPlayback.trackArtist
     }
-    val resolvedAudioMode = status.tuning?.audioMode
-        ?: currentPlayback.jukeboxAudioMode
+    val statusAudioModeWireValue = status.tuning?.audioModeWireValue
+    val resolvedCastAudioModeWireValue = statusAudioModeWireValue
+        ?: currentPlayback.castAudioModeWireValue
+    val resolvedAudioMode = if (statusAudioModeWireValue != null) {
+        JukeboxAudioMode.fromWireValue(statusAudioModeWireValue) ?: JukeboxAudioMode.Off
+    } else {
+        currentPlayback.jukeboxAudioMode
+    }
+    val resolvedSupportedAudioModes = status.supportedAudioModes
     val metadataBackfilled = (hasTitle && currentPlayback.trackTitle.isNullOrBlank()) ||
         (hasArtist && currentPlayback.trackArtist.isNullOrBlank())
-    val audioModeChanged = resolvedAudioMode != currentPlayback.jukeboxAudioMode
-    val displayTitle = if (metadataBackfilled || currentPlayback.playTitle.isBlank() || audioModeChanged) {
+    val audioModeChanged = resolvedCastAudioModeWireValue != currentPlayback.castAudioModeWireValue
+    val audioModeOptionsChanged = resolvedSupportedAudioModes != currentPlayback.castSupportedAudioModes
+    val displayTitle = if (
+        metadataBackfilled ||
+        currentPlayback.playTitle.isBlank() ||
+        audioModeChanged ||
+        audioModeOptionsChanged
+    ) {
         buildCastPlaybackTitle(
             title = resolvedTrackTitle,
             artist = resolvedTrackArtist,
-            audioMode = resolvedAudioMode,
+            audioModeWireValue = resolvedCastAudioModeWireValue,
+            supportedAudioModes = resolvedSupportedAudioModes,
             fallback = currentPlayback.playTitle
         )
     } else {
@@ -227,6 +262,8 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
             currentPlayback.castTotalBranches
         },
         jukeboxAudioMode = resolvedAudioMode,
+        castAudioModeWireValue = resolvedCastAudioModeWireValue,
+        castSupportedAudioModes = resolvedSupportedAudioModes,
         lastYouTubeId = resolvedYouTubeId,
         lastTrackCreatedAtEpochMs = resolvedCreatedAtEpochMs,
         castPlaybackState = status.playbackState,
@@ -272,14 +309,23 @@ private fun resolveCastTuningState(
 private fun buildCastPlaybackTitle(
     title: String?,
     artist: String?,
-    audioMode: JukeboxAudioMode,
+    audioModeWireValue: String,
+    supportedAudioModes: List<AudioModeOption>,
     fallback: String
 ): String {
     val baseTitle = title?.takeIf { it.isNotBlank() } ?: return fallback
-    val titledMode = if (audioMode == JukeboxAudioMode.Off) {
+    val normalizedWireValue = audioModeWireValue.trim()
+    val audioModeLabel = supportedAudioModes
+        .firstOrNull { it.wireValue == normalizedWireValue }
+        ?.label
+    val titledMode = if (
+        normalizedWireValue.isBlank() ||
+        normalizedWireValue == JukeboxAudioMode.Off.wireValue ||
+        audioModeLabel.isNullOrBlank()
+    ) {
         baseTitle
     } else {
-        "$baseTitle (${audioMode.wireValue})"
+        "$baseTitle ($audioModeLabel)"
     }
     return if (artist.isNullOrBlank()) {
         titledMode

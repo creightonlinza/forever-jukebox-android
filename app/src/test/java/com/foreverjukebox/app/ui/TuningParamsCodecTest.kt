@@ -300,6 +300,12 @@ class TuningParamsCodecTest {
     }
 
     @Test
+    fun buildAudioModeParamSupportsReceiverWireValues() {
+        assertEquals("am=future_mode", TuningParamsCodec.buildAudioModeParam(" future_mode "))
+        assertNull(TuningParamsCodec.buildAudioModeParam(" "))
+    }
+
+    @Test
     fun stripHighlightAnchorParamDropsHighlightOnlyPayload() {
         val stripped = TuningParamsCodec.stripHighlightAnchorParam("ah=1")
         assertNull(stripped)

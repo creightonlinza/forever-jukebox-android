@@ -143,6 +143,14 @@ object TuningParamsCodec {
         return "am=${audioMode.wireValue}"
     }
 
+    fun buildAudioModeParam(audioModeWireValue: String): String? {
+        val normalized = audioModeWireValue.trim()
+        if (normalized.isBlank()) {
+            return null
+        }
+        return "am=$normalized"
+    }
+
     fun stripHighlightAnchorParam(raw: String?): String? {
         if (raw.isNullOrBlank()) {
             return null

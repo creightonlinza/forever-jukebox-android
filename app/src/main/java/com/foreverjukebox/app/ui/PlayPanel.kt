@@ -256,6 +256,11 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     }
 
     if (showTuning && playback.playMode != PlaybackMode.Autocanonizer && canOpenCastReceiverDetails) {
+        val audioModeOptions = if (playback.isCasting) {
+            playback.castSupportedAudioModes
+        } else {
+            localAudioModeOptions
+        }
         TuningDialog(
             initialThreshold = tuning.threshold,
             initialMinProb = tuning.minProb,
@@ -265,7 +270,13 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             initialJustBackwards = tuning.justBackwards,
             initialJustLong = tuning.justLong,
             initialRemoveSequential = tuning.removeSequential,
-            initialAudioMode = playback.jukeboxAudioMode,
+            initialAudioModeWireValue = if (playback.isCasting) {
+                playback.castAudioModeWireValue
+            } else {
+                playback.jukeboxAudioMode.wireValue
+            },
+            audioModeOptions = audioModeOptions,
+            isAudioModePickerEnabled = !playback.isCasting || audioModeOptions.isNotEmpty(),
             onDismiss = { showTuning = false },
             onReset = viewModel::resetTuningDefaults,
             onApply = viewModel::applyTuning

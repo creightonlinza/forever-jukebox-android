@@ -38,6 +38,14 @@ class CastStatusReducerTest {
               "error":"",
               "errorCode":"cast_track_too_long",
               "activeVizIndex":4,
+              "supportedAudioModes":[
+                {"wireValue":" off ","label":" Off "},
+                {"wireValue":"daycore","label":"Daycore"},
+                {"wireValue":"daycore","label":"Duplicate Daycore"},
+                {"wireValue":"","label":"Ignored"},
+                {"wireValue":"future_mode","label":"Future Mode"},
+                {"wireValue":"blank_label","label":" "}
+              ],
               "tuning":{
                 "justBackwards":true,
                 "justLongBranches":false,
@@ -70,7 +78,15 @@ class CastStatusReducerTest {
         assertEquals("", parsed?.error)
         assertEquals("cast_track_too_long", parsed?.errorCode)
         assertEquals(4, parsed?.activeVizIndex)
-        assertEquals(JukeboxAudioMode.Daycore, parsed?.tuning?.audioMode)
+        assertEquals(
+            listOf(
+                AudioModeOption("off", "Off"),
+                AudioModeOption("daycore", "Daycore"),
+                AudioModeOption("future_mode", "Future Mode")
+            ),
+            parsed?.supportedAudioModes
+        )
+        assertEquals("daycore", parsed?.tuning?.audioModeWireValue)
         assertEquals(28, parsed?.tuning?.threshold)
         assertEquals(31, parsed?.tuning?.computedThreshold)
         assertEquals(12, parsed?.tuning?.branchProbability?.minPercent)
@@ -79,6 +95,54 @@ class CastStatusReducerTest {
         assertEquals(listOf(2, 5), parsed?.tuning?.deletedEdgeIds)
         assertTrue(parsed?.tuning?.justBackwards == true)
         assertTrue(parsed?.tuning?.highlightAnchorBranch == true)
+    }
+
+    @Test
+    fun parseCastStatusMessageParsesLoadingSupportedAudioModesWithoutTuning() {
+        val parsed = parseCastStatusMessage(
+            """
+            {
+              "type":"status",
+              "isLoading":true,
+              "playbackState":"loading",
+              "supportedAudioModes":[
+                {"wireValue":"off","label":"Off"},
+                {"wireValue":"cowbell","label":"More Cowbell"}
+              ],
+              "tuning":null
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertTrue(parsed?.isLoading == true)
+        assertNull(parsed?.tuning)
+        assertEquals(
+            listOf(
+                AudioModeOption("off", "Off"),
+                AudioModeOption("cowbell", "More Cowbell")
+            ),
+            parsed?.supportedAudioModes
+        )
+    }
+
+    @Test
+    fun parseCastStatusMessageDropsMalformedSupportedAudioModes() {
+        val parsed = parseCastStatusMessage(
+            """
+            {
+              "type":"status",
+              "supportedAudioModes":[
+                {"wireValue":"","label":"Blank Wire"},
+                {"wireValue":"lofi","label":""},
+                "not-an-object"
+              ]
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(emptyList<AudioModeOption>(), parsed?.supportedAudioModes)
     }
 
     @Test
@@ -232,6 +296,7 @@ class CastStatusReducerTest {
             playbackState = "playing",
             error = "",
             activeVizIndex = 3,
+            supportedAudioModes = supportedAudioModes(),
             tuning = castTuning(
                 justBackwards = true,
                 removeSequentialBranches = true,
@@ -248,7 +313,9 @@ class CastStatusReducerTest {
         val next = reduceCastStatus(current, status)
 
         assertEquals(JukeboxAudioMode.Daycore, next.playback.jukeboxAudioMode)
-        assertEquals("Old Song (daycore) — New Artist", next.playback.playTitle)
+        assertEquals("daycore", next.playback.castAudioModeWireValue)
+        assertEquals(supportedAudioModes(), next.playback.castSupportedAudioModes)
+        assertEquals("Old Song (Daycore) — New Artist", next.playback.playTitle)
         assertEquals(31, next.tuning.threshold)
         assertEquals(29, next.tuning.computedThreshold)
         assertEquals(12, next.tuning.minProb)
@@ -260,13 +327,82 @@ class CastStatusReducerTest {
     }
 
     @Test
+    fun reduceCastStatusDisplaysReceiverOnlyAudioModeLabel() {
+        val current = UiState(
+            playback = PlaybackState(
+                isRunning = true,
+                playTitle = "",
+                trackTitle = "Old Song",
+                jukeboxAudioMode = JukeboxAudioMode.Off
+            )
+        )
+        val status = CastStatusMessage(
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 3),
+            title = "New Song",
+            artist = "New Artist",
+            trackDurationSeconds = 189.5,
+            totalBeats = 640,
+            totalBranches = 82,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 3,
+            supportedAudioModes = listOf(
+                AudioModeOption("off", "Off"),
+                AudioModeOption("future_mode", "Future Mode")
+            ),
+            tuning = castTuning(audioModeWireValue = "future_mode")
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals(JukeboxAudioMode.Off, next.playback.jukeboxAudioMode)
+        assertEquals("future_mode", next.playback.castAudioModeWireValue)
+        assertEquals("Old Song (Future Mode) — New Artist", next.playback.playTitle)
+    }
+
+    @Test
+    fun reduceCastStatusClearsSupportedAudioModesWhenStatusOmitsValidOptions() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                castSupportedAudioModes = supportedAudioModes(),
+                castAudioModeWireValue = "cowbell",
+                playTitle = "Song (More Cowbell)",
+                trackTitle = "Song"
+            )
+        )
+        val status = CastStatusMessage(
+            title = "",
+            artist = "",
+            trackDurationSeconds = null,
+            totalBeats = null,
+            totalBranches = null,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = null,
+            tuning = castTuning(audioMode = JukeboxAudioMode.Cowbell)
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals(emptyList<AudioModeOption>(), next.playback.castSupportedAudioModes)
+        assertEquals("cowbell", next.playback.castAudioModeWireValue)
+        assertEquals("Song", next.playback.playTitle)
+    }
+
+    @Test
     fun reduceCastStatusDoesNotHydrateTuningWhenReceiverTuningIsNull() {
         val current = UiState(
             playback = PlaybackState(
                 isCasting = true,
                 isRunning = true,
                 lastJobId = "job_1",
-                jukeboxAudioMode = JukeboxAudioMode.Lofi
+                jukeboxAudioMode = JukeboxAudioMode.Lofi,
+                castAudioModeWireValue = JukeboxAudioMode.Lofi.wireValue
             ),
             tuning = TuningState(threshold = 42, justBackwards = true)
         )
@@ -755,7 +891,8 @@ class CastStatusReducerTest {
         deltaPercent: Int = 10,
         deletedEdgeIds: List<Int> = emptyList(),
         highlightAnchorBranch: Boolean = false,
-        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
+        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
+        audioModeWireValue: String = audioMode.wireValue
     ): CastTuningStatus {
         return CastTuningStatus(
             justBackwards = justBackwards,
@@ -770,7 +907,15 @@ class CastStatusReducerTest {
             ),
             deletedEdgeIds = deletedEdgeIds,
             highlightAnchorBranch = highlightAnchorBranch,
-            audioMode = audioMode
+            audioModeWireValue = audioModeWireValue
+        )
+    }
+
+    private fun supportedAudioModes(): List<AudioModeOption> {
+        return listOf(
+            AudioModeOption("off", "Off"),
+            AudioModeOption("daycore", "Daycore"),
+            AudioModeOption("cowbell", "More Cowbell")
         )
     }
 }

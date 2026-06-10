@@ -118,6 +118,39 @@ class TuningCoordinatorCastPolicyTest {
     }
 
     @Test
+    fun buildCastTuningUpdateEmitsReceiverOnlyAudioModeWireValue() {
+        val current = TuningState(
+            threshold = 22,
+            minProb = 10,
+            maxProb = 40,
+            ramp = 25,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            justLong = false,
+            removeSequential = true
+        )
+
+        val update = buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Off,
+            currentAudioModeWireValue = "off",
+            threshold = 22,
+            minProb = 0.10,
+            maxProb = 0.40,
+            ramp = 0.05,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            justLongBranches = false,
+            removeSequentialBranches = true,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Off,
+            audioModeWireValue = "future_mode"
+        )
+
+        assertEquals("am=future_mode", update.castParams)
+    }
+
+    @Test
     fun buildCastTuningUpdateUsesChangedThresholdOnly() {
         val current = TuningState(
             threshold = 22,

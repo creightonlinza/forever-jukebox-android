@@ -60,6 +60,15 @@ enum class JukeboxAudioMode(
     }
 }
 
+data class AudioModeOption(
+    val wireValue: String,
+    val label: String
+)
+
+val localAudioModeOptions: List<AudioModeOption> = JukeboxAudioMode.entries.map {
+    AudioModeOption(wireValue = it.wireValue, label = it.label)
+}
+
 enum class SleepTimerOption(val label: String, val durationMs: Long?) {
     Off("Off", null),
     Minutes15("15 minutes", 15L * 60L * 1000L),
@@ -180,6 +189,8 @@ data class PlaybackState(
     val lastTrackCreatedAtEpochMs: Long? = null,
     val castPlaybackState: String? = null,
     val isCastLoading: Boolean = false,
+    val castAudioModeWireValue: String = JukeboxAudioMode.Off.wireValue,
+    val castSupportedAudioModes: List<AudioModeOption> = emptyList(),
     val deleteEligible: Boolean = false,
     val deleteInFlight: Boolean = false,
     val isCasting: Boolean = false,
