@@ -16,6 +16,8 @@ interface JukeboxPlayer {
     fun seek(time: Double)
     fun scheduleJump(targetTime: Double, sourceStartTime: Double): Boolean
     fun cancelScheduledJump()
+    fun setAnchorJump(targetTime: Double, sourceStartTime: Double): Boolean = false
+    fun clearAnchorJump() = Unit
     fun getCurrentTime(): Double
     fun getAudioTime(): Double
     fun getPlaybackRate(): Double
@@ -76,6 +78,7 @@ class JukeboxEngine(
         applyDeletedEdges()
         beats = analysis?.beats ?: mutableListOf()
         resetState()
+        syncAnchorJump()
     }
 
     fun clearAnalysis() {
@@ -84,18 +87,23 @@ class JukeboxEngine(
         graph = null
         beats = mutableListOf()
         resetState()
+        syncAnchorJump()
     }
 
     fun getGraphState(): JukeboxGraphState? = graph
 
     fun getConfig(): JukeboxConfig = config.copy()
 
+    fun refreshAnchorJump() {
+        syncAnchorJump()
+    }
+
     fun updateConfig(partial: JukeboxConfigUpdate) {
         config = config.applyUpdate(partial)
     }
 
     fun updateConfig(partial: JukeboxConfig) {
-        updateConfig(partial.toUpdate())
+        config = partial
     }
 
     fun rebuildGraph() {
@@ -107,6 +115,7 @@ class JukeboxEngine(
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
         applyDeletedEdges()
+        syncAnchorJump()
     }
 
     fun getVisualizationData(): VisualizationData? {
@@ -187,12 +196,14 @@ class JukeboxEngine(
         deletedEdgeKeys.clear()
         clearPendingAdvance(cancelScheduledJump = true)
         clearEdgeDeletionFlags()
+        syncAnchorJump()
     }
 
     fun deleteEdge(edge: Edge) {
         deletedEdgeKeys.add(edgeKey(edge.src.which, edge.dest.which))
         clearPendingAdvance(cancelScheduledJump = true)
         applyDeletedEdges()
+        syncAnchorJump()
     }
 
     fun deleteEdgesById(ids: List<Int>) {
@@ -205,6 +216,7 @@ class JukeboxEngine(
         }
         clearPendingAdvance(cancelScheduledJump = true)
         applyDeletedEdges()
+        syncAnchorJump()
     }
 
     fun setForceBranch(enabled: Boolean) {
@@ -550,6 +562,36 @@ class JukeboxEngine(
             config.minLongBranch
         )
         graph = current.copy(lastBranchPoint = refreshedAnchorSource ?: -1)
+    }
+
+    private fun syncAnchorJump() {
+        val currentGraph = graph ?: run {
+            player.clearAnchorJump()
+            return
+        }
+        val anchorSource = beats.getOrNull(currentGraph.lastBranchPoint) ?: run {
+            player.clearAnchorJump()
+            return
+        }
+        if (anchorSource.neighbors.isEmpty()) {
+            player.clearAnchorJump()
+            return
+        }
+        val bestIndex = getBestLastBranchNeighborIndex(anchorSource)
+        val bestEdge = anchorSource.neighbors.getOrNull(bestIndex)
+        if (bestEdge == null || bestEdge.deleted) {
+            player.clearAnchorJump()
+            return
+        }
+        val targetTime = bestEdge.dest.start
+        val sourceStartTime = anchorSource.start
+        if (!targetTime.isFinite() || !sourceStartTime.isFinite()) {
+            player.clearAnchorJump()
+            return
+        }
+        if (!player.setAnchorJump(targetTime, sourceStartTime)) {
+            player.clearAnchorJump()
+        }
     }
 
     private fun clearEdgeDeletionFlags() {

@@ -205,6 +205,7 @@ class LocalAnalysisCoordinator(
                     playbackCoordinator.setDecodeProgress(percent)
                 }
             }
+            controller.engine.refreshAnchorJump()
         }
         updateState {
             it.copy(

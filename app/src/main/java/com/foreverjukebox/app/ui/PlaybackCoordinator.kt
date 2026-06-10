@@ -146,6 +146,9 @@ class PlaybackCoordinator(
         if (deletedIds.isNotEmpty()) {
             params.add("d=${deletedIds.joinToString(",")}")
         }
+        config.preferredAnchorBeat?.let { anchorBeat ->
+            params.add("ab=$anchorBeat")
+        }
         if (playback.jukeboxAudioMode != JukeboxAudioMode.Off) {
             params.add("am=${playback.jukeboxAudioMode.wireValue}")
         }
@@ -252,6 +255,7 @@ class PlaybackCoordinator(
                         setAnalysisProgress(percent, "Loading audio")
                     }
                 }
+                engine.refreshAnchorJump()
             }
         } catch (err: OutOfMemoryError) {
             Log.e(TAG, "Out of memory while loading cached track audio for $jobId", err)
@@ -381,6 +385,7 @@ class PlaybackCoordinator(
                             setDecodeProgress(percent)
                         }
                     }
+                    engine.refreshAnchorJump()
                 }
                 return true
             } catch (cancel: CancellationException) {
@@ -592,7 +597,7 @@ class PlaybackCoordinator(
     }
 
     fun resetForNewTrack(stopPlaybackService: Boolean = true) {
-        engine.clearDeletedEdges()
+        engine.clearAnalysis()
         pendingTuningParams = null
         audioLoadInFlight = false
         controller.autocanonizer.reset()
@@ -781,6 +786,7 @@ class PlaybackCoordinator(
                             setDecodeProgress(percent)
                         }
                     }
+                    engine.refreshAnchorJump()
                 }
                 updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
                 syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
@@ -1078,6 +1084,9 @@ class PlaybackCoordinator(
             config = config.copy(
                 randomBranchChanceDelta = mapPercentToRange(value, 0.0, MAX_RANDOM_BRANCH_DELTA)
             )
+        }
+        parsed.anchorBeat?.let { value ->
+            config = config.copy(preferredAnchorBeat = value)
         }
         return ResolvedTuningParams(config, parsed.deletedEdgeIds, parsed.audioMode)
     }

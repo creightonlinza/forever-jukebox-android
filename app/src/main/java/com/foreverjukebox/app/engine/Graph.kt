@@ -836,6 +836,51 @@ private fun addAnchorBranch(
     )
 }
 
+private fun addPreferredAnchorBranch(
+    quanta: List<QuantumBase>,
+    threshold: Int,
+    config: JukeboxConfig
+): Int? {
+    val preferred = config.preferredAnchorBeat ?: return null
+    val source = quanta.getOrNull(preferred) ?: return null
+    if (source.neighbors.any { !it.deleted && it.dest.which < source.which }) {
+        return source.which
+    }
+
+    val decisionContext = buildAnchorDecisionContext(quanta)
+    val maxAnchorThreshold = if (longestBackwardBranch(quanta) < 50) 65 else 55
+    val best = source.allNeighbors
+        .asSequence()
+        .filter { edge ->
+            !edge.deleted &&
+                edge.dest.which < source.which &&
+                edge.distance < maxAnchorThreshold &&
+                edge.distance > threshold
+        }
+        .map { edge ->
+            BranchCandidate(
+                branchesToTarget = decisionContext.branchesToTarget[edge.dest.which] ?: Int.MAX_VALUE,
+                earliestReachable = decisionContext.earliestByBeat[edge.dest.which] ?: edge.dest.which,
+                immediateBackward = source.which - edge.dest.which,
+                distance = edge.distance,
+                q = source,
+                edge = edge
+            )
+        }
+        .sortedWith(
+            compareBy<BranchCandidate> { it.branchesToTarget }
+                .thenBy { it.earliestReachable }
+                .thenBy { it.distance }
+                .thenByDescending { it.immediateBackward }
+        )
+        .firstOrNull()
+
+    if (best != null) {
+        source.neighbors.add(best.edge)
+    }
+    return source.which
+}
+
 private fun applyBranchFilters(
     quanta: List<QuantumBase>,
     config: JukeboxConfig,
@@ -909,7 +954,8 @@ fun buildJumpGraph(analysis: TrackAnalysis, config: JukeboxConfig): JukeboxGraph
     }
 
     collectNearestNeighbors(quanta, threshold, config)
-    val preferredLastBranchPoint = addAnchorBranch(quanta, threshold, config)
+    val preferredLastBranchPoint = addPreferredAnchorBranch(quanta, threshold, config)
+        ?: addAnchorBranch(quanta, threshold, config)
     val (lastBranchPoint, longestReach) = applyBranchFilters(
         quanta,
         config,
