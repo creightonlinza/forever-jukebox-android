@@ -229,6 +229,19 @@ class JukeboxEngine(
         return if (idx >= 0) beats[idx] else null
     }
 
+    fun getSectionStartBeatIndices(): List<Int> {
+        val currentAnalysis = analysis ?: return emptyList()
+        if (beats.isEmpty()) return emptyList()
+        val indices = sortedSetOf<Int>()
+        for (section in currentAnalysis.sections.drop(1)) {
+            val index = findBeatIndexAtOrAfterTime(section.start)
+            if (index > 0) {
+                indices += index
+            }
+        }
+        return indices.toList()
+    }
+
     fun seekToBeat(index: Int) {
         if (analysis == null || beats.isEmpty()) return
         val clamped = index.coerceIn(0, beats.size - 1)
@@ -529,6 +542,23 @@ class JukeboxEngine(
             }
         }
         return (low - 1).coerceIn(0, beats.size - 1)
+    }
+
+    private fun findBeatIndexAtOrAfterTime(time: Double): Int {
+        var low = 0
+        var high = beats.size - 1
+        var result = beats.size - 1
+        while (low <= high) {
+            val mid = (low + high) / 2
+            val beat = beats[mid]
+            if (beat.start >= time) {
+                result = mid
+                high = mid - 1
+            } else {
+                low = mid + 1
+            }
+        }
+        return result
     }
 
     private fun applyDeletedEdges() {

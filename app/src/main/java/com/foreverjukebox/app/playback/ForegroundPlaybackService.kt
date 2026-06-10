@@ -294,7 +294,10 @@ class ForegroundPlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
-        mediaSession = MediaSessionCompat(this, "ForeverJukeboxPlayback").apply {
+        mediaSession = MediaSessionCompat(
+            applicationContext.playbackAttributionContext(),
+            "ForeverJukeboxPlayback"
+        ).apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onMediaButtonEvent(mediaButtonIntent: Intent?): Boolean {
                     val keyEvent = mediaButtonIntent?.let { intent ->
@@ -827,7 +830,8 @@ class ForegroundPlaybackService : Service() {
     }
 
     private fun registerBluetoothRouteMonitoring() {
-        val manager = getSystemService(AudioManager::class.java) ?: return
+        val manager = applicationContext.playbackAttributionContext()
+            .getSystemService(AudioManager::class.java) ?: return
         audioManager = manager
         manager.registerAudioDeviceCallback(bluetoothAudioDeviceCallback, null)
         val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
@@ -1061,16 +1065,17 @@ class ForegroundPlaybackService : Service() {
             isLoading: Boolean = false,
             loadingProgress: Int? = null
         ) {
-            val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+            val playbackContext = context.playbackServiceContext()
+            val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_START
                 putSkipAvailability(canSkipPrevious, canSkipNext)
                 putLoadingNotification(isLoading, loadingProgress)
             }
             if (isRunning) {
-                context.startService(intent)
-            } else if (canStartForegroundService(context)) {
+                playbackContext.startService(intent)
+            } else if (canStartForegroundService(playbackContext)) {
                 pendingForegroundStart = true
-                context.startForegroundService(intent)
+                playbackContext.startForegroundService(intent)
             }
         }
 
@@ -1081,28 +1086,30 @@ class ForegroundPlaybackService : Service() {
             isLoading: Boolean = false,
             loadingProgress: Int? = null
         ) {
-            val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+            val playbackContext = context.playbackServiceContext()
+            val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_UPDATE
                 putSkipAvailability(canSkipPrevious, canSkipNext)
                 putLoadingNotification(isLoading, loadingProgress)
             }
             if (isRunning) {
-                context.startService(intent)
-            } else if (canStartForegroundService(context)) {
+                playbackContext.startService(intent)
+            } else if (canStartForegroundService(playbackContext)) {
                 pendingForegroundStart = true
-                context.startForegroundService(intent)
+                playbackContext.startForegroundService(intent)
             }
         }
 
         fun setSleepTimer(context: Context, durationMs: Long?) {
-            val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+            val playbackContext = context.playbackServiceContext()
+            val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_SET_SLEEP_TIMER
                 putExtra(
                     PlaybackServiceConstants.EXTRA_SLEEP_TIMER_DURATION_MS,
                     durationMs ?: 0L
                 )
             }
-            context.startService(intent)
+            playbackContext.startService(intent)
         }
 
         fun updateCast(
@@ -1114,7 +1121,8 @@ class ForegroundPlaybackService : Service() {
             canSkipPrevious: Boolean? = null,
             canSkipNext: Boolean? = null
         ) {
-            val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+            val playbackContext = context.playbackServiceContext()
+            val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_UPDATE
                 putExtra(PlaybackServiceConstants.EXTRA_IS_CASTING, true)
                 putExtra(PlaybackServiceConstants.EXTRA_CAST_IS_PLAYING, isPlaying)
@@ -1124,10 +1132,10 @@ class ForegroundPlaybackService : Service() {
                 putSkipAvailability(canSkipPrevious, canSkipNext)
             }
             if (isRunning) {
-                context.startService(intent)
-            } else if (canStartForegroundService(context)) {
+                playbackContext.startService(intent)
+            } else if (canStartForegroundService(playbackContext)) {
                 pendingForegroundStart = true
-                context.startForegroundService(intent)
+                playbackContext.startForegroundService(intent)
             }
         }
 
@@ -1157,24 +1165,31 @@ class ForegroundPlaybackService : Service() {
         }
 
         fun stop(context: Context) {
+            val playbackContext = context.playbackServiceContext()
             when (resolveForegroundServiceStopCommand(_sleepTimerState.value.isActive)) {
                 ForegroundServiceStopCommand.ClearNotificationKeepTimer -> {
-                    val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+                    val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                         action = PlaybackServiceConstants.ACTION_CLEAR_NOTIFICATION_KEEP_TIMER
                     }
-                    context.startService(intent)
+                    playbackContext.startService(intent)
                 }
                 ForegroundServiceStopCommand.StopService -> {
                     if (pendingForegroundStart) {
-                        val intent = Intent(context, ForegroundPlaybackService::class.java).apply {
+                        val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                             action = PlaybackServiceConstants.ACTION_STOP
                         }
-                        context.startForegroundService(intent)
+                        playbackContext.startForegroundService(intent)
                     } else {
-                        context.stopService(Intent(context, ForegroundPlaybackService::class.java))
+                        playbackContext.stopService(
+                            Intent(playbackContext, ForegroundPlaybackService::class.java)
+                        )
                     }
                 }
             }
+        }
+
+        private fun Context.playbackServiceContext(): Context {
+            return applicationContext.playbackAttributionContext()
         }
 
         private fun canStartForegroundService(context: Context): Boolean {

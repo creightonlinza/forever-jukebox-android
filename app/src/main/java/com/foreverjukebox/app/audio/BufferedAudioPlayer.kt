@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class BufferedAudioPlayer : JukeboxPlayer {
     private var sampleRate = 44100
@@ -20,6 +21,10 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private var durationSeconds: Double? = null
     private var jukeboxAudioMode = JukeboxAudioMode.Off
     private var duckingActive = false
+    private var cowbellSamplesLoaded = false
+    private val cowbellSampleIndexByName = NativeCowbellOverlayController.requiredSampleNames()
+        .withIndex()
+        .associate { (index, sampleName) -> sampleName to index }
 
     suspend fun loadFile(
         file: File,
@@ -175,6 +180,60 @@ class BufferedAudioPlayer : JukeboxPlayer {
         return durationSeconds
     }
 
+    fun preloadCowbellSamples(context: Context, sampleNames: List<String>) {
+        if (cowbellSamplesLoaded) return
+        if (durationSeconds == null) return
+        ensureNativePlayer()
+        if (nativeHandle == 0L) return
+        var loadedCount = 0
+        for (sampleName in sampleNames) {
+            val sampleIndex = cowbellSampleIndexByName[sampleName] ?: continue
+            val wav = runCatching {
+                context.assets.open("cowbell/sounds/$sampleName").use { input ->
+                    parsePcmWav(input.readBytes())
+                }
+            }.getOrNull() ?: continue
+            nativeLoadCowbellSample(
+                nativeHandle,
+                sampleIndex,
+                wav.data,
+                wav.sampleRate,
+                wav.channelCount
+            )
+            loadedCount += 1
+        }
+        cowbellSamplesLoaded = loadedCount == sampleNames.size
+    }
+
+    fun scheduleCowbellHit(
+        sampleName: String,
+        targetTimeSeconds: Double,
+        leftVolume: Float,
+        rightVolume: Float
+    ) {
+        if (nativeHandle == 0L || !cowbellSamplesLoaded) return
+        val sampleIndex = cowbellSampleIndexByName[sampleName] ?: return
+        nativeScheduleCowbellHit(
+            nativeHandle,
+            sampleIndex,
+            targetTimeSeconds,
+            leftVolume.coerceAtLeast(0.0f),
+            rightVolume.coerceAtLeast(0.0f)
+        )
+    }
+
+    fun cancelCowbellHits() {
+        if (nativeHandle != 0L) {
+            nativeCancelCowbellHits(nativeHandle)
+        }
+    }
+
+    fun cancelPendingCowbellHits() {
+        if (nativeHandle != 0L) {
+            nativeCancelPendingCowbellHits(nativeHandle)
+        }
+    }
+
     private fun ensureNativePlayer() {
         if (nativeHandle != 0L) return
         nativeHandle = nativeCreatePlayer(sampleRate, channelCount)
@@ -188,6 +247,57 @@ class BufferedAudioPlayer : JukeboxPlayer {
         if (nativeHandle == 0L) return
         nativeRelease(nativeHandle)
         nativeHandle = 0L
+        cowbellSamplesLoaded = false
+    }
+
+    private fun parsePcmWav(bytes: ByteArray): DecodedAudio {
+        require(bytes.size >= WAV_HEADER_MIN_BYTES) { "Invalid WAV" }
+        require(String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF") { "Invalid WAV RIFF header" }
+        require(String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE") { "Invalid WAV WAVE header" }
+        var offset = 12
+        var sampleRate: Int? = null
+        var channelCount: Int? = null
+        var data: ByteArray? = null
+        while (offset + 8 <= bytes.size) {
+            val chunkId = String(bytes, offset, 4, Charsets.US_ASCII)
+            val chunkSize = littleEndianInt(bytes, offset + 4)
+            val chunkDataOffset = offset + 8
+            if (chunkDataOffset + chunkSize > bytes.size) break
+            when (chunkId) {
+                "fmt " -> {
+                    val audioFormat = littleEndianShort(bytes, chunkDataOffset).toInt()
+                    val channels = littleEndianShort(bytes, chunkDataOffset + 2).toInt()
+                    val rate = littleEndianInt(bytes, chunkDataOffset + 4)
+                    val bitsPerSample = littleEndianShort(bytes, chunkDataOffset + 14).toInt()
+                    require(audioFormat == PCM_WAV_FORMAT) { "Unsupported WAV format" }
+                    require(bitsPerSample == PCM_WAV_BITS_PER_SAMPLE) { "Unsupported WAV depth" }
+                    sampleRate = rate
+                    channelCount = channels
+                }
+                "data" -> {
+                    data = bytes.copyOfRange(chunkDataOffset, chunkDataOffset + chunkSize)
+                }
+            }
+            offset = chunkDataOffset + chunkSize + (chunkSize % 2)
+        }
+        return DecodedAudio(
+            data = requireNotNull(data) { "Missing WAV data" },
+            sampleRate = requireNotNull(sampleRate) { "Missing WAV format" },
+            channelCount = requireNotNull(channelCount) { "Missing WAV channels" },
+            durationSeconds = 0.0
+        )
+    }
+
+    private fun littleEndianInt(bytes: ByteArray, offset: Int): Int {
+        return ByteBuffer.wrap(bytes, offset, Int.SIZE_BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .int
+    }
+
+    private fun littleEndianShort(bytes: ByteArray, offset: Int): Short {
+        return ByteBuffer.wrap(bytes, offset, Short.SIZE_BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .short
     }
 
     private fun decodeToPcm(
@@ -361,9 +471,29 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeSetJukeboxAudioMode(handle: Long, mode: Int)
     private external fun nativeGetPlaybackRate(handle: Long): Double
     private external fun nativeCloneAudioFrom(handle: Long, sourceHandle: Long): Boolean
+    private external fun nativeLoadCowbellSample(
+        handle: Long,
+        sampleIndex: Int,
+        data: ByteArray,
+        sampleRate: Int,
+        channelCount: Int
+    )
+    private external fun nativeScheduleCowbellHit(
+        handle: Long,
+        sampleIndex: Int,
+        targetTimeSeconds: Double,
+        leftVolume: Float,
+        rightVolume: Float
+    )
+    private external fun nativeCancelCowbellHits(handle: Long)
+    private external fun nativeCancelPendingCowbellHits(handle: Long)
     private external fun nativeRelease(handle: Long)
 
     companion object {
+        private const val WAV_HEADER_MIN_BYTES = 44
+        private const val PCM_WAV_FORMAT = 1
+        private const val PCM_WAV_BITS_PER_SAMPLE = 16
+
         init {
             System.loadLibrary("fj_oboe")
         }

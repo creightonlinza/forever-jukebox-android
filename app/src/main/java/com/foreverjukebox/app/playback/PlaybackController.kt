@@ -3,12 +3,18 @@ package com.foreverjukebox.app.playback
 import android.content.Context
 import android.os.SystemClock
 import com.foreverjukebox.app.audio.BufferedAudioPlayer
+import com.foreverjukebox.app.audio.BufferedAudioCowbellHitScheduler
+import com.foreverjukebox.app.audio.CowbellOverlayController
+import com.foreverjukebox.app.audio.NativeCowbellOverlayController
+import com.foreverjukebox.app.audio.NoOpCowbellOverlayController
 import com.foreverjukebox.app.autocanonizer.AutocanonizerController
 import com.foreverjukebox.app.autocanonizer.BufferedAutocanonizerPlayer
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.JukeboxEngineOptions
+import com.foreverjukebox.app.engine.QuantumBase
 import com.foreverjukebox.app.engine.RandomMode
 import com.foreverjukebox.app.engine.VisualizationData
+import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +28,7 @@ class PlaybackController {
     val autocanonizer = AutocanonizerController(autocanonizerPlayer, autocanonizerScope)
     private var audioFocusController: PlaybackAudioFocusController =
         NoOpPlaybackAudioFocusController
+    private var cowbellOverlay: CowbellOverlayController = NoOpCowbellOverlayController
     private var playbackStateChangedBroadcaster: (() -> Unit)? = null
 
     private var playTimerMs = 0L
@@ -29,6 +36,7 @@ class PlaybackController {
     private var transportState = TransportState.Stopped
     private var trackTitle: String? = null
     private var trackArtist: String? = null
+    private var duckingActive = false
 
     private enum class TransportState {
         Playing,
@@ -37,10 +45,13 @@ class PlaybackController {
     }
 
     fun attachAudioFocus(context: Context) {
-        val appContext = context.applicationContext
+        val appContext = context.applicationContext.playbackAttributionContext()
         playbackStateChangedBroadcaster = {
             broadcastLocalPlaybackStateChanged(appContext)
         }
+        cowbellOverlay = NativeCowbellOverlayController(
+            BufferedAudioCowbellHitScheduler(appContext, player)
+        )
         audioFocusController = AndroidPlaybackAudioFocusController(
             context = appContext,
             onDuckingChanged = ::setDucking,
@@ -53,8 +64,33 @@ class PlaybackController {
     }
 
     fun setDucking(active: Boolean) {
+        duckingActive = active
         player.setDucking(active)
         autocanonizer.setDucking(active)
+        cowbellOverlay.setVolume(if (active) DUCKED_VOLUME else NORMAL_VOLUME)
+    }
+
+    fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
+        player.setJukeboxAudioMode(mode)
+        cowbellOverlay.setEnabled(mode == JukeboxAudioMode.Cowbell)
+    }
+
+    fun setCowbellSectionStartBeatIndices(indices: Collection<Int>) {
+        cowbellOverlay.setSectionStartBeatIndices(indices)
+    }
+
+    fun handleCowbellBeatEnter(
+        beatIndex: Int,
+        beat: QuantumBase,
+        nextBeat: QuantumBase?,
+        playbackRate: Double
+    ) {
+        cowbellOverlay.handleBeatEnter(
+            beatIndex = beatIndex,
+            beat = beat,
+            nextBeat = nextBeat,
+            playbackRate = playbackRate
+        )
     }
 
     fun setTrackMeta(title: String?, artist: String?) {
@@ -77,7 +113,9 @@ class PlaybackController {
         }
         // Guard against any leftover gain shaping from autocanonizer paths.
         player.setGain(1.0)
+        cowbellOverlay.setVolume(if (duckingActive) DUCKED_VOLUME else NORMAL_VOLUME)
         if (resetFromStart) {
+            cowbellOverlay.cancelScheduledHits()
             engine.stopJukebox()
             engine.resetStats()
             playTimerMs = 0L
@@ -110,6 +148,7 @@ class PlaybackController {
     }
 
     fun pausePlayback() {
+        cowbellOverlay.cancelScheduledHits()
         if (transportState != TransportState.Playing) {
             return
         }
@@ -130,6 +169,7 @@ class PlaybackController {
     }
 
     fun stopPlayback() {
+        cowbellOverlay.cancelScheduledHits()
         if (transportState == TransportState.Stopped) {
             return
         }
@@ -152,11 +192,13 @@ class PlaybackController {
     }
 
     fun stopExternalPlayback() {
+        cowbellOverlay.cancelScheduledHits()
         markTransportStopped()
         audioFocusController.abandonAudioFocus()
     }
 
     fun pauseExternalPlayback() {
+        cowbellOverlay.cancelScheduledHits()
         markTransportPaused()
         audioFocusController.abandonAudioFocus()
     }
@@ -214,6 +256,7 @@ class PlaybackController {
         val beats = data?.beats ?: return false
         if (index !in beats.indices) return false
         val beat = beats[index]
+        cowbellOverlay.cancelScheduledHits()
         player.seek(beat.start)
         engine.seekToBeat(index)
         return true
@@ -225,9 +268,15 @@ class PlaybackController {
 
     fun release() {
         audioFocusController.abandonAudioFocus()
+        cowbellOverlay.release()
         autocanonizer.release()
         player.release()
         autocanonizerScope.cancel()
+    }
+
+    private companion object {
+        private const val NORMAL_VOLUME = 1.0
+        private const val DUCKED_VOLUME = 0.2
     }
 }
 

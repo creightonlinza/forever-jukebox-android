@@ -307,6 +307,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var castSelectionJob: Job? = null
     private var pendingDeepLinkUriString: String? = null
     private var savedPlaylistTracks: List<SavedPlaylistTrack> = emptyList()
+    private var lastCowbellBeatsPlayed = -1
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
@@ -619,10 +620,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         engine.onUpdate { engineState ->
-            if (state.value.playback.playMode == PlaybackMode.Autocanonizer) {
+            val currentPlayback = state.value.playback
+            if (currentPlayback.playMode == PlaybackMode.Autocanonizer) {
                 return@onUpdate
             }
             val currentBeatIndex = engineState.currentBeatIndex
+            if (
+                currentPlayback.jukeboxAudioMode == JukeboxAudioMode.Cowbell &&
+                !currentPlayback.isCasting &&
+                currentBeatIndex >= 0 &&
+                engineState.beatsPlayed != lastCowbellBeatsPlayed
+            ) {
+                lastCowbellBeatsPlayed = engineState.beatsPlayed
+                val beats = currentPlayback.vizData?.beats
+                val beat = beats?.getOrNull(currentBeatIndex)
+                if (beat != null) {
+                    controller.handleCowbellBeatEnter(
+                        beatIndex = currentBeatIndex,
+                        beat = beat,
+                        nextBeat = beats.getOrNull(currentBeatIndex + 1),
+                        playbackRate = controller.player.getPlaybackRate()
+                    )
+                }
+            }
             val lastJumpFrom = engineState.lastJumpFromIndex
             val jumpLine = if (engineState.lastJumped && lastJumpFrom != null) {
                 JumpLine(lastJumpFrom, currentBeatIndex, SystemClock.elapsedRealtime())
@@ -2087,6 +2107,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     controller.setTrackMeta(current.trackTitle, current.trackArtist)
                 }
                 val wasPaused = current.isPaused
+                if (!wasPaused) {
+                    lastCowbellBeatsPlayed = -1
+                }
                 val running = controller.playOrResumePlayback()
                 val paused = controller.isPaused()
                 playbackCoordinator.updateListenTimeDisplay()
@@ -2626,7 +2649,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (mode == PlaybackMode.Autocanonizer) {
-            controller.player.setJukeboxAudioMode(JukeboxAudioMode.Off)
+            controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
         }
         if (!current.isCasting) {
             val transportPlan = stopTransportForModeChange(
@@ -2643,6 +2666,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 controller.autocanonizer.clearSyncedAudio()
             }
         }
+        lastCowbellBeatsPlayed = -1
         playbackCoordinator.applyPlaybackMode(mode)
         _state.update {
             it.copy(
@@ -2674,7 +2698,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             castPlaybackCoordinator.requestCastStatus()
             return
         }
-        controller.player.setJukeboxAudioMode(mode)
+        lastCowbellBeatsPlayed = -1
+        controller.setJukeboxAudioMode(mode)
         if (current.isRunning || current.isPaused) {
             engine.syncToPlaybackPosition()
         }
@@ -2741,7 +2766,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val audioModeChanged = currentPlayback.playMode == PlaybackMode.Jukebox &&
                 currentPlayback.jukeboxAudioMode != requestedAudioMode
             if (audioModeChanged && !currentPlayback.isCasting) {
-                controller.player.setJukeboxAudioMode(requestedAudioMode)
+                lastCowbellBeatsPlayed = -1
+                controller.setJukeboxAudioMode(requestedAudioMode)
             }
             tuningCoordinator.applyTuning(
                 threshold = threshold,
@@ -2785,7 +2811,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val resetAudioMode = currentPlayback.playMode == PlaybackMode.Jukebox &&
                 currentPlayback.jukeboxAudioMode != JukeboxAudioMode.Off
             if (resetAudioMode && !currentPlayback.isCasting) {
-                controller.player.setJukeboxAudioMode(JukeboxAudioMode.Off)
+                lastCowbellBeatsPlayed = -1
+                controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
             }
             tuningCoordinator.resetTuningDefaults()
             if (resetAudioMode && !currentPlayback.isCasting &&
