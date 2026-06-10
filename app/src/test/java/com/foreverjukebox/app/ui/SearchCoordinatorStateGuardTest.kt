@@ -89,7 +89,7 @@ class SearchCoordinatorStateGuardTest {
                     searchState = searchState.copy(query = query)
                     currentState = currentState.copy(search = searchState)
                 },
-                logError = { _, _ -> Unit }
+                logError = { _, _ -> }
             )
 
             coordinator.runSpotifySearch("old query")

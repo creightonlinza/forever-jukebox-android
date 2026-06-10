@@ -7,7 +7,7 @@ class CastPlaybackCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val onCastUnavailable: () -> Unit,
-    private val onSyncCastNotification: (PlaybackState) -> Unit,
+    private val onSyncCastNotification: () -> Unit,
     private val castTrackLengthLimitErrorMessage: () -> String
 ) {
     fun resetStatusListener() {
@@ -43,10 +43,7 @@ class CastPlaybackCoordinator(
         if (baseUrl.isBlank()) {
             return
         }
-        val session = castController.getSession()
-        if (session == null) {
-            return
-        }
+        val session = castController.getSession() ?: return
         ensureCastStatusListener(session)
         val displayTitle = if (artist.isNullOrBlank()) {
             title?.takeIf { it.isNotBlank() } ?: "Unknown"
@@ -91,7 +88,7 @@ class CastPlaybackCoordinator(
                 )
             )
         }
-        onSyncCastNotification(getState().playback)
+        onSyncCastNotification()
         castController.loadTrack(
             session = session,
             baseUrl = baseUrl,
@@ -153,7 +150,7 @@ class CastPlaybackCoordinator(
                 reduced
             }
         }
-        onSyncCastNotification(getState().playback)
+        onSyncCastNotification()
     }
 
     private companion object {

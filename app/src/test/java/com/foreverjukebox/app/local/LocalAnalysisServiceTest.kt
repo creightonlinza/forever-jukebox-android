@@ -123,7 +123,7 @@ class LocalAnalysisServiceTest {
             analyzer = analyzer,
             modelExtractor = NoopModelProvider(),
             cacheDir = cacheDir,
-            cacheKeyResolver = LocalAnalysisCacheKeyResolver { sharedKey }
+            cacheKeyResolver = { sharedKey }
         )
 
         service.analyze("content://provider/audio/123", "Fixture Track").toList()

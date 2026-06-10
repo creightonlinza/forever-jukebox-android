@@ -47,8 +47,8 @@ B5:30:EB:FD:C1:7E:C2:D0:1A:2E:9A:9D:D9:DD:02:CA:5D:2F:E0:7A:E2:C6:E5:F8:45:E7:FF
 ./gradlew assembleDebug
 ```
 
-3. On first launch, choose Local or Server mode.
-4. If you choose Server mode, ensure your API/worker are running and set the API base URL (for example `http://10.0.2.2:8000` on the emulator).
+1. On first launch, choose Local or Server mode.
+2. If you choose Server mode, ensure your API/worker are running and set the API base URL (for example `http://10.0.2.2:8000` on the emulator).
 
 ## Local Mode Native Dependencies
 

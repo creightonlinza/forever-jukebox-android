@@ -12,6 +12,7 @@ enum class FavoriteSourceType {
     @SerialName("bandcamp")
     Bandcamp,
     @SerialName("upload")
+    @Suppress("unused")
     Upload
 }
 
@@ -24,12 +25,3 @@ data class FavoriteTrack(
     val sourceType: FavoriteSourceType? = null,
     val tuningParams: String? = null
 )
-
-fun favoriteSourceTypeFromProvider(provider: String?): FavoriteSourceType {
-    return when (sourceProviderFromRaw(provider)) {
-        SOURCE_PROVIDER_SOUNDCLOUD -> FavoriteSourceType.SoundCloud
-        SOURCE_PROVIDER_BANDCAMP -> FavoriteSourceType.Bandcamp
-        SOURCE_PROVIDER_UPLOAD -> FavoriteSourceType.Upload
-        else -> FavoriteSourceType.Youtube
-    }
-}

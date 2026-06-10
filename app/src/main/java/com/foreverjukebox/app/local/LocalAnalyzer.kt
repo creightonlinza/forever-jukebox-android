@@ -5,7 +5,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -16,7 +15,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.abs
 import kotlin.math.floor
-import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -114,7 +112,7 @@ class NativeLocalAnalyzer(
             frameSize = ESSENTIA_FRAME_SIZE,
             hopSize = ESSENTIA_HOP_SIZE,
             profile = essentiaProfile,
-            progressCallback = NativeAnalysisBridge.EssentiaProgressCallback { progress ->
+            progressCallback = { progress ->
                 val mapped = (progress.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 100)
                 if (mapped > essentiaProgressPercent) {
                     essentiaProgressPercent = mapped
@@ -139,7 +137,7 @@ class NativeLocalAnalyzer(
             samples = madmomSamples,
             sampleRate = madmomSampleRate,
             configJson = madmomBeatsPortConfigJson,
-            progressCallback = NativeAnalysisBridge.MadmomBeatsPortProgressCallback { stage, progress ->
+            progressCallback = { stage, progress ->
                 val mapped = mapMadmomStageProgress(stage, progress)
                 if (mapped > madmomProgressPercent) {
                     madmomProgressPercent = mapped
@@ -162,14 +160,10 @@ class NativeLocalAnalyzer(
         }
 
         val beatTimes = madmomBeatsPort.beatTimes.ifEmpty { listOf(0.0) }
-        val beatNumbers = if (madmomBeatsPort.beatNumbers.isNotEmpty()) {
-            madmomBeatsPort.beatNumbers
-        } else {
+        val beatNumbers = madmomBeatsPort.beatNumbers.ifEmpty {
             beatTimes.indices.map { (it % 4) + 1 }
         }
-        val beatConfidences = if (madmomBeatsPort.beatConfidences.isNotEmpty()) {
-            madmomBeatsPort.beatConfidences
-        } else {
+        val beatConfidences = madmomBeatsPort.beatConfidences.ifEmpty {
             beatTimes.map { 1.0 }
         }
 
@@ -444,7 +438,7 @@ class NativeLocalAnalyzer(
             val indices = mutableListOf<Int>()
             for (j in frameTimes.indices) {
                 val t = frameTimes[j]
-                if (t >= start && t < end) {
+                if (t in start..<end) {
                     indices += j
                 }
             }

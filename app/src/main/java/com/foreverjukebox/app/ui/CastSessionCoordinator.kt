@@ -1,10 +1,6 @@
 package com.foreverjukebox.app.ui
 
-import android.app.Application
 import com.foreverjukebox.app.playback.PlaybackController
-import com.google.android.gms.cast.framework.CastContext
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
 internal data class PreservedCastTrack(
     val jobId: String,
@@ -42,8 +38,6 @@ internal fun stateAfterCastDisconnect(state: UiState): UiState {
 }
 
 class CastSessionCoordinator(
-    private val application: Application,
-    private val scope: CoroutineScope,
     private val controller: PlaybackController,
     private val castPlaybackCoordinator: CastPlaybackCoordinator,
     private val playbackCoordinator: PlaybackCoordinator,
@@ -51,50 +45,8 @@ class CastSessionCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
-    private val notifyCastUnavailable: () -> Unit,
-    private val setPlaybackMode: (PlaybackMode) -> Unit,
-    private val syncCastNotification: (PlaybackState) -> Unit,
-    private val showToast: suspend (String) -> Unit
+    private val syncCastNotification: () -> Unit
 ) {
-    fun castCurrentTrack() {
-        if (!getState().castEnabled) {
-            notifyCastUnavailable()
-            return
-        }
-        if (getState().playback.playMode == PlaybackMode.Autocanonizer) {
-            setPlaybackMode(PlaybackMode.Jukebox)
-        }
-        val baseUrl = getState().baseUrl.trim()
-        if (baseUrl.isBlank()) {
-            scope.launch { showToast("Set a base URL before casting.") }
-            return
-        }
-        val playback = getState().playback
-        val jobId = playback.lastJobId
-        if (jobId.isNullOrBlank()) {
-            scope.launch { showToast("Load a track before casting.") }
-            return
-        }
-        val castContext = try {
-            CastContext.getSharedInstance(application)
-        } catch (_: Exception) {
-            scope.launch { showToast("Cast is unavailable on this device.") }
-            return
-        }
-        val session = castContext.sessionManager.currentCastSession
-        if (session == null) {
-            scope.launch { showToast("Connect to a Cast device first.") }
-            return
-        }
-        castPlaybackCoordinator.castTrackId(
-            jobId = jobId,
-            title = playback.trackTitle,
-            artist = playback.trackArtist,
-            youtubeId = playback.lastYouTubeId,
-            tuningParams = playbackCoordinator.buildTuningParamsString()
-        )
-    }
-
     fun setCastingConnected(isConnected: Boolean, deviceName: String? = null) {
         if (isConnected) {
             handleCastingConnected(deviceName)
@@ -130,7 +82,7 @@ class CastSessionCoordinator(
             }
             castPlaybackCoordinator.resetStatusListener()
             castPlaybackCoordinator.requestCastStatus()
-            syncCastNotification(getState().playback)
+            syncCastNotification()
             return
         }
 

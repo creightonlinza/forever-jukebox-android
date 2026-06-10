@@ -284,7 +284,6 @@ object PlaybackControllerHolder {
     @Volatile
     private var controller: PlaybackController? = null
 
-    @Suppress("UNUSED_PARAMETER")
     fun get(context: Context): PlaybackController {
         return controller ?: synchronized(this) {
             controller ?: PlaybackController().also {

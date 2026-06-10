@@ -673,25 +673,34 @@ class ForegroundPlaybackService : Service() {
 
         val notification: Notification = builder.build()
         if (hasStartedForeground) {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(PlaybackServiceConstants.NOTIFICATION_ID, notification)
         } else {
             try {
                 startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
                 hasStartedForeground = true
-            } catch (error: ForegroundServiceStartNotAllowedException) {
-                // Android can reject entering foreground if the app is background-restricted.
-                // Avoid crashing the process; drop this notification update.
-                Log.w(
-                    TAG,
-                    "Foreground start denied for playback notification update.",
-                    error
-                )
-                activeNotificationState = null
-                hasStartedForeground = false
-                stopSelf()
+            } catch (error: IllegalStateException) {
+                if (isForegroundStartDenied(error)) {
+                    // Android can reject entering foreground if the app is background-restricted.
+                    // Avoid crashing the process; drop this notification update.
+                    Log.w(
+                        TAG,
+                        "Foreground start denied for playback notification update.",
+                        error
+                    )
+                    activeNotificationState = null
+                    hasStartedForeground = false
+                    stopSelf()
+                } else {
+                    throw error
+                }
             }
         }
+    }
+
+    private fun isForegroundStartDenied(error: IllegalStateException): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            error is ForegroundServiceStartNotAllowedException
     }
 
     private fun tintedIcon(resId: Int, color: Int): IconCompat {
@@ -907,7 +916,7 @@ class ForegroundPlaybackService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             hasStartedForeground = false
         } else {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             manager.cancel(PlaybackServiceConstants.NOTIFICATION_ID)
         }
         mediaSession.isActive = false
@@ -1017,7 +1026,7 @@ class ForegroundPlaybackService : Service() {
     }
 
     private fun createChannel() {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val existing = manager.getNotificationChannel(PlaybackServiceConstants.CHANNEL_ID)
         if (existing != null) return
         val channel = NotificationChannel(

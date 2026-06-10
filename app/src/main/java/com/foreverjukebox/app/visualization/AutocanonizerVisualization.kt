@@ -435,8 +435,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBeatTiles(
         val topRightX = if (nextRect != null) max(nextRect.x, rect.x + rect.width) else rect.x + rect.width
         val nextTop = if (nextRect != null) minOf(nextRect.y, rect.y + rect.height) else rect.y
 
-        val overrideColor = tileColorOverrides[i]
-        val color = when (overrideColor) {
+        val color = when (val overrideColor = tileColorOverrides[i]) {
             AutocanonizerController.PRIMARY_TILE_COLOR_HEX -> Color(0xFF4F8FFF)
             AutocanonizerController.OTHER_TILE_COLOR_HEX -> Color(0xFF10DF00)
             null -> parseColor(beats[i].colorHex)

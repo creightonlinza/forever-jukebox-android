@@ -378,8 +378,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE
     )
     private val castSessionCoordinator = CastSessionCoordinator(
-        application = getApplication(),
-        scope = viewModelScope,
         controller = controller,
         castPlaybackCoordinator = castPlaybackCoordinator,
         playbackCoordinator = playbackCoordinator,
@@ -387,10 +385,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         applyActiveTab = ::applyActiveTab,
-        notifyCastUnavailable = ::notifyCastUnavailable,
-        setPlaybackMode = ::setPlaybackMode,
-        syncCastNotification = ::syncCastNotification,
-        showToast = ::showToast
+        syncCastNotification = ::syncCastNotification
     )
     private val listenLinkCoordinator = ListenLinkCoordinator(
         buildTuningParamsString = playbackCoordinator::buildTuningParamsString,
@@ -442,7 +437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             addAction(ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN)
         }
         ContextCompat.registerReceiver(
-            getApplication<Application>(),
+            getApplication(),
             playbackServiceEventReceiver,
             playbackServiceEvents,
             ContextCompat.RECEIVER_NOT_EXPORTED
@@ -736,7 +731,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         if (state.value.playback.isCasting) {
-            syncCastNotification(state.value.playback)
+            syncCastNotification()
         } else {
             syncPlaybackServiceSession()
         }
@@ -890,8 +885,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         applyActiveTab(resolvedTab, recordHistory = true)
     }
-
-    fun canNavigateBack(): Boolean = tabHistory.isNotEmpty()
 
     fun navigateBack(): Boolean {
         if (tabHistory.isEmpty()) return false
@@ -1141,15 +1134,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         maybeSelectPlaylistTrack(currentPlaylistTrackOrNull())
     }
 
-    private fun resolveTrackMeta(trackId: String): Pair<String?, String?> {
-        val meta = resolveTrackMeta(
-            trackId = trackId,
-            search = state.value.search,
-            favorites = state.value.favorites
-        )
-        return meta.title to meta.artist
-    }
-
     private fun playlistTrackForServerTrack(
         trackId: String,
         title: String?,
@@ -1268,7 +1252,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val currentTrackId = playback.shareTrackIdOrNull() ?: return FavoriteToggleResult.NoTrack
         val currentCanonicalId =
             canonicalTrackId(currentTrackId) ?: return FavoriteToggleResult.NoTrack
-        val currentId = currentCanonicalId
         if (shouldBlockListenFavoriteToggle(currentState)) {
             return FavoriteToggleResult.BlockedInFlight
         }
@@ -1293,7 +1276,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
                 val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "Unknown"
                 val newFavorite = FavoriteTrack(
-                    uniqueSongId = currentId,
+                    uniqueSongId = currentCanonicalId,
                     title = title,
                     artist = artist,
                     duration = playback.trackDurationSeconds,
@@ -1519,11 +1502,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@launchCastSelection
                     }
                 } catch (_: IOException) {
-                    Unit
                 } catch (_: IllegalArgumentException) {
-                    Unit
                 } catch (_: IllegalStateException) {
-                    Unit
                 }
                 val resolvedJobId = queueYoutubeAnalysisForCast(
                     youtubeId = youtubeId,
@@ -1747,11 +1727,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             return@launchCastSelection
                         }
                     } catch (_: IOException) {
-                        Unit
                     } catch (_: IllegalArgumentException) {
-                        Unit
                     } catch (_: IllegalStateException) {
-                        Unit
                     }
                     val resolvedJobId = queueYoutubeAnalysisForCast(
                         youtubeId = normalizedSourceId,
@@ -2094,7 +2071,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
-        syncCastNotification(state.value.playback)
+        syncCastNotification()
     }
 
     private fun startOrResumeJukeboxPlayback(current: PlaybackState) {
@@ -2283,10 +2260,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    fun castCurrentTrack() {
-        castSessionCoordinator.castCurrentTrack()
-    }
-
     fun setCastingConnected(isConnected: Boolean, deviceName: String? = null) {
         castSessionCoordinator.setCastingConnected(isConnected, deviceName)
     }
@@ -2440,12 +2413,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             throw cancel
         } catch (error: HttpStatusException) {
             handleDeleteCurrentJobFailure(error, jobId, adminKey)
+            false
         } catch (error: IOException) {
             handleDeleteCurrentJobFailure(error, jobId, adminKey)
+            false
         } catch (error: IllegalArgumentException) {
             handleDeleteCurrentJobFailure(error, jobId, adminKey)
+            false
         } catch (error: IllegalStateException) {
             handleDeleteCurrentJobFailure(error, jobId, adminKey)
+            false
         } finally {
             updatePlaybackState { it.copy(deleteInFlight = false) }
         }
@@ -2455,12 +2432,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         error: Exception,
         jobId: String,
         adminKey: String
-    ): Boolean {
+    ) {
         Log.e(TAG, "Failed to delete current job", error)
         if (adminKey.isBlank()) {
             playbackCoordinator.markDeleteEligibilityFailed(jobId)
         }
-        return false
     }
 
     fun dismissTrackLengthLimitErrorDialog() {
@@ -2630,11 +2606,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refreshPlaybackFromController() {
-        playbackCoordinator.restorePlaybackState()
-        playbackCoordinator.updateListenTimeDisplay()
-    }
-
     fun openFullscreenVisualization() {
         _state.update(::stateAfterFullscreenVisualizationOpen)
     }
@@ -2677,46 +2648,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         if (current.isCasting) {
-            syncCastNotification(state.value.playback)
+            syncCastNotification()
         } else {
             syncPlaybackServiceSession()
         }
-    }
-
-    fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
-        val current = state.value.playback
-        if (current.playMode != PlaybackMode.Jukebox) {
-            return
-        }
-        if (current.jukeboxAudioMode == mode) {
-            return
-        }
-        if (current.isCasting) {
-            castPlaybackCoordinator.sendCastTuningParams(
-                TuningParamsCodec.buildAudioModeParam(mode)
-            )
-            castPlaybackCoordinator.requestCastStatus()
-            return
-        }
-        lastCowbellBeatsPlayed = -1
-        controller.setJukeboxAudioMode(mode)
-        if (current.isRunning || current.isPaused) {
-            engine.syncToPlaybackPosition()
-        }
-        _state.update {
-            it.copy(
-                playback = it.playback.copy(
-                    jukeboxAudioMode = mode,
-                    playTitle = buildPlaybackTitle(
-                        title = it.playback.trackTitle,
-                        artist = it.playback.trackArtist,
-                        playMode = it.playback.playMode,
-                        audioMode = mode
-                    )
-                )
-            )
-        }
-        syncPlaybackServiceSession()
     }
 
     fun setCanonizerFinishOutSong(enabled: Boolean) {
@@ -2994,8 +2929,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    private fun syncCastNotification(playback: PlaybackState) {
+    private fun syncCastNotification() {
         syncPlaybackServiceSession()
     }
 
