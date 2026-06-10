@@ -1,9 +1,10 @@
 package com.foreverjukebox.app.ui
 
 private val currentWhatsNewBullets = listOf(
+    "I got a fever, and the only prescription is More Cowbell (audio mode).",
     "Favorites search and sorting added, with maximum saved favorites bumped to 150 tracks.",
     "A few more Audio Mode options introduced: 8-bit, Underwater, Cathedral.",
-    "Misc fixes and improvements.",
+    "Misc fixes and under the hood improvements.",
     "Please report any bugs to GitHub/Reddit/Discord."
 )
 
