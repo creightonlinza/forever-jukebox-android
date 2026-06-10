@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.AppMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -65,6 +66,52 @@ class PlaybackUiPolicyTest {
         assertTrue(PlaybackState(isCastLoading = true).isTrackLoading())
         assertTrue(PlaybackState(castPlaybackState = "loading").isTrackLoading())
         assertFalse(PlaybackState().isTrackLoading())
+    }
+
+    @Test
+    fun loadingTrackMetadataUsesTitleAndArtist() {
+        val metadata = resolveLoadingTrackMetadata(
+            playback = PlaybackState(
+                trackTitle = " Track ",
+                trackArtist = " Artist "
+            ),
+            localSelectedFileName = null
+        )
+
+        assertEquals(LoadingTrackMetadata("Track", "Artist"), metadata)
+    }
+
+    @Test
+    fun loadingTrackMetadataShowsTitleWithoutArtist() {
+        val metadata = resolveLoadingTrackMetadata(
+            playback = PlaybackState(trackTitle = "Track"),
+            localSelectedFileName = null
+        )
+
+        assertEquals(LoadingTrackMetadata("Track", null), metadata)
+    }
+
+    @Test
+    fun loadingTrackMetadataSuppressesBlankMetadata() {
+        val metadata = resolveLoadingTrackMetadata(
+            playback = PlaybackState(
+                trackTitle = " ",
+                trackArtist = " "
+            ),
+            localSelectedFileName = ""
+        )
+
+        assertNull(metadata)
+    }
+
+    @Test
+    fun loadingTrackMetadataFallsBackToLocalFileName() {
+        val metadata = resolveLoadingTrackMetadata(
+            playback = PlaybackState(),
+            localSelectedFileName = " local.mp3 "
+        )
+
+        assertEquals(LoadingTrackMetadata("local.mp3", null), metadata)
     }
 
     @Test

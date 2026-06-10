@@ -216,6 +216,11 @@ data class TrackMetaJson(
     val duration: Double? = null
 )
 
+data class LoadingTrackMetadata(
+    val title: String,
+    val artist: String?
+)
+
 val serverModeTabs: List<TabId> = listOf(TabId.Top, TabId.Search, TabId.Play, TabId.Faq)
 val localModeTabs: List<TabId> = listOf(TabId.Input, TabId.Play, TabId.Faq)
 val defaultOnboardingMode: AppMode = AppMode.Local
@@ -291,6 +296,19 @@ fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating
 
 fun PlaybackState.isTrackLoading(): Boolean {
     return isLoading() || isCastLoading || castPlaybackState == "loading"
+}
+
+fun resolveLoadingTrackMetadata(
+    playback: PlaybackState,
+    localSelectedFileName: String?
+): LoadingTrackMetadata? {
+    val title = playback.trackTitle.takeIfNotBlank()
+        ?: localSelectedFileName.takeIfNotBlank()
+        ?: return null
+    return LoadingTrackMetadata(
+        title = title,
+        artist = playback.trackArtist.takeIfNotBlank()
+    )
 }
 
 fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
@@ -446,6 +464,8 @@ fun stateAfterLocalAnalysisCancel(current: UiState): UiState {
         localAnalysisJsonPath = null
     )
 }
+
+private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
 fun isValidBaseUrl(value: String): Boolean {
     val trimmed = value.trim()

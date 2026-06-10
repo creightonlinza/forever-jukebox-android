@@ -52,6 +52,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -896,74 +898,105 @@ internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMod
 internal fun LoadingStatus(
     progress: Int?,
     label: String?,
+    trackTitle: String? = null,
+    trackArtist: String? = null,
     playAfterLoaded: Boolean = false,
     showPlayAfterLoaded: Boolean = false,
     onPlayAfterLoadedChange: (Boolean) -> Unit = {},
     showCancel: Boolean = false,
     onCancel: () -> Unit = {}
 ) {
+    val displayTitle = trackTitle?.trim()?.takeIf { it.isNotBlank() }
+    val displayArtist = trackArtist?.trim()?.takeIf { it.isNotBlank() }
+    val trackLine = when {
+        displayTitle == null -> null
+        displayArtist == null -> displayTitle
+        else -> "$displayTitle - $displayArtist"
+    }
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier.size(72.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            val themeTokens = LocalThemeTokens.current
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = themeTokens.onBackground,
-                trackColor = themeTokens.onBackground.copy(alpha = 0.2f),
-                strokeWidth = 2.dp
-            )
-        }
-        if (progress != null) {
-            Text(
-                text = "${progress}%",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-        }
-        if (!label.isNullOrBlank()) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (showPlayAfterLoaded) {
-            Row(
-                modifier = Modifier.padding(top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier.size(72.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Checkbox(
-                    checked = playAfterLoaded,
-                    onCheckedChange = onPlayAfterLoadedChange
+                val themeTokens = LocalThemeTokens.current
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = themeTokens.onBackground,
+                    trackColor = themeTokens.onBackground.copy(alpha = 0.2f),
+                    strokeWidth = 2.dp
                 )
+            }
+            if (progress != null) {
                 Text(
-                    text = "Play when ready",
+                    text = "${progress}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            if (!label.isNullOrBlank()) {
+                Text(
+                    text = label,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-        if (showCancel) {
-            OutlinedButton(
-                onClick = onCancel,
-                colors = pillOutlinedButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .height(SmallButtonHeight)
-            ) {
-                Text("Cancel Analysis", style = MaterialTheme.typography.labelSmall)
+        Spacer(modifier = Modifier.weight(1f))
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (trackLine != null) {
+                Text(
+                    text = trackLine,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                )
+            }
+            if (showPlayAfterLoaded) {
+                Row(
+                    modifier = Modifier.padding(top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = playAfterLoaded,
+                        onCheckedChange = onPlayAfterLoadedChange
+                    )
+                    Text(
+                        text = "Play when ready",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (showCancel) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .height(SmallButtonHeight)
+                ) {
+                    Text("Cancel Analysis", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
+        Spacer(modifier = Modifier.weight(1f))
     }
 }
 

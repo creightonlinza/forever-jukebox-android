@@ -38,6 +38,7 @@ class LocalAnalysisCoordinator(
     fun startLocalAnalysis(
         uri: Uri,
         displayName: String?,
+        initialArtist: String? = null,
         playAfterLoaded: Boolean = false
     ) {
         val state = getState()
@@ -50,6 +51,7 @@ class LocalAnalysisCoordinator(
             cancelLocalAnalysisInternal(showCancelledMessage = false)
         }
         val resolvedName = displayName?.takeIf { it.isNotBlank() } ?: "Local Track"
+        val resolvedArtist = initialArtist?.trim()?.takeIf { it.isNotBlank() }
         updateState {
             it.copy(
                 localSelectedFileName = resolvedName,
@@ -58,10 +60,14 @@ class LocalAnalysisCoordinator(
             )
         }
         playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
-        if (playAfterLoaded) {
-            updateState {
-                it.copy(playback = it.playback.copy(playAfterLoaded = true))
-            }
+        updateState {
+            it.copy(
+                playback = it.playback.copy(
+                    trackTitle = resolvedName,
+                    trackArtist = resolvedArtist,
+                    playAfterLoaded = playAfterLoaded
+                )
+            )
         }
         applyActiveTab(TabId.Play, true)
         playbackCoordinator.setAnalysisQueued(1, "Processing audio")
@@ -143,6 +149,7 @@ class LocalAnalysisCoordinator(
             startLocalAnalysis(
                 uri = sourceUri.toUri(),
                 displayName = cachedTrack.title,
+                initialArtist = cachedTrack.artist,
                 playAfterLoaded = playAfterLoaded
             )
         }
