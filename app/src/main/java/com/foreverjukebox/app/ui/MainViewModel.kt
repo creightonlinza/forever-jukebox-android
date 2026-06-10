@@ -2032,6 +2032,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePlayback() {
         val current = state.value.playback
         if (blockPlaybackChangeWhileLoading(showToast = false)) return
+        if (shouldRetryFailedLoadFromTransport(state.value)) {
+            retryFailedLoad()
+            return
+        }
         if (current.isCasting) {
             toggleCastPlayback(current)
             return

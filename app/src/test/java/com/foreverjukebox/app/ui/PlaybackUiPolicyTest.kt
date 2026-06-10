@@ -95,6 +95,82 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun failedServerLoadCanRetryFromTransportWithJobId() {
+        val state = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(
+                analysisErrorMessage = "Loading failed.",
+                lastJobId = "job_123"
+            )
+        )
+
+        assertTrue(shouldRetryFailedLoadFromTransport(state))
+    }
+
+    @Test
+    fun failedServerLoadCanRetryFromTransportWithYoutubeId() {
+        val state = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(
+                analysisErrorMessage = "Loading failed.",
+                lastYouTubeId = "dQw4w9WgXcQ"
+            )
+        )
+
+        assertTrue(shouldRetryFailedLoadFromTransport(state))
+    }
+
+    @Test
+    fun localLoadErrorDoesNotRetryFromTransport() {
+        val state = UiState(
+            appMode = AppMode.Local,
+            playback = PlaybackState(
+                analysisErrorMessage = "Local analysis failed.",
+                lastJobId = "job_123"
+            )
+        )
+
+        assertFalse(shouldRetryFailedLoadFromTransport(state))
+    }
+
+    @Test
+    fun loadingStatesDoNotRetryFromTransport() {
+        val baseState = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(
+                analysisErrorMessage = "Loading failed.",
+                lastJobId = "job_123"
+            )
+        )
+
+        assertFalse(
+            shouldRetryFailedLoadFromTransport(
+                baseState.copy(playback = baseState.playback.copy(analysisInFlight = true))
+            )
+        )
+        assertFalse(
+            shouldRetryFailedLoadFromTransport(
+                baseState.copy(playback = baseState.playback.copy(isCastLoading = true))
+            )
+        )
+        assertFalse(
+            shouldRetryFailedLoadFromTransport(
+                baseState.copy(playback = baseState.playback.copy(castPlaybackState = "loading"))
+            )
+        )
+    }
+
+    @Test
+    fun missingTrackIdDoesNotRetryFromTransport() {
+        val state = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(analysisErrorMessage = "Loading failed.")
+        )
+
+        assertFalse(shouldRetryFailedLoadFromTransport(state))
+    }
+
+    @Test
     fun playbackChangeLoadingLockBlocksEveryLoadingPhase() {
         assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisInFlight = true)))
         assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisCalculating = true)))

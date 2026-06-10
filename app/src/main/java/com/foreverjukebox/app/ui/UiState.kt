@@ -293,6 +293,13 @@ fun PlaybackState.isTrackLoading(): Boolean {
     return isLoading() || isCastLoading || castPlaybackState == "loading"
 }
 
+fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
+    return state.appMode == AppMode.Server &&
+        !state.playback.analysisErrorMessage.isNullOrBlank() &&
+        !state.playback.isTrackLoading() &&
+        !state.playback.shareTrackIdOrNull().isNullOrBlank()
+}
+
 internal fun shouldBlockPlaybackChangeWhileLoading(playback: PlaybackState): Boolean {
     return playback.isTrackLoading()
 }
