@@ -1374,7 +1374,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         serverTrackLoadCoordinator.launch {
             if (artist.isNotBlank()) {
                 try {
-                    val response = api.getJobByTrack(baseUrl, name, artist)
+                    val response = retryTransientServerLoad {
+                        api.getJobByTrack(baseUrl, name, artist)
+                    }
                     if (shouldReuseLookupJob(response)) {
                         val jobId = response!!.id!!
                         val trackId = trackIdFromAnalysis(response) ?: buildJobTrackId(jobId)
@@ -1483,7 +1485,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launchCastSelection
                 }
                 try {
-                    val existing = api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
+                    val existing = retryTransientServerLoad {
+                        api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
+                    }
                     val resolvedJobId = existing?.id
                     if (!resolvedJobId.isNullOrBlank()) {
                         castPlaybackCoordinator.castTrackId(
@@ -1539,16 +1543,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = null,
             failureLogMessage = "Failed to start YouTube analysis"
         ) {
-            val existing = api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
+            val existing = retryTransientServerLoad {
+                api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
+            }
             if (existing != null) {
                 return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(existing)
             }
-            val response = api.startYoutubeAnalysis(
-                baseUrl,
-                trackId,
-                resolvedTitle,
-                resolvedArtist
-            )
+            val response = retryTransientServerLoad {
+                api.startYoutubeAnalysis(
+                    baseUrl,
+                    trackId,
+                    resolvedTitle,
+                    resolvedArtist
+                )
+            }
             if (response.status == "failed") {
                 playbackCoordinator.setAnalysisError(
                     ErrorDisplay.format(
@@ -1707,7 +1715,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (provider == SOURCE_PROVIDER_YOUTUBE) {
                     try {
-                        val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                        val existing = retryTransientServerLoad {
+                            api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                        }
                         val resolvedJobId = existing?.id
                         if (!resolvedJobId.isNullOrBlank()) {
                             castPlaybackCoordinator.castTrackId(
@@ -1749,7 +1759,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 try {
-                    val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                    val existing = retryTransientServerLoad {
+                        api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                    }
                     val resolvedJobId = existing?.id
                     if (resolvedJobId.isNullOrBlank()) {
                         showToast("Unable to queue this track for casting.")
@@ -1798,19 +1810,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = null,
             failureLogMessage = "Failed to load track by source"
         ) {
-            val existing = api.getJobBySource(baseUrl, provider, normalizedSourceId)
+            val existing = retryTransientServerLoad {
+                api.getJobBySource(baseUrl, provider, normalizedSourceId)
+            }
             if (existing != null) {
                 return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(existing)
             }
             if (provider != SOURCE_PROVIDER_YOUTUBE) {
                 return@launchServerTrackLoadWithCache false
             }
-            val started = api.startYoutubeAnalysis(
-                baseUrl = baseUrl,
-                youtubeId = normalizedSourceId,
-                title = resolvedTitle,
-                artist = resolvedArtist
-            )
+            val started = retryTransientServerLoad {
+                api.startYoutubeAnalysis(
+                    baseUrl = baseUrl,
+                    youtubeId = normalizedSourceId,
+                    title = resolvedTitle,
+                    artist = resolvedArtist
+                )
+            }
             if (started.status == "failed") {
                 playbackCoordinator.setAnalysisError(
                     ErrorDisplay.format(
@@ -1896,7 +1912,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = normalizedJobId,
             failureLogMessage = "Failed to load track by job id"
         ) {
-            val response = api.getAnalysis(baseUrl, normalizedJobId)
+            val response = retryTransientServerLoad {
+                api.getAnalysis(baseUrl, normalizedJobId)
+            }
             serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = normalizedJobId)
         }
     }
@@ -2304,12 +2322,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return null
         }
         return try {
-            val started = api.startYoutubeAnalysis(
-                baseUrl = normalizedBaseUrl,
-                youtubeId = youtubeId,
-                title = title,
-                artist = artist
-            )
+            val started = retryTransientServerLoad {
+                api.startYoutubeAnalysis(
+                    baseUrl = normalizedBaseUrl,
+                    youtubeId = youtubeId,
+                    title = title,
+                    artist = artist
+                )
+            }
             if (started.status == "failed") {
                 showToast(
                     ErrorDisplay.format(
@@ -2862,7 +2882,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playback.analysisMessage ?: "Resuming load..."
             )
             try {
-                val response = api.getAnalysis(baseUrl, jobId)
+                val response = retryTransientServerLoad {
+                    api.getAnalysis(baseUrl, jobId)
+                }
                 val handled = serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = jobId)
                 if (!handled) {
                     playbackCoordinator.setAnalysisError("Loading failed.")

@@ -328,7 +328,9 @@ class PlaybackCoordinator(
         setAnalysisProgress(0, "Loading audio")
         val target = audioFile(jobId)
         try {
-            api.fetchAudioToFile(baseUrl, jobId, target)
+            retryTransientServerLoad {
+                api.fetchAudioToFile(baseUrl, jobId, target)
+            }
             if (!isActiveJobId(jobId)) {
                 return false
             }
@@ -917,7 +919,9 @@ class PlaybackCoordinator(
             if (!isActiveJobId(jobId)) {
                 return
             }
-            val response = api.getAnalysis(baseUrl, jobId)
+            val response = retryTransientServerLoad {
+                api.getAnalysis(baseUrl, jobId)
+            }
             if (!isActiveJobId(jobId)) {
                 return
             }
