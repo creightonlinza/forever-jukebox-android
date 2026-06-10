@@ -109,10 +109,12 @@ class TuningCoordinatorCastPolicyTest {
         val eightBit = buildAudioOnlyCastUpdate(current, JukeboxAudioMode.EightBit)
         val underwater = buildAudioOnlyCastUpdate(current, JukeboxAudioMode.Underwater)
         val cathedral = buildAudioOnlyCastUpdate(current, JukeboxAudioMode.Cathedral)
+        val cowbell = buildAudioOnlyCastUpdate(current, JukeboxAudioMode.Cowbell)
 
         assertEquals("am=eight_bit", eightBit.castParams)
         assertEquals("am=underwater", underwater.castParams)
         assertEquals("am=cathedral", cathedral.castParams)
+        assertEquals("am=cowbell", cowbell.castParams)
     }
 
     @Test

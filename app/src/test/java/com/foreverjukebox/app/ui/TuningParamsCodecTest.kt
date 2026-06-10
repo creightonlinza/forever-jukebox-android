@@ -80,6 +80,10 @@ class TuningParamsCodecTest {
         assertEquals(JukeboxAudioMode.EightBit, TuningParamsCodec.parse("am=eight_bit")?.audioMode)
         assertEquals(JukeboxAudioMode.Underwater, TuningParamsCodec.parse("am=underwater")?.audioMode)
         assertEquals(JukeboxAudioMode.Cathedral, TuningParamsCodec.parse("am=cathedral")?.audioMode)
+        assertEquals(
+            JukeboxAudioMode.Cowbell,
+            TuningParamsCodec.parse("am=cowbell")?.audioMode
+        )
     }
 
     @Test
@@ -93,6 +97,7 @@ class TuningParamsCodecTest {
         assertEquals(6, JukeboxAudioMode.EightBit.nativeModeCode)
         assertEquals(7, JukeboxAudioMode.Underwater.nativeModeCode)
         assertEquals(8, JukeboxAudioMode.Cathedral.nativeModeCode)
+        assertEquals(9, JukeboxAudioMode.Cowbell.nativeModeCode)
     }
 
     @Test
@@ -286,6 +291,10 @@ class TuningParamsCodecTest {
         assertEquals(
             "am=cathedral",
             TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Cathedral)
+        )
+        assertEquals(
+            "am=cowbell",
+            TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Cowbell)
         )
     }
 
