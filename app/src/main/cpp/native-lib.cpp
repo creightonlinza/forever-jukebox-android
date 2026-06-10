@@ -31,6 +31,7 @@ constexpr int32_t kBitcrusherLevels = 1 << kEightBitDepth;
 constexpr float kCathedralReverbSeconds = 4.75f;
 constexpr float kCathedralReverbDecay = 2.5f;
 constexpr int32_t kCathedralTapCount = 64;
+constexpr int32_t kCowbellSampleCount = 19;
 
 enum class AudioMode {
     Off = 0,
@@ -56,6 +57,26 @@ struct AudioModeSettings {
     float reverbMix = 0.0f;
     bool cathedralReverb = false;
     bool pan = false;
+};
+
+struct CowbellSample {
+    std::vector<int16_t> data;
+    int32_t sampleRate = 44100;
+    int32_t channelCount = 2;
+
+    int64_t frameCount() const {
+        if (channelCount <= 0) return 0;
+        return static_cast<int64_t>(data.size() / static_cast<size_t>(channelCount));
+    }
+};
+
+struct CowbellHit {
+    int32_t sampleIndex = -1;
+    double targetSourceFrame = 0.0;
+    double sampleFrame = 0.0;
+    float leftVolume = 0.0f;
+    float rightVolume = 0.0f;
+    bool active = false;
 };
 
 AudioModeSettings settingsForMode(int32_t mode) {
@@ -459,6 +480,7 @@ public:
         mJumpAtSourceFrame.store(0.0);
         mJumpToFrame.store(0.0);
         mHasJump.store(false);
+        cancelCowbellHits();
         clearAnchorJump();
         resetDspState();
         mIsPlaying.store(false);
@@ -471,6 +493,7 @@ public:
             mEightBitAudioData = renderEightBitPcm(mAudioData, mSampleRate, mChannelCount);
             mTotalFrames =
                 static_cast<int64_t>(mAudioData.size() / static_cast<size_t>(mChannelCount));
+            mCowbellHits.clear();
         }
         mReadFrame.store(0.0);
         mAudioFrame.store(0);
@@ -516,7 +539,66 @@ public:
         const int64_t frame = static_cast<int64_t>(seconds * static_cast<double>(mSampleRate));
         mReadFrame.store(frame < 0 ? 0.0 : static_cast<double>(frame));
         mHasJump.store(false);
+        cancelCowbellHits();
         resetDspState();
+    }
+
+    void loadCowbellSample(
+        int32_t sampleIndex,
+        std::vector<int16_t>&& data,
+        int32_t sourceSampleRate,
+        int32_t sourceChannelCount) {
+        if (sampleIndex < 0 || sampleIndex >= kCowbellSampleCount ||
+            data.empty() || sourceSampleRate <= 0 || sourceChannelCount <= 0) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        mCowbellSamples[static_cast<size_t>(sampleIndex)] = {
+            std::move(data),
+            sourceSampleRate,
+            sourceChannelCount
+        };
+    }
+
+    void scheduleCowbellHit(
+        int32_t sampleIndex,
+        double targetTimeSeconds,
+        float leftVolume,
+        float rightVolume) {
+        if (sampleIndex < 0 || sampleIndex >= kCowbellSampleCount ||
+            !std::isfinite(targetTimeSeconds)) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        const CowbellSample& sample = mCowbellSamples[static_cast<size_t>(sampleIndex)];
+        if (sample.data.empty() || sample.frameCount() <= 0) {
+            return;
+        }
+        mCowbellHits.push_back({
+            sampleIndex,
+            targetTimeSeconds * static_cast<double>(mSampleRate),
+            0.0,
+            std::max(0.0f, leftVolume),
+            std::max(0.0f, rightVolume),
+            false
+        });
+    }
+
+    void cancelCowbellHits() {
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        mCowbellHits.clear();
+    }
+
+    void cancelPendingCowbellHits() {
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        mCowbellHits.erase(
+            std::remove_if(
+                mCowbellHits.begin(),
+                mCowbellHits.end(),
+                [](const CowbellHit& hit) {
+                    return !hit.active;
+                }),
+            mCowbellHits.end());
     }
 
     bool scheduleJump(double targetTime, double sourceStartTime) {
@@ -721,6 +803,7 @@ private:
             const int64_t frame0 = static_cast<int64_t>(std::floor(sourceFrame));
             const int64_t frame1 = std::min<int64_t>(frame0 + 1, totalFrames - 1);
             const float frac = static_cast<float>(sourceFrame - static_cast<double>(frame0));
+            prepareCowbellHitsForFrame(sourceFrame);
             for (int32_t channel = 0; channel < channels; channel += 1) {
                 const size_t offset0 = static_cast<size_t>(frame0 * channels + channel);
                 const size_t offset1 = static_cast<size_t>(frame1 * channels + channel);
@@ -728,14 +811,94 @@ private:
                 const float s1 = static_cast<float>(audioData[offset1]) / 32768.0f;
                 float sample = s0 + (s1 - s0) * frac;
                 sample = processDspSample(sample, channel, settings);
-                output[channel] = floatToInt16(sample * outputGain);
+                const float cowbell = cowbellSampleForChannel(channel, channels);
+                output[channel] = floatToInt16(sample * outputGain + cowbell);
             }
+            advanceCowbellHits();
             applyPan(output, channels, settings);
             output += channels;
             sourceFrame += settings.rate;
             advanceDspFrame(settings);
         }
         return sourceFrame;
+    }
+
+    void prepareCowbellHitsForFrame(double sourceFrame) {
+        for (CowbellHit& hit : mCowbellHits) {
+            if (!hit.active && sourceFrame >= hit.targetSourceFrame) {
+                hit.active = true;
+                hit.sampleFrame = 0.0;
+            }
+        }
+    }
+
+    float cowbellSampleForChannel(int32_t outputChannel, int32_t outputChannels) const {
+        float mixed = 0.0f;
+        for (const CowbellHit& hit : mCowbellHits) {
+            if (!hit.active) continue;
+            const CowbellSample& sample = mCowbellSamples[static_cast<size_t>(hit.sampleIndex)];
+            const int64_t sampleFrames = sample.frameCount();
+            if (sampleFrames <= 0 || hit.sampleFrame >= static_cast<double>(sampleFrames)) {
+                continue;
+            }
+            const int64_t frame0 = static_cast<int64_t>(std::floor(hit.sampleFrame));
+            const int64_t frame1 = std::min<int64_t>(frame0 + 1, sampleFrames - 1);
+            const float frac = static_cast<float>(hit.sampleFrame - static_cast<double>(frame0));
+            const int32_t sampleChannel = resolveCowbellSampleChannel(
+                sample.channelCount,
+                outputChannel,
+                outputChannels);
+            const size_t offset0 =
+                static_cast<size_t>(frame0 * sample.channelCount + sampleChannel);
+            const size_t offset1 =
+                static_cast<size_t>(frame1 * sample.channelCount + sampleChannel);
+            const float s0 = static_cast<float>(sample.data[offset0]) / 32768.0f;
+            const float s1 = static_cast<float>(sample.data[offset1]) / 32768.0f;
+            const float value = s0 + (s1 - s0) * frac;
+            mixed += value * cowbellVolumeForChannel(hit, outputChannel, outputChannels);
+        }
+        return mixed;
+    }
+
+    int32_t resolveCowbellSampleChannel(
+        int32_t sampleChannels,
+        int32_t outputChannel,
+        int32_t outputChannels) const {
+        if (sampleChannels <= 1) return 0;
+        if (outputChannels <= 1) {
+            return 0;
+        }
+        return std::clamp(outputChannel, 0, sampleChannels - 1);
+    }
+
+    float cowbellVolumeForChannel(
+        const CowbellHit& hit,
+        int32_t outputChannel,
+        int32_t outputChannels) const {
+        if (outputChannels <= 1) {
+            return (hit.leftVolume + hit.rightVolume) * 0.5f;
+        }
+        return outputChannel == 0 ? hit.leftVolume : hit.rightVolume;
+    }
+
+    void advanceCowbellHits() {
+        for (CowbellHit& hit : mCowbellHits) {
+            if (!hit.active) continue;
+            const CowbellSample& sample = mCowbellSamples[static_cast<size_t>(hit.sampleIndex)];
+            hit.sampleFrame += static_cast<double>(sample.sampleRate) /
+                               static_cast<double>(mSampleRate);
+        }
+        mCowbellHits.erase(
+            std::remove_if(
+                mCowbellHits.begin(),
+                mCowbellHits.end(),
+                [this](const CowbellHit& hit) {
+                    if (!hit.active) return false;
+                    const CowbellSample& sample =
+                        mCowbellSamples[static_cast<size_t>(hit.sampleIndex)];
+                    return hit.sampleFrame >= static_cast<double>(sample.frameCount());
+                }),
+            mCowbellHits.end());
     }
 
     float nextDuckingVolume() {
@@ -859,6 +1022,9 @@ private:
     std::mutex mStreamMutex;
     std::vector<int16_t> mAudioData;
     std::vector<int16_t> mEightBitAudioData;
+    std::vector<CowbellSample> mCowbellSamples =
+        std::vector<CowbellSample>(static_cast<size_t>(kCowbellSampleCount));
+    std::vector<CowbellHit> mCowbellHits;
     std::mutex mDataMutex;
     int64_t mTotalFrames = 0;
     std::atomic<double> mReadFrame{0.0};
@@ -1034,6 +1200,53 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCloneAudioFrom(
     if (!player || !source) return JNI_FALSE;
     player->cloneAudioFrom(*source);
     return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeLoadCowbellSample(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jint sampleIndex,
+    jbyteArray data,
+    jint sampleRate,
+    jint channelCount) {
+    auto* player = toPlayer(handle);
+    if (!player || !data) return;
+    jsize length = env->GetArrayLength(data);
+    if (length <= 0) return;
+    std::vector<int16_t> pcm(static_cast<size_t>(length / 2));
+    env->GetByteArrayRegion(data, 0, length, reinterpret_cast<jbyte*>(pcm.data()));
+    player->loadCowbellSample(sampleIndex, std::move(pcm), sampleRate, channelCount);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeScheduleCowbellHit(
+    JNIEnv*,
+    jobject,
+    jlong handle,
+    jint sampleIndex,
+    jdouble targetTimeSeconds,
+    jfloat leftVolume,
+    jfloat rightVolume) {
+    auto* player = toPlayer(handle);
+    if (player) {
+        player->scheduleCowbellHit(sampleIndex, targetTimeSeconds, leftVolume, rightVolume);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCancelCowbellHits(
+    JNIEnv*, jobject, jlong handle) {
+    auto* player = toPlayer(handle);
+    if (player) player->cancelCowbellHits();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCancelPendingCowbellHits(
+    JNIEnv*, jobject, jlong handle) {
+    auto* player = toPlayer(handle);
+    if (player) player->cancelPendingCowbellHits();
 }
 
 extern "C" JNIEXPORT void JNICALL

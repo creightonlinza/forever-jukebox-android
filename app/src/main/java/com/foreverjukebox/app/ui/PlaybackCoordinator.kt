@@ -437,6 +437,7 @@ class PlaybackCoordinator(
         val (vizData, autocanonizerData) = withContext(Dispatchers.Default) {
             engine.loadAnalysis(result)
             applyPendingTuningParams()
+            controller.setCowbellSectionStartBeatIndices(engine.getSectionStartBeatIndices())
             val viz = engine.getVisualizationData()
             val canonizer = controller.autocanonizer.setAnalysis(result, trackMeta?.duration)
             viz to canonizer
@@ -602,7 +603,8 @@ class PlaybackCoordinator(
         audioLoadInFlight = false
         controller.autocanonizer.reset()
         controller.stopExternalPlayback()
-        controller.player.setJukeboxAudioMode(JukeboxAudioMode.Off)
+        controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
+        controller.setCowbellSectionStartBeatIndices(emptyList())
         engine.updateConfig(defaultConfig)
         controller.stopPlayback()
         controller.resetTimers()
@@ -1131,7 +1133,7 @@ class PlaybackCoordinator(
             engine.rebuildGraph()
         }
         if (parsed.audioMode != null) {
-            controller.player.setJukeboxAudioMode(parsed.audioMode)
+            controller.setJukeboxAudioMode(parsed.audioMode)
             updatePlaybackState {
                 it.copy(
                     jukeboxAudioMode = parsed.audioMode,

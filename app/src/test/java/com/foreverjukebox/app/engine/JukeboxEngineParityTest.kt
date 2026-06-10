@@ -781,6 +781,65 @@ class JukeboxEngineParityTest {
         assertEquals(1, player.clearAnchorJumpCalls)
     }
 
+    @Test
+    fun sectionStartBeatIndicesReturnEmptyWithoutAnalysis() {
+        val engine = JukeboxEngine(FakePlayer())
+
+        assertEquals(emptyList<Int>(), engine.getSectionStartBeatIndices())
+    }
+
+    @Test
+    fun sectionStartBeatIndicesSkipFirstSection() {
+        val engine = JukeboxEngine(FakePlayer())
+        engine.loadAnalysis(
+            makeAnalysisPayloadWithSections(
+                beatStarts = listOf(0.0, 1.0, 2.0, 3.0, 4.0),
+                sectionStarts = listOf(0.0, 2.0, 4.0)
+            )
+        )
+
+        assertEquals(listOf(2, 4), engine.getSectionStartBeatIndices())
+    }
+
+    @Test
+    fun sectionStartBeatIndicesUseFirstBeatAtOrAfterSectionStart() {
+        val engine = JukeboxEngine(FakePlayer())
+        engine.loadAnalysis(
+            makeAnalysisPayloadWithSections(
+                beatStarts = listOf(0.0, 1.0, 2.0, 3.0),
+                sectionStarts = listOf(0.0, 1.2)
+            )
+        )
+
+        assertEquals(listOf(2), engine.getSectionStartBeatIndices())
+    }
+
+    @Test
+    fun sectionStartBeatIndicesDeduplicateMappedBeats() {
+        val engine = JukeboxEngine(FakePlayer())
+        engine.loadAnalysis(
+            makeAnalysisPayloadWithSections(
+                beatStarts = listOf(0.0, 1.0, 2.0, 3.0),
+                sectionStarts = listOf(0.0, 1.2, 1.7)
+            )
+        )
+
+        assertEquals(listOf(2), engine.getSectionStartBeatIndices())
+    }
+
+    @Test
+    fun sectionStartBeatIndicesExcludeFirstBeatIndex() {
+        val engine = JukeboxEngine(FakePlayer())
+        engine.loadAnalysis(
+            makeAnalysisPayloadWithSections(
+                beatStarts = listOf(0.0, 1.0, 2.0),
+                sectionStarts = listOf(-1.0, 0.0, 1.0)
+            )
+        )
+
+        assertEquals(listOf(1), engine.getSectionStartBeatIndices())
+    }
+
     private fun makeAnalysisPayload(count: Int): JsonElement {
         val beats = JsonArray((0 until count).map { i ->
             JsonObject(
@@ -816,6 +875,56 @@ class JukeboxEngineParityTest {
                 "track" to JsonObject(mapOf("duration" to JsonPrimitive(count.toDouble())))
             )
         )
+    }
+
+    private fun makeAnalysisPayloadWithSections(
+        beatStarts: List<Double>,
+        sectionStarts: List<Double>
+    ): JsonElement {
+        val beats = quantumArray(beatStarts)
+        return JsonObject(
+            mapOf(
+                "sections" to quantumArray(sectionStarts),
+                "bars" to beats,
+                "beats" to beats,
+                "tatums" to beats,
+                "segments" to segmentArray(beatStarts),
+                "track" to JsonObject(
+                    mapOf(
+                        "duration" to JsonPrimitive((beatStarts.lastOrNull() ?: 0.0) + 1.0)
+                    )
+                )
+            )
+        )
+    }
+
+    private fun quantumArray(starts: List<Double>): JsonArray {
+        return JsonArray(starts.map { start ->
+            JsonObject(
+                mapOf(
+                    "start" to JsonPrimitive(start),
+                    "duration" to JsonPrimitive(1.0),
+                    "confidence" to JsonPrimitive(1.0)
+                )
+            )
+        })
+    }
+
+    private fun segmentArray(starts: List<Double>): JsonArray {
+        return JsonArray(starts.map { start ->
+            JsonObject(
+                mapOf(
+                    "start" to JsonPrimitive(start),
+                    "duration" to JsonPrimitive(1.0),
+                    "confidence" to JsonPrimitive(1.0),
+                    "loudness_start" to JsonPrimitive(0.0),
+                    "loudness_max" to JsonPrimitive(0.0),
+                    "loudness_max_time" to JsonPrimitive(0.0),
+                    "pitches" to JsonArray(List(12) { JsonPrimitive(0.0) }),
+                    "timbre" to JsonArray(List(12) { JsonPrimitive(0.0) })
+                )
+            )
+        })
     }
 
     private fun makeAnalysis(beats: MutableList<QuantumBase>): TrackAnalysis {

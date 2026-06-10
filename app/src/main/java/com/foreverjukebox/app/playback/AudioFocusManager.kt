@@ -7,6 +7,16 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 
+internal const val PLAYBACK_ATTRIBUTION_TAG = "audio_playback"
+
+internal fun Context.playbackAttributionContext(): Context {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        createAttributionContext(PLAYBACK_ATTRIBUTION_TAG)
+    } else {
+        this
+    }
+}
+
 internal enum class AudioFocusAction {
     Duck,
     Unduck,
