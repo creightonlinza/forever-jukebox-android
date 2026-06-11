@@ -1,11 +1,12 @@
 package com.foreverjukebox.app.ui
 
 private val currentWhatsNewBullets = listOf(
+    "Loading sound effects added, enable in Settings menu",
     "I got a fever, and the only prescription is More Cowbell! (new audio mode)",
-    "Favorites search and sorting added, with maximum saved favorites bumped to 150 tracks.",
-    "A few more Audio Mode options introduced: 8-bit, Underwater, Cathedral.",
-    "Misc fixes and under the hood improvements.",
-    "Please report any bugs to GitHub/Reddit/Discord."
+    "Favorites search and sorting added, with maximum saved favorites bumped to 150 tracks",
+    "A few more Audio Mode options introduced: 8-bit, Underwater, Cathedral",
+    "Misc fixes and under the hood improvements",
+    "Please report any bugs to GitHub/Reddit/Discord"
 )
 
 internal fun normalizedDisplayVersion(versionName: String): String {

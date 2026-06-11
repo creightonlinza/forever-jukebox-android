@@ -32,6 +32,8 @@ import com.foreverjukebox.app.data.trackIdFromAnalysis
 import com.foreverjukebox.app.data.trackIdFromTopSong
 import com.foreverjukebox.app.data.youtubeTrackIdFromTopSong
 import com.foreverjukebox.app.data.sourceProviderFromRaw
+import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
+import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
@@ -298,6 +300,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val defaultConfig = engine.getConfig()
     private val json = Json { ignoreUnknownKeys = true }
     private val localAnalysisService = LocalAnalysisService.create(application)
+    private val loadingAudioFeedbackController = LoadingAudioFeedbackController(
+        SoundPoolLoadingAudioFeedbackPlayer(application, viewModelScope)
+    )
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
@@ -600,6 +605,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            preferences.loadingAudioFeedback.collect { enabled ->
+                _state.update { it.copy(loadingAudioFeedbackEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            state.collect { current ->
+                loadingAudioFeedbackController.update(
+                    enabled = current.loadingAudioFeedbackEnabled,
+                    loading = shouldPlayLoadingAudioFeedback(current),
+                    failureMessage = current.playback.analysisErrorMessage
+                )
+            }
+        }
+        viewModelScope.launch {
             ForegroundPlaybackService.sleepTimerState.collect { status ->
                 val selectedOption = sleepTimerOptionForDurationMs(status.configuredDurationMs)
                 val remainingMs = status.remainingMs.coerceAtLeast(0L)
@@ -714,6 +733,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             getApplication<Application>().unregisterReceiver(playbackServiceEventReceiver)
         }
         super.onCleared()
+        loadingAudioFeedbackController.release()
         playbackCoordinator.onCleared()
         controller.release()
     }
@@ -824,6 +844,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch {
             preferences.setThemeMode(mode)
+        }
+    }
+
+    fun setLoadingAudioFeedbackEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferences.setLoadingAudioFeedback(enabled)
         }
     }
 

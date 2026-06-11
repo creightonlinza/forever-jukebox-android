@@ -104,6 +104,7 @@ data class UiState(
     val allowFavoritesSync: Boolean = false,
     val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     val maxTrackLengthMinutes: Double? = null,
+    val loadingAudioFeedbackEnabled: Boolean = false,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,
     val listenFavoriteToggleInFlight: Boolean = false,
@@ -296,6 +297,12 @@ fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating
 
 fun PlaybackState.isTrackLoading(): Boolean {
     return isLoading() || isCastLoading || castPlaybackState == "loading"
+}
+
+fun shouldPlayLoadingAudioFeedback(state: UiState): Boolean {
+    return state.loadingAudioFeedbackEnabled &&
+        !state.playback.isCasting &&
+        state.playback.isLoading()
 }
 
 fun resolveLoadingTrackMetadata(

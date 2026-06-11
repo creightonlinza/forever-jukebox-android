@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Settings
@@ -79,6 +80,7 @@ fun HeaderBar(
     onEditBaseUrl: (String) -> Unit,
     onEditAdminKey: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    onLoadingAudioFeedbackChange: (Boolean) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onRefreshCacheSize: () -> Unit,
     onClearCache: () -> Unit,
@@ -152,6 +154,7 @@ fun HeaderBar(
                 onOpenWhatsNew()
             },
             onThemeChange = onThemeChange,
+            onLoadingAudioFeedbackChange = onLoadingAudioFeedbackChange,
             onAppModeChange = onAppModeChange,
             onEditBaseUrl = onEditBaseUrl,
             onEditAdminKey = onEditAdminKey,
@@ -347,6 +350,7 @@ private fun SettingsDialog(
     onOpenSleepTimer: () -> Unit,
     onOpenWhatsNew: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    onLoadingAudioFeedbackChange: (Boolean) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
     onEditAdminKey: (String) -> Unit,
@@ -491,6 +495,17 @@ private fun SettingsDialog(
                     ) {
                         Text("Dark", style = MaterialTheme.typography.labelSmall)
                     }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Enable loading sound effects")
+                    Switch(
+                        checked = state.loadingAudioFeedbackEnabled,
+                        onCheckedChange = onLoadingAudioFeedbackChange
+                    )
                 }
                 Text("Cache")
                 OutlinedButton(
