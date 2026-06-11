@@ -162,6 +162,26 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
+    fun playbackServiceSessionKeepsRetryableFailedLoadVisibleWhenRequested() {
+        val failed = PlaybackState(
+            analysisErrorMessage = "Loading failed.",
+            lastJobId = "job_123"
+        )
+
+        assertEquals(
+            PlaybackServiceSession.Hidden,
+            resolvePlaybackServiceSession(failed)
+        )
+        assertEquals(
+            PlaybackServiceSession.LocalFailed,
+            resolvePlaybackServiceSession(
+                playback = failed,
+                keepFailedLoadVisible = true
+            )
+        )
+    }
+
+    @Test
     fun playbackServiceSessionWouldHideIntermediateCachedAudioState() {
         assertEquals(
             PlaybackServiceSession.Hidden,

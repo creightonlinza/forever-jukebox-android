@@ -429,6 +429,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN -> {
                     closeFullscreenVisualization()
                 }
+                ForegroundPlaybackService.ACTION_RETRY_FAILED_LOAD -> {
+                    retryFailedLoad()
+                }
             }
         }
     }
@@ -440,6 +443,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             addAction(ForegroundPlaybackService.ACTION_PLAYLIST_PREVIOUS)
             addAction(ForegroundPlaybackService.ACTION_PLAYLIST_NEXT)
             addAction(ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN)
+            addAction(ForegroundPlaybackService.ACTION_RETRY_FAILED_LOAD)
         }
         ContextCompat.registerReceiver(
             getApplication(),

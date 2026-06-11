@@ -510,7 +510,10 @@ class PlaybackCoordinator(
             return
         }
         val current = getState()
-        val session = resolvePlaybackServiceSession(current.playback)
+        val session = resolvePlaybackServiceSession(
+            playback = current.playback,
+            keepFailedLoadVisible = shouldRetryFailedLoadFromTransport(current)
+        )
         val skip = resolvePlaybackServiceSkipAvailability(current)
         when (session) {
             PlaybackServiceSession.Hidden -> syncHiddenPlaybackServiceSession()
@@ -519,6 +522,7 @@ class PlaybackCoordinator(
                 session,
                 skip
             )
+            PlaybackServiceSession.LocalFailed -> syncLocalFailedPlaybackServiceSession()
             PlaybackServiceSession.LocalPaused,
             PlaybackServiceSession.LocalPlaying,
             PlaybackServiceSession.LocalReady -> syncLocalPlaybackServiceSession(skip)
@@ -573,6 +577,22 @@ class PlaybackCoordinator(
         lastLoadingNotificationBucket = progressBucket
     }
 
+    private fun syncLocalFailedPlaybackServiceSession() {
+        if (
+            playbackServiceSessionVisible &&
+            lastPlaybackServiceSessionKind == PlaybackServiceSessionKind.LocalFailed
+        ) {
+            return
+        }
+        ForegroundPlaybackService.update(
+            context = application,
+            isLoadFailed = true
+        )
+        playbackServiceSessionVisible = true
+        lastPlaybackServiceSessionKind = PlaybackServiceSessionKind.LocalFailed
+        lastLoadingNotificationBucket = null
+    }
+
     private fun syncLocalPlaybackServiceSession(skip: PlaybackServiceSkipAvailability) {
         resetPlaybackServiceSessionTracking()
         ForegroundPlaybackService.update(
@@ -581,7 +601,11 @@ class PlaybackCoordinator(
             canSkipNext = skip.canSkipNext
         )
         playbackServiceSessionVisible = true
-        lastPlaybackServiceSessionKind = resolvePlaybackServiceSession(getState().playback).kind
+        val current = getState()
+        lastPlaybackServiceSessionKind = resolvePlaybackServiceSession(
+            playback = current.playback,
+            keepFailedLoadVisible = shouldRetryFailedLoadFromTransport(current)
+        ).kind
     }
 
     private fun hardStopPlaybackServiceSession() {
