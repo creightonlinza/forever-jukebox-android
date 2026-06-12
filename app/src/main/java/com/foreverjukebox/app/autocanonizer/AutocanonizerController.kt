@@ -43,10 +43,6 @@ class AutocanonizerController(
         finishOutSong = enabled
     }
 
-    fun setVolume(volume: Double) {
-        player.setVolume(volume)
-    }
-
     fun setDucking(active: Boolean) {
         player.setDucking(active)
     }
@@ -79,11 +75,7 @@ class AutocanonizerController(
 
     fun getData(): AutocanonizerData? = data
 
-    fun getCurrentIndex(): Int = currentIndex
-
     fun getForcedOtherIndex(): Int? = forcedOtherIndex
-
-    fun getBeatsPlayed(): Int = beatsPlayed
 
     fun getTileColorOverrides(): Map<Int, String> = tileColorOverrides.toMap()
 

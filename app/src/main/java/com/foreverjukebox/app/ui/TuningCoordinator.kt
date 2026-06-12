@@ -234,7 +234,7 @@ class TuningCoordinator(
         playbackCoordinator.syncTuningState()
     }
 
-    private suspend fun resetCastTuningDefaults() {
+    private fun resetCastTuningDefaults() {
         val currentState = getState()
         castPlaybackCoordinator.sendCastTuningParams(
             buildCastTuningResetParams(

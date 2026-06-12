@@ -42,10 +42,10 @@ fun JukeboxVisualization(
     currentIndex: Int,
     jumpLine: JumpLine?,
     positioner: Positioner,
-    edgeRouting: EdgeRouting = EdgeRouting.Auto,
-    highlightAnchorBranch: Boolean = false,
     onSelectBeat: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    edgeRouting: EdgeRouting = EdgeRouting.Auto,
+    highlightAnchorBranch: Boolean = false
 ) {
     var layoutSize by remember { mutableStateOf(IntSize.Zero) }
     var nowState by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }

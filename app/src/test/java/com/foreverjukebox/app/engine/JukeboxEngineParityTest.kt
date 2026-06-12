@@ -458,7 +458,7 @@ class JukeboxEngineParityTest {
 
         engine.seekToBeat(1)
 
-        assertEquals(10.5, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(10.5, getPrivateField(engine, "nextAudioTime"), 0.000001)
     }
 
     @Test
@@ -485,7 +485,7 @@ class JukeboxEngineParityTest {
 
         invokeAdvanceBeat(engine, 5.0)
 
-        assertEquals(5.5, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(5.5, getPrivateField(engine, "nextAudioTime"), 0.000001)
     }
 
     @Test
@@ -504,7 +504,7 @@ class JukeboxEngineParityTest {
         engine.syncToPlaybackPosition()
 
         assertEquals(1, getPrivateField<Int>(engine, "currentBeatIndex"))
-        assertEquals(20.375, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(20.375, getPrivateField(engine, "nextAudioTime"), 0.000001)
     }
 
     @Test
@@ -569,7 +569,7 @@ class JukeboxEngineParityTest {
         invokeTick(engine)
 
         assertEquals(0, getPrivateField<Int>(engine, "currentBeatIndex"))
-        assertEquals(10.75, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(10.75, getPrivateField(engine, "nextAudioTime"), 0.000001)
         assertEquals(1, player.scheduleJumpCalls.size)
         assertEquals(0.0, player.scheduleJumpCalls[0].first, 0.000001)
         assertEquals(1.0, player.scheduleJumpCalls[0].second, 0.000001)
@@ -727,7 +727,7 @@ class JukeboxEngineParityTest {
         invokeTick(engine)
 
         assertEquals(2, getPrivateField<Int>(engine, "currentBeatIndex"))
-        assertEquals(20.75, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(20.75, getPrivateField(engine, "nextAudioTime"), 0.000001)
         assertEquals(false, getPrivateField<Boolean>(engine, "lastJumped"))
     }
 
@@ -761,7 +761,7 @@ class JukeboxEngineParityTest {
         invokeTick(engine)
 
         assertEquals(0, getPrivateField<Int>(engine, "currentBeatIndex"))
-        assertEquals(10.75, getPrivateField<Double>(engine, "nextAudioTime"), 0.000001)
+        assertEquals(10.75, getPrivateField(engine, "nextAudioTime"), 0.000001)
         assertEquals(1, player.scheduleJumpCalls.size)
         assertEquals(1, player.cancelScheduledJumpCalls)
         assertEquals(false, getPrivateField<Boolean>(engine, "lastJumped"))

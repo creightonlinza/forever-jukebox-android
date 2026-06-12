@@ -65,10 +65,6 @@ class JukeboxEngine(
         listeners.add(callback)
     }
 
-    fun removeUpdateListener(callback: (JukeboxState) -> Unit) {
-        listeners.remove(callback)
-    }
-
     fun loadAnalysis(data: JsonElement) {
         deletedEdgeKeys.clear()
         analysis = normalizeAnalysis(data)
@@ -201,19 +197,6 @@ class JukeboxEngine(
 
     fun deleteEdge(edge: Edge) {
         deletedEdgeKeys.add(edgeKey(edge.src.which, edge.dest.which))
-        clearPendingAdvance(cancelScheduledJump = true)
-        applyDeletedEdges()
-        syncAnchorJump()
-    }
-
-    fun deleteEdgesById(ids: List<Int>) {
-        val current = graph ?: return
-        if (ids.isEmpty()) return
-        val edgeById = current.allEdges.associateBy { it.id }
-        for (id in ids) {
-            val edge = edgeById[id] ?: continue
-            deletedEdgeKeys.add(edgeKey(edge.src.which, edge.dest.which))
-        }
         clearPendingAdvance(cancelScheduledJump = true)
         applyDeletedEdges()
         syncAnchorJump()

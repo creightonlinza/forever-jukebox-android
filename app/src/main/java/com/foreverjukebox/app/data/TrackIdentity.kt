@@ -1,9 +1,6 @@
 package com.foreverjukebox.app.data
 
 const val SOURCE_PROVIDER_YOUTUBE = "youtube"
-const val SOURCE_PROVIDER_SOUNDCLOUD = "soundcloud"
-const val SOURCE_PROVIDER_BANDCAMP = "bandcamp"
-const val SOURCE_PROVIDER_UPLOAD = "upload"
 
 private val YOUTUBE_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}$")
 

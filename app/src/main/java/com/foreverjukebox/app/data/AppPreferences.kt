@@ -9,8 +9,6 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map

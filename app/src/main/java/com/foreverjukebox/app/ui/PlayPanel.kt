@@ -45,6 +45,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val context = LocalContext.current
     val playback = state.playback
@@ -136,8 +137,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 label = when {
                     playback.analysisCalculating -> "Calculating pathways"
                     playback.analysisInFlight -> playback.analysisMessage ?: "Fetching audio"
-                    playback.audioLoading -> "Fetching audio"
-                    else -> null
+                    else -> "Fetching audio"
                 },
                 playAfterLoaded = playback.playAfterLoaded,
                 showPlayAfterLoaded = shouldShowPlayAfterLoadedOption(state.appMode, playback),

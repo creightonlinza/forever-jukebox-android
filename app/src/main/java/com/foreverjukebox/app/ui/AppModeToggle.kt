@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
 
 @Composable
+@SuppressLint("UnusedBoxWithConstraintsScope")
 fun AppModeSliderToggle(
     selectedMode: AppMode,
     onModeChange: (AppMode) -> Unit,

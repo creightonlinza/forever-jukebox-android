@@ -61,6 +61,7 @@ internal fun reduceSleepTimerDialogSelection(
 }
 
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun TuningDialog(
     initialThreshold: Int,
     initialMinProb: Int,

@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.ui
 
 import android.app.Application
-import com.google.android.gms.cast.Cast
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
@@ -42,9 +41,9 @@ class CastController(private val application: Application) {
         if (statusListenerSession === session) {
             return
         }
-        session.setMessageReceivedCallbacks(namespace, Cast.MessageReceivedCallback { _, _, message ->
+        session.setMessageReceivedCallbacks(namespace) { _, _, message ->
             onMessage(message)
-        })
+        }
         statusListenerSession = session
     }
 

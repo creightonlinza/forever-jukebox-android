@@ -46,7 +46,7 @@ internal object NoOpPlaybackAudioFocusController : PlaybackAudioFocusController 
 }
 
 internal class AndroidPlaybackAudioFocusController(
-    private val context: Context,
+    context: Context,
     private val onDuckingChanged: (Boolean) -> Unit,
     private val onPlaybackFocusLost: () -> Unit
 ) : PlaybackAudioFocusController {
@@ -65,17 +65,8 @@ internal class AndroidPlaybackAudioFocusController(
     }
 
     override fun requestAudioFocus(): Boolean {
-        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val request = focusRequest ?: buildFocusRequest().also { focusRequest = it }
-            audioManager.requestAudioFocus(request)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(
-                focusChangeListener,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            )
-        }
+        val request = focusRequest ?: buildFocusRequest().also { focusRequest = it }
+        val result = audioManager.requestAudioFocus(request)
         val granted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (granted) {
             onDuckingChanged(false)
@@ -85,12 +76,7 @@ internal class AndroidPlaybackAudioFocusController(
 
     override fun abandonAudioFocus() {
         onDuckingChanged(false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusRequest?.let(audioManager::abandonAudioFocusRequest)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.abandonAudioFocus(focusChangeListener)
-        }
+        focusRequest?.let(audioManager::abandonAudioFocusRequest)
     }
 
     private fun buildFocusRequest(): AudioFocusRequest {

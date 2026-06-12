@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.ui
 
 import android.app.Application
-import android.net.Uri
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
@@ -30,7 +29,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
@@ -105,7 +103,7 @@ class PlaybackCoordinator(
     }
 
     fun setPendingTuningParams(raw: String?) {
-        pendingTuningParams = if (shouldApplyTuningParams() && !raw.isNullOrBlank()) {
+        pendingTuningParams = if (!raw.isNullOrBlank()) {
             raw
         } else {
             null
@@ -113,7 +111,6 @@ class PlaybackCoordinator(
     }
 
     fun buildTuningParamsString(): String? {
-        if (!shouldApplyTuningParams()) return null
         val config = engine.getConfig()
         val playback = getState().playback
         val params = mutableListOf<String>()
@@ -133,11 +130,10 @@ class PlaybackCoordinator(
         val maxChanged = config.maxRandomBranchChance != defaultConfig.maxRandomBranchChance
         val deltaChanged = config.randomBranchChanceDelta != defaultConfig.randomBranchChanceDelta
         if (minChanged || maxChanged || deltaChanged) {
-            val minPct = mapValueToPercent(config.minRandomBranchChance, 0.0, 1.0)
-            val maxPct = mapValueToPercent(config.maxRandomBranchChance, 0.0, 1.0)
+            val minPct = mapValueToPercent(config.minRandomBranchChance, 1.0)
+            val maxPct = mapValueToPercent(config.maxRandomBranchChance, 1.0)
             val deltaPct = mapValueToPercent(
                 config.randomBranchChanceDelta,
-                0.0,
                 MAX_RANDOM_BRANCH_DELTA
             )
             params.add("bp=$minPct,$maxPct,$deltaPct")
@@ -1074,17 +1070,17 @@ class PlaybackCoordinator(
         }
         parsed.minProbPercent?.let { value ->
             config = config.copy(
-                minRandomBranchChance = mapPercentToRange(value, 0.0, 1.0)
+                minRandomBranchChance = mapPercentToRange(value, 1.0)
             )
         }
         parsed.maxProbPercent?.let { value ->
             config = config.copy(
-                maxRandomBranchChance = mapPercentToRange(value, 0.0, 1.0)
+                maxRandomBranchChance = mapPercentToRange(value, 1.0)
             )
         }
         parsed.rampPercent?.let { value ->
             config = config.copy(
-                randomBranchChanceDelta = mapPercentToRange(value, 0.0, MAX_RANDOM_BRANCH_DELTA)
+                randomBranchChanceDelta = mapPercentToRange(value, MAX_RANDOM_BRANCH_DELTA)
             )
         }
         parsed.anchorBeat?.let { value ->
@@ -1093,14 +1089,14 @@ class PlaybackCoordinator(
         return ResolvedTuningParams(config, parsed.deletedEdgeIds, parsed.audioMode)
     }
 
-    private fun mapPercentToRange(percent: Int, min: Double, max: Double): Double {
+    private fun mapPercentToRange(percent: Int, max: Double): Double {
         val safe = percent.coerceIn(0, 100)
-        return ((max - min) * safe) / 100.0 + min
+        return (max * safe) / 100.0
     }
 
-    private fun mapValueToPercent(value: Double, min: Double, max: Double): Int {
-        val safeValue = value.coerceIn(min, max)
-        return ((100.0 * (safeValue - min)) / (max - min)).roundToInt()
+    private fun mapValueToPercent(value: Double, max: Double): Int {
+        val safeValue = value.coerceIn(0.0, max)
+        return ((100.0 * safeValue) / max).roundToInt()
     }
 
     private fun getDeletedEdgeIds(): List<Int> {
@@ -1109,10 +1105,6 @@ class PlaybackCoordinator(
     }
 
     private fun applyPendingTuningParams() {
-        if (!shouldApplyTuningParams()) {
-            pendingTuningParams = null
-            return
-        }
         val raw = pendingTuningParams
         pendingTuningParams = null
         val parsed = parseTuningParams(raw) ?: return
@@ -1168,8 +1160,6 @@ class PlaybackCoordinator(
             resolvedTitle
         }
     }
-
-    private fun shouldApplyTuningParams(): Boolean = true
 }
 
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }

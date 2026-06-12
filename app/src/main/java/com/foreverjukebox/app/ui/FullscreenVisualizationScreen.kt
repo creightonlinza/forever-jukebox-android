@@ -112,7 +112,7 @@ internal fun FullscreenVisualizationScreen(
             tuning = tuning,
             inAutocanonizer = inAutocanonizer,
             edgeRouting = edgeRouting,
-            squareModifier = Modifier.size(squareSize),
+            modifier = Modifier.size(squareSize),
             jukeboxModifier = jukeboxModifier,
             onSelectBeat = onSelectBeat
         )
@@ -199,12 +199,12 @@ private tailrec fun Context.findActivity(): Activity? {
 }
 
 @Composable
-private fun BoxWithConstraintsScope.FullscreenVisualizationContent(
+private fun FullscreenVisualizationContent(
     playback: PlaybackState,
     tuning: TuningState,
     inAutocanonizer: Boolean,
     edgeRouting: EdgeRouting,
-    squareModifier: Modifier,
+    modifier: Modifier,
     jukeboxModifier: Modifier,
     onSelectBeat: (Int) -> Unit
 ) {
@@ -219,7 +219,7 @@ private fun BoxWithConstraintsScope.FullscreenVisualizationContent(
                 forcedOtherIndex = playback.canonizerOtherIndex,
                 tileColorOverrides = playback.canonizerTileColorOverrides,
                 onSelectBeat = onSelectBeat,
-                modifier = squareModifier
+                modifier = modifier
             )
         } else {
             JukeboxVisualization(

@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -72,6 +73,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun HeaderBar(
     state: UiState,
     onEditBaseUrl: (String) -> Unit,
@@ -171,6 +173,7 @@ fun TitleOnlyHeaderBar() {
 }
 
 @Composable
+@SuppressLint("UnusedBoxWithConstraintsScope")
 private fun HeroTitle() {
     val tokens = LocalThemeTokens.current
     val frameTransition = rememberInfiniteTransition(label = "heroTitleFrameFlicker")
@@ -337,6 +340,7 @@ private fun fitHeroTitleStyle(
 }
 
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 private fun SettingsDialog(
     state: UiState,
     onDismiss: () -> Unit,

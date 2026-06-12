@@ -361,7 +361,7 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
             weights[assigned] = when {
                 channels == 2 -> 1f
                 assigned == 2 -> MINUS_3DB
-                assigned == 3 && channels >= 4 -> 0f
+                assigned == 3 -> 0f
                 assigned >= 4 -> MINUS_3DB
                 else -> 1f
             }

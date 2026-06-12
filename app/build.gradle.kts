@@ -1,5 +1,8 @@
 import com.android.build.api.dsl.ApplicationExtension
 import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+import org.gradle.api.file.Directory
+import org.gradle.api.file.RegularFile
+import org.gradle.api.provider.Provider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -20,13 +23,15 @@ plugins {
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 val madmomBeatsPortFfiVersion = "4.1.0"
-val madmomBeatsPortFfiZipUrlProperty = providers.gradleProperty("madmomBeatsPortFfiZipUrl")
-val madmomBeatsPortFfiZipPathProperty = providers.gradleProperty("madmomBeatsPortFfiZipPath")
-val madmomBeatsPortFfiZipUrl = madmomBeatsPortFfiZipUrlProperty.orElse(
+val madmomBeatsPortFfiZipUrlProperty: Provider<String> = providers.gradleProperty("madmomBeatsPortFfiZipUrl")
+val madmomBeatsPortFfiZipPathProperty: Provider<String> = providers.gradleProperty("madmomBeatsPortFfiZipPath")
+val madmomBeatsPortFfiZipUrl: Provider<String> = madmomBeatsPortFfiZipUrlProperty.orElse(
     "https://github.com/creightonlinza/madmom-beats-port/releases/download/v$madmomBeatsPortFfiVersion/madmom-beats-port-v$madmomBeatsPortFfiVersion-android.zip"
 )
-val madmomBeatsPortFfiZipCache = layout.buildDirectory.file("downloads/madmom-beats-port-v$madmomBeatsPortFfiVersion-android.zip")
-val madmomBeatsPortFfiGeneratedJniLibs = layout.buildDirectory.dir("generated/madmom_beats_port_ffi/jniLibs")
+val madmomBeatsPortFfiZipCache: Provider<RegularFile> =
+    layout.buildDirectory.file("downloads/madmom-beats-port-v$madmomBeatsPortFfiVersion-android.zip")
+val madmomBeatsPortFfiGeneratedJniLibs: Provider<Directory> =
+    layout.buildDirectory.dir("generated/madmom_beats_port_ffi/jniLibs")
 val essentiaSharedJniLibsDir = file("third_party/essentia/android")
 val keystoreProperties = Properties().apply {
     val propertiesFile = rootProject.file("keystore.properties")
@@ -60,8 +65,8 @@ val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 val versionCodeBase = System.getenv("APP_VERSION_CODE_BASE")?.toIntOrNull() ?: 0
 val ciVersionCode = runNumber + versionCodeBase
 val versionTag = System.getenv("APP_VERSION_TAG")?.trim().orEmpty()
-val versionStamp = LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy.MM"))
-val ciVersionName = if (versionTag.isNotEmpty()) versionTag else "$versionStamp.$runNumber"
+val versionStamp: String = LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy.MM"))
+val ciVersionName = versionTag.ifEmpty { "$versionStamp.$runNumber" }
 
 val prepareMadmomBeatsPortFfiJniLibs by tasks.registering {
     description = "Fetches madmom_beats_port_ffi Android binaries and stages ABI jniLibs for packaging."
