@@ -608,6 +608,40 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun wrapsToStartWhenPlaybackRunsPastFinalBeatBoundary() {
+        val player = FakePlayer().apply {
+            fakeCurrentTime = 3.1
+            fakeAudioTime = 20.0
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf()
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 2)
+        setPrivateField(engine, "nextAudioTime", 10.75)
+        setPrivateField(engine, "beatsPlayed", 9)
+        setPrivateField(engine, "ticking", true)
+
+        invokeTick(engine)
+
+        assertEquals(listOf(0.0), player.seekCalls)
+        assertEquals(0.0, player.fakeCurrentTime, 0.000001)
+        assertEquals(0, getPrivateField<Int>(engine, "currentBeatIndex"))
+        assertEquals(10, getPrivateField<Int>(engine, "beatsPlayed"))
+        assertEquals(0, player.stopCalls)
+    }
+
+    @Test
     fun resetStatsClearsPerSourceBranchHistory() {
         val engine = JukeboxEngine(FakePlayer())
         val branchState = getPrivateField<BranchState>(engine, "branchState")
@@ -1033,6 +1067,7 @@ class JukeboxEngineParityTest {
         var fakePlaybackRate = 1.0
         var scheduleJumpResult = true
         var cancelScheduledJumpCalls = 0
+        val seekCalls = mutableListOf<Double>()
         val scheduleJumpCalls = mutableListOf<Pair<Double, Double>>()
         val anchorJumpCalls = mutableListOf<Pair<Double, Double>>()
         var clearAnchorJumpCalls = 0
@@ -1049,7 +1084,10 @@ class JukeboxEngineParityTest {
             stopCalls += 1
         }
 
-        override fun seek(time: Double) = Unit
+        override fun seek(time: Double) {
+            seekCalls.add(time)
+            fakeCurrentTime = time
+        }
 
         override fun scheduleJump(targetTime: Double, sourceStartTime: Double): Boolean {
             scheduleJumpCalls.add(targetTime to sourceStartTime)
