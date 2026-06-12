@@ -2676,8 +2676,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         index: Int,
         playAfterLoaded: Boolean = false
     ) {
+        val playlist = state.value.playlist
+        if (!playlist.canSelectTrackAt(index)) return
         if (blockPlaybackChangeWhileLoading()) return
-        val track = state.value.playlist.tracks.getOrNull(index) ?: return
+        val track = playlist.tracks[index]
         _state.update {
             it.copy(playlist = it.playlist.selectTrackAt(index))
         }

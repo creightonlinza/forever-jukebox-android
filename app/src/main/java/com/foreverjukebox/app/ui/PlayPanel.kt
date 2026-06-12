@@ -346,7 +346,9 @@ private fun PlaylistDialog(
                                     MaterialTheme.colorScheme.surface
                                 }
                             )
-                            .clickable { onSelect(index) }
+                            .clickable(enabled = playlist.canSelectTrackAt(index)) {
+                                onSelect(index)
+                            }
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
