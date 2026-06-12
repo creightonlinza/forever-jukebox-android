@@ -1666,7 +1666,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         trackId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playAfterLoaded: Boolean = false
     ) {
         if (blockPlaybackChangeWhileLoading()) return
         clearInactiveSavedPlaylistBeforeOutsideSelection()
@@ -1675,7 +1676,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             title,
             artist,
             tuningParams,
-            playAfterLoaded = false,
+            playAfterLoaded = playAfterLoaded,
             ignoreLoadingLock = true
         )
     }
@@ -2515,16 +2516,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { showToast("Set a base URL first.") }
             return
         }
-        val trackId = state.value.playback.shareTrackIdOrNull()
-        if (trackId.isNullOrBlank()) {
+        val retryRequest = failedLoadRetryRequest(state.value.playback)
+        if (retryRequest == null) {
             viewModelScope.launch { showToast("Nothing to retry.") }
             return
         }
-        val title = state.value.playback.trackTitle
-        val artist = state.value.playback.trackArtist
         serverTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack()
-        loadTrackById(trackId, title, artist)
+        loadTrackById(
+            trackId = retryRequest.trackId,
+            title = retryRequest.title,
+            artist = retryRequest.artist,
+            playAfterLoaded = retryRequest.playAfterLoaded
+        )
     }
 
     suspend fun deleteCurrentJob(): Boolean {

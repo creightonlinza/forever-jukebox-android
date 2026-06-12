@@ -85,6 +85,7 @@ class SoundPoolLoadingAudioFeedbackPlayer(
     private var failureSoundId = UNLOADED_SOUND_ID
     private var loadingPulseJob: Job? = null
     private var failureJob: Job? = null
+    private var loadingStreamId = NO_STREAM_ID
     private var loadingSoundLoaded = false
     private var failureSoundLoaded = false
     private var released = false
@@ -117,6 +118,7 @@ class SoundPoolLoadingAudioFeedbackPlayer(
     override fun stopLoadingPulse() {
         loadingPulseJob?.cancel()
         loadingPulseJob = null
+        stopLoadingSound()
     }
 
     override fun playFailure() {
@@ -138,8 +140,15 @@ class SoundPoolLoadingAudioFeedbackPlayer(
 
     private fun playLoadingSound() {
         if (loadingSoundLoaded) {
-            playSound(loadingSoundId)
+            stopLoadingSound()
+            loadingStreamId = playSound(loadingSoundId)
         }
+    }
+
+    private fun stopLoadingSound() {
+        if (loadingStreamId == NO_STREAM_ID || released) return
+        soundPool.stop(loadingStreamId)
+        loadingStreamId = NO_STREAM_ID
     }
 
     private fun playFailureSound() {
@@ -148,8 +157,8 @@ class SoundPoolLoadingAudioFeedbackPlayer(
         }
     }
 
-    private fun playSound(soundId: Int) {
-        soundPool.play(
+    private fun playSound(soundId: Int): Int {
+        return soundPool.play(
             soundId,
             FEEDBACK_VOLUME,
             FEEDBACK_VOLUME,
@@ -162,6 +171,7 @@ class SoundPoolLoadingAudioFeedbackPlayer(
     private companion object {
         const val MAX_STREAMS = 2
         const val UNLOADED_SOUND_ID = 0
+        const val NO_STREAM_ID = 0
         const val SOUND_LOAD_PRIORITY = 1
         const val SOUND_LOAD_SUCCESS = 0
         const val PLAY_PRIORITY = 1

@@ -127,6 +127,13 @@ data class LocalCachedTrack(
     val sourceUri: String?
 )
 
+data class FailedLoadRetryRequest(
+    val trackId: String,
+    val title: String?,
+    val artist: String?,
+    val playAfterLoaded: Boolean
+)
+
 data class VersionUpdatePrompt(
     val latestVersion: String,
     val downloadUrl: String
@@ -323,6 +330,16 @@ fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
         !state.playback.analysisErrorMessage.isNullOrBlank() &&
         !state.playback.isTrackLoading() &&
         !state.playback.shareTrackIdOrNull().isNullOrBlank()
+}
+
+fun failedLoadRetryRequest(playback: PlaybackState): FailedLoadRetryRequest? {
+    val trackId = playback.shareTrackIdOrNull() ?: return null
+    return FailedLoadRetryRequest(
+        trackId = trackId,
+        title = playback.trackTitle,
+        artist = playback.trackArtist,
+        playAfterLoaded = playback.playAfterLoaded
+    )
 }
 
 internal fun shouldBlockPlaybackChangeWhileLoading(playback: PlaybackState): Boolean {

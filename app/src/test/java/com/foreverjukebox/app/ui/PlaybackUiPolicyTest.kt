@@ -171,6 +171,48 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun failedLoadRetryRequestCarriesPlayAfterLoadedWhenEnabled() {
+        val request = failedLoadRetryRequest(
+            PlaybackState(
+                playAfterLoaded = true,
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2",
+                trackTitle = "Track",
+                trackArtist = "Artist"
+            )
+        )
+
+        assertEquals("a3f3c0dc73c6476c9db95c227f9206f2", request?.trackId)
+        assertEquals("Track", request?.title)
+        assertEquals("Artist", request?.artist)
+        assertTrue(request?.playAfterLoaded == true)
+    }
+
+    @Test
+    fun failedLoadRetryRequestCarriesPlayAfterLoadedWhenDisabled() {
+        val request = failedLoadRetryRequest(
+            PlaybackState(
+                playAfterLoaded = false,
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+            )
+        )
+
+        assertEquals("a3f3c0dc73c6476c9db95c227f9206f2", request?.trackId)
+        assertFalse(request?.playAfterLoaded == true)
+    }
+
+    @Test
+    fun failedLoadRetryRequestRequiresTrackId() {
+        assertNull(
+            failedLoadRetryRequest(
+                PlaybackState(
+                    playAfterLoaded = true,
+                    analysisErrorMessage = "Loading failed."
+                )
+            )
+        )
+    }
+
+    @Test
     fun localLoadErrorDoesNotRetryFromTransport() {
         val state = UiState(
             appMode = AppMode.Local,
