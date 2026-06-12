@@ -118,27 +118,30 @@ class PlaybackUiPolicyTest {
     fun shareTrackIdPrefersJobIdForReusableServerIdentity() {
         val playback = PlaybackState(
             lastYouTubeId = "dQw4w9WgXcQ",
-            lastJobId = "job_123"
+            lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
         )
 
-        assertEquals("job_123", playback.shareTrackIdOrNull())
+        assertEquals("a3f3c0dc73c6476c9db95c227f9206f2", playback.shareTrackIdOrNull())
     }
 
     @Test
-    fun shareTrackIdFallsBackToYoutubeIdForLegacySourceOnlyTracks() {
+    fun shareTrackIdDoesNotFallbackToYoutubeIdForLegacySourceOnlyTracks() {
         val playback = PlaybackState(lastYouTubeId = "dQw4w9WgXcQ")
 
-        assertEquals("dQw4w9WgXcQ", playback.shareTrackIdOrNull())
+        assertNull(playback.shareTrackIdOrNull())
     }
 
     @Test
     fun reusableTrackIdsForMatchingIncludesJobAndYoutubeAliases() {
         val playback = PlaybackState(
             lastYouTubeId = "dQw4w9WgXcQ",
-            lastJobId = "job_123"
+            lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
         )
 
-        assertEquals(setOf("job_123", "dQw4w9WgXcQ"), playback.reusableTrackIdsForMatching())
+        assertEquals(
+            setOf("a3f3c0dc73c6476c9db95c227f9206f2", "dQw4w9WgXcQ"),
+            playback.reusableTrackIdsForMatching()
+        )
     }
 
     @Test
@@ -147,7 +150,7 @@ class PlaybackUiPolicyTest {
             appMode = AppMode.Server,
             playback = PlaybackState(
                 analysisErrorMessage = "Loading failed.",
-                lastJobId = "job_123"
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
             )
         )
 
@@ -155,7 +158,7 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
-    fun failedServerLoadCanRetryFromTransportWithYoutubeId() {
+    fun failedServerLoadDoesNotRetryFromTransportWithYoutubeIdOnly() {
         val state = UiState(
             appMode = AppMode.Server,
             playback = PlaybackState(
@@ -164,7 +167,7 @@ class PlaybackUiPolicyTest {
             )
         )
 
-        assertTrue(shouldRetryFailedLoadFromTransport(state))
+        assertFalse(shouldRetryFailedLoadFromTransport(state))
     }
 
     @Test
@@ -173,7 +176,7 @@ class PlaybackUiPolicyTest {
             appMode = AppMode.Local,
             playback = PlaybackState(
                 analysisErrorMessage = "Local analysis failed.",
-                lastJobId = "job_123"
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
             )
         )
 
@@ -186,7 +189,7 @@ class PlaybackUiPolicyTest {
             appMode = AppMode.Server,
             playback = PlaybackState(
                 analysisErrorMessage = "Loading failed.",
-                lastJobId = "job_123"
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
             )
         )
 

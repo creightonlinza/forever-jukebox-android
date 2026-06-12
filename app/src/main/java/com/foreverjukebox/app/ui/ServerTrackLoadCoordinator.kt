@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AnalysisResponse
+import com.foreverjukebox.app.data.canonicalJobId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -27,7 +28,7 @@ class ServerTrackLoadCoordinator(
     }
 
     suspend fun loadOrPoll(response: AnalysisResponse, fallbackJobId: String? = null): Boolean {
-        val jobId = response.id ?: fallbackJobId ?: return false
+        val jobId = canonicalJobId(response.id) ?: canonicalJobId(fallbackJobId) ?: return false
         playbackCoordinator.setLastJobId(jobId)
         playbackCoordinator.updateDeleteEligibility(response)
         if (!getState().playback.audioLoaded && playbackCoordinator.tryLoadCachedTrack(jobId)) {

@@ -8,6 +8,7 @@ import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
+import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
@@ -274,7 +275,9 @@ class PlaybackCoordinator(
                 analysisCalculating = false
             )
         }
-        val resolvedJobId = response.id ?: getState().playback.lastJobId
+        val resolvedJobId = canonicalJobId(response.id)
+            ?: canonicalJobId(getState().playback.lastJobId)
+            ?: jobId
         setLastJobId(resolvedJobId)
         applyAnalysisResult(response)
         return true
@@ -288,7 +291,7 @@ class PlaybackCoordinator(
     }
 
     fun updateDeleteEligibility(response: AnalysisResponse) {
-        val jobId = response.id ?: lastJobId ?: return
+        val jobId = canonicalJobId(response.id) ?: canonicalJobId(lastJobId) ?: return
         if (deleteEligibilityJobId == jobId) {
             return
         }
@@ -423,7 +426,8 @@ class PlaybackCoordinator(
     }
 
     suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
-        if (response.id?.let { !isActiveJobId(it) } == true) {
+        val responseJobId = canonicalJobId(response.id)
+        if (response.id != null && (responseJobId == null || !isActiveJobId(responseJobId))) {
             return false
         }
         val result = response.result ?: return false
@@ -484,7 +488,7 @@ class PlaybackCoordinator(
         }
         applyActiveTab(TabId.Play, true)
         syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-        val jobId = response.id ?: lastJobId
+        val jobId = responseJobId ?: canonicalJobId(lastJobId)
         if (jobId != null) {
             recordPlay(jobId)
         }

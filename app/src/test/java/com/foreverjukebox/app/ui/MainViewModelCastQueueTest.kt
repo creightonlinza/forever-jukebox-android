@@ -15,6 +15,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MainViewModelCastQueueTest {
+    private val jobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+    private val secondJobId = "0123456789abcdef0123456789abcdef"
+    private val thirdJobId = "ffffffffffffffffffffffffffffffff"
 
     @Test
     fun tryQueueYoutubeAnalysisForCastSkipsBlankBaseUrl() = runTest {
@@ -27,7 +30,7 @@ class MainViewModelCastQueueTest {
             artist = "Artist"
         ) { _, _, _, _ ->
             called = true
-            AnalysisStartResponse(id = "job_123")
+            AnalysisStartResponse(id = jobId)
         }
 
         assertNull(queuedJobId)
@@ -51,10 +54,10 @@ class MainViewModelCastQueueTest {
             resolvedYoutubeId = youtubeId
             resolvedTitle = title
             resolvedArtist = artist
-            AnalysisStartResponse(id = "job_abc123")
+            AnalysisStartResponse(id = jobId)
         }
 
-        assertEquals("job_abc123", queuedJobId)
+        assertEquals(jobId, queuedJobId)
         assertEquals("https://api.example.com", resolvedBaseUrl)
         assertEquals("dQw4w9WgXcQ", resolvedYoutubeId)
         assertEquals("Track", resolvedTitle)
@@ -88,10 +91,10 @@ class MainViewModelCastQueueTest {
         ) { _, _, title, artist ->
             resolvedTitle = title
             resolvedArtist = artist
-            AnalysisStartResponse(id = "job_metadata")
+            AnalysisStartResponse(id = jobId)
         }
 
-        assertEquals("job_metadata", queuedJobId)
+        assertEquals(jobId, queuedJobId)
         assertNull(resolvedTitle)
         assertNull(resolvedArtist)
     }
@@ -214,13 +217,13 @@ class MainViewModelCastQueueTest {
     fun favoriteRemovalTrackIdsForDeletionIncludesYoutubeAndJobIdentity() {
         val playback = PlaybackState(
             lastYouTubeId = "dQw4w9WgXcQ",
-            lastJobId = "job_123"
+            lastJobId = jobId
         )
 
         val trackIds = favoriteRemovalTrackIdsForDeletion(playback)
 
         assertTrue(trackIds.contains("dQw4w9WgXcQ"))
-        assertTrue(trackIds.contains("job_123"))
+        assertTrue(trackIds.contains(jobId))
     }
 
     @Test
@@ -229,23 +232,23 @@ class MainViewModelCastQueueTest {
 
         val trackIds = favoriteRemovalTrackIdsForDeletion(
             playback = playback,
-            fallbackJobId = "job_fallback"
+            fallbackJobId = secondJobId
         )
 
-        assertEquals(setOf("job_fallback"), trackIds)
+        assertEquals(setOf(secondJobId), trackIds)
     }
 
     @Test
     fun removeFavoritesForTrackIdsRemovesMatchingSimpleIds() {
         val favorites = listOf(
             FavoriteTrack(uniqueSongId = "dQw4w9WgXcQ", title = "YouTube", artist = "Artist"),
-            FavoriteTrack(uniqueSongId = "job_123", title = "Job", artist = "Artist"),
+            FavoriteTrack(uniqueSongId = jobId, title = "Job", artist = "Artist"),
             FavoriteTrack(uniqueSongId = "other", title = "Other", artist = "Artist")
         )
 
         val filtered = removeFavoritesForTrackIds(
             favorites = favorites,
-            trackIds = setOf("dQw4w9WgXcQ", "job_123")
+            trackIds = setOf("dQw4w9WgXcQ", jobId)
         )
 
         assertEquals(1, filtered.size)
@@ -258,7 +261,7 @@ class MainViewModelCastQueueTest {
             search = SearchState(
                 topSongs = listOf(
                     TopSongItem(
-                        id = "job_top_1",
+                        id = jobId,
                         sourceProvider = "soundcloud",
                         sourceId = "sc_123",
                         title = "Top Song"
@@ -273,7 +276,7 @@ class MainViewModelCastQueueTest {
             sourceId = "sc_123"
         )
 
-        assertEquals("job_top_1", resolved)
+        assertEquals(jobId, resolved)
     }
 
     @Test
@@ -282,7 +285,7 @@ class MainViewModelCastQueueTest {
             search = SearchState(
                 trendingSongs = listOf(
                     TopSongItem(
-                        id = "job_trending_1",
+                        id = secondJobId,
                         sourceProvider = "bandcamp",
                         sourceId = "bc_42",
                         title = "Trending Song"
@@ -290,7 +293,7 @@ class MainViewModelCastQueueTest {
                 ),
                 recentSongs = listOf(
                     TopSongItem(
-                        id = "job_recent_1",
+                        id = thirdJobId,
                         sourceProvider = "upload",
                         sourceId = "upload_9",
                         title = "Recent Song"
@@ -310,8 +313,8 @@ class MainViewModelCastQueueTest {
             sourceId = "upload_9"
         )
 
-        assertEquals("job_trending_1", trendingResolved)
-        assertEquals("job_recent_1", recentResolved)
+        assertEquals(secondJobId, trendingResolved)
+        assertEquals(thirdJobId, recentResolved)
     }
 
     @Test
@@ -355,7 +358,7 @@ class MainViewModelCastQueueTest {
     @Test
     fun shouldReuseLookupJobReturnsTrueForFailedLookupResponse() {
         val failed = AnalysisResponse(
-            id = "job_1",
+            id = jobId,
             youtubeId = "dQw4w9WgXcQ",
             status = "failed",
             error = "Blocked"
@@ -367,7 +370,7 @@ class MainViewModelCastQueueTest {
     @Test
     fun shouldReuseLookupJobReturnsTrueForInProgressLookupResponse() {
         val queued = AnalysisResponse(
-            id = "job_1",
+            id = jobId,
             youtubeId = "dQw4w9WgXcQ",
             status = "queued"
         )
@@ -382,7 +385,7 @@ class MainViewModelCastQueueTest {
     @Test
     fun shouldReuseLookupJobReturnsTrueForCompleteLookupResponse() {
         val complete = AnalysisResponse(
-            id = "job_1",
+            id = jobId,
             youtubeId = "dQw4w9WgXcQ",
             status = "complete"
         )
@@ -402,7 +405,7 @@ class MainViewModelCastQueueTest {
                 )
             )
         )
-        assertTrue(
+        assertFalse(
             shouldReuseLookupJob(
                 AnalysisResponse(
                     id = "job_1",

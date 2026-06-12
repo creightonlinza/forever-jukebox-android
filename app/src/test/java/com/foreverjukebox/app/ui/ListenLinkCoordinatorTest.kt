@@ -28,7 +28,8 @@ class ListenLinkCoordinatorTest {
                 baseUrl = "https://example.com/",
                 playback = PlaybackState(
                     playMode = PlaybackMode.Jukebox,
-                    lastYouTubeId = "dQw4w9WgXcQ"
+                    lastYouTubeId = "dQw4w9WgXcQ",
+                    lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
                 )
             ),
             tuningParams = "thresh=7&jb=1"
@@ -37,7 +38,7 @@ class ListenLinkCoordinatorTest {
         val shareUrl = coordinator.buildShareUrl()
 
         assertEquals(
-            "https://example.com/listen/dQw4w9WgXcQ?thresh=7&jb=1",
+            "https://example.com/listen/a3f3c0dc73c6476c9db95c227f9206f2?thresh=7&jb=1",
             shareUrl
         )
     }
@@ -49,7 +50,8 @@ class ListenLinkCoordinatorTest {
                 baseUrl = "https://example.com/",
                 playback = PlaybackState(
                     playMode = PlaybackMode.Jukebox,
-                    lastYouTubeId = "dQw4w9WgXcQ"
+                    lastYouTubeId = "dQw4w9WgXcQ",
+                    lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
                 )
             ),
             tuningParams = "thresh=7&ab=22"
@@ -58,7 +60,7 @@ class ListenLinkCoordinatorTest {
         val shareUrl = coordinator.buildShareUrl()
 
         assertEquals(
-            "https://example.com/listen/dQw4w9WgXcQ?thresh=7&ab=22",
+            "https://example.com/listen/a3f3c0dc73c6476c9db95c227f9206f2?thresh=7&ab=22",
             shareUrl
         )
     }
@@ -71,7 +73,8 @@ class ListenLinkCoordinatorTest {
                 playback = PlaybackState(
                     playMode = PlaybackMode.Jukebox,
                     jukeboxAudioMode = JukeboxAudioMode.Nightcore,
-                    lastYouTubeId = "dQw4w9WgXcQ"
+                    lastYouTubeId = "dQw4w9WgXcQ",
+                    lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
                 )
             ),
             tuningParams = "am=nightcore"
@@ -80,7 +83,7 @@ class ListenLinkCoordinatorTest {
         val shareUrl = coordinator.buildShareUrl()
 
         assertEquals(
-            "https://example.com/listen/dQw4w9WgXcQ?am=nightcore",
+            "https://example.com/listen/a3f3c0dc73c6476c9db95c227f9206f2?am=nightcore",
             shareUrl
         )
     }
@@ -92,14 +95,17 @@ class ListenLinkCoordinatorTest {
                 baseUrl = "https://example.com",
                 playback = PlaybackState(
                     playMode = PlaybackMode.Autocanonizer,
-                    lastJobId = "job_123"
+                    lastJobId = "0123456789abcdef0123456789abcdef"
                 )
             )
         )
 
         val shareUrl = coordinator.buildShareUrl()
 
-        assertEquals("https://example.com/listen/job_123?mode=autocanonizer", shareUrl)
+        assertEquals(
+            "https://example.com/listen/0123456789abcdef0123456789abcdef?mode=autocanonizer",
+            shareUrl
+        )
     }
 
     @Test

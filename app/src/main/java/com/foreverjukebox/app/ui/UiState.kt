@@ -368,10 +368,6 @@ fun PlaybackState.shareTrackIdOrNull(): String? {
     if (jobId.isNotBlank()) {
         return jobId
     }
-    val youtubeId = lastYouTubeId?.trim().orEmpty()
-    if (youtubeId.isNotBlank()) {
-        return youtubeId
-    }
     return null
 }
 
