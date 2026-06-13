@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.SavedPlaylistTrack
 import com.foreverjukebox.app.data.SavedPlaylistTrackType
+import com.foreverjukebox.app.data.canonicalTrackId
 
 internal const val MAX_PLAYLIST_TRACKS = 10
 
@@ -182,6 +183,29 @@ internal fun SavedPlaylistTrack.toPlaylistTrack(): PlaylistTrack? {
         title = title,
         artist = artist,
         tuningParams = tuningParams
+    )
+}
+
+/**
+ * Builds a [PlaylistTrack] of [PlaylistTrackType.Server] from an arbitrary track id.
+ *
+ * Uses [canonicalTrackId] (not the narrower job-id check) so that ids sourced from
+ * favorites — which may be YouTube source ids rather than 32-char job ids — are
+ * accepted. Returns null only when the id can't be parsed as any known track id.
+ */
+internal fun serverPlaylistTrack(
+    trackId: String,
+    title: String?,
+    artist: String?,
+    tuningParams: String?
+): PlaylistTrack? {
+    val canonical = canonicalTrackId(trackId) ?: return null
+    return PlaylistTrack(
+        id = canonical,
+        type = PlaylistTrackType.Server,
+        title = title.takeIfNotBlank(),
+        artist = artist.takeIfNotBlank(),
+        tuningParams = tuningParams?.takeIf { it.isNotBlank() }
     )
 }
 

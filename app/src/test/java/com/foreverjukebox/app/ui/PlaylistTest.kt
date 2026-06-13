@@ -369,6 +369,67 @@ class PlaylistTest {
         )
     }
 
+    @Test
+    fun serverPlaylistTrackAcceptsYoutubeSourceIdFromFavorites() {
+        // Regression: favorites pass their uniqueSongId (which may be an 11-char
+        // YouTube source id) into the playlist conversion. It must not be rejected.
+        val youtubeId = "dQw4w9WgXcQ"
+
+        val playlistTrack = serverPlaylistTrack(
+            trackId = youtubeId,
+            title = "Never Gonna Give You Up",
+            artist = "Rick Astley",
+            tuningParams = "jb=1"
+        )
+
+        assertEquals(
+            PlaylistTrack(
+                id = youtubeId,
+                type = PlaylistTrackType.Server,
+                title = "Never Gonna Give You Up",
+                artist = "Rick Astley",
+                tuningParams = "jb=1"
+            ),
+            playlistTrack
+        )
+    }
+
+    @Test
+    fun serverPlaylistTrackAcceptsCanonicalJobId() {
+        val jobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+
+        val playlistTrack = serverPlaylistTrack(
+            trackId = jobId,
+            title = "Track",
+            artist = "Artist",
+            tuningParams = null
+        )
+
+        assertEquals(jobId, playlistTrack?.id)
+        assertEquals(PlaylistTrackType.Server, playlistTrack?.type)
+    }
+
+    @Test
+    fun serverPlaylistTrackTrimsAndNullsBlankMetadata() {
+        val playlistTrack = serverPlaylistTrack(
+            trackId = "  dQw4w9WgXcQ  ",
+            title = "   ",
+            artist = "",
+            tuningParams = "  "
+        )
+
+        assertEquals("dQw4w9WgXcQ", playlistTrack?.id)
+        assertNull(playlistTrack?.title)
+        assertNull(playlistTrack?.artist)
+        assertNull(playlistTrack?.tuningParams)
+    }
+
+    @Test
+    fun serverPlaylistTrackRejectsUnparseableId() {
+        assertNull(serverPlaylistTrack("not-a-real-id", "Title", "Artist", null))
+        assertNull(serverPlaylistTrack("   ", "Title", "Artist", null))
+    }
+
     private fun track(
         id: String,
         type: PlaylistTrackType = PlaylistTrackType.Server,

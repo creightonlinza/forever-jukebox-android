@@ -1210,14 +1210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         artist: String?,
         tuningParams: String?
     ): PlaylistTrack? {
-        val canonical = canonicalJobId(trackId) ?: return null
-        return PlaylistTrack(
-            id = canonical,
-            type = PlaylistTrackType.Server,
-            title = title.takeIfNotBlank(),
-            artist = artist.takeIfNotBlank(),
-            tuningParams = tuningParams?.takeIf { it.isNotBlank() }
-        )
+        return serverPlaylistTrack(trackId, title, artist, tuningParams)
     }
 
     private fun playlistTrackForLocalCached(localId: String): PlaylistTrack? {
