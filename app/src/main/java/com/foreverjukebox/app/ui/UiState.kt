@@ -104,6 +104,7 @@ data class UiState(
     val allowFavoritesSync: Boolean = false,
     val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     val maxTrackLengthMinutes: Double? = null,
+    val loadingAudioFeedbackEnabled: Boolean = false,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,
     val listenFavoriteToggleInFlight: Boolean = false,
@@ -124,6 +125,13 @@ data class LocalCachedTrack(
     val title: String,
     val artist: String?,
     val sourceUri: String?
+)
+
+data class FailedLoadRetryRequest(
+    val trackId: String,
+    val title: String?,
+    val artist: String?,
+    val playAfterLoaded: Boolean
 )
 
 data class VersionUpdatePrompt(
@@ -216,6 +224,11 @@ data class TrackMetaJson(
     val duration: Double? = null
 )
 
+data class LoadingTrackMetadata(
+    val title: String,
+    val artist: String?
+)
+
 val serverModeTabs: List<TabId> = listOf(TabId.Top, TabId.Search, TabId.Play, TabId.Faq)
 val localModeTabs: List<TabId> = listOf(TabId.Input, TabId.Play, TabId.Faq)
 val defaultOnboardingMode: AppMode = AppMode.Local
@@ -293,6 +306,42 @@ fun PlaybackState.isTrackLoading(): Boolean {
     return isLoading() || isCastLoading || castPlaybackState == "loading"
 }
 
+fun shouldPlayLoadingAudioFeedback(state: UiState): Boolean {
+    return state.loadingAudioFeedbackEnabled &&
+        !state.playback.isCasting &&
+        state.playback.isLoading()
+}
+
+fun resolveLoadingTrackMetadata(
+    playback: PlaybackState,
+    localSelectedFileName: String?
+): LoadingTrackMetadata? {
+    val title = playback.trackTitle.takeIfNotBlank()
+        ?: localSelectedFileName.takeIfNotBlank()
+        ?: return null
+    return LoadingTrackMetadata(
+        title = title,
+        artist = playback.trackArtist.takeIfNotBlank()
+    )
+}
+
+fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
+    return state.appMode == AppMode.Server &&
+        !state.playback.analysisErrorMessage.isNullOrBlank() &&
+        !state.playback.isTrackLoading() &&
+        !state.playback.shareTrackIdOrNull().isNullOrBlank()
+}
+
+fun failedLoadRetryRequest(playback: PlaybackState): FailedLoadRetryRequest? {
+    val trackId = playback.shareTrackIdOrNull() ?: return null
+    return FailedLoadRetryRequest(
+        trackId = trackId,
+        title = playback.trackTitle,
+        artist = playback.trackArtist,
+        playAfterLoaded = playback.playAfterLoaded
+    )
+}
+
 internal fun shouldBlockPlaybackChangeWhileLoading(playback: PlaybackState): Boolean {
     return playback.isTrackLoading()
 }
@@ -335,10 +384,6 @@ fun PlaybackState.shareTrackIdOrNull(): String? {
     val jobId = lastJobId?.trim().orEmpty()
     if (jobId.isNotBlank()) {
         return jobId
-    }
-    val youtubeId = lastYouTubeId?.trim().orEmpty()
-    if (youtubeId.isNotBlank()) {
-        return youtubeId
     }
     return null
 }
@@ -439,6 +484,8 @@ fun stateAfterLocalAnalysisCancel(current: UiState): UiState {
         localAnalysisJsonPath = null
     )
 }
+
+private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
 fun isValidBaseUrl(value: String): Boolean {
     val trimmed = value.trim()

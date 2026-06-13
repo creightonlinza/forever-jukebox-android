@@ -67,6 +67,7 @@ class AppPreferences(private val context: Context) {
         private val KEY_APP_CONFIG = stringPreferencesKey("app_config")
         private val KEY_CANONIZER_FINISH = booleanPreferencesKey("canonizer_finish_out_song")
         private val KEY_HIGHLIGHT_ANCHOR_BRANCH = booleanPreferencesKey("highlight_anchor_branch")
+        private val KEY_LOADING_AUDIO_FEEDBACK = booleanPreferencesKey("loading_audio_feedback")
         private val KEY_SAVED_PLAYLIST = stringPreferencesKey("saved_playlist")
         private val KEY_WHATS_NEW_VERSION_CODE = intPreferencesKey("whats_new_version_code")
     }
@@ -112,6 +113,10 @@ class AppPreferences(private val context: Context) {
 
     val highlightAnchorBranch: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_HIGHLIGHT_ANCHOR_BRANCH] ?: false
+    }
+
+    val loadingAudioFeedback: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_LOADING_AUDIO_FEEDBACK] ?: false
     }
 
     val savedPlaylist: Flow<List<SavedPlaylistTrack>> = context.dataStore.data.map { prefs ->
@@ -195,6 +200,12 @@ class AppPreferences(private val context: Context) {
     suspend fun setHighlightAnchorBranch(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_HIGHLIGHT_ANCHOR_BRANCH] = enabled
+        }
+    }
+
+    suspend fun setLoadingAudioFeedback(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_LOADING_AUDIO_FEEDBACK] = enabled
         }
     }
 

@@ -9,6 +9,7 @@ internal enum class PlaybackServiceSyncReason {
 internal enum class PlaybackServiceSessionKind {
     Hidden,
     LocalLoading,
+    LocalFailed,
     LocalReady,
     LocalPlaying,
     LocalPaused,
@@ -24,6 +25,10 @@ internal sealed class PlaybackServiceSession {
 
     data class LocalLoading(val progress: Int?) : PlaybackServiceSession() {
         override val kind: PlaybackServiceSessionKind = PlaybackServiceSessionKind.LocalLoading
+    }
+
+    data object LocalFailed : PlaybackServiceSession() {
+        override val kind: PlaybackServiceSessionKind = PlaybackServiceSessionKind.LocalFailed
     }
 
     data object LocalReady : PlaybackServiceSession() {
@@ -53,7 +58,10 @@ internal data class PlaybackServiceSkipAvailability(
     val canSkipNext: Boolean
 )
 
-internal fun resolvePlaybackServiceSession(playback: PlaybackState): PlaybackServiceSession {
+internal fun resolvePlaybackServiceSession(
+    playback: PlaybackState,
+    keepFailedLoadVisible: Boolean = false
+): PlaybackServiceSession {
     if (playback.shouldShowCastNotification()) {
         return PlaybackServiceSession.Cast(
             isPlaying = playback.isRunning,
@@ -67,6 +75,9 @@ internal fun resolvePlaybackServiceSession(playback: PlaybackState): PlaybackSer
     }
     if (playback.isLoading()) {
         return PlaybackServiceSession.LocalLoading(playback.analysisProgress)
+    }
+    if (keepFailedLoadVisible && !playback.analysisErrorMessage.isNullOrBlank()) {
+        return PlaybackServiceSession.LocalFailed
     }
     if (playback.isRunning) {
         return PlaybackServiceSession.LocalPlaying

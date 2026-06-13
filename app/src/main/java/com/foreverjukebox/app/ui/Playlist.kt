@@ -112,6 +112,10 @@ internal fun JukeboxPlaylistState.canRemoveTrackAt(index: Int): Boolean {
     return index in tracks.indices && index != currentIndex
 }
 
+internal fun JukeboxPlaylistState.canSelectTrackAt(index: Int): Boolean {
+    return index in tracks.indices && index != currentIndex
+}
+
 internal fun JukeboxPlaylistState.removeTrackAt(index: Int): JukeboxPlaylistState {
     if (!canRemoveTrackAt(index)) {
         return this

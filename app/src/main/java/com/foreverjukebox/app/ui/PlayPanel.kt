@@ -51,6 +51,10 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val playback = state.playback
     val tuning = state.tuning
     val headerTitle = resolvePlaybackHeaderTitle(playback)
+    val loadingTrackMetadata = resolveLoadingTrackMetadata(
+        playback = playback,
+        localSelectedFileName = state.localSelectedFileName.takeIf { state.appMode == AppMode.Local }
+    )
     val favoriteTargetIds = playback.reusableTrackIdsForMatching()
     val isFavorite = favoriteTargetIds.isNotEmpty() && state.favorites.any { favorite ->
         canonicalTrackId(favorite.uniqueSongId) in favoriteTargetIds
@@ -139,6 +143,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     playback.analysisInFlight -> playback.analysisMessage ?: "Fetching audio"
                     else -> "Fetching audio"
                 },
+                trackTitle = loadingTrackMetadata?.title,
+                trackArtist = loadingTrackMetadata?.artist,
                 playAfterLoaded = playback.playAfterLoaded,
                 showPlayAfterLoaded = shouldShowPlayAfterLoadedOption(state.appMode, playback),
                 onPlayAfterLoadedChange = viewModel::setPlayAfterLoaded,
@@ -340,7 +346,9 @@ private fun PlaylistDialog(
                                     MaterialTheme.colorScheme.surface
                                 }
                             )
-                            .clickable { onSelect(index) }
+                            .clickable(enabled = playlist.canSelectTrackAt(index)) {
+                                onSelect(index)
+                            }
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

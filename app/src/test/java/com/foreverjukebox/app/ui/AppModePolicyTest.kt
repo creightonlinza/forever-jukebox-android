@@ -177,6 +177,53 @@ class AppModePolicyTest {
     }
 
     @Test
+    fun loadingAudioFeedbackDefaultsOff() {
+        assertFalse(
+            shouldPlayLoadingAudioFeedback(
+                UiState(
+                    playback = PlaybackState(analysisInFlight = true)
+                )
+            )
+        )
+    }
+
+    @Test
+    fun loadingAudioFeedbackPlaysForLocalDeviceLoadingWhenEnabled() {
+        assertTrue(
+            shouldPlayLoadingAudioFeedback(
+                UiState(
+                    loadingAudioFeedbackEnabled = true,
+                    playback = PlaybackState(analysisInFlight = true)
+                )
+            )
+        )
+        assertTrue(
+            shouldPlayLoadingAudioFeedback(
+                UiState(
+                    loadingAudioFeedbackEnabled = true,
+                    playback = PlaybackState(audioLoading = true)
+                )
+            )
+        )
+    }
+
+    @Test
+    fun loadingAudioFeedbackDoesNotPlayForCastLoading() {
+        assertFalse(
+            shouldPlayLoadingAudioFeedback(
+                UiState(
+                    loadingAudioFeedbackEnabled = true,
+                    playback = PlaybackState(
+                        analysisInFlight = true,
+                        isCasting = true,
+                        isCastLoading = true
+                    )
+                )
+            )
+        )
+    }
+
+    @Test
     fun modeSwitchResetClearsRuntimeState() {
         val current = UiState(
             appMode = AppMode.Local,
@@ -186,6 +233,7 @@ class AppModePolicyTest {
             showBaseUrlPrompt = true,
             localSelectedFileName = "track.mp3",
             localAnalysisJsonPath = "/tmp/analysis.json",
+            loadingAudioFeedbackEnabled = true,
             activeTab = TabId.Play,
             topSongsTab = TopSongsTab.Recent,
             search = SearchState(query = "abc", topSongsLoading = true),
@@ -219,6 +267,7 @@ class AppModePolicyTest {
         assertEquals(JukeboxAudioMode.Off, reset.playback.jukeboxAudioMode)
         assertNull(reset.localSelectedFileName)
         assertNull(reset.localAnalysisJsonPath)
+        assertTrue(reset.loadingAudioFeedbackEnabled)
         assertEquals(TuningState(), reset.tuning)
     }
 

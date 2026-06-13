@@ -8,6 +8,7 @@ import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
+import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
@@ -274,7 +275,9 @@ class PlaybackCoordinator(
                 analysisCalculating = false
             )
         }
-        val resolvedJobId = response.id ?: getState().playback.lastJobId
+        val resolvedJobId = canonicalJobId(response.id)
+            ?: canonicalJobId(getState().playback.lastJobId)
+            ?: jobId
         setLastJobId(resolvedJobId)
         applyAnalysisResult(response)
         return true
@@ -288,7 +291,7 @@ class PlaybackCoordinator(
     }
 
     fun updateDeleteEligibility(response: AnalysisResponse) {
-        val jobId = response.id ?: lastJobId ?: return
+        val jobId = canonicalJobId(response.id) ?: canonicalJobId(lastJobId) ?: return
         if (deleteEligibilityJobId == jobId) {
             return
         }
@@ -328,7 +331,9 @@ class PlaybackCoordinator(
         setAnalysisProgress(0, "Loading audio")
         val target = audioFile(jobId)
         try {
-            api.fetchAudioToFile(baseUrl, jobId, target)
+            retryTransientServerLoad {
+                api.fetchAudioToFile(baseUrl, jobId, target)
+            }
             if (!isActiveJobId(jobId)) {
                 return false
             }
@@ -421,7 +426,8 @@ class PlaybackCoordinator(
     }
 
     suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
-        if (response.id?.let { !isActiveJobId(it) } == true) {
+        val responseJobId = canonicalJobId(response.id)
+        if (response.id != null && (responseJobId == null || !isActiveJobId(responseJobId))) {
             return false
         }
         val result = response.result ?: return false
@@ -482,7 +488,7 @@ class PlaybackCoordinator(
         }
         applyActiveTab(TabId.Play, true)
         syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-        val jobId = response.id ?: lastJobId
+        val jobId = responseJobId ?: canonicalJobId(lastJobId)
         if (jobId != null) {
             recordPlay(jobId)
         }
@@ -508,7 +514,10 @@ class PlaybackCoordinator(
             return
         }
         val current = getState()
-        val session = resolvePlaybackServiceSession(current.playback)
+        val session = resolvePlaybackServiceSession(
+            playback = current.playback,
+            keepFailedLoadVisible = shouldRetryFailedLoadFromTransport(current)
+        )
         val skip = resolvePlaybackServiceSkipAvailability(current)
         when (session) {
             PlaybackServiceSession.Hidden -> syncHiddenPlaybackServiceSession()
@@ -517,6 +526,7 @@ class PlaybackCoordinator(
                 session,
                 skip
             )
+            PlaybackServiceSession.LocalFailed -> syncLocalFailedPlaybackServiceSession()
             PlaybackServiceSession.LocalPaused,
             PlaybackServiceSession.LocalPlaying,
             PlaybackServiceSession.LocalReady -> syncLocalPlaybackServiceSession(skip)
@@ -571,6 +581,22 @@ class PlaybackCoordinator(
         lastLoadingNotificationBucket = progressBucket
     }
 
+    private fun syncLocalFailedPlaybackServiceSession() {
+        if (
+            playbackServiceSessionVisible &&
+            lastPlaybackServiceSessionKind == PlaybackServiceSessionKind.LocalFailed
+        ) {
+            return
+        }
+        ForegroundPlaybackService.update(
+            context = application,
+            isLoadFailed = true
+        )
+        playbackServiceSessionVisible = true
+        lastPlaybackServiceSessionKind = PlaybackServiceSessionKind.LocalFailed
+        lastLoadingNotificationBucket = null
+    }
+
     private fun syncLocalPlaybackServiceSession(skip: PlaybackServiceSkipAvailability) {
         resetPlaybackServiceSessionTracking()
         ForegroundPlaybackService.update(
@@ -579,7 +605,11 @@ class PlaybackCoordinator(
             canSkipNext = skip.canSkipNext
         )
         playbackServiceSessionVisible = true
-        lastPlaybackServiceSessionKind = resolvePlaybackServiceSession(getState().playback).kind
+        val current = getState()
+        lastPlaybackServiceSessionKind = resolvePlaybackServiceSession(
+            playback = current.playback,
+            keepFailedLoadVisible = shouldRetryFailedLoadFromTransport(current)
+        ).kind
     }
 
     private fun hardStopPlaybackServiceSession() {
@@ -695,19 +725,6 @@ class PlaybackCoordinator(
     }
 
     fun updateListenTimeDisplay() {
-        val durationSeconds = controller.player.getDurationSeconds()
-        val playbackMode = getState().playback.playMode
-        if (
-            playbackMode == PlaybackMode.Jukebox &&
-            durationSeconds != null &&
-            controller.player.getCurrentTime() >= durationSeconds - END_EPSILON_SECONDS
-        ) {
-            controller.stopPlayback()
-            stopListenTimer()
-            updatePlaybackState { it.copy(isRunning = false, isPaused = false) }
-            syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-            return
-        }
         val totalSeconds = controller.getListenTimeSeconds()
         updatePlaybackState {
             it.copy(
@@ -930,7 +947,9 @@ class PlaybackCoordinator(
             if (!isActiveJobId(jobId)) {
                 return
             }
-            val response = api.getAnalysis(baseUrl, jobId)
+            val response = retryTransientServerLoad {
+                api.getAnalysis(baseUrl, jobId)
+            }
             if (!isActiveJobId(jobId)) {
                 return
             }
@@ -1164,6 +1183,5 @@ class PlaybackCoordinator(
 
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
-private const val END_EPSILON_SECONDS = 0.02
 private const val MAX_RANDOM_BRANCH_DELTA = 0.2
 private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 100.0 / MAX_RANDOM_BRANCH_DELTA

@@ -180,6 +180,20 @@ class PlaylistTest {
     }
 
     @Test
+    fun canSelectTrackAtExcludesCurrentTrack() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("A"), track("B"), track("C")),
+            currentIndex = 1
+        )
+
+        assertTrue(playlist.canSelectTrackAt(0))
+        assertFalse(playlist.canSelectTrackAt(1))
+        assertTrue(playlist.canSelectTrackAt(2))
+        assertFalse(playlist.canSelectTrackAt(-1))
+        assertFalse(playlist.canSelectTrackAt(3))
+    }
+
+    @Test
     fun skipAvailabilityFollowsOrderAfterReplacement() {
         val playlist = JukeboxPlaylistState(
             tracks = listOf(track("A"), track("B"), track("C")),

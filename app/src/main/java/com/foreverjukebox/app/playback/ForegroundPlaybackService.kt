@@ -93,10 +93,14 @@ internal enum class PlaybackNotificationActionSlot {
 internal fun playbackNotificationActionSlots(
     canSkipPrevious: Boolean,
     canSkipNext: Boolean,
-    isLoading: Boolean = false
+    isLoading: Boolean = false,
+    isLoadFailed: Boolean = false
 ): List<PlaybackNotificationActionSlot> {
     if (isLoading) {
         return emptyList()
+    }
+    if (isLoadFailed) {
+        return listOf(PlaybackNotificationActionSlot.Toggle)
     }
     val actions = mutableListOf<PlaybackNotificationActionSlot>()
     if (canSkipPrevious) {
@@ -128,8 +132,12 @@ internal fun localPlaybackNotificationTitle(
     baseTitle: String?,
     audioMode: JukeboxAudioMode,
     isLoading: Boolean,
-    loadingProgressBucket: Int?
+    loadingProgressBucket: Int?,
+    isLoadFailed: Boolean = false
 ): String {
+    if (isLoadFailed) {
+        return LOAD_FAILED_NOTIFICATION_TITLE
+    }
     if (isLoading) {
         return loadingNotificationTitle(loadingProgressBucket)
     }
@@ -143,9 +151,10 @@ internal fun localPlaybackNotificationTitle(
 
 internal fun localPlaybackNotificationArtist(
     baseArtist: String?,
-    isLoading: Boolean
+    isLoading: Boolean,
+    isLoadFailed: Boolean = false
 ): String {
-    return if (isLoading) {
+    return if (isLoading || isLoadFailed) {
         DEFAULT_NOTIFICATION_TITLE
     } else {
         baseArtist.orEmpty()
@@ -168,6 +177,7 @@ private object PlaybackServiceConstants {
     const val ACTION_PLAYLIST_PREVIOUS = "com.foreverjukebox.app.playback.PLAYLIST_PREVIOUS"
     const val ACTION_PLAYLIST_NEXT = "com.foreverjukebox.app.playback.PLAYLIST_NEXT"
     const val ACTION_CLOSE_FULLSCREEN = "com.foreverjukebox.app.playback.CLOSE_FULLSCREEN"
+    const val ACTION_RETRY_FAILED_LOAD = "com.foreverjukebox.app.playback.RETRY_FAILED_LOAD"
     const val EXTRA_IS_CASTING = "com.foreverjukebox.app.playback.extra.IS_CASTING"
     const val EXTRA_CAST_IS_PLAYING = "com.foreverjukebox.app.playback.extra.CAST_IS_PLAYING"
     const val EXTRA_TRACK_TITLE = "com.foreverjukebox.app.playback.extra.TRACK_TITLE"
@@ -176,6 +186,7 @@ private object PlaybackServiceConstants {
     const val EXTRA_CAN_SKIP_PREVIOUS = "com.foreverjukebox.app.playback.extra.CAN_SKIP_PREVIOUS"
     const val EXTRA_CAN_SKIP_NEXT = "com.foreverjukebox.app.playback.extra.CAN_SKIP_NEXT"
     const val EXTRA_IS_LOADING = "com.foreverjukebox.app.playback.extra.IS_LOADING"
+    const val EXTRA_IS_LOAD_FAILED = "com.foreverjukebox.app.playback.extra.IS_LOAD_FAILED"
     const val EXTRA_LOADING_PROGRESS = "com.foreverjukebox.app.playback.extra.LOADING_PROGRESS"
     const val EXTRA_SLEEP_TIMER_DURATION_MS = "com.foreverjukebox.app.playback.extra.SLEEP_TIMER_DURATION_MS"
     const val CAST_COMMAND_NAMESPACE = "urn:x-cast:com.foreverjukebox.app"
@@ -184,6 +195,7 @@ private object PlaybackServiceConstants {
 private const val NOTIFICATION_ACCENT = "#4AC7FF"
 private const val DEFAULT_NOTIFICATION_TITLE = "The Forever Jukebox"
 private const val LOADING_NOTIFICATION_TITLE = "Loading"
+private const val LOAD_FAILED_NOTIFICATION_TITLE = "Loading Failed"
 private const val CAST_FALLBACK_DEVICE_LABEL = "Other device"
 private const val BLUETOOTH_DISCONNECT_WINDOW_MS = 3_000L
 
@@ -240,7 +252,8 @@ private data class PlaybackNotificationState(
     val durationMs: Long? = null,
     val canSkipPrevious: Boolean = false,
     val canSkipNext: Boolean = false,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val isLoadFailed: Boolean = false
 ) {
     fun contentText(): String = artist
 
@@ -399,7 +412,8 @@ class ForegroundPlaybackService : Service() {
                 } else {
                     refreshNotificationForCurrentPlayback(
                         skipAvailability = intent.notificationSkipAvailability(),
-                        loadingNotification = intent.loadingNotification()
+                        loadingNotification = intent.loadingNotification(),
+                        isLoadFailed = intent.isLoadFailedNotification()
                     )
                 }
                 pendingForegroundStart = false
@@ -410,7 +424,8 @@ class ForegroundPlaybackService : Service() {
 
     private fun refreshNotificationForCurrentPlayback(
         skipAvailability: NotificationSkipAvailability = activeNotificationSkipAvailability(),
-        loadingNotification: LoadingNotification? = null
+        loadingNotification: LoadingNotification? = null,
+        isLoadFailed: Boolean = false
     ) {
         val active = activeNotificationState
         if (active?.mode == NotificationMode.Cast) {
@@ -422,7 +437,8 @@ class ForegroundPlaybackService : Service() {
             buildLocalNotificationState(
                 isPlaying = controller.isPlaying(),
                 skipAvailability = skipAvailability,
-                loadingNotification = loadingNotification
+                loadingNotification = loadingNotification,
+                isLoadFailed = isLoadFailed
             )
         )
     }
@@ -439,7 +455,8 @@ class ForegroundPlaybackService : Service() {
     private fun buildLocalNotificationState(
         isPlaying: Boolean,
         skipAvailability: NotificationSkipAvailability = activeNotificationSkipAvailability(),
-        loadingNotification: LoadingNotification? = null
+        loadingNotification: LoadingNotification? = null,
+        isLoadFailed: Boolean = false
     ): PlaybackNotificationState {
         val controller = PlaybackControllerHolder.get(this)
         val audioMode = controller.player.getJukeboxAudioMode()
@@ -448,11 +465,13 @@ class ForegroundPlaybackService : Service() {
             baseTitle = controller.getTrackTitle(),
             audioMode = audioMode,
             isLoading = isLoading,
-            loadingProgressBucket = loadingNotification?.progressBucket
+            loadingProgressBucket = loadingNotification?.progressBucket,
+            isLoadFailed = isLoadFailed
         )
         val artist = localPlaybackNotificationArtist(
             baseArtist = controller.getTrackArtist(),
-            isLoading = isLoading
+            isLoading = isLoading,
+            isLoadFailed = isLoadFailed
         )
         val positionMs = controller.getPlaybackPositionMs().coerceAtLeast(0L)
         val durationMs = controller.getTrackDurationMs()?.coerceAtLeast(0L)
@@ -464,9 +483,10 @@ class ForegroundPlaybackService : Service() {
             castDeviceName = null,
             positionMs = positionMs,
             durationMs = durationMs,
-            canSkipPrevious = !isLoading && skipAvailability.canSkipPrevious,
-            canSkipNext = !isLoading && skipAvailability.canSkipNext,
-            isLoading = isLoading
+            canSkipPrevious = !isLoading && !isLoadFailed && skipAvailability.canSkipPrevious,
+            canSkipNext = !isLoading && !isLoadFailed && skipAvailability.canSkipNext,
+            isLoading = isLoading,
+            isLoadFailed = isLoadFailed
         )
     }
 
@@ -504,6 +524,10 @@ class ForegroundPlaybackService : Service() {
             null
         }
         return LoadingNotification(progressBucket)
+    }
+
+    private fun Intent.isLoadFailedNotification(): Boolean {
+        return getBooleanExtra(PlaybackServiceConstants.EXTRA_IS_LOAD_FAILED, false)
     }
 
     private fun Intent.toCastNotificationState(): PlaybackNotificationState? {
@@ -589,7 +613,9 @@ class ForegroundPlaybackService : Service() {
             } else {
                 android.R.drawable.ic_media_play
             }
-            NotificationMode.Local -> if (state.isPlaying) {
+            NotificationMode.Local -> if (state.isLoadFailed) {
+                android.R.drawable.ic_popup_sync
+            } else if (state.isPlaying) {
                 android.R.drawable.ic_media_pause
             } else {
                 android.R.drawable.ic_media_play
@@ -597,7 +623,13 @@ class ForegroundPlaybackService : Service() {
         }
         val actionLabel = when (state.mode) {
             NotificationMode.Cast -> if (state.isPlaying) "Pause" else "Play"
-            NotificationMode.Local -> if (state.isPlaying) "Pause" else "Play"
+            NotificationMode.Local -> if (state.isLoadFailed) {
+                "Retry"
+            } else if (state.isPlaying) {
+                "Pause"
+            } else {
+                "Play"
+            }
         }
         val actionIcon = tintedIcon(actionIconRes, NOTIFICATION_ACCENT.toColorInt())
         val previousIcon = tintedIcon(
@@ -611,7 +643,8 @@ class ForegroundPlaybackService : Service() {
         val actionSlots = playbackNotificationActionSlots(
             canSkipPrevious = state.canSkipPrevious,
             canSkipNext = state.canSkipNext,
-            isLoading = state.isLoading
+            isLoading = state.isLoading,
+            isLoadFailed = state.isLoadFailed
         )
 
         val builder = NotificationCompat.Builder(this, PlaybackServiceConstants.CHANNEL_ID)
@@ -745,6 +778,12 @@ class ForegroundPlaybackService : Service() {
     private fun handlePlaybackAction(action: PlaybackAction) {
         val activeState = activeNotificationState
         if (activeState?.isLoading == true) {
+            return
+        }
+        if (activeState?.isLoadFailed == true) {
+            if (action == PlaybackAction.Play || action == PlaybackAction.Toggle) {
+                broadcastRetryFailedLoadRequested()
+            }
             return
         }
         val targetPlayState = when (action) {
@@ -910,6 +949,12 @@ class ForegroundPlaybackService : Service() {
         })
     }
 
+    private fun broadcastRetryFailedLoadRequested() {
+        sendBroadcast(Intent(PlaybackServiceConstants.ACTION_RETRY_FAILED_LOAD).apply {
+            setPackage(packageName)
+        })
+    }
+
     private fun clearPlaybackNotificationKeepTimer() {
         activeNotificationState = null
         if (hasStartedForeground) {
@@ -1066,19 +1111,23 @@ class ForegroundPlaybackService : Service() {
             PlaybackServiceConstants.ACTION_PLAYLIST_NEXT
         const val ACTION_CLOSE_FULLSCREEN: String =
             PlaybackServiceConstants.ACTION_CLOSE_FULLSCREEN
+        const val ACTION_RETRY_FAILED_LOAD: String =
+            PlaybackServiceConstants.ACTION_RETRY_FAILED_LOAD
 
         fun start(
             context: Context,
             canSkipPrevious: Boolean? = null,
             canSkipNext: Boolean? = null,
             isLoading: Boolean = false,
-            loadingProgress: Int? = null
+            loadingProgress: Int? = null,
+            isLoadFailed: Boolean = false
         ) {
             val playbackContext = context.playbackServiceContext()
             val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_START
                 putSkipAvailability(canSkipPrevious, canSkipNext)
                 putLoadingNotification(isLoading, loadingProgress)
+                putLoadFailedNotification(isLoadFailed)
             }
             if (isRunning) {
                 playbackContext.startService(intent)
@@ -1093,13 +1142,15 @@ class ForegroundPlaybackService : Service() {
             canSkipPrevious: Boolean? = null,
             canSkipNext: Boolean? = null,
             isLoading: Boolean = false,
-            loadingProgress: Int? = null
+            loadingProgress: Int? = null,
+            isLoadFailed: Boolean = false
         ) {
             val playbackContext = context.playbackServiceContext()
             val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                 action = PlaybackServiceConstants.ACTION_UPDATE
                 putSkipAvailability(canSkipPrevious, canSkipNext)
                 putLoadingNotification(isLoading, loadingProgress)
+                putLoadFailedNotification(isLoadFailed)
             }
             if (isRunning) {
                 playbackContext.startService(intent)
@@ -1170,6 +1221,12 @@ class ForegroundPlaybackService : Service() {
             putExtra(PlaybackServiceConstants.EXTRA_IS_LOADING, true)
             loadingNotificationProgressBucket(loadingProgress)?.let { progressBucket ->
                 putExtra(PlaybackServiceConstants.EXTRA_LOADING_PROGRESS, progressBucket)
+            }
+        }
+
+        private fun Intent.putLoadFailedNotification(isLoadFailed: Boolean) {
+            if (isLoadFailed) {
+                putExtra(PlaybackServiceConstants.EXTRA_IS_LOAD_FAILED, true)
             }
         }
 

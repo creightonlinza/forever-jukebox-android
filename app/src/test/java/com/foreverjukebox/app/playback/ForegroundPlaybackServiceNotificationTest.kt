@@ -70,6 +70,17 @@ class ForegroundPlaybackServiceNotificationTest {
     }
 
     @Test
+    fun notificationActionsShowOnlyRetryWhenLoadFailed() {
+        val actions = playbackNotificationActionSlots(
+            canSkipPrevious = true,
+            canSkipNext = true,
+            isLoadFailed = true
+        )
+
+        assertEquals(listOf(PlaybackNotificationActionSlot.Toggle), actions)
+    }
+
+    @Test
     fun compactActionIndicesUseAllVisibleNotificationActions() {
         assertEquals(emptyList<Int>(), compactActionIndices(0).toList())
         assertEquals(listOf(0), compactActionIndices(1).toList())
@@ -148,6 +159,20 @@ class ForegroundPlaybackServiceNotificationTest {
     }
 
     @Test
+    fun localNotificationTitleUsesFailedTitleForLoadFailure() {
+        assertEquals(
+            "Loading Failed",
+            localPlaybackNotificationTitle(
+                baseTitle = "Track",
+                audioMode = JukeboxAudioMode.Nightcore,
+                isLoading = false,
+                loadingProgressBucket = null,
+                isLoadFailed = true
+            )
+        )
+    }
+
+    @Test
     fun localNotificationArtistUsesAppNameWhileLoading() {
         assertEquals(
             "The Forever Jukebox",
@@ -161,6 +186,18 @@ class ForegroundPlaybackServiceNotificationTest {
             localPlaybackNotificationArtist(
                 baseArtist = "Artist",
                 isLoading = true
+            )
+        )
+    }
+
+    @Test
+    fun localNotificationArtistUsesAppNameForLoadFailure() {
+        assertEquals(
+            "The Forever Jukebox",
+            localPlaybackNotificationArtist(
+                baseArtist = "Artist",
+                isLoading = false,
+                isLoadFailed = true
             )
         )
     }

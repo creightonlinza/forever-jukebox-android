@@ -269,6 +269,12 @@ class JukeboxEngine(
 
         val audioTime = player.getAudioTime()
         lastTickTime = audioTime
+        if (hasReachedFinalBeatBoundary(player.getCurrentTime())) {
+            wrapPlaybackToStart(audioTime)
+            emitState(true)
+            lastJumped = false
+            return TICK_INTERVAL_MS
+        }
         if (nextAudioTime == 0.0) {
             nextAudioTime = audioTime
         }
@@ -286,6 +292,25 @@ class JukeboxEngine(
         val remainingMs = ((nextAudioTime - player.getAudioTime()) * 1000.0 - 10.0)
             .coerceAtLeast(0.0)
         return remainingMs.toLong()
+    }
+
+    private fun hasReachedFinalBeatBoundary(trackTime: Double): Boolean {
+        if (beats.isEmpty() || !trackTime.isFinite()) return false
+        val lastBeat = beats.last()
+        val finalBoundary = lastBeat.start + lastBeat.duration
+        return finalBoundary.isFinite() && trackTime >= finalBoundary
+    }
+
+    private fun wrapPlaybackToStart(audioTime: Double) {
+        val firstBeat = beats.firstOrNull() ?: return
+        clearPendingAdvance(cancelScheduledJump = true)
+        player.seek(firstBeat.start)
+        currentBeatIndex = 0
+        nextAudioTime = audioTime + firstBeat.duration / getPlaybackRate()
+        beatsPlayed += 1
+        lastJumped = true
+        lastJumpTime = firstBeat.start
+        lastJumpFromIndex = beats.lastIndex
     }
 
     private fun advanceBeat(audioTime: Double) {

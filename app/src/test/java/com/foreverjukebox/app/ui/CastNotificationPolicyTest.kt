@@ -24,7 +24,7 @@ class CastNotificationPolicyTest {
         val playback = PlaybackState(
             isCasting = true,
             isRunning = false,
-            lastYouTubeId = "abc123"
+            lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
         )
         assertTrue(playback.shouldShowCastNotification())
     }

@@ -8,6 +8,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TrackMetadataPolicyTest {
+    private val jobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+    private val favoriteJobId = "0123456789abcdef0123456789abcdef"
+    private val unknownJobId = "ffffffffffffffffffffffffffffffff"
 
     @Test
     fun resolveTrackLoadMetadataPrefersExplicitMetadataOverLookup() {
@@ -64,11 +67,11 @@ class TrackMetadataPolicyTest {
     @Test
     fun resolveTrackMetaFindsTrendingSongByJobId() {
         val metadata = resolveTrackMeta(
-            trackId = "job_123",
+            trackId = jobId,
             search = SearchState(
                 trendingSongs = listOf(
                     TopSongItem(
-                        id = "job_123",
+                        id = jobId,
                         title = "Trending Track",
                         artist = "Trending Artist"
                     )
@@ -84,13 +87,13 @@ class TrackMetadataPolicyTest {
     @Test
     fun resolveTrackMetaUsesFavoritesWhenFeedsDoNotMatch() {
         val metadata = resolveTrackMeta(
-            trackId = "favorite_job",
+            trackId = favoriteJobId,
             search = searchWithTopSong(
                 sourceId = "dQw4w9WgXcQ",
                 title = "Top Track",
                 artist = "Top Artist"
             ),
-            favorites = listOf(favorite("favorite_job", "Favorite Track", "Favorite Artist"))
+            favorites = listOf(favorite(favoriteJobId, "Favorite Track", "Favorite Artist"))
         )
 
         assertEquals("Favorite Track", metadata.title)
@@ -100,13 +103,13 @@ class TrackMetadataPolicyTest {
     @Test
     fun resolveTrackMetaReturnsNullMetadataForUnknownTrack() {
         val metadata = resolveTrackMeta(
-            trackId = "unknown_job",
+            trackId = unknownJobId,
             search = searchWithTopSong(
                 sourceId = "dQw4w9WgXcQ",
                 title = "Top Track",
                 artist = "Top Artist"
             ),
-            favorites = listOf(favorite("favorite_job", "Favorite Track", "Favorite Artist"))
+            favorites = listOf(favorite(favoriteJobId, "Favorite Track", "Favorite Artist"))
         )
 
         assertNull(metadata.title)
