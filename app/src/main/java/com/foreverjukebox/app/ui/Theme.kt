@@ -1,5 +1,8 @@
 package com.foreverjukebox.app.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -8,9 +11,12 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.foreverjukebox.app.data.ThemeMode
 
 @Composable
@@ -26,6 +32,19 @@ fun ForeverJukeboxTheme(mode: ThemeMode, content: @Composable () -> Unit) {
     val colors: ColorScheme = themeColors(tokens, isDark)
     val typography = remember { appTypography() }
     val shapes = remember { appShapes() }
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        val window = context.findActivity()?.window
+        if (window != null) {
+            SideEffect {
+                // Dark theme → light (white) system bar icons; light theme → dark (black) icons.
+                // Android only supports these two appearances, not an arbitrary custom color.
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !isDark
+                controller.isAppearanceLightNavigationBars = !isDark
+            }
+        }
+    }
     CompositionLocalProvider(LocalThemeTokens provides tokens) {
         MaterialTheme(
             colorScheme = colors,
@@ -34,6 +53,12 @@ fun ForeverJukeboxTheme(mode: ThemeMode, content: @Composable () -> Unit) {
             content = content
         )
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private fun appTypography(): Typography {

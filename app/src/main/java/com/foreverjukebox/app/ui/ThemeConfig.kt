@@ -33,7 +33,7 @@ data class ThemeTokens(
 data class ThemeConfig(val dark: ThemeTokens, val light: ThemeTokens)
 
 private val DarkTokens = ThemeTokens(
-    background = Color(0xFF0F1115),
+    background = Color(0xFF000000),
     onBackground = Color(0xFFE7E4DD),
     panelSurface = Color(0xFF141922),
     heroSurface = Color(0xFF1A1F27),
@@ -53,9 +53,9 @@ private val DarkTokens = ThemeTokens(
 )
 
 private val LightTokens = ThemeTokens(
-    background = Color(0xFFF6F1FF),
+    background = Color(0xFFFFFFFF),
     onBackground = Color(0xFF261A38),
-    panelSurface = Color(0xFFFCFAFF),
+    panelSurface = Color(0xFFF2ECFB),
     heroSurface = Color(0xFFEFE5FF),
     controlSurface = Color(0xFFE8DBFF),
     controlSurfaceHover = Color(0xFFDDCCFF),

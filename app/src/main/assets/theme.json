@@ -1,6 +1,6 @@
 {
   "dark": {
-    "background": "#0F1115",
+    "background": "#000000",
     "onBackground": "#E7E4DD",
     "panelSurface": "#141922",
     "heroSurface": "#1A1F27",
@@ -19,9 +19,9 @@
     "vizBackground": "#232B3D"
   },
   "light": {
-    "background": "#F6F1FF",
+    "background": "#FFFFFF",
     "onBackground": "#261A38",
-    "panelSurface": "#FCFAFF",
+    "panelSurface": "#F2ECFB",
     "heroSurface": "#EFE5FF",
     "controlSurface": "#E8DBFF",
     "controlSurfaceHover": "#DDCCFF",

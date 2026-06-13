@@ -16,9 +16,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
@@ -94,8 +97,9 @@ fun HeaderBar(
 
     Column(
         modifier = Modifier
-            .clip(SurfaceShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clip(HeaderSurfaceShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -167,8 +171,9 @@ fun HeaderBar(
 fun TitleOnlyHeaderBar() {
     Column(
         modifier = Modifier
-            .clip(SurfaceShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clip(HeaderSurfaceShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
     ) {
         HeroTitle()
