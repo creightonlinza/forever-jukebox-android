@@ -93,6 +93,9 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                                 viewModel.addServerTrackToPlaylist(id, title, artist, tuningParams)
                             },
                             onRemoveFavorite = viewModel::removeFavorite,
+                            favoritesSortKey = state.favoritesSortKey,
+                            favoritesSortDirection = state.favoritesSortDirection,
+                            onFavoritesSortChange = viewModel::setFavoritesSort,
                             favoritesSyncCode = state.favoritesSyncCode,
                             allowFavoritesSync = state.allowFavoritesSync,
                             onRefreshSync = viewModel::refreshFavoritesFromSync,

@@ -490,7 +490,9 @@ public:
         {
             std::lock_guard<std::mutex> lock(mDataMutex);
             mAudioData = std::move(data);
-            mEightBitAudioData = renderEightBitPcm(mAudioData, mSampleRate, mChannelCount);
+            mEightBitAudioData.clear();
+            mEightBitAudioData.shrink_to_fit();
+            syncEightBitBufferLocked();
             mTotalFrames =
                 static_cast<int64_t>(mAudioData.size() / static_cast<size_t>(mChannelCount));
             mCowbellHits.clear();
@@ -512,6 +514,24 @@ public:
 
     void setJukeboxAudioMode(int32_t mode) {
         mAudioMode.store(sanitizeAudioModeCode(mode));
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        syncEightBitBufferLocked();
+    }
+
+    // Materializes or frees the 8-bit downsampled buffer to match the active
+    // audio mode. The 8-bit buffer is a full second copy of the audio, so it is
+    // only built while the EightBit mode is active and released otherwise.
+    // Must be called with mDataMutex held.
+    void syncEightBitBufferLocked() {
+        if (settingsForMode(mAudioMode.load()).useEightBitBuffer) {
+            if (mEightBitAudioData.empty() && !mAudioData.empty()) {
+                mEightBitAudioData =
+                    renderEightBitPcm(mAudioData, mSampleRate, mChannelCount);
+            }
+        } else if (!mEightBitAudioData.empty()) {
+            mEightBitAudioData.clear();
+            mEightBitAudioData.shrink_to_fit();
+        }
     }
 
     double getPlaybackRate() const {
@@ -523,7 +543,14 @@ public:
         {
             std::scoped_lock lock(mDataMutex, source.mDataMutex);
             mAudioData = source.mAudioData;
-            mEightBitAudioData = source.mEightBitAudioData;
+            mEightBitAudioData.clear();
+            mEightBitAudioData.shrink_to_fit();
+            // Only carry the 8-bit copy if this player's mode actually needs it.
+            if (settingsForMode(mAudioMode.load()).useEightBitBuffer) {
+                mEightBitAudioData = source.mEightBitAudioData.empty()
+                    ? renderEightBitPcm(mAudioData, mSampleRate, mChannelCount)
+                    : source.mEightBitAudioData;
+            }
             mTotalFrames = source.mTotalFrames;
         }
         mReadFrame.store(0.0);
@@ -1069,13 +1096,16 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCreatePlayer(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeLoadPcm(
-    JNIEnv* env, jobject, jlong handle, jbyteArray data) {
+    JNIEnv* env, jobject, jlong handle, jbyteArray data, jint length) {
     auto* player = toPlayer(handle);
-    if (!player || !data) return;
-    jsize length = env->GetArrayLength(data);
-    if (length <= 0) return;
-    std::vector<int16_t> pcm(static_cast<size_t>(length / 2));
-    env->GetByteArrayRegion(data, 0, length,
+    if (!player || !data || length <= 0) return;
+    // The backing array may be larger than the valid PCM range, so honour the
+    // explicit length and only copy whole 16-bit samples.
+    const jsize available = std::min<jsize>(length, env->GetArrayLength(data));
+    const jsize evenLength = available & ~static_cast<jsize>(1);
+    if (evenLength <= 0) return;
+    std::vector<int16_t> pcm(static_cast<size_t>(evenLength / 2));
+    env->GetByteArrayRegion(data, 0, evenLength,
                             reinterpret_cast<jbyte*>(pcm.data()));
     player->loadPcm(std::move(pcm));
 }

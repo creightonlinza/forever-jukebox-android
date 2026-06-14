@@ -100,6 +100,8 @@ data class UiState(
     val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,
     val cacheSizeBytes: Long = 0,
     val favorites: List<FavoriteTrack> = emptyList(),
+    val favoritesSortKey: FavoriteSortKey = FavoriteSortKey.Title,
+    val favoritesSortDirection: FavoriteSortDirection = FavoriteSortDirection.Ascending,
     val favoritesSyncCode: String? = null,
     val allowFavoritesSync: Boolean = false,
     val maxFavorites: Int = DEFAULT_MAX_FAVORITES,

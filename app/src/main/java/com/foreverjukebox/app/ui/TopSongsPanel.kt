@@ -87,6 +87,9 @@ fun TopSongsPanel(
     onSelect: (String, String?, String?, String?) -> Unit,
     onLongSelect: (String, String?, String?, String?) -> Unit,
     onRemoveFavorite: (String) -> Unit,
+    favoritesSortKey: FavoriteSortKey,
+    favoritesSortDirection: FavoriteSortDirection,
+    onFavoritesSortChange: (FavoriteSortKey, FavoriteSortDirection) -> Unit,
     favoritesSyncCode: String?,
     allowFavoritesSync: Boolean,
     onRefreshSync: () -> Unit,
@@ -406,7 +409,10 @@ fun TopSongsPanel(
                             showLoadingSpinner = false,
                             onSelect = onSelect,
                             onLongSelect = onLongSelect,
-                            onRemoveFavorite = onRemoveFavorite
+                            onRemoveFavorite = onRemoveFavorite,
+                            sortKey = favoritesSortKey,
+                            sortDirection = favoritesSortDirection,
+                            onSortChange = onFavoritesSortChange
                         )
                     }
                 } else {
@@ -418,7 +424,10 @@ fun TopSongsPanel(
                         showLoadingSpinner = true,
                         onSelect = onSelect,
                         onLongSelect = onLongSelect,
-                        onRemoveFavorite = onRemoveFavorite
+                        onRemoveFavorite = onRemoveFavorite,
+                        sortKey = favoritesSortKey,
+                        sortDirection = favoritesSortDirection,
+                        onSortChange = onFavoritesSortChange
                     )
                 }
             }
@@ -572,21 +581,21 @@ private fun FavoritesListContent(
     showLoadingSpinner: Boolean,
     onSelect: (String, String?, String?, String?) -> Unit,
     onLongSelect: (String, String?, String?, String?) -> Unit,
-    onRemoveFavorite: (String) -> Unit
+    onRemoveFavorite: (String) -> Unit,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection,
+    onSortChange: (FavoriteSortKey, FavoriteSortDirection) -> Unit
 ) {
     val trimmedQuery = rawQuery.trim()
     val filteredFavorites = filterFavorites(favorites, rawQuery)
-    var sortKey by remember { mutableStateOf(FavoriteSortKey.Title) }
-    var sortDirection by remember { mutableStateOf(FavoriteSortDirection.Ascending) }
     val sortedFavorites = sortFavoritesForDisplay(filteredFavorites, sortKey, sortDirection)
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val onSortSelected: (FavoriteSortKey) -> Unit = { selectedKey ->
         if (sortKey == selectedKey) {
-            sortDirection = sortDirection.toggled()
+            onSortChange(selectedKey, sortDirection.toggled())
         } else {
-            sortKey = selectedKey
-            sortDirection = FavoriteSortDirection.Ascending
+            onSortChange(selectedKey, FavoriteSortDirection.Ascending)
         }
     }
 
@@ -819,12 +828,12 @@ internal fun filterFavorites(favorites: List<FavoriteTrack>, rawQuery: String): 
     }
 }
 
-internal enum class FavoriteSortKey {
+enum class FavoriteSortKey {
     Title,
     Artist
 }
 
-internal enum class FavoriteSortDirection {
+enum class FavoriteSortDirection {
     Ascending,
     Descending;
 
@@ -834,6 +843,15 @@ internal enum class FavoriteSortDirection {
             Descending -> Ascending
         }
     }
+}
+
+internal fun favoriteSortKeyFromString(raw: String?): FavoriteSortKey {
+    return FavoriteSortKey.entries.firstOrNull { it.name == raw } ?: FavoriteSortKey.Title
+}
+
+internal fun favoriteSortDirectionFromString(raw: String?): FavoriteSortDirection {
+    return FavoriteSortDirection.entries.firstOrNull { it.name == raw }
+        ?: FavoriteSortDirection.Ascending
 }
 
 internal fun sortFavoritesForDisplay(

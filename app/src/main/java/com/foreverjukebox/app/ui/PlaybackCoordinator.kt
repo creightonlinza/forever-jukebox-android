@@ -3,7 +3,8 @@ package com.foreverjukebox.app.ui
 import android.app.Application
 import android.os.PowerManager
 import android.os.SystemClock
-import android.util.Log
+import com.foreverjukebox.app.AppLog
+import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.HttpStatusException
@@ -178,6 +179,14 @@ class PlaybackCoordinator(
     }
 
     fun setAnalysisError(message: String) {
+        // Single chokepoint for every surfaced load/analysis error (server, cached,
+        // local, playback, autocanonizer). Persisting the message here guarantees
+        // the cause of any "Loading failed." is captured even on paths that have no
+        // throwable to log at the call site (e.g. server-reported failures). The
+        // benign user-cancel sentinel is excluded as noise.
+        if (message != LoadingAudioFeedbackController.LOCAL_ANALYSIS_CANCELLED_MESSAGE) {
+            AppLog.e(TAG, "Load/analysis error surfaced: $message")
+        }
         applyLoadingEvent(LoadingEvent.AnalysisError(message))
     }
 
@@ -211,13 +220,13 @@ class PlaybackCoordinator(
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
-                Log.e(TAG, "Polling failed for $jobId", error)
+                AppLog.e(TAG, "Polling failed for $jobId", error)
                 setAnalysisError("Loading failed.")
             } catch (error: IllegalArgumentException) {
-                Log.e(TAG, "Polling failed for $jobId", error)
+                AppLog.e(TAG, "Polling failed for $jobId", error)
                 setAnalysisError("Loading failed.")
             } catch (error: IllegalStateException) {
-                Log.e(TAG, "Polling failed for $jobId", error)
+                AppLog.e(TAG, "Polling failed for $jobId", error)
                 setAnalysisError("Loading failed.")
             }
         }
@@ -254,11 +263,24 @@ class PlaybackCoordinator(
                 }
                 engine.refreshAnchorJump()
             }
+        } catch (cancel: CancellationException) {
+            throw cancel
         } catch (err: OutOfMemoryError) {
-            Log.e(TAG, "Out of memory while loading cached track audio for $jobId", err)
-            withContext(Dispatchers.IO) {
-                audioFile(jobId).delete()
-            }
+            // The cached audio could not be loaded (out of memory, or a corrupt /
+            // truncated cache entry that fails to decode — e.g. MediaCodec throws
+            // CodecException, an IllegalStateException). Drop the unusable file and
+            // return false so the caller re-fetches it from the server instead of
+            // crashing on the bad cache entry.
+            discardUnusableCachedAudio(jobId, err)
+            return false
+        } catch (err: IOException) {
+            discardUnusableCachedAudio(jobId, err)
+            return false
+        } catch (err: IllegalStateException) {
+            discardUnusableCachedAudio(jobId, err)
+            return false
+        } catch (err: IllegalArgumentException) {
+            discardUnusableCachedAudio(jobId, err)
             return false
         }
         if (!isActiveJobId(jobId)) {
@@ -356,6 +378,32 @@ class PlaybackCoordinator(
             clearFailedAudioLoad()
             ignoreFailures { target.delete() }
             throw err
+        } catch (err: OutOfMemoryError) {
+            // Decoding a full track to PCM can exhaust the heap. Recover the same
+            // way the cached-track path does (PlaybackCoordinator.tryLoadCachedTrack)
+            // rather than letting the Error propagate uncaught and kill the app.
+            // Surfaced as an IOException so the existing load-failure handling
+            // shows the error state and stops polling.
+            controller.player.clear()
+            clearFailedAudioLoad()
+            ignoreFailures { target.delete() }
+            throw IOException("Out of memory while loading audio for $jobId", err)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (err: IllegalStateException) {
+            // A decode failure (e.g. MediaCodec.CodecException) that survived the
+            // per-attempt retries in loadServerAudioFileWithRetry. Remap to an
+            // IOException so every caller's load-failure handling applies instead
+            // of an uncaught IllegalStateException reaching the launching scope.
+            controller.player.clear()
+            clearFailedAudioLoad()
+            ignoreFailures { target.delete() }
+            throw IOException("Failed to decode audio for $jobId", err)
+        } catch (err: IllegalArgumentException) {
+            controller.player.clear()
+            clearFailedAudioLoad()
+            ignoreFailures { target.delete() }
+            throw IOException("Failed to decode audio for $jobId", err)
         }
     }
 
@@ -423,6 +471,14 @@ class PlaybackCoordinator(
         audioLoadInFlight = false
         updatePlaybackState { it.copy(audioLoading = false) }
         syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+    }
+
+    private suspend fun discardUnusableCachedAudio(jobId: String, error: Throwable) {
+        AppLog.e(TAG, "Discarding unusable cached audio for $jobId", error)
+        controller.player.clear()
+        withContext(Dispatchers.IO) {
+            ignoreFailures { audioFile(jobId).delete() }
+        }
     }
 
     suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
@@ -816,24 +872,33 @@ class PlaybackCoordinator(
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
-                Log.e(TAG, "Failed to load cached audio for $cachedId", error)
+                AppLog.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             } catch (error: IllegalArgumentException) {
-                Log.e(TAG, "Failed to load cached audio for $cachedId", error)
+                AppLog.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             } catch (error: IllegalStateException) {
-                Log.e(TAG, "Failed to load cached audio for $cachedId", error)
+                AppLog.e(TAG, "Failed to load cached audio for $cachedId", error)
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             }
         }
         val jobId = playback.lastJobId ?: return false
-        return loadAudioFromJob(jobId)
+        return try {
+            loadAudioFromJob(jobId)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: IOException) {
+            AppLog.e(TAG, "Failed to load audio for $jobId", error)
+            updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+            syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+            false
+        }
     }
 
     fun syncTuningState() {
@@ -981,11 +1046,11 @@ class PlaybackCoordinator(
                             } catch (cancel: CancellationException) {
                                 throw cancel
                             } catch (error: IOException) {
-                                Log.e(TAG, "Background audio load failed for $jobId", error)
+                                AppLog.e(TAG, "Background audio load failed for $jobId", error)
                             } catch (error: IllegalArgumentException) {
-                                Log.e(TAG, "Background audio load failed for $jobId", error)
+                                AppLog.e(TAG, "Background audio load failed for $jobId", error)
                             } catch (error: IllegalStateException) {
-                                Log.e(TAG, "Background audio load failed for $jobId", error)
+                                AppLog.e(TAG, "Background audio load failed for $jobId", error)
                             } finally {
                                 audioLoadInFlight = false
                                 if (backgroundAudioLoadJob == audioJob) {

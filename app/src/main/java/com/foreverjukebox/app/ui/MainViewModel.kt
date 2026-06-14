@@ -31,6 +31,7 @@ import com.foreverjukebox.app.data.sanitizeMaxFavorites
 import com.foreverjukebox.app.data.trackIdFromTopSong
 import com.foreverjukebox.app.data.youtubeTrackIdFromTopSong
 import com.foreverjukebox.app.data.sourceProviderFromRaw
+import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
@@ -366,7 +367,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             hydrateSavedPlaylistIfInactive()
         },
         applyActiveTab = ::applyActiveTab,
-        logError = { message, error -> Log.e(TAG, message, error) }
+        logError = { message, error -> AppLog.e(TAG, message, error) }
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
@@ -583,6 +584,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update {
                     it.copy(playback = it.playback.copy(activeVizIndex = resolvedIndex))
                 }
+            }
+        }
+        viewModelScope.launch {
+            preferences.favoritesSortKey.collect { raw ->
+                val sortKey = favoriteSortKeyFromString(raw)
+                _state.update { it.copy(favoritesSortKey = sortKey) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.favoritesSortDirection.collect { raw ->
+                val sortDirection = favoriteSortDirectionFromString(raw)
+                _state.update { it.copy(favoritesSortDirection = sortDirection) }
             }
         }
         viewModelScope.launch {
@@ -2090,13 +2103,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (error: IOException) {
-            Log.e(TAG, "Failed to load existing job", error)
+            AppLog.e(TAG, "Failed to load existing job", error)
             playbackCoordinator.setAnalysisError("Loading failed.")
         } catch (error: IllegalArgumentException) {
-            Log.e(TAG, "Failed to load existing job", error)
+            AppLog.e(TAG, "Failed to load existing job", error)
             playbackCoordinator.setAnalysisError("Loading failed.")
         } catch (error: IllegalStateException) {
-            Log.e(TAG, "Failed to load existing job", error)
+            AppLog.e(TAG, "Failed to load existing job", error)
             playbackCoordinator.setAnalysisError("Loading failed.")
         }
     }
@@ -2133,17 +2146,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (error.statusCode == 422) {
                     showServerTrackLengthLimitError()
                 } else {
-                    Log.e(TAG, failureLogMessage, error)
+                    AppLog.e(TAG, failureLogMessage, error)
                     playbackCoordinator.setAnalysisError("Loading failed.")
                 }
             } catch (error: IOException) {
-                Log.e(TAG, failureLogMessage, error)
+                AppLog.e(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalArgumentException) {
-                Log.e(TAG, failureLogMessage, error)
+                AppLog.e(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalStateException) {
-                Log.e(TAG, failureLogMessage, error)
+                AppLog.e(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             }
         }
@@ -2750,6 +2763,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setFavoritesSort(sortKey: FavoriteSortKey, sortDirection: FavoriteSortDirection) {
+        if (
+            state.value.favoritesSortKey == sortKey &&
+            state.value.favoritesSortDirection == sortDirection
+        ) {
+            return
+        }
+        _state.update {
+            it.copy(favoritesSortKey = sortKey, favoritesSortDirection = sortDirection)
+        }
+        viewModelScope.launch {
+            preferences.setFavoritesSort(sortKey.name, sortDirection.name)
+        }
+    }
+
     fun setActiveVisualization(index: Int) {
         if (index !in 0 until visualizationCount) {
             return
@@ -3025,13 +3053,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
-                Log.e(TAG, "Failed to recover server load state", error)
+                AppLog.e(TAG, "Failed to recover server load state", error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalArgumentException) {
-                Log.e(TAG, "Failed to recover server load state", error)
+                AppLog.e(TAG, "Failed to recover server load state", error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalStateException) {
-                Log.e(TAG, "Failed to recover server load state", error)
+                AppLog.e(TAG, "Failed to recover server load state", error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             }
         }

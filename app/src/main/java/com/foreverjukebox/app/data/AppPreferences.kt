@@ -64,6 +64,9 @@ class AppPreferences(private val context: Context) {
         private val KEY_VIZ_INDEX = intPreferencesKey("viz_index")
         private val KEY_FAVORITES = stringPreferencesKey("favorites")
         private val KEY_FAVORITES_SYNC_CODE = stringPreferencesKey("favorites_sync_code")
+        private val KEY_FAVORITES_SORT_KEY = stringPreferencesKey("favorites_sort_key")
+        private val KEY_FAVORITES_SORT_DIRECTION =
+            stringPreferencesKey("favorites_sort_direction")
         private val KEY_APP_CONFIG = stringPreferencesKey("app_config")
         private val KEY_CANONIZER_FINISH = booleanPreferencesKey("canonizer_finish_out_song")
         private val KEY_HIGHLIGHT_ANCHOR_BRANCH = booleanPreferencesKey("highlight_anchor_branch")
@@ -100,6 +103,14 @@ class AppPreferences(private val context: Context) {
 
     val favoritesSyncCode: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_FAVORITES_SYNC_CODE]
+    }
+
+    val favoritesSortKey: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FAVORITES_SORT_KEY]
+    }
+
+    val favoritesSortDirection: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FAVORITES_SORT_DIRECTION]
     }
 
     val appConfig: Flow<AppConfigResponse?> = context.dataStore.data.map { prefs ->
@@ -176,6 +187,13 @@ class AppPreferences(private val context: Context) {
             } else {
                 prefs[KEY_FAVORITES_SYNC_CODE] = code.trim().lowercase()
             }
+        }
+    }
+
+    suspend fun setFavoritesSort(sortKey: String, sortDirection: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_FAVORITES_SORT_KEY] = sortKey
+            prefs[KEY_FAVORITES_SORT_DIRECTION] = sortDirection
         }
     }
 

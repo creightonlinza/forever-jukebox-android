@@ -9,7 +9,6 @@ import com.foreverjukebox.app.engine.JukeboxPlayer
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -42,7 +41,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
         channelCount = decoded.channelCount
         durationSeconds = decoded.durationSeconds
         ensureNativePlayer()
-        nativeLoadPcm(nativeHandle, decoded.data)
+        nativeLoadPcm(nativeHandle, decoded.data, decoded.dataLength)
     }
 
     suspend fun loadUri(
@@ -64,7 +63,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
         channelCount = decoded.channelCount
         durationSeconds = decoded.durationSeconds
         ensureNativePlayer()
-        nativeLoadPcm(nativeHandle, decoded.data)
+        nativeLoadPcm(nativeHandle, decoded.data, decoded.dataLength)
     }
 
     fun release() {
@@ -280,8 +279,10 @@ class BufferedAudioPlayer : JukeboxPlayer {
             }
             offset = chunkDataOffset + chunkSize + (chunkSize % 2)
         }
+        val resolvedData = requireNotNull(data) { "Missing WAV data" }
         return DecodedAudio(
-            data = requireNotNull(data) { "Missing WAV data" },
+            data = resolvedData,
+            dataLength = resolvedData.size,
             sampleRate = requireNotNull(sampleRate) { "Missing WAV format" },
             channelCount = requireNotNull(channelCount) { "Missing WAV channels" },
             durationSeconds = 0.0
@@ -337,11 +338,14 @@ class BufferedAudioPlayer : JukeboxPlayer {
         } else {
             -1L
         }
+        // Pre-size to the duration estimate so the buffer rarely has to grow,
+        // keeping a single PCM copy on the heap instead of the buffer + an
+        // extra toByteArray() snapshot.
         val output = if (durationUs > 0) {
             val expectedBytes = (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
-            ByteArrayOutputStream(expectedBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            PcmBuffer(expectedBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         } else {
-            ByteArrayOutputStream()
+            PcmBuffer()
         }
         var expectedPcmBytes = if (durationUs > 0) {
             (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
@@ -407,7 +411,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
                             }
                             outBuffer.get(chunkBuffer, 0, info.size)
                             outBuffer.clear()
-                            output.write(chunkBuffer, 0, info.size)
+                            output.append(chunkBuffer, 0, info.size)
                             outputBytesWritten += info.size.toLong().coerceAtLeast(0L)
                             reportProgress(info.presentationTimeUs)
                         }
@@ -430,30 +434,63 @@ class BufferedAudioPlayer : JukeboxPlayer {
             runCatching { decoder.stop() }
             decoder.release()
             extractor.release()
-            output.flush()
-            output.close()
         }
         onProgress?.invoke(100)
-        val data = output.toByteArray()
+        val totalBytes = output.size
         val bytesPerFrame = channels * 2
-        val totalFrames = if (bytesPerFrame > 0) data.size / bytesPerFrame else 0
+        val totalFrames = if (bytesPerFrame > 0) totalBytes / bytesPerFrame else 0
         val durationSeconds = if (sampleRate > 0) {
             totalFrames.toDouble() / sampleRate.toDouble()
         } else {
             0.0
         }
-        return DecodedAudio(data, sampleRate, channels, durationSeconds)
+        return DecodedAudio(output.backingArray, totalBytes, sampleRate, channels, durationSeconds)
     }
 
     private data class DecodedAudio(
         val data: ByteArray,
+        val dataLength: Int,
         val sampleRate: Int,
         val channelCount: Int,
         val durationSeconds: Double
     )
 
+    // Growable PCM sink that exposes its backing array directly, so the decoded
+    // audio is handed to native code without an intermediate full-size copy.
+    // Pre-size to the expected byte count to avoid reallocation in the common
+    // case where the track duration is known.
+    private class PcmBuffer(initialCapacity: Int = DEFAULT_CAPACITY) {
+        var backingArray: ByteArray = ByteArray(initialCapacity.coerceAtLeast(DEFAULT_CAPACITY))
+            private set
+        var size: Int = 0
+            private set
+
+        fun append(source: ByteArray, offset: Int, length: Int) {
+            if (length <= 0) return
+            ensureCapacity(size + length)
+            System.arraycopy(source, offset, backingArray, size, length)
+            size += length
+        }
+
+        private fun ensureCapacity(required: Int) {
+            if (required <= backingArray.size) return
+            var newCapacity = backingArray.size
+            while (newCapacity in 1 until required) {
+                newCapacity = newCapacity shl 1
+            }
+            if (newCapacity < required) {
+                newCapacity = required
+            }
+            backingArray = backingArray.copyOf(newCapacity)
+        }
+
+        private companion object {
+            const val DEFAULT_CAPACITY = 64 * 1024
+        }
+    }
+
     private external fun nativeCreatePlayer(sampleRate: Int, channelCount: Int): Long
-    private external fun nativeLoadPcm(handle: Long, data: ByteArray)
+    private external fun nativeLoadPcm(handle: Long, data: ByteArray, length: Int)
     private external fun nativePlay(handle: Long)
     private external fun nativePause(handle: Long)
     private external fun nativeStop(handle: Long)
