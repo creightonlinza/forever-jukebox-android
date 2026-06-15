@@ -10,6 +10,7 @@ import org.junit.Test
 class ApiModelsContractTest {
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val jsonWithDefaults = Json { encodeDefaults = true }
 
     @Test
     fun analysisResponsePrefersJobIdForReusableTrackIdentity() {
@@ -182,6 +183,46 @@ class ApiModelsContractTest {
         assertNull(parsedProvider)
 
         assertNull(parsedSource)
+    }
+
+    @Test
+    fun favoriteTrackDecodesPlayModeAndTreatsLegacyAsAbsent() {
+        val autocanonized = """
+            {
+              "uniqueSongId": "dQw4w9WgXcQ",
+              "title": "Track",
+              "artist": "Artist",
+              "playMode": "autocanonizer"
+            }
+        """.trimIndent()
+        val legacy = """
+            {
+              "uniqueSongId": "dQw4w9WgXcQ",
+              "title": "Track",
+              "artist": "Artist"
+            }
+        """.trimIndent()
+
+        val decodedAutocanonized = json.decodeFromString(FavoriteTrack.serializer(), autocanonized)
+        val decodedLegacy = json.decodeFromString(FavoriteTrack.serializer(), legacy)
+
+        assertEquals(FavoritePlayMode.Autocanonizer, decodedAutocanonized.playMode)
+        assertNull(decodedLegacy.playMode)
+    }
+
+    @Test
+    fun favoriteTrackEncodesPlayModeWireValue() {
+        val encoded = jsonWithDefaults.encodeToString(
+            FavoriteTrack.serializer(),
+            FavoriteTrack(
+                uniqueSongId = "dQw4w9WgXcQ",
+                title = "Track",
+                artist = "Artist",
+                playMode = FavoritePlayMode.Autocanonizer
+            )
+        )
+
+        assertTrue(encoded.contains("\"playMode\":\"autocanonizer\""))
     }
 
     @Test

@@ -33,7 +33,8 @@ data class SavedPlaylistTrack(
     val type: SavedPlaylistTrackType,
     val title: String? = null,
     val artist: String? = null,
-    val tuningParams: String? = null
+    val tuningParams: String? = null,
+    val playMode: FavoritePlayMode? = null
 )
 
 internal fun encodeSavedPlaylistTracks(

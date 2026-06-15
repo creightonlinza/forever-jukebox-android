@@ -17,11 +17,22 @@ enum class FavoriteSourceType {
 }
 
 @Serializable
+enum class FavoritePlayMode {
+    @SerialName("jukebox")
+    Jukebox,
+    @SerialName("autocanonizer")
+    Autocanonizer
+}
+
+@Serializable
 data class FavoriteTrack(
     val uniqueSongId: String,
     val title: String,
     val artist: String,
     val duration: Double? = null,
     val sourceType: FavoriteSourceType? = null,
-    val tuningParams: String? = null
+    val tuningParams: String? = null,
+    // Play mode the track was favorited in; absent/null on legacy favorites,
+    // which predate autocanonizer favorites and are treated as jukebox.
+    val playMode: FavoritePlayMode? = null
 )

@@ -92,6 +92,12 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                             onLongSelect = { id, title, artist, tuningParams ->
                                 viewModel.addServerTrackToPlaylist(id, title, artist, tuningParams)
                             },
+                            onFavoriteSelect = { id, title, artist, tuningParams, playMode ->
+                                viewModel.selectFavoriteTrack(id, title, artist, tuningParams, playMode)
+                            },
+                            onFavoriteLongSelect = { id, title, artist, tuningParams, playMode ->
+                                viewModel.addFavoriteTrackToPlaylist(id, title, artist, tuningParams, playMode)
+                            },
                             onRemoveFavorite = viewModel::removeFavorite,
                             favoritesSortKey = state.favoritesSortKey,
                             favoritesSortDirection = state.favoritesSortDirection,
