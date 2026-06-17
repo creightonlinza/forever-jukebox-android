@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import com.foreverjukebox.app.engine.JumpEvent
 import com.foreverjukebox.app.engine.JukeboxPlayer
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.Dispatchers
@@ -154,6 +155,16 @@ class BufferedAudioPlayer : JukeboxPlayer {
     override fun clearAnchorJump() {
         if (nativeHandle != 0L) {
             nativeClearAnchorJump(nativeHandle)
+        }
+    }
+
+    override fun consumeJumpEvent(): JumpEvent? {
+        if (nativeHandle == 0L) return null
+        val event = DoubleArray(JUMP_EVENT_FIELD_COUNT)
+        return if (nativeConsumeJumpEvent(nativeHandle, event)) {
+            JumpEvent(sourceStartTime = event[0], targetTime = event[1])
+        } else {
+            null
         }
     }
 
@@ -499,6 +510,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeCancelScheduledJump(handle: Long)
     private external fun nativeSetAnchorJump(handle: Long, targetTime: Double, audioStart: Double): Boolean
     private external fun nativeClearAnchorJump(handle: Long)
+    private external fun nativeConsumeJumpEvent(handle: Long, event: DoubleArray): Boolean
     private external fun nativeGetCurrentTime(handle: Long): Double
     private external fun nativeGetAudioTime(handle: Long): Double
     private external fun nativeIsPlaying(handle: Long): Boolean
@@ -527,6 +539,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeRelease(handle: Long)
 
     companion object {
+        private const val JUMP_EVENT_FIELD_COUNT = 2
         private const val WAV_HEADER_MIN_BYTES = 44
         private const val PCM_WAV_FORMAT = 1
         private const val PCM_WAV_BITS_PER_SAMPLE = 16

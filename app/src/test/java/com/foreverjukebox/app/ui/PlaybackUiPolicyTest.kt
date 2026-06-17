@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.engine.JukeboxState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -14,6 +15,29 @@ class PlaybackUiPolicyTest {
         assertEquals("Pause", playbackTransportContentDescription(PlaybackState(isRunning = true)))
         assertEquals("Resume", playbackTransportContentDescription(PlaybackState(isPaused = true)))
         assertEquals("Play", playbackTransportContentDescription(PlaybackState()))
+    }
+
+    @Test
+    fun jumpLineUsesActualJumpDestinationWhenCursorCaughtUpPastIt() {
+        val line = jumpLineForEngineState(
+            JukeboxState(
+                currentBeatIndex = 2,
+                beatsPlayed = 12,
+                currentTime = 1.2,
+                lastJumped = true,
+                lastJumpTime = 0.0,
+                lastJumpFromIndex = 1,
+                lastJumpToIndex = 0,
+                currentThreshold = 20,
+                lastBranchPoint = 1,
+                curRandomBranchChance = 0.2
+            ),
+            startedAt = 1234L
+        )
+
+        assertEquals(1, line?.from)
+        assertEquals(0, line?.to)
+        assertEquals(1234L, line?.startedAt)
     }
 
     @Test

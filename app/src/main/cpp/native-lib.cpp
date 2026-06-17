@@ -464,6 +464,7 @@ public:
                 closeLocked();
             }
         }
+        clearPromotedJumpEvent();
         mIsPlaying.store(false);
     }
 
@@ -480,6 +481,7 @@ public:
         mJumpAtSourceFrame.store(0.0);
         mJumpToFrame.store(0.0);
         mHasJump.store(false);
+        clearPromotedJumpEvent();
         cancelCowbellHits();
         clearAnchorJump();
         resetDspState();
@@ -500,6 +502,7 @@ public:
         mReadFrame.store(0.0);
         mAudioFrame.store(0);
         mHasJump.store(false);
+        clearPromotedJumpEvent();
         clearAnchorJump();
         resetDspState();
     }
@@ -558,6 +561,7 @@ public:
         mJumpAtSourceFrame.store(0.0);
         mJumpToFrame.store(0.0);
         mHasJump.store(false);
+        clearPromotedJumpEvent();
         clearAnchorJump();
         resetDspState();
     }
@@ -566,6 +570,7 @@ public:
         const int64_t frame = static_cast<int64_t>(seconds * static_cast<double>(mSampleRate));
         mReadFrame.store(frame < 0 ? 0.0 : static_cast<double>(frame));
         mHasJump.store(false);
+        clearPromotedJumpEvent();
         cancelCowbellHits();
         resetDspState();
     }
@@ -696,6 +701,20 @@ public:
         mHasAnchorJump.store(false);
         mAnchorJumpAtSourceFrame.store(0.0);
         mAnchorJumpToFrame.store(0.0);
+    }
+
+    bool consumeJumpEvent(double* sourceStartTime, double* targetTime) {
+        if (!sourceStartTime || !targetTime) {
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        if (!mHasPromotedJump.exchange(false)) {
+            return false;
+        }
+        const double sampleRate = static_cast<double>(mSampleRate);
+        *sourceStartTime = mPromotedJumpAtSourceFrame.load() / sampleRate;
+        *targetTime = mPromotedJumpToFrame.load() / sampleRate;
+        return true;
     }
 
     double getCurrentTimeSeconds() const {
@@ -940,7 +959,9 @@ private:
             if (sourceFrame + kJumpFrameEpsilon >= jumpAt) {
                 mHasJump.store(false);
                 if (sourceFrame - jumpAt <= kMaxLateJumpFrames) {
-                    return mJumpToFrame.load();
+                    const double targetFrame = mJumpToFrame.load();
+                    publishJumpEvent(jumpAt, targetFrame);
+                    return targetFrame;
                 }
             }
         }
@@ -949,10 +970,24 @@ private:
             if (sourceFrame + kJumpFrameEpsilon >= anchorJumpAt &&
                 sourceFrame - anchorJumpAt <= kMaxLateJumpFrames) {
                 mHasJump.store(false);
-                return mAnchorJumpToFrame.load();
+                const double targetFrame = mAnchorJumpToFrame.load();
+                publishJumpEvent(anchorJumpAt, targetFrame);
+                return targetFrame;
             }
         }
         return sourceFrame;
+    }
+
+    void publishJumpEvent(double sourceFrame, double targetFrame) {
+        mPromotedJumpAtSourceFrame.store(sourceFrame);
+        mPromotedJumpToFrame.store(targetFrame);
+        mHasPromotedJump.store(true);
+    }
+
+    void clearPromotedJumpEvent() {
+        mHasPromotedJump.store(false);
+        mPromotedJumpAtSourceFrame.store(0.0);
+        mPromotedJumpToFrame.store(0.0);
     }
 
     AudioModeSettings updateDspModeIfNeeded() {
@@ -1062,6 +1097,9 @@ private:
     std::atomic<double> mAnchorJumpAtSourceFrame{0.0};
     std::atomic<double> mAnchorJumpToFrame{0.0};
     std::atomic<bool> mHasAnchorJump{false};
+    std::atomic<double> mPromotedJumpAtSourceFrame{0.0};
+    std::atomic<double> mPromotedJumpToFrame{0.0};
+    std::atomic<bool> mHasPromotedJump{false};
     std::atomic<bool> mIsPlaying{false};
     std::atomic<float> mGain{1.0f};
     std::atomic<float> mDuckingTargetVolume{kNormalDuckingVolume};
@@ -1164,6 +1202,23 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeClearAnchorJump(
     JNIEnv*, jobject, jlong handle) {
     auto* player = toPlayer(handle);
     if (player) player->clearAnchorJump();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeConsumeJumpEvent(
+    JNIEnv* env, jobject, jlong handle, jdoubleArray event) {
+    auto* player = toPlayer(handle);
+    if (!player || !event || env->GetArrayLength(event) < 2) {
+        return false;
+    }
+    double sourceStartTime = 0.0;
+    double targetTime = 0.0;
+    if (!player->consumeJumpEvent(&sourceStartTime, &targetTime)) {
+        return false;
+    }
+    const jdouble values[2] = {sourceStartTime, targetTime};
+    env->SetDoubleArrayRegion(event, 0, 2, values);
+    return true;
 }
 
 extern "C" JNIEXPORT jdouble JNICALL

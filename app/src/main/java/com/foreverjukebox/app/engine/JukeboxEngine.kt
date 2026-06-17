@@ -18,6 +18,7 @@ interface JukeboxPlayer {
     fun cancelScheduledJump()
     fun setAnchorJump(targetTime: Double, sourceStartTime: Double): Boolean = false
     fun clearAnchorJump() = Unit
+    fun consumeJumpEvent(): JumpEvent? = null
     fun getCurrentTime(): Double
     fun getAudioTime(): Double
     fun getPlaybackRate(): Double
@@ -44,6 +45,7 @@ class JukeboxEngine(
     private var lastJumped = false
     private var lastJumpTime: Double? = null
     private var lastJumpFromIndex: Int? = null
+    private var lastJumpToIndex: Int? = null
     private var lastTickTime: Double? = null
     private var forceBranch = false
     private var pendingAdvance: PendingAdvance? = null
@@ -238,6 +240,7 @@ class JukeboxEngine(
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
+        lastJumpToIndex = null
         clearPendingAdvance(cancelScheduledJump = false)
     }
 
@@ -255,6 +258,7 @@ class JukeboxEngine(
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
+        lastJumpToIndex = null
         lastTickTime = null
         clearPendingAdvance(cancelScheduledJump = true)
     }
@@ -286,8 +290,9 @@ class JukeboxEngine(
             guard -= 1
         }
 
-        val snapped = verifyPlaybackSync()
-        emitState(if (snapped) false else lastJumped)
+        verifyPlaybackSync()
+        consumePromotedJumpEvent()
+        emitState(lastJumped)
         lastJumped = false
         val remainingMs = ((nextAudioTime - player.getAudioTime()) * 1000.0 - 10.0)
             .coerceAtLeast(0.0)
@@ -311,6 +316,7 @@ class JukeboxEngine(
         lastJumped = true
         lastJumpTime = firstBeat.start
         lastJumpFromIndex = beats.lastIndex
+        lastJumpToIndex = 0
     }
 
     private fun advanceBeat(audioTime: Double) {
@@ -450,10 +456,12 @@ class JukeboxEngine(
             lastJumped = true
             lastJumpTime = advance.targetTime
             lastJumpFromIndex = advance.jumpFromIndex
+            lastJumpToIndex = advance.chosenIndex
         } else {
             lastJumped = false
             lastJumpTime = null
             lastJumpFromIndex = null
+            lastJumpToIndex = null
         }
 
         currentBeatIndex = advance.chosenIndex
@@ -521,7 +529,20 @@ class JukeboxEngine(
         lastJumped = false
         lastJumpTime = null
         lastJumpFromIndex = null
+        lastJumpToIndex = null
         clearPendingAdvance(cancelScheduledJump = true)
+    }
+
+    private fun consumePromotedJumpEvent() {
+        val event = player.consumeJumpEvent() ?: return
+        if (!event.sourceStartTime.isFinite() || !event.targetTime.isFinite()) return
+        val sourceIndex = findBeatIndexByTime(event.sourceStartTime)
+        val targetIndex = findBeatIndexByTime(event.targetTime)
+        if (sourceIndex !in beats.indices || targetIndex !in beats.indices) return
+        lastJumped = true
+        lastJumpTime = event.targetTime
+        lastJumpFromIndex = sourceIndex
+        lastJumpToIndex = targetIndex
     }
 
     private fun nextAudioTimeForBeatAt(
@@ -659,6 +680,7 @@ class JukeboxEngine(
             lastJumped = jumped,
             lastJumpTime = lastJumpTime,
             lastJumpFromIndex = lastJumpFromIndex,
+            lastJumpToIndex = lastJumpToIndex,
             currentThreshold = currentGraph.currentThreshold,
             lastBranchPoint = currentGraph.lastBranchPoint,
             curRandomBranchChance = curRandomBranchChance

@@ -2,6 +2,8 @@ package com.foreverjukebox.app.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import com.foreverjukebox.app.engine.JukeboxState
+import com.foreverjukebox.app.visualization.JumpLine
 
 enum class FavoriteToggleResult {
     Added,
@@ -54,4 +56,11 @@ internal fun playbackTransportContentDescription(playback: PlaybackState): Strin
         playback.isPaused -> "Resume"
         else -> "Play"
     }
+}
+
+internal fun jumpLineForEngineState(engineState: JukeboxState, startedAt: Long): JumpLine? {
+    val jumpFrom = engineState.lastJumpFromIndex ?: return null
+    if (!engineState.lastJumped) return null
+    val jumpTo = engineState.lastJumpToIndex ?: engineState.currentBeatIndex
+    return JumpLine(jumpFrom, jumpTo, startedAt)
 }

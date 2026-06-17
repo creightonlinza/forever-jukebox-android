@@ -84,9 +84,15 @@ data class JukeboxState(
     val lastJumped: Boolean,
     val lastJumpTime: Double?,
     val lastJumpFromIndex: Int?,
+    val lastJumpToIndex: Int?,
     val currentThreshold: Int,
     val lastBranchPoint: Int,
     val curRandomBranchChance: Double
+)
+
+data class JumpEvent(
+    val sourceStartTime: Double,
+    val targetTime: Double
 )
 
 data class Segment(

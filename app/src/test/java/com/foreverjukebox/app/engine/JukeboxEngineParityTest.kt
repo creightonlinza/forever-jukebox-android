@@ -728,6 +728,45 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun promotedAudioJumpRestoresHighlightAfterMissedExplicitScheduling() {
+        val player = FakePlayer().apply {
+            fakeCurrentTime = 0.95
+            fakeAudioTime = 1.05
+            jumpEvent = JumpEvent(sourceStartTime = 1.0, targetTime = 0.0)
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val edge = makeEdge(0, beats[1], beats[0], 10.0)
+        beats[1].neighbors = mutableListOf(edge)
+        beats[1].allNeighbors = mutableListOf(edge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(edge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 0)
+        setPrivateField(engine, "nextAudioTime", 1.0)
+        setPrivateField(engine, "ticking", true)
+        var update: JukeboxState? = null
+        engine.onUpdate { update = it }
+
+        invokeTick(engine)
+
+        assertEquals(0, player.scheduleJumpCalls.size)
+        assertEquals(0, update?.currentBeatIndex)
+        assertEquals(true, update?.lastJumped)
+        assertEquals(1, update?.lastJumpFromIndex)
+        assertEquals(0, update?.lastJumpToIndex)
+    }
+
+    @Test
     fun rejectedScheduledJumpAdvancesSequentiallyAndRestoresBranchSelection() {
         val player = FakePlayer().apply {
             fakeCurrentTime = 0.0
@@ -795,6 +834,7 @@ class JukeboxEngineParityTest {
         assertEquals(2, getPrivateField<Int>(engine, "currentBeatIndex"))
         assertEquals(20.75, getPrivateField(engine, "nextAudioTime"), 0.000001)
         assertEquals(false, getPrivateField<Boolean>(engine, "lastJumped"))
+        assertNull(getPrivateField<Int?>(engine, "lastJumpToIndex"))
     }
 
     @Test
@@ -831,6 +871,48 @@ class JukeboxEngineParityTest {
         assertEquals(1, player.scheduleJumpCalls.size)
         assertEquals(1, player.cancelScheduledJumpCalls)
         assertEquals(false, getPrivateField<Boolean>(engine, "lastJumped"))
+    }
+
+    @Test
+    fun promotedAudioJumpPreservesDestinationWhenCatchUpAdvancesPastIt() {
+        val player = FakePlayer().apply {
+            fakeCurrentTime = 0.25
+            fakeAudioTime = 0.5
+        }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val edge = makeEdge(0, beats[1], beats[0], 10.0)
+        beats[1].neighbors = mutableListOf(edge)
+        beats[1].allNeighbors = mutableListOf(edge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(edge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        setPrivateField(engine, "currentBeatIndex", 0)
+        setPrivateField(engine, "nextAudioTime", 1.0)
+        setPrivateField(engine, "ticking", true)
+        invokePreparePendingAdvance(engine, 1.0)
+        assertEquals(1, player.scheduleJumpCalls.size)
+        player.fakeCurrentTime = 1.1
+        player.fakeAudioTime = 2.1
+        player.jumpEvent = JumpEvent(sourceStartTime = 1.0, targetTime = 0.0)
+        var update: JukeboxState? = null
+        engine.onUpdate { update = it }
+
+        invokeTick(engine)
+
+        assertEquals(1, update?.currentBeatIndex)
+        assertEquals(true, update?.lastJumped)
+        assertEquals(1, update?.lastJumpFromIndex)
+        assertEquals(0, update?.lastJumpToIndex)
     }
 
     @Test
@@ -1039,6 +1121,15 @@ class JukeboxEngineParityTest {
         method.invoke(engine, audioTime)
     }
 
+    private fun invokePreparePendingAdvance(engine: JukeboxEngine, audioTime: Double) {
+        val method: Method = JukeboxEngine::class.java.getDeclaredMethod(
+            "preparePendingAdvance",
+            Double::class.javaPrimitiveType
+        )
+        method.isAccessible = true
+        method.invoke(engine, audioTime)
+    }
+
     private fun invokeTick(engine: JukeboxEngine) {
         val method: Method = JukeboxEngine::class.java.getDeclaredMethod("tick")
         method.isAccessible = true
@@ -1066,6 +1157,7 @@ class JukeboxEngineParityTest {
         var fakeAudioTime = 0.0
         var fakePlaybackRate = 1.0
         var scheduleJumpResult = true
+        var jumpEvent: JumpEvent? = null
         var cancelScheduledJumpCalls = 0
         val seekCalls = mutableListOf<Double>()
         val scheduleJumpCalls = mutableListOf<Pair<Double, Double>>()
@@ -1105,6 +1197,12 @@ class JukeboxEngineParityTest {
 
         override fun clearAnchorJump() {
             clearAnchorJumpCalls += 1
+        }
+
+        override fun consumeJumpEvent(): JumpEvent? {
+            val event = jumpEvent
+            jumpEvent = null
+            return event
         }
 
         override fun getCurrentTime(): Double = fakeCurrentTime

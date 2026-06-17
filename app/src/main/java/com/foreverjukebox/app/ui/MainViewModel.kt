@@ -38,7 +38,6 @@ import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
-import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
 import com.foreverjukebox.app.cast.CastAppIdResolver
@@ -672,11 +671,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             val lastJumpFrom = engineState.lastJumpFromIndex
-            val jumpLine = if (engineState.lastJumped && lastJumpFrom != null) {
-                JumpLine(lastJumpFrom, currentBeatIndex, SystemClock.elapsedRealtime())
-            } else {
-                null
-            }
+            val jumpLine = jumpLineForEngineState(engineState, SystemClock.elapsedRealtime())
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
