@@ -29,7 +29,6 @@ import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Delete
@@ -997,39 +996,5 @@ internal fun LoadingStatus(
             }
         }
         Spacer(modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-internal fun ErrorStatus(
-    message: String,
-    showRetry: Boolean,
-    onRetry: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (showRetry) {
-            SquareIconButton(
-                onClick = onRetry,
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .size(SmallButtonHeight)
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = "Retry",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }

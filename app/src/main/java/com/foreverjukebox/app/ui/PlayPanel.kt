@@ -130,10 +130,13 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (!playback.isCasting && !playback.analysisErrorMessage.isNullOrBlank()) {
-            ErrorStatus(
+            LoadingFailedStatus(
                 message = playback.analysisErrorMessage,
-                showRetry = state.appMode == AppMode.Server,
-                onRetry = { viewModel.retryFailedLoad() }
+                onRetry = if (state.appMode == AppMode.Server) {
+                    { viewModel.retryFailedLoad() }
+                } else {
+                    null
+                }
             )
         } else if (!playback.isCasting && (playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading)) {
             LoadingStatus(

@@ -75,8 +75,11 @@ fun TopSongsPanel(
     recentItems: List<TopSongItem>,
     favorites: List<FavoriteTrack>,
     loading: Boolean,
+    topSongsErrorMessage: String?,
     trendingLoading: Boolean,
+    trendingErrorMessage: String?,
     recentLoading: Boolean,
+    recentErrorMessage: String?,
     favoritesLoading: Boolean,
     topSongsLimit: Int,
     activeTab: TopSongsTab,
@@ -216,6 +219,11 @@ fun TopSongsPanel(
                         }
                     } else if (loading || !hasAttemptedTopSongsLoad) {
                         ListLoadingPlaceholder()
+                    } else if (!topSongsErrorMessage.isNullOrBlank()) {
+                        ListLoadingFailedStatus(
+                            message = topSongsErrorMessage,
+                            onRetry = onRefreshTopSongs
+                        )
                     } else {
                         ListStatusMessage(text = "No plays recorded yet.")
                     }
@@ -282,6 +290,11 @@ fun TopSongsPanel(
                         }
                     } else if (trendingLoading || !hasAttemptedTrendingLoad) {
                         ListLoadingPlaceholder()
+                    } else if (!trendingErrorMessage.isNullOrBlank()) {
+                        ListLoadingFailedStatus(
+                            message = trendingErrorMessage,
+                            onRetry = onRefreshTrendingSongs
+                        )
                     } else {
                         ListStatusMessage(text = "No trending tracks yet.")
                     }
@@ -348,6 +361,11 @@ fun TopSongsPanel(
                         }
                     } else if (recentLoading || !hasAttemptedRecentLoad) {
                         ListLoadingPlaceholder()
+                    } else if (!recentErrorMessage.isNullOrBlank()) {
+                        ListLoadingFailedStatus(
+                            message = recentErrorMessage,
+                            onRetry = onRefreshRecentSongs
+                        )
                     } else {
                         ListStatusMessage(text = "No recent plays yet.")
                     }
@@ -954,6 +972,18 @@ private fun ListStatusMessage(
             style = MaterialTheme.typography.bodySmall
         )
     }
+}
+
+@Composable
+private fun ListLoadingFailedStatus(
+    message: String,
+    onRetry: () -> Unit
+) {
+    LoadingFailedStatus(
+        message = message,
+        onRetry = onRetry,
+        modifier = Modifier.heightIn(min = 120.dp)
+    )
 }
 
 @Composable
