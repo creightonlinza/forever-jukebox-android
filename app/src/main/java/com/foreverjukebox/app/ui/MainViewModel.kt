@@ -16,6 +16,7 @@ import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.AnalysisStartResponse
+import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.HttpStatusException
@@ -1221,9 +1222,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         trackId: String,
         title: String?,
         artist: String?,
-        tuningParams: String?
+        tuningParams: String?,
+        playMode: FavoritePlayMode? = null
     ): PlaylistTrack? {
-        return serverPlaylistTrack(trackId, title, artist, tuningParams)
+        return serverPlaylistTrack(trackId, title, artist, tuningParams, playMode)
     }
 
     private fun playlistTrackForLocalCached(localId: String): PlaylistTrack? {
@@ -1256,6 +1258,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             artist = playback.trackArtist,
             tuningParams = if (type == PlaylistTrackType.Server && playback.playMode == PlaybackMode.Jukebox) {
                 playbackCoordinator.buildTuningParamsString()
+            } else {
+                null
+            },
+            playMode = if (type == PlaylistTrackType.Server) {
+                playback.playMode.toFavoritePlayModeOrNull()
             } else {
                 null
             }
@@ -1308,13 +1315,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playAfterLoaded: Boolean = false
     ) {
         when (track.type) {
-            PlaylistTrackType.Server -> loadTrackByIdInternal(
-                track.id,
-                track.title,
-                track.artist,
-                track.tuningParams,
-                playAfterLoaded
-            )
+            PlaylistTrackType.Server -> {
+                // Honor the track's saved play mode as the playlist advances; a null
+                // playMode (untagged/jukebox favorites, top songs) falls back to jukebox.
+                setPlaybackMode(track.playMode.toPlaybackMode())
+                loadTrackByIdInternal(
+                    track.id,
+                    track.title,
+                    track.artist,
+                    track.tuningParams,
+                    playAfterLoaded
+                )
+            }
             PlaylistTrackType.LocalCached -> localAnalysisCoordinator.openCachedLocalTrack(
                 localId = track.id,
                 playAfterLoaded = playAfterLoaded
@@ -1361,7 +1373,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playbackCoordinator.buildTuningParamsString()
                     } else {
                         null
-                    }
+                    },
+                    playMode = playback.playMode.toFavoritePlayModeOrNull()
                 )
                 favoritesController.updateFavorites(
                     favorites + newFavorite,
@@ -1400,11 +1413,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         trackId: String,
         title: String? = null,
         artist: String? = null,
-        tuningParams: String? = null
+        tuningParams: String? = null,
+        playMode: FavoritePlayMode? = null
     ) {
         if (blockPlaybackChangeWhileLoading()) return
         clearInactiveSavedPlaylistBeforeOutsideSelection()
-        val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams)
+        val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams, playMode)
         if (track != null && state.value.playlist.isActive()) {
             updatePlaylistState { it.replaceCurrentTrackWith(track) }
         }
@@ -1416,6 +1430,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun selectFavoriteTrack(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null,
+        playMode: FavoritePlayMode? = null
+    ) {
+        if (blockPlaybackChangeWhileLoading()) return
+        // Restore the play mode the track was favorited in before loading so the
+        // track opens in jukebox or autocanonizer accordingly. Legacy favorites
+        // (null playMode) fall back to jukebox.
+        setPlaybackMode(playMode.toPlaybackMode())
+        selectServerPlaylistTrack(trackId, title, artist, tuningParams, playMode)
+    }
+
     fun addServerTrackToPlaylist(
         trackId: String,
         title: String? = null,
@@ -1423,6 +1452,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tuningParams: String? = null
     ) {
         val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams) ?: return
+        addTrackToPlaylistFromLongPress(track)
+    }
+
+    fun addFavoriteTrackToPlaylist(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null,
+        playMode: FavoritePlayMode? = null
+    ) {
+        // Carry the favorite's play mode into the playlist entry so playback honors
+        // it when this track is reached during advancement (see loadPlaylistTrack).
+        val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams, playMode) ?: return
         addTrackToPlaylistFromLongPress(track)
     }
 

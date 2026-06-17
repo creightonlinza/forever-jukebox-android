@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.autocanonizer.AutocanonizerData
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.DEFAULT_MAX_FAVORITES
+import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
@@ -33,6 +34,20 @@ enum class TopSongsTab {
 enum class PlaybackMode {
     Jukebox,
     Autocanonizer
+}
+
+// Only autocanonizer is persisted explicitly; jukebox is the implicit default and
+// maps to null so untagged/legacy tracks fall back to jukebox on the way back in.
+fun PlaybackMode.toFavoritePlayModeOrNull(): FavoritePlayMode? = when (this) {
+    PlaybackMode.Autocanonizer -> FavoritePlayMode.Autocanonizer
+    PlaybackMode.Jukebox -> null
+}
+
+// Legacy favorites predate autocanonizer favorites and decode to a null
+// playMode; treat them as jukebox.
+fun FavoritePlayMode?.toPlaybackMode(): PlaybackMode = when (this) {
+    FavoritePlayMode.Autocanonizer -> PlaybackMode.Autocanonizer
+    FavoritePlayMode.Jukebox, null -> PlaybackMode.Jukebox
 }
 
 enum class JukeboxAudioMode(

@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.SavedPlaylistTrack
 import com.foreverjukebox.app.data.SavedPlaylistTrackType
 import com.foreverjukebox.app.data.canonicalTrackId
@@ -17,7 +18,9 @@ data class PlaylistTrack(
     val type: PlaylistTrackType,
     val title: String?,
     val artist: String?,
-    val tuningParams: String? = null
+    val tuningParams: String? = null,
+    // Play mode the track should load in; null is the implicit jukebox default.
+    val playMode: FavoritePlayMode? = null
 )
 
 data class JukeboxPlaylistState(
@@ -167,7 +170,8 @@ internal fun PlaylistTrack.toSavedPlaylistTrack(): SavedPlaylistTrack {
         },
         title = title,
         artist = artist,
-        tuningParams = tuningParams
+        tuningParams = tuningParams,
+        playMode = playMode
     )
 }
 
@@ -182,7 +186,8 @@ internal fun SavedPlaylistTrack.toPlaylistTrack(): PlaylistTrack? {
         },
         title = title,
         artist = artist,
-        tuningParams = tuningParams
+        tuningParams = tuningParams,
+        playMode = playMode
     )
 }
 
@@ -197,7 +202,8 @@ internal fun serverPlaylistTrack(
     trackId: String,
     title: String?,
     artist: String?,
-    tuningParams: String?
+    tuningParams: String?,
+    playMode: FavoritePlayMode? = null
 ): PlaylistTrack? {
     val canonical = canonicalTrackId(trackId) ?: return null
     return PlaylistTrack(
@@ -205,7 +211,8 @@ internal fun serverPlaylistTrack(
         type = PlaylistTrackType.Server,
         title = title.takeIfNotBlank(),
         artist = artist.takeIfNotBlank(),
-        tuningParams = tuningParams?.takeIf { it.isNotBlank() }
+        tuningParams = tuningParams?.takeIf { it.isNotBlank() },
+        playMode = playMode
     )
 }
 
@@ -231,7 +238,8 @@ private fun PlaylistTrack.withMetadataFrom(incoming: PlaylistTrack): PlaylistTra
     return copy(
         title = incoming.title.takeIfNotBlank() ?: title,
         artist = incoming.artist.takeIfNotBlank() ?: artist,
-        tuningParams = incoming.tuningParams?.takeIf { it.isNotBlank() } ?: tuningParams
+        tuningParams = incoming.tuningParams?.takeIf { it.isNotBlank() } ?: tuningParams,
+        playMode = incoming.playMode ?: playMode
     )
 }
 

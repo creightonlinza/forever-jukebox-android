@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.FavoritePlayMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -430,19 +431,45 @@ class PlaylistTest {
         assertNull(serverPlaylistTrack("   ", "Title", "Artist", null))
     }
 
+    @Test
+    fun serverPlaylistTrackCarriesPlayMode() {
+        val autocanonized = serverPlaylistTrack(
+            "dQw4w9WgXcQ",
+            "Track",
+            "Artist",
+            tuningParams = null,
+            playMode = FavoritePlayMode.Autocanonizer
+        )
+        val jukebox = serverPlaylistTrack("dQw4w9WgXcQ", "Track", "Artist", tuningParams = null)
+
+        assertEquals(FavoritePlayMode.Autocanonizer, autocanonized?.playMode)
+        assertNull(jukebox?.playMode)
+    }
+
+    @Test
+    fun savedPlaylistTrackRoundTripPreservesPlayMode() {
+        val original = track("dQw4w9WgXcQ", playMode = FavoritePlayMode.Autocanonizer)
+
+        val restored = original.toSavedPlaylistTrack().toPlaylistTrack()
+
+        assertEquals(FavoritePlayMode.Autocanonizer, restored?.playMode)
+    }
+
     private fun track(
         id: String,
         type: PlaylistTrackType = PlaylistTrackType.Server,
         tuningParams: String? = null,
         title: String? = id,
-        artist: String? = "Artist"
+        artist: String? = "Artist",
+        playMode: FavoritePlayMode? = null
     ): PlaylistTrack {
         return PlaylistTrack(
             id = id,
             type = type,
             title = title,
             artist = artist,
-            tuningParams = tuningParams
+            tuningParams = tuningParams,
+            playMode = playMode
         )
     }
 }

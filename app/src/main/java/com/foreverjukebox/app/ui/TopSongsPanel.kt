@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.TopSongItem
 import androidx.compose.ui.focus.FocusRequester
@@ -86,6 +87,8 @@ fun TopSongsPanel(
     onRefreshFavorites: () -> Unit,
     onSelect: (String, String?, String?, String?) -> Unit,
     onLongSelect: (String, String?, String?, String?) -> Unit,
+    onFavoriteSelect: (String, String?, String?, String?, FavoritePlayMode?) -> Unit,
+    onFavoriteLongSelect: (String, String?, String?, String?, FavoritePlayMode?) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     favoritesSortKey: FavoriteSortKey,
     favoritesSortDirection: FavoriteSortDirection,
@@ -407,8 +410,8 @@ fun TopSongsPanel(
                             onQueryChange = { favoritesQuery = it },
                             loading = favoritesLoading,
                             showLoadingSpinner = false,
-                            onSelect = onSelect,
-                            onLongSelect = onLongSelect,
+                            onSelect = onFavoriteSelect,
+                            onLongSelect = onFavoriteLongSelect,
                             onRemoveFavorite = onRemoveFavorite,
                             sortKey = favoritesSortKey,
                             sortDirection = favoritesSortDirection,
@@ -422,8 +425,8 @@ fun TopSongsPanel(
                         onQueryChange = { favoritesQuery = it },
                         loading = favoritesLoading,
                         showLoadingSpinner = true,
-                        onSelect = onSelect,
-                        onLongSelect = onLongSelect,
+                        onSelect = onFavoriteSelect,
+                        onLongSelect = onFavoriteLongSelect,
                         onRemoveFavorite = onRemoveFavorite,
                         sortKey = favoritesSortKey,
                         sortDirection = favoritesSortDirection,
@@ -579,8 +582,8 @@ private fun FavoritesListContent(
     onQueryChange: (String) -> Unit,
     loading: Boolean,
     showLoadingSpinner: Boolean,
-    onSelect: (String, String?, String?, String?) -> Unit,
-    onLongSelect: (String, String?, String?, String?) -> Unit,
+    onSelect: (String, String?, String?, String?, FavoritePlayMode?) -> Unit,
+    onLongSelect: (String, String?, String?, String?, FavoritePlayMode?) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     sortKey: FavoriteSortKey,
     sortDirection: FavoriteSortDirection,
@@ -668,7 +671,8 @@ private fun FavoritesListContent(
                                             item.uniqueSongId,
                                             title,
                                             artist,
-                                            item.tuningParams
+                                            item.tuningParams,
+                                            item.playMode
                                         )
                                     },
                                     onLongClick = {
@@ -676,7 +680,8 @@ private fun FavoritesListContent(
                                             item.uniqueSongId,
                                             title,
                                             artist,
-                                            item.tuningParams
+                                            item.tuningParams,
+                                            item.playMode
                                         )
                                     }
                                 ),
