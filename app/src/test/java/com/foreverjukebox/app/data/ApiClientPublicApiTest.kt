@@ -10,6 +10,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -249,6 +250,32 @@ class ApiClientPublicApiTest {
         assertEquals("123.45", item.getValue("duration").toString())
         assertEquals("youtube", item.getValue("sourceType").toString().trim('"'))
         assertEquals("jb=1&thresh=7", item.getValue("tuningParams").toString().trim('"'))
+        assertFalse(item.containsKey("playMode"))
+    }
+
+    @Test
+    fun createFavoritesSyncEncodesAutocanonizerPlayModeOnlyWhenPresent() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"code":"abc123","count":1,"favorites":[]}""")
+        )
+        val baseUrl = server.url("/api/").toString()
+        val favorites = listOf(
+            FavoriteTrack(
+                uniqueSongId = "mvJjmWTg7Qo",
+                title = "Song 1",
+                artist = "Artist 1",
+                playMode = FavoritePlayMode.Autocanonizer
+            )
+        )
+
+        api.createFavoritesSync(baseUrl = baseUrl, favorites = favorites)
+
+        val request = server.takeRequest()
+        val payload = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+        val item = payload.getValue("favorites").jsonArray.single().jsonObject
+        assertEquals("autocanonizer", item.getValue("playMode").toString().trim('"'))
     }
 
     @Test
