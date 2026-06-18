@@ -2087,9 +2087,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = normalizedJobId,
             failureLogMessage = "Failed to load track by job id"
         ) {
-            val response = retryTransientServerLoad {
-                api.getAnalysis(baseUrl, normalizedJobId)
-            }
+            val response = loadExplicitJobInitialResponse(
+                fetchJob = {
+                    retryTransientServerLoad {
+                        api.getAnalysis(baseUrl, normalizedJobId)
+                    }
+                },
+                retryJob = {
+                    api.retryJob(baseUrl, normalizedJobId)
+                }
+            )
             serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = normalizedJobId)
         }
     }

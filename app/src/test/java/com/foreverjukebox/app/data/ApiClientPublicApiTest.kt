@@ -164,6 +164,35 @@ class ApiClientPublicApiTest {
     }
 
     @Test
+    fun retryJobUsesEmptyPostAndParsesResponse() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "id": "job_123",
+                      "status": "queued",
+                      "progress": 0.0,
+                      "message": "Retry queued"
+                    }
+                    """.trimIndent()
+                )
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val response = api.retryJob(baseUrl = baseUrl, jobId = "job_123")
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/base/api/jobs/job_123/retry", request.path)
+        assertEquals(0L, request.bodySize)
+        assertEquals("job_123", response.id)
+        assertEquals("queued", response.status)
+        assertEquals("Retry queued", response.message)
+    }
+
+    @Test
     fun createFavoritesSyncTrimsPayloadToServerLimit() = runTest {
         server.enqueue(
             MockResponse()
