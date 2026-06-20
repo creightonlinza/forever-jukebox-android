@@ -655,6 +655,7 @@ class ForegroundPlaybackService : Service() {
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setOnlyAlertOnce(true)
             .setContentIntent(activityPendingIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
 
         actionSlots.forEach { slot ->
@@ -692,17 +693,20 @@ class ForegroundPlaybackService : Service() {
                 state.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 state.durationMs == null
             )
-            val mediaStyle = MediaStyle()
-                .setMediaSession(mediaSession.sessionToken)
-            when (compactActionIndices(actionSlots.size).size) {
-                1 -> mediaStyle.setShowActionsInCompactView(0)
-                2 -> mediaStyle.setShowActionsInCompactView(0, 1)
-                3 -> mediaStyle.setShowActionsInCompactView(0, 1, 2)
-            }
-            builder.setStyle(
-                mediaStyle
-            )
         }
+
+        // Bind the MediaStyle/MediaSession for both local and cast playback so the
+        // notification is surfaced in the lock-screen "now playing" media area. Without
+        // this, the cast notification was a plain low-importance notification that many
+        // lock screens hide.
+        val mediaStyle = MediaStyle()
+            .setMediaSession(mediaSession.sessionToken)
+        when (compactActionIndices(actionSlots.size).size) {
+            1 -> mediaStyle.setShowActionsInCompactView(0)
+            2 -> mediaStyle.setShowActionsInCompactView(0, 1)
+            3 -> mediaStyle.setShowActionsInCompactView(0, 1, 2)
+        }
+        builder.setStyle(mediaStyle)
 
         val notification: Notification = builder.build()
         if (hasStartedForeground) {

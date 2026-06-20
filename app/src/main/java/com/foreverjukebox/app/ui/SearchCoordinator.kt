@@ -206,14 +206,26 @@ class SearchCoordinator(
             if (!isRequestCurrent(generation, baseUrl)) {
                 return@launch
             }
-            updateSearchState { setFeedLoading(it, feed, true) }
+            updateSearchState { search ->
+                setFeedErrorMessage(
+                    search = setFeedLoading(search, feed, true),
+                    feed = feed,
+                    errorMessage = null
+                )
+            }
             try {
                 val items = fetchSongs(feed, baseUrl)
                 if (!isRequestCurrent(generation, baseUrl)) {
                     return@launch
                 }
                 markFeedLoaded(feed)
-                updateSearchState { setFeedItems(it, feed, items) }
+                updateSearchState { search ->
+                    setFeedErrorMessage(
+                        search = setFeedItems(search, feed, items),
+                        feed = feed,
+                        errorMessage = null
+                    )
+                }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
@@ -221,19 +233,19 @@ class SearchCoordinator(
                     return@launch
                 }
                 logError("Song refresh failed for $feed", error)
-                updateSearchState { setFeedItems(it, feed, emptyList()) }
+                updateSearchState { setFeedErrorMessage(it, feed, "Loading failed.") }
             } catch (error: IllegalArgumentException) {
                 if (!isRequestCurrent(generation, baseUrl)) {
                     return@launch
                 }
                 logError("Song refresh failed for $feed", error)
-                updateSearchState { setFeedItems(it, feed, emptyList()) }
+                updateSearchState { setFeedErrorMessage(it, feed, "Loading failed.") }
             } catch (error: IllegalStateException) {
                 if (!isRequestCurrent(generation, baseUrl)) {
                     return@launch
                 }
                 logError("Song refresh failed for $feed", error)
-                updateSearchState { setFeedItems(it, feed, emptyList()) }
+                updateSearchState { setFeedErrorMessage(it, feed, "Loading failed.") }
             } finally {
                 if (isRequestCurrent(generation, baseUrl)) {
                     updateSearchState { setFeedLoading(it, feed, false) }
@@ -267,6 +279,18 @@ class SearchCoordinator(
             SongsFeed.Top -> search.copy(topSongs = items)
             SongsFeed.Recent -> search.copy(recentSongs = items)
             SongsFeed.Trending -> search.copy(trendingSongs = items)
+        }
+    }
+
+    private fun setFeedErrorMessage(
+        search: SearchState,
+        feed: SongsFeed,
+        errorMessage: String?
+    ): SearchState {
+        return when (feed) {
+            SongsFeed.Top -> search.copy(topSongsErrorMessage = errorMessage)
+            SongsFeed.Recent -> search.copy(recentSongsErrorMessage = errorMessage)
+            SongsFeed.Trending -> search.copy(trendingSongsErrorMessage = errorMessage)
         }
     }
 

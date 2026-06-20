@@ -195,10 +195,13 @@ class MainViewModelCastQueueTest {
         val original = SearchState(
             topSongs = listOf(topSong),
             topSongsLoading = true,
+            topSongsErrorMessage = "Loading failed.",
             trendingSongs = listOf(trendingSong),
             trendingSongsLoading = true,
+            trendingSongsErrorMessage = "Loading failed.",
             recentSongs = listOf(recentSong),
             recentSongsLoading = true,
+            recentSongsErrorMessage = "Loading failed.",
             spotifyLoading = true
         )
 
@@ -206,10 +209,13 @@ class MainViewModelCastQueueTest {
 
         assertEquals(listOf(topSong), reset.topSongs)
         assertTrue(reset.topSongsLoading)
+        assertEquals("Loading failed.", reset.topSongsErrorMessage)
         assertEquals(listOf(trendingSong), reset.trendingSongs)
         assertTrue(reset.trendingSongsLoading)
+        assertEquals("Loading failed.", reset.trendingSongsErrorMessage)
         assertEquals(listOf(recentSong), reset.recentSongs)
         assertTrue(reset.recentSongsLoading)
+        assertEquals("Loading failed.", reset.recentSongsErrorMessage)
         assertTrue(reset.spotifyLoading)
     }
 

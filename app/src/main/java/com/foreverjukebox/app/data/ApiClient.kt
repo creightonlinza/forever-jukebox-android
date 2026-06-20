@@ -64,6 +64,11 @@ class ApiClient(
         return getJson(url)
     }
 
+    suspend fun retryJob(baseUrl: String, jobId: String): AnalysisResponse {
+        val url = buildUrl(baseUrl, ApiPaths.retryJob(jobId))
+        return postEmpty(url).let { json.decodeFromString(it) }
+    }
+
     suspend fun getJobBySource(
         baseUrl: String,
         sourceProvider: String,
@@ -245,13 +250,14 @@ class ApiClient(
         }
     }
 
-    private suspend fun postEmpty(url: String) = withContext(Dispatchers.IO) {
+    private suspend fun postEmpty(url: String): String = withContext(Dispatchers.IO) {
         val body = ByteArray(0).toRequestBody("application/json".toMediaType())
         val request = Request.Builder().url(url).post(body).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throwHttpStatus(response)
             }
+            response.body?.string() ?: ""
         }
     }
 
@@ -329,6 +335,7 @@ class ApiClient(
         fun jobBySource(sourceProvider: String, sourceId: String) =
             listOf("api", "jobs", "by-source", sourceProvider, sourceId)
         fun job(jobId: String) = listOf("api", "jobs", jobId)
+        fun retryJob(jobId: String) = listOf("api", "jobs", jobId, "retry")
         fun play(jobId: String) = listOf("api", "plays", jobId)
         fun audio(jobId: String) = listOf("api", "audio", jobId)
         fun favoritesSync(code: String) = listOf("api", "favorites", "sync", code)
