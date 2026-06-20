@@ -583,7 +583,7 @@ private fun ServerSettingsDialog(
                 OutlinedTextField(
                     value = adminKey,
                     onValueChange = onAdminKeyChange,
-                    label = { Text("Admin Key") },
+                    label = { Text("Admin Key (optional)") },
                     textStyle = MaterialTheme.typography.bodySmall,
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
