@@ -19,6 +19,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("io.gitlab.arturbosch.detekt")
+
+    id("io.sentry.android.gradle") version "6.12.0"
 }
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -274,8 +276,39 @@ dependencies {
     implementation("com.google.oboe:oboe:1.10.0")
     implementation("com.google.android.gms:play-services-cast-framework:22.2.0")
 
+    // Sentry: crash (JVM + native) and error reporting only. Auto-installation of
+    // classpath-detected integrations is disabled in the sentry {} block below.
+    implementation("io.sentry:sentry-android-core:8.44.0")
+    implementation("io.sentry:sentry-android-ndk:8.44.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling:1.10.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
+}
+
+
+sentry {
+    org.set("forever-jukebox")
+    projectName.set("android")
+
+    // this will upload your source code to Sentry to show it as part of the stack traces
+    // disable if you don't want to expose your sources
+    includeSourceContext.set(true)
+
+    // Don't auto-add SDK integrations based on classpath detection (okhttp, fragment,
+    // compose, navigation, session replay). We declare exactly what we need below:
+    // sentry-android-core (JVM crashes + errors + structured logs) and sentry-android-ndk
+    // (native crashes). Keeps the footprint to crash/error reporting only.
+    autoInstallation {
+        enabled.set(false)
+    }
+
+    // Disable build-time bytecode instrumentation (OkHttp/Room/file-IO performance spans).
+    // Without this, the plugin rewrites OkHttpClient to call io.sentry.okhttp classes that
+    // are no longer on the classpath (autoInstallation off) -> ClassNotFoundException at
+    // runtime. We don't use performance tracing, so this is off entirely.
+    tracingInstrumentation {
+        enabled.set(false)
+    }
 }
