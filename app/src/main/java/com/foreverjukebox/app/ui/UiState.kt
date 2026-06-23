@@ -181,6 +181,12 @@ data class SearchState(
     val pendingTrackArtist: String? = null
 )
 
+data class AutocanonizerUiState(
+    val mainSeconds: Double = 0.0,
+    val otherSeconds: Double = 0.0,
+    val trackDurationSeconds: Double = 0.0
+)
+
 data class PlaybackState(
     val playMode: PlaybackMode = PlaybackMode.Jukebox,
     val jukeboxAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
@@ -206,6 +212,7 @@ data class PlaybackState(
     val trackArtist: String? = null,
     val vizData: VisualizationData? = null,
     val autocanonizerData: AutocanonizerData? = null,
+    val autocanonizer: AutocanonizerUiState = AutocanonizerUiState(),
     val activeVizIndex: Int = defaultVisualizationIndex,
     val currentBeatIndex: Int = -1,
     val canonizerOtherIndex: Int? = null,
@@ -224,6 +231,56 @@ data class PlaybackState(
     val isCasting: Boolean = false,
     val castDeviceName: String? = null
 )
+
+internal fun AutocanonizerUiState.withCursorTimes(
+    mainSeconds: Double,
+    otherSeconds: Double
+): AutocanonizerUiState {
+    return copy(
+        mainSeconds = mainSeconds,
+        otherSeconds = otherSeconds
+    )
+}
+
+internal fun AutocanonizerUiState.withResetCursorTimes(): AutocanonizerUiState {
+    return copy(
+        mainSeconds = 0.0,
+        otherSeconds = 0.0
+    )
+}
+
+internal fun autocanonizerUiStateForTrack(trackDurationSeconds: Double): AutocanonizerUiState {
+    return AutocanonizerUiState(trackDurationSeconds = trackDurationSeconds)
+}
+
+internal fun playbackStateAfterAutocanonizerPause(playback: PlaybackState): PlaybackState {
+    return playback.copy(
+        isRunning = false,
+        isPaused = true,
+        canonizerOtherIndex = null
+    )
+}
+
+internal fun playbackStateAfterAutocanonizerStop(playback: PlaybackState): PlaybackState {
+    return playback.copy(
+        isRunning = false,
+        isPaused = false,
+        canonizerOtherIndex = null,
+        autocanonizer = playback.autocanonizer.withResetCursorTimes()
+    )
+}
+
+internal fun playbackStateAfterAutocanonizerStart(playback: PlaybackState): PlaybackState {
+    return playback.copy(
+        beatsPlayed = 0,
+        currentBeatIndex = -1,
+        canonizerOtherIndex = null,
+        canonizerTileColorOverrides = emptyMap(),
+        lastJumpFromIndex = null,
+        jumpLine = null,
+        autocanonizer = playback.autocanonizer.withResetCursorTimes()
+    )
+}
 
 data class TuningState(
     val threshold: Int = 2,

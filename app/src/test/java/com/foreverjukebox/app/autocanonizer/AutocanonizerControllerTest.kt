@@ -35,9 +35,11 @@ class AutocanonizerControllerTest {
         controller.setFinishOutSong(true)
 
         val beats = mutableListOf<Int>()
+        val cursorTimes = mutableListOf<AutocanonizerCursorTimes>()
         var ended = 0
-        controller.setOnBeat { index, _, _ ->
+        controller.setOnBeat { index, _, _, times ->
             beats.add(index)
+            cursorTimes.add(times)
         }
         controller.setOnEnded {
             ended += 1
@@ -48,7 +50,40 @@ class AutocanonizerControllerTest {
 
         assertTrue(started)
         assertEquals(listOf(3, 1, 2, 3), beats)
+        assertEquals(
+            listOf(
+                AutocanonizerCursorTimes(mainSeconds = 3.0, otherSeconds = 1.0),
+                AutocanonizerCursorTimes(mainSeconds = 3.0, otherSeconds = 1.0),
+                AutocanonizerCursorTimes(mainSeconds = 3.0, otherSeconds = 2.0),
+                AutocanonizerCursorTimes(mainSeconds = 3.0, otherSeconds = 3.0)
+            ),
+            cursorTimes
+        )
         assertEquals(1, ended)
+    }
+
+    @Test
+    fun normalBeatEmitsMainAndOtherBeatStarts() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(dispatcher)
+        val controller = AutocanonizerController(
+            player = FakeAutocanonizerPlayer(ready = true),
+            scope = scope
+        )
+        controller.setData(sampleData())
+        val cursorTimes = mutableListOf<AutocanonizerCursorTimes>()
+        controller.setOnBeat { _, _, _, times ->
+            cursorTimes.add(times)
+        }
+
+        val started = controller.startAtIndex(3)
+        scope.advanceUntilIdle()
+
+        assertTrue(started)
+        assertEquals(
+            listOf(AutocanonizerCursorTimes(mainSeconds = 3.0, otherSeconds = 1.0)),
+            cursorTimes
+        )
     }
 
     @Test
