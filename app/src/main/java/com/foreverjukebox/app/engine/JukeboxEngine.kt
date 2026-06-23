@@ -71,7 +71,12 @@ class JukeboxEngine(
         deletedEdgeKeys.clear()
         analysis = normalizeAnalysis(data)
         val beatsCount = analysis?.beats?.size ?: 0
-        config = config.copy(minLongBranch = beatsCount / 5)
+        config = config.copy(
+            minLongBranch = minimumBranchBeats(
+                totalBeats = beatsCount,
+                percent = config.minLongBranchPercent
+            )
+        )
         graph = analysis?.let { graphBuilder(it, config) }
         applyDeletedEdges()
         beats = analysis?.beats ?: mutableListOf()
@@ -108,7 +113,12 @@ class JukeboxEngine(
         val current = analysis ?: return
         clearPendingAdvance(cancelScheduledJump = true)
         clearEdgeDeletionFlags()
-        config = config.copy(minLongBranch = current.beats.size / 5)
+        config = config.copy(
+            minLongBranch = minimumBranchBeats(
+                totalBeats = current.beats.size,
+                percent = config.minLongBranchPercent
+            )
+        )
         graph = graphBuilder(current, config)
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
@@ -261,6 +271,11 @@ class JukeboxEngine(
         lastJumpToIndex = null
         lastTickTime = null
         clearPendingAdvance(cancelScheduledJump = true)
+    }
+
+    private fun minimumBranchBeats(totalBeats: Int, percent: Int): Int {
+        val safePercent = percent.takeIf { it > 0 } ?: DEFAULT_MIN_LONG_BRANCH_PERCENT
+        return totalBeats * safePercent.coerceAtMost(100) / 100
     }
 
     private fun tick(): Long {

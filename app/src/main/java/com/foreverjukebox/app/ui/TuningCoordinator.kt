@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
+import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,7 +27,7 @@ internal fun buildCastTuningResetParams(
     val threshold = resetThreshold ?: defaultConfig.currentThreshold
     return listOf(
         "jb=${if (defaultConfig.justBackwards) 1 else 0}",
-        "lg=${if (defaultConfig.justLongBranches) 1 else 0}",
+        "bl=${if (defaultConfig.justLongBranches) defaultConfig.minLongBranchPercent else 0}",
         "sq=${if (defaultConfig.removeSequentialBranches) 0 else 1}",
         "thresh=$threshold",
         "bp=$minProb,$maxProb,$ramp",
@@ -45,7 +46,7 @@ internal fun buildCastTuningUpdate(
     ramp: Double,
     highlightAnchorBranch: Boolean,
     justBackwards: Boolean,
-    justLongBranches: Boolean,
+    minJumpDistancePercent: Int,
     removeSequentialBranches: Boolean,
     randomBranchDeltaPercentScale: Double,
     audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
@@ -58,15 +59,15 @@ internal fun buildCastTuningUpdate(
         ramp = (ramp * randomBranchDeltaPercentScale).roundToInt().coerceIn(0, 100),
         highlightAnchorBranch = highlightAnchorBranch,
         justBackwards = justBackwards,
-        justLong = justLongBranches,
+        minJumpDistancePercent = minJumpDistancePercent,
         removeSequential = removeSequentialBranches
     )
     val params = mutableListOf<String>()
     if (currentTuning.justBackwards != nextTuning.justBackwards) {
         params.add("jb=${if (nextTuning.justBackwards) 1 else 0}")
     }
-    if (currentTuning.justLong != nextTuning.justLong) {
-        params.add("lg=${if (nextTuning.justLong) 1 else 0}")
+    if (currentTuning.minJumpDistancePercent != nextTuning.minJumpDistancePercent) {
+        params.add("bl=${nextTuning.minJumpDistancePercent}")
     }
     if (currentTuning.removeSequential != nextTuning.removeSequential) {
         params.add("sq=${if (nextTuning.removeSequential) 0 else 1}")
@@ -120,7 +121,7 @@ class TuningCoordinator(
         ramp: Double,
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
-        justLongBranches: Boolean,
+        minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioMode: JukeboxAudioMode,
         audioModeWireValue: String = audioMode.wireValue
@@ -133,7 +134,7 @@ class TuningCoordinator(
                 ramp = ramp,
                 highlightAnchorBranch = highlightAnchorBranch,
                 justBackwards = justBackwards,
-                justLongBranches = justLongBranches,
+                minJumpDistancePercent = minJumpDistancePercent,
                 removeSequentialBranches = removeSequentialBranches,
                 audioMode = audioMode,
                 audioModeWireValue = audioModeWireValue
@@ -147,7 +148,7 @@ class TuningCoordinator(
             ramp = ramp,
             highlightAnchorBranch = highlightAnchorBranch,
             justBackwards = justBackwards,
-            justLongBranches = justLongBranches,
+            minJumpDistancePercent = minJumpDistancePercent,
             removeSequentialBranches = removeSequentialBranches
         )
     }
@@ -167,7 +168,7 @@ class TuningCoordinator(
         ramp: Double,
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
-        justLongBranches: Boolean,
+        minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioMode: JukeboxAudioMode,
         audioModeWireValue: String
@@ -183,7 +184,7 @@ class TuningCoordinator(
             ramp = ramp,
             highlightAnchorBranch = highlightAnchorBranch,
             justBackwards = justBackwards,
-            justLongBranches = justLongBranches,
+            minJumpDistancePercent = minJumpDistancePercent,
             removeSequentialBranches = removeSequentialBranches,
             randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
             audioMode = audioMode,
@@ -203,7 +204,7 @@ class TuningCoordinator(
         ramp: Double,
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
-        justLongBranches: Boolean,
+        minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean
     ) {
         val vizData = withContext(Dispatchers.Default) {
@@ -217,9 +218,8 @@ class TuningCoordinator(
                 maxRandomBranchChance = maxProb,
                 randomBranchChanceDelta = ramp,
                 justBackwards = justBackwards,
-                justLongBranches = justLongBranches,
                 removeSequentialBranches = removeSequentialBranches
-            )
+            ).withMinimumJumpDistancePercent(minJumpDistancePercent)
             engine.updateConfig(nextConfig)
             engine.rebuildGraph()
             engine.getVisualizationData()

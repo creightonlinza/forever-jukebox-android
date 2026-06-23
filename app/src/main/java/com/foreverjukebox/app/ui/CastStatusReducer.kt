@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
 import com.foreverjukebox.app.visualization.visualizationCount
 import java.time.OffsetDateTime
 import kotlinx.serialization.json.Json
@@ -21,6 +22,7 @@ data class CastBranchProbabilityStatus(
 data class CastTuningStatus(
     val justBackwards: Boolean,
     val justLongBranches: Boolean,
+    val minLongBranchPercent: Int,
     val removeSequentialBranches: Boolean,
     val threshold: Int?,
     val computedThreshold: Int?,
@@ -132,9 +134,14 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?: JukeboxAudioMode.Off.wireValue
+    val justLongBranches = json.booleanValue("justLongBranches")
+    val minLongBranchPercent = json.intValue("minLongBranchPercent")
+        ?.takeIf { it == 0 || it in ALLOWED_BRANCH_LENGTHS }
+        ?: if (justLongBranches) DEFAULT_MIN_LONG_BRANCH_PERCENT else 0
     return CastTuningStatus(
         justBackwards = json.booleanValue("justBackwards"),
-        justLongBranches = json.booleanValue("justLongBranches"),
+        justLongBranches = justLongBranches,
+        minLongBranchPercent = minLongBranchPercent,
         removeSequentialBranches = json.booleanValue("removeSequentialBranches"),
         threshold = json.intValue("threshold")?.takeIf { it >= 2 },
         computedThreshold = json.intValue("computedThreshold")?.takeIf { it >= 2 },
@@ -301,7 +308,7 @@ private fun resolveCastTuningState(
         ramp = tuning.branchProbability.deltaPercent,
         highlightAnchorBranch = tuning.highlightAnchorBranch,
         justBackwards = tuning.justBackwards,
-        justLong = tuning.justLongBranches,
+        minJumpDistancePercent = tuning.minLongBranchPercent,
         removeSequential = tuning.removeSequentialBranches
     )
 }

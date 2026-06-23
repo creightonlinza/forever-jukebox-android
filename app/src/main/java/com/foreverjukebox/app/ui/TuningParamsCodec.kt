@@ -1,8 +1,11 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+
+internal val ALLOWED_BRANCH_LENGTHS = setOf(5, 10, 20, 30)
 
 data class ParsedTuningParams(
     val threshold: Int?,
@@ -11,7 +14,7 @@ data class ParsedTuningParams(
     val rampPercent: Int?,
     val highlightAnchorBranch: Boolean?,
     val justBackwards: Boolean?,
-    val justLongBranches: Boolean?,
+    val minJumpDistancePercent: Int?,
     val removeSequentialBranches: Boolean?,
     val deletedEdgeIds: List<Int>,
     val anchorBeat: Int?,
@@ -19,7 +22,8 @@ data class ParsedTuningParams(
 )
 
 object TuningParamsCodec {
-    private val knownKeys = setOf("jb", "lg", "sq", "thresh", "bp", "d", "ab", "ah", "am")
+    private val knownKeys = setOf("jb", "bl", "lg", "sq", "thresh", "bp", "d", "ab", "ah", "am")
+
     fun parse(raw: String?, minThreshold: Int = 0): ParsedTuningParams? {
         if (raw.isNullOrBlank()) {
             return null
@@ -54,6 +58,16 @@ object TuningParamsCodec {
         val anchorBeat = params.firstValue("ab")
             ?.toIntOrNull()
             ?.takeIf { it >= 0 }
+        val branchLength = params.firstValue("bl")
+            ?.toIntOrNull()
+            ?.takeIf { it in ALLOWED_BRANCH_LENGTHS }
+        val legacyLongBranches = parseStandardBoolean(params.firstValue("lg"))
+        val minJumpDistancePercent = when {
+            branchLength != null -> branchLength
+            legacyLongBranches == true -> DEFAULT_MIN_LONG_BRANCH_PERCENT
+            legacyLongBranches == false -> 0
+            else -> null
+        }
 
         return ParsedTuningParams(
             threshold = threshold,
@@ -62,7 +76,7 @@ object TuningParamsCodec {
             rampPercent = rampPercent,
             highlightAnchorBranch = parseStandardBoolean(params.firstValue("ah")),
             justBackwards = parseStandardBoolean(params.firstValue("jb")),
-            justLongBranches = parseStandardBoolean(params.firstValue("lg")),
+            minJumpDistancePercent = minJumpDistancePercent,
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
             deletedEdgeIds = deletedEdgeIds,
             anchorBeat = anchorBeat,
@@ -81,11 +95,30 @@ object TuningParamsCodec {
         }
         val sanitized = linkedMapOf<String, String>()
         val hasHighlightParam = params.containsKey("ah")
+        val branchLength = params.firstValue("bl")
+            ?.toIntOrNull()
+            ?.takeIf { it == 0 || it in ALLOWED_BRANCH_LENGTHS }
+        val legacyLongBranches = parseStandardBoolean(params.firstValue("lg"))
+        val resolvedBranchLength = when {
+            branchLength != null -> branchLength
+            legacyLongBranches == true -> DEFAULT_MIN_LONG_BRANCH_PERCENT
+            legacyLongBranches == false -> 0
+            else -> null
+        }
+        var branchLengthHandled = false
         for ((name, values) in params) {
             val value = values.firstOrNull() ?: continue
             when (name) {
-                "jb", "lg" -> parseStandardBoolean(value)?.let {
+                "jb" -> parseStandardBoolean(value)?.let {
                     sanitized[name] = if (it) "1" else "0"
+                }
+                "bl", "lg" -> {
+                    if (!branchLengthHandled) {
+                        resolvedBranchLength
+                            ?.takeIf { it > 0 }
+                            ?.let { sanitized["bl"] = it.toString() }
+                        branchLengthHandled = true
+                    }
                 }
                 "ah" -> if (parseStandardBoolean(value) != null) {
                     sanitized[name] = if (highlightAnchorBranch) "1" else "0"
@@ -123,12 +156,14 @@ object TuningParamsCodec {
     ): String {
         val params = mutableListOf(
             "jb=${if (tuning.justBackwards) 1 else 0}",
-            "lg=${if (tuning.justLong) 1 else 0}",
             "sq=${if (tuning.removeSequential) 0 else 1}",
             "thresh=${tuning.threshold.coerceAtLeast(2)}",
             "bp=${tuning.minProb.coerceIn(0, 100)},${tuning.maxProb.coerceIn(0, 100)},${tuning.ramp.coerceIn(0, 100)}",
             "ah=${if (tuning.highlightAnchorBranch) 1 else 0}"
         )
+        if (tuning.minJumpDistancePercent > 0) {
+            params.add(1, "bl=${tuning.minJumpDistancePercent}")
+        }
         if (audioMode != JukeboxAudioMode.Off || includeOffAudioMode) {
             params.add("am=${audioMode.wireValue}")
         }
@@ -180,7 +215,8 @@ object TuningParamsCodec {
             ramp = parsed.rampPercent ?: base.ramp,
             highlightAnchorBranch = parsed.highlightAnchorBranch ?: base.highlightAnchorBranch,
             justBackwards = parsed.justBackwards ?: base.justBackwards,
-            justLong = parsed.justLongBranches ?: base.justLong,
+            minJumpDistancePercent =
+                parsed.minJumpDistancePercent ?: base.minJumpDistancePercent,
             removeSequential = parsed.removeSequentialBranches ?: base.removeSequential
         )
     }
