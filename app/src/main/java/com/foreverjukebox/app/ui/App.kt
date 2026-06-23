@@ -116,7 +116,16 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                             state = state,
                             onSearch = viewModel::runSpotifySearch,
                             onSpotifySelect = viewModel::selectSpotifyTrack,
-                            onYoutubeSelect = viewModel::selectYoutubeTrack
+                            onYoutubeSelect = viewModel::selectYoutubeTrack,
+                            onOpenYoutube = { videoId ->
+                                runCatching {
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
+                                        youtubeWatchUrl(videoId).toUri()
+                                    )
+                                    context.startActivity(intent)
+                                }
+                            }
                         )
                         TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
                         TabId.Faq -> FaqPanel()

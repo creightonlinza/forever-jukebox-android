@@ -15,10 +15,48 @@ class FormatAndUrlPolicyTest {
     }
 
     @Test
-    fun formatDurationShortUsesMmSsUntilOneHour() {
-        assertEquals("00:05", formatDurationShort(5.0))
-        assertEquals("59:59", formatDurationShort(3599.0))
-        assertEquals("01:00:00", formatDurationShort(3600.0))
+    fun formatTrackDurationUsesCompactSearchResultFormat() {
+        assertEquals("0:00", formatTrackDuration(0.0))
+        assertEquals("0:01", formatTrackDuration(1.0))
+        assertEquals("1:01", formatTrackDuration(61.0))
+        assertEquals("59:59", formatTrackDuration(3599.0))
+        assertEquals("1:00:00", formatTrackDuration(3600.0))
+        assertEquals("1:01:01", formatTrackDuration(3661.0))
+        assertEquals("12:00:00", formatTrackDuration(43_200.0))
+    }
+
+    @Test
+    fun formatTrackDurationFloorsFractionsAndRejectsMissingOrInvalidValues() {
+        assertEquals("1:05", formatTrackDuration(65.9))
+        assertEquals("-", formatTrackDuration(null))
+        assertEquals("-", formatTrackDuration(-1.0))
+        assertEquals("-", formatTrackDuration(Double.NaN))
+        assertEquals("-", formatTrackDuration(Double.POSITIVE_INFINITY))
+        assertEquals("-", formatTrackDuration(Double.NEGATIVE_INFINITY))
+    }
+
+    @Test
+    fun youtubeUrlsUseTheVideoIdWithoutChangingTheSearchApi() {
+        assertEquals(
+            "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+            youtubeThumbnailUrl("dQw4w9WgXcQ")
+        )
+        assertEquals(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            youtubeWatchUrl("dQw4w9WgXcQ")
+        )
+    }
+
+    @Test
+    fun youtubeUrlsTrimValidVideoIds() {
+        assertEquals(
+            "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+            youtubeThumbnailUrl(" dQw4w9WgXcQ ")
+        )
+        assertEquals(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            youtubeWatchUrl(" dQw4w9WgXcQ ")
+        )
     }
 
     @Test
