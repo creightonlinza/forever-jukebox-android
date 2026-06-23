@@ -12,7 +12,6 @@
         android:tag="audio_playback" />
 
     <application
-        android:name=".ForeverJukeboxApp"
         android:allowBackup="true"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
@@ -47,5 +46,14 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="true" />
+
+        <!-- Required: set your sentry.io project identifier (DSN) -->
+        <meta-data android:name="io.sentry.dsn" android:value="https://a6537a45657a1fc1b95e640f6e67b030@o4511598611464192.ingest.us.sentry.io/4511598611595264" />
+        <!-- Do not send user PII (IP address, device name, request headers) with events -->
+        <meta-data android:name="io.sentry.send-default-pii" android:value="false" />
+        <!-- Attach the UI layout tree to crashes for debugging (no user content / screenshot) -->
+        <meta-data android:name="io.sentry.attach-view-hierarchy" android:value="true" />
+        <!-- Enable structured logs (Sentry.logger()) for recoverable, non-fatal failures -->
+        <meta-data android:name="io.sentry.logs.enabled" android:value="true" />
     </application>
 </manifest>

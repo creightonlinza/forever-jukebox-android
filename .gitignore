@@ -23,3 +23,6 @@ third_party/essentia/prebuilt/
 third_party/essentia/built/
 third_party/essentia/src/
 third_party/essentia/.work/
+
+# Sentry Config File
+sentry.properties

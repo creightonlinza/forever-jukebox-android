@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AppMode
@@ -32,7 +33,6 @@ import com.foreverjukebox.app.data.sanitizeMaxFavorites
 import com.foreverjukebox.app.data.trackIdFromTopSong
 import com.foreverjukebox.app.data.youtubeTrackIdFromTopSong
 import com.foreverjukebox.app.data.sourceProviderFromRaw
-import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
@@ -326,7 +326,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getState = { state.value },
         updateSearchState = ::updateSearchState,
         setSearchQuery = ::setSearchQuery,
-        logError = { message, error -> Log.e(TAG, message, error) }
+        logError = { message, error -> AppLog.warn(TAG, message, error) }
     )
     private val favoritesController = FavoritesController(
         scope = viewModelScope,
@@ -367,7 +367,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             hydrateSavedPlaylistIfInactive()
         },
         applyActiveTab = ::applyActiveTab,
-        logError = { message, error -> AppLog.e(TAG, message, error) }
+        logError = { message, error -> AppLog.warn(TAG, message, error) }
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
@@ -2147,13 +2147,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (error: IOException) {
-            AppLog.e(TAG, "Failed to load existing job", error)
+            AppLog.warn(TAG, "Failed to load existing job", error)
             playbackCoordinator.setAnalysisError("Loading failed.")
         } catch (error: IllegalArgumentException) {
-            AppLog.e(TAG, "Failed to load existing job", error)
+            AppLog.warn(TAG, "Failed to load existing job", error)
             playbackCoordinator.setAnalysisError("Loading failed.")
         } catch (error: IllegalStateException) {
-            AppLog.e(TAG, "Failed to load existing job", error)
+            AppLog.warn(TAG, "Failed to load existing job", error)
             playbackCoordinator.setAnalysisError("Loading failed.")
         }
     }
@@ -2190,17 +2190,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (error.statusCode == 422) {
                     showServerTrackLengthLimitError()
                 } else {
-                    AppLog.e(TAG, failureLogMessage, error)
+                    AppLog.warn(TAG, failureLogMessage, error)
                     playbackCoordinator.setAnalysisError("Loading failed.")
                 }
             } catch (error: IOException) {
-                AppLog.e(TAG, failureLogMessage, error)
+                AppLog.warn(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalArgumentException) {
-                AppLog.e(TAG, failureLogMessage, error)
+                AppLog.warn(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalStateException) {
-                AppLog.e(TAG, failureLogMessage, error)
+                AppLog.warn(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             }
         }
@@ -3097,13 +3097,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
-                AppLog.e(TAG, "Failed to recover server load state", error)
+                AppLog.warn(TAG, "Failed to recover server load state", error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalArgumentException) {
-                AppLog.e(TAG, "Failed to recover server load state", error)
+                AppLog.warn(TAG, "Failed to recover server load state", error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalStateException) {
-                AppLog.e(TAG, "Failed to recover server load state", error)
+                AppLog.warn(TAG, "Failed to recover server load state", error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             }
         }
