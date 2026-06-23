@@ -60,7 +60,9 @@ internal fun playbackStateAfterModeChange(
     preserveTransportState: Boolean
 ): PlaybackState {
     if (preserveTransportState) {
-        return playback
+        return playback.copy(
+            autocanonizer = playback.autocanonizer.withResetCursorTimes()
+        )
     }
     return playback.copy(
         isRunning = false,
@@ -69,6 +71,7 @@ internal fun playbackStateAfterModeChange(
         currentBeatIndex = -1,
         canonizerOtherIndex = null,
         lastJumpFromIndex = null,
-        jumpLine = null
+        jumpLine = null,
+        autocanonizer = playback.autocanonizer.withResetCursorTimes()
     )
 }

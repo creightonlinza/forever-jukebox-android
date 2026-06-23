@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.ui
 
+import kotlin.math.floor
+
 fun formatDuration(seconds: Double): String {
     val totalSeconds = seconds.toInt()
     val hours = totalSeconds / 3600
@@ -18,4 +20,14 @@ fun formatDurationShort(seconds: Double): String {
     } else {
         "%02d:%02d".format(minutes, secs)
     }
+}
+
+fun formatCursorTime(seconds: Double): String {
+    val total = if (seconds.isFinite()) {
+        floor(seconds).toLong().coerceAtLeast(0)
+    } else {
+        0L
+    }
+
+    return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
 }

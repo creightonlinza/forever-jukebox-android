@@ -51,11 +51,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.foreverjukebox.app.autocanonizer.AutocanonizerMainColor
+import com.foreverjukebox.app.autocanonizer.AutocanonizerOtherColor
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.visualization.AutocanonizerVisualization
 import com.foreverjukebox.app.visualization.EdgeRouting
@@ -475,6 +479,9 @@ internal fun ColumnScope.LocalListenScreen(
             onOpenFullscreen = onOpenFullscreen,
             onTogglePlayback = onTogglePlayback
         )
+        if (shouldShowAutocanonizerCursorTimes(playback)) {
+            AutocanonizerCursorTimeRow(state = playback.autocanonizer)
+        }
         LocalListenFooter(
             listenTime = playback.listenTime,
             beatsPlayed = playback.beatsPlayed,
@@ -857,6 +864,32 @@ private fun BoxScope.LocalVisualizationBottomControls(
                 )
             }
         }
+    }
+}
+
+internal fun shouldShowAutocanonizerCursorTimes(playback: PlaybackState): Boolean {
+    return playback.playMode == PlaybackMode.Autocanonizer && !playback.isCasting
+}
+
+@Composable
+private fun AutocanonizerCursorTimeRow(state: AutocanonizerUiState) {
+    val mainTime = formatCursorTime(state.mainSeconds)
+    val otherTime = formatCursorTime(state.otherSeconds)
+    val totalTime = formatCursorTime(state.trackDurationSeconds)
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.semantics {
+            contentDescription =
+                "Blue position $mainTime, green position $otherTime, total $totalTime"
+        }
+    ) {
+        Text(mainTime, color = AutocanonizerMainColor)
+        Text("–", color = mutedColor)
+        Text(otherTime, color = AutocanonizerOtherColor)
+        Text("/", color = mutedColor)
+        Text(totalTime, color = mutedColor)
     }
 }
 

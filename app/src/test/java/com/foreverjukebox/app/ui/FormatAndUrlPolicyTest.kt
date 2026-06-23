@@ -22,6 +22,17 @@ class FormatAndUrlPolicyTest {
     }
 
     @Test
+    fun formatCursorTimeUsesUnboundedMinutesAndSafeInvalidDefaults() {
+        assertEquals("0:00", formatCursorTime(0.0))
+        assertEquals("1:02", formatCursorTime(62.9))
+        assertEquals("62:15", formatCursorTime(3735.0))
+        assertEquals("0:00", formatCursorTime(-1.0))
+        assertEquals("0:00", formatCursorTime(Double.NaN))
+        assertEquals("0:00", formatCursorTime(Double.POSITIVE_INFINITY))
+        assertEquals("0:00", formatCursorTime(Double.NEGATIVE_INFINITY))
+    }
+
+    @Test
     fun isValidBaseUrlRequiresHttpOrHttpsAndHost() {
         assertTrue(isValidBaseUrl("https://example.com"))
         assertTrue(isValidBaseUrl("http://localhost:8080"))

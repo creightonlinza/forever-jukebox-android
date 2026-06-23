@@ -58,6 +58,13 @@ internal fun resolveLoadedTrackMeta(
     )
 }
 
+internal fun resolveAutocanonizerTrackDuration(
+    autocanonizerTrackDuration: Double?,
+    sourceDuration: Double?
+): Double {
+    return autocanonizerTrackDuration ?: sourceDuration ?: 0.0
+}
+
 class PlaybackCoordinator(
     private val application: Application,
     private val scope: CoroutineScope,
@@ -526,6 +533,12 @@ class PlaybackCoordinator(
                     autocanonizerData = autocanonizerData,
                     playTitle = playTitle,
                     trackDurationSeconds = loadedTrackMeta.durationSeconds,
+                    autocanonizer = autocanonizerUiStateForTrack(
+                        resolveAutocanonizerTrackDuration(
+                            autocanonizerTrackDuration = autocanonizerData?.trackDuration,
+                            sourceDuration = loadedTrackMeta.durationSeconds
+                        )
+                    ),
                     castTotalBeats = null,
                     castTotalBranches = null,
                     lastYouTubeId = resolvedYouTubeId,
@@ -709,6 +722,7 @@ class PlaybackCoordinator(
                     beatsPlayed = 0,
                     listenTime = "00:00:00",
                     trackDurationSeconds = null,
+                    autocanonizer = autocanonizerUiStateForTrack(0.0),
                     castTotalBeats = null,
                     castTotalBranches = null,
                     trackTitle = null,
@@ -819,6 +833,12 @@ class PlaybackCoordinator(
                     autocanonizerData = autocanonizerData,
                     playTitle = playTitle,
                     trackDurationSeconds = audioDuration,
+                    autocanonizer = it.playback.autocanonizer.copy(
+                        trackDurationSeconds = resolveAutocanonizerTrackDuration(
+                            autocanonizerTrackDuration = autocanonizerData?.trackDuration,
+                            sourceDuration = null
+                        )
+                    ),
                     castTotalBeats = null,
                     castTotalBranches = null,
                     trackTitle = title,

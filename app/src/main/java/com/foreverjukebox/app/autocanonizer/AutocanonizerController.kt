@@ -12,8 +12,8 @@ class AutocanonizerController(
     private val scope: CoroutineScope
 ) {
     companion object {
-        const val PRIMARY_TILE_COLOR_HEX = "#4F8FFF"
-        const val OTHER_TILE_COLOR_HEX = "#10DF00"
+        const val PRIMARY_TILE_COLOR_HEX = AUTOCANONIZER_MAIN_COLOR_HEX
+        const val OTHER_TILE_COLOR_HEX = AUTOCANONIZER_OTHER_COLOR_HEX
     }
 
     private var data: AutocanonizerData? = null
@@ -28,10 +28,22 @@ class AutocanonizerController(
     private var beatsPlayed = 0
     private val tileColorOverrides = linkedMapOf<Int, String>()
 
-    private var onBeat: ((index: Int, beat: AutocanonizerBeat, forcedOtherIndex: Int?) -> Unit)? = null
+    private var onBeat: ((
+        index: Int,
+        beat: AutocanonizerBeat,
+        forcedOtherIndex: Int?,
+        cursorTimes: AutocanonizerCursorTimes
+    ) -> Unit)? = null
     private var onEnded: (() -> Unit)? = null
 
-    fun setOnBeat(handler: ((index: Int, beat: AutocanonizerBeat, forcedOtherIndex: Int?) -> Unit)?) {
+    fun setOnBeat(
+        handler: ((
+            index: Int,
+            beat: AutocanonizerBeat,
+            forcedOtherIndex: Int?,
+            cursorTimes: AutocanonizerCursorTimes
+        ) -> Unit)?
+    ) {
         onBeat = handler
     }
 
@@ -188,7 +200,15 @@ class AutocanonizerController(
             beatsPlayed += 1
             applyTileOverride(currentIndex, PRIMARY_TILE_COLOR_HEX)
             applyTileOverride(beat.otherIndex, OTHER_TILE_COLOR_HEX)
-            onBeat?.invoke(currentIndex, beat, null)
+            onBeat?.invoke(
+                currentIndex,
+                beat,
+                null,
+                AutocanonizerCursorTimes(
+                    mainSeconds = beat.start,
+                    otherSeconds = beats[beat.otherIndex].start
+                )
+            )
 
             if (isFinal && finishOutSong) {
                 secondaryOnly = true
@@ -221,7 +241,15 @@ class AutocanonizerController(
             forcedOtherIndex = secondaryIndex
             beatsPlayed += 1
             applyTileOverride(secondaryIndex, OTHER_TILE_COLOR_HEX)
-            onBeat?.invoke(secondaryIndex, beat, secondaryIndex)
+            onBeat?.invoke(
+                secondaryIndex,
+                beat,
+                secondaryIndex,
+                AutocanonizerCursorTimes(
+                    mainSeconds = beats.last().start,
+                    otherSeconds = beat.start
+                )
+            )
             secondaryIndex += 1
             delay(delaySeconds.toDelayMillis())
         }
