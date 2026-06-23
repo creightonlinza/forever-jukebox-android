@@ -36,6 +36,11 @@ data class AutocanonizerData(
     val sections: List<AutocanonizerSection>
 )
 
+data class AutocanonizerCursorTimes(
+    val mainSeconds: Double,
+    val otherSeconds: Double
+)
+
 private const val TIMBRE_WEIGHT = 1.0
 private const val PITCH_WEIGHT = 10.0
 private const val LOUD_START_WEIGHT = 1.0

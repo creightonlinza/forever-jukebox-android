@@ -126,9 +126,19 @@ fun FaqPanel() {
             }
 
             FaqAccordionSection(
-                title = "How do Playlists work?",
+                title = "Why is loading so slow?",
                 expanded = expandedSectionIndex == 3,
                 onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(3) }
+            ) {
+                BulletListItem("The track must be analyzed locally or by the server before it can play.")
+                BulletListItem("The entire track must also be decoded and loaded into memory so the Jukebox can jump instantly. Longer tracks take longer, even when analysis is cached.")
+                BulletListItem("For best results, keep the screen on and the app open until loading finishes. Loading may slow considerably when the device is locked or the app is in the background.")
+            }
+
+            FaqAccordionSection(
+                title = "How do Playlists work?",
+                expanded = expandedSectionIndex == 4,
+                onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(4) }
             ) {
                 BulletListItem("Playlists let you queue up multiple tracks and move between them from the Listen screen.")
                 BulletListItem("First load a track, then long-press another track to add it to the playlist. A short tap continues to swap the track in and start loading it.")
@@ -137,8 +147,8 @@ fun FaqPanel() {
 
             FaqAccordionSection(
                 title = "How do Favorites work? (server mode only)",
-                expanded = expandedSectionIndex == 4,
-                onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(4) }
+                expanded = expandedSectionIndex == 5,
+                onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(5) }
             ) {
                 BulletListItem("Favorites are saved/unsaved by clicking the star icon on a track. They are stored locally in your browser and can optionally be synced across devices using a sync code obtained from the Favorites sync menu.")
                 BulletListItem("When you favorite a track, its tuning is saved too, so future loads restore your chosen parameters.")

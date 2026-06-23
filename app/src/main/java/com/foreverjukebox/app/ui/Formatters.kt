@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.ui
 
+import kotlin.math.floor
+
 fun formatDuration(seconds: Double): String {
     val totalSeconds = seconds.toInt()
     val hours = totalSeconds / 3600
@@ -34,4 +36,14 @@ internal fun youtubeWatchUrl(videoId: String): String {
     val normalizedVideoId = videoId.trim()
     require(normalizedVideoId.isNotEmpty()) { "videoId must not be blank" }
     return "https://www.youtube.com/watch?v=$normalizedVideoId"
+}
+
+fun formatCursorTime(seconds: Double): String {
+    val total = if (seconds.isFinite()) {
+        floor(seconds).toLong().coerceAtLeast(0)
+    } else {
+        0L
+    }
+
+    return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
 }

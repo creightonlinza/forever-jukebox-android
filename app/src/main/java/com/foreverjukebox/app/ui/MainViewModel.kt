@@ -684,7 +684,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             playbackCoordinator.maybeUpdateNotification()
         }
-        controller.autocanonizer.setOnBeat { index, _, forcedOtherIndex ->
+        controller.autocanonizer.setOnBeat { index, _, forcedOtherIndex, cursorTimes ->
             if (state.value.playback.playMode != PlaybackMode.Autocanonizer) {
                 return@setOnBeat
             }
@@ -696,6 +696,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         currentBeatIndex = index,
                         canonizerOtherIndex = forcedOtherIndex,
                         canonizerTileColorOverrides = tileOverrides,
+                        autocanonizer = it.playback.autocanonizer.withCursorTimes(
+                            mainSeconds = cursorTimes.mainSeconds,
+                            otherSeconds = cursorTimes.otherSeconds
+                        ),
                         lastJumpFromIndex = null,
                         jumpLine = null
                     )
@@ -710,6 +714,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             controller.stopExternalPlayback()
             playbackCoordinator.stopListenTimer()
             playbackCoordinator.updateListenTimeDisplay()
+            _state.update {
+                it.copy(
+                    playback = playbackStateAfterAutocanonizerStop(it.playback)
+                )
+            }
             val current = state.value
             if (shouldAdvancePlaylistOnAutocanonizerEnd(current)) {
                 selectPlaylistTrack(
@@ -717,14 +726,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     playAfterLoaded = true
                 )
                 return@setOnEnded
-            }
-            _state.update {
-                it.copy(
-                    playback = it.playback.copy(
-                        isRunning = false,
-                        isPaused = false
-                    )
-                )
             }
             syncPlaybackServiceSession()
         }
@@ -752,11 +753,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playbackCoordinator.updateListenTimeDisplay()
         _state.update {
             it.copy(
-                playback = it.playback.copy(
-                    isRunning = false,
-                    isPaused = false,
-                    canonizerOtherIndex = null
-                )
+                playback = if (it.playback.playMode == PlaybackMode.Autocanonizer) {
+                    playbackStateAfterAutocanonizerStop(it.playback)
+                } else {
+                    it.playback.copy(
+                        isRunning = false,
+                        isPaused = false,
+                        canonizerOtherIndex = null
+                    )
+                }
             )
         }
         if (state.value.playback.isCasting) {
@@ -781,15 +786,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playbackCoordinator.updateListenTimeDisplay()
         _state.update {
             it.copy(
-                playback = it.playback.copy(
-                    isRunning = isRunning,
-                    isPaused = isPaused,
-                    canonizerOtherIndex = if (isRunning || isPaused) {
-                        it.playback.canonizerOtherIndex
-                    } else {
-                        null
-                    }
-                )
+                playback = when {
+                    it.playback.playMode == PlaybackMode.Autocanonizer &&
+                        !isRunning &&
+                        !isPaused -> playbackStateAfterAutocanonizerStop(it.playback)
+                    else -> it.playback.copy(
+                        isRunning = isRunning,
+                        isPaused = isPaused,
+                        canonizerOtherIndex = if (isRunning || isPaused) {
+                            it.playback.canonizerOtherIndex
+                        } else {
+                            null
+                        }
+                    )
+                }
             )
         }
         syncPlaybackServiceSession()
@@ -2362,11 +2372,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             playbackCoordinator.updateListenTimeDisplay()
             _state.update {
                 it.copy(
-                    playback = it.playback.copy(
-                        isRunning = false,
-                        isPaused = true,
-                        canonizerOtherIndex = null
-                    )
+                    playback = playbackStateAfterAutocanonizerPause(it.playback)
                 )
             }
             syncPlaybackServiceSession()
@@ -2421,6 +2427,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!ensureAutocanonizerReady(current)) {
                 return@launch
             }
+            _state.update {
+                it.copy(
+                    playback = playbackStateAfterAutocanonizerStart(it.playback)
+                )
+            }
             val started = startAutocanonizerTransport(
                 controller = controller,
                 index = index,
@@ -2434,12 +2445,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
-                        beatsPlayed = 0,
-                        currentBeatIndex = -1,
-                        canonizerOtherIndex = null,
                         canonizerTileColorOverrides = controller.autocanonizer.getTileColorOverrides(),
-                        lastJumpFromIndex = null,
-                        jumpLine = null,
                         isRunning = true,
                         isPaused = false
                     )

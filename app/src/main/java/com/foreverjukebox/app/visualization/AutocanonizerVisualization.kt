@@ -26,6 +26,8 @@ import androidx.core.graphics.toColorInt
 import com.foreverjukebox.app.autocanonizer.AutocanonizerBeat
 import com.foreverjukebox.app.autocanonizer.AutocanonizerController
 import com.foreverjukebox.app.autocanonizer.AutocanonizerData
+import com.foreverjukebox.app.autocanonizer.AutocanonizerMainColor
+import com.foreverjukebox.app.autocanonizer.AutocanonizerOtherColor
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
@@ -436,8 +438,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBeatTiles(
         val nextTop = if (nextRect != null) minOf(nextRect.y, rect.y + rect.height) else rect.y
 
         val color = when (val overrideColor = tileColorOverrides[i]) {
-            AutocanonizerController.PRIMARY_TILE_COLOR_HEX -> Color(0xFF4F8FFF)
-            AutocanonizerController.OTHER_TILE_COLOR_HEX -> Color(0xFF10DF00)
+            AutocanonizerController.PRIMARY_TILE_COLOR_HEX -> AutocanonizerMainColor
+            AutocanonizerController.OTHER_TILE_COLOR_HEX -> AutocanonizerOtherColor
             null -> parseColor(beats[i].colorHex)
             else -> parseColor(overrideColor)
         }
@@ -504,20 +506,20 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawOverlay(
     val sectionY = layout.topPad + layout.tileHeight - 20f
 
     drawRect(
-        color = Color(0xFF4F8FFF).copy(alpha = 0.65f),
+        color = AutocanonizerMainColor.copy(alpha = 0.65f),
         topLeft = Offset(currentRect.x, currentRect.y),
         size = Size(currentRect.width, currentRect.height)
     )
     if (otherRect != null) {
         drawRect(
-            color = Color(0xFF10DF00).copy(alpha = 0.5f),
+            color = AutocanonizerOtherColor.copy(alpha = 0.5f),
             topLeft = Offset(otherRect.x, otherRect.y),
             size = Size(otherRect.width, otherRect.height)
         )
     }
 
     drawRect(
-        color = Color(0xFF4F8FFF),
+        color = AutocanonizerMainColor,
         topLeft = Offset(currentRect.x - 4f, sectionY),
         size = Size(8f, 8f)
     )
@@ -532,7 +534,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawOverlay(
     }
     if (otherCursor != null) {
         drawRect(
-            color = Color(0xFF10DF00),
+            color = AutocanonizerOtherColor,
             topLeft = Offset(otherCursor.x - 4f, otherCursor.y),
             size = Size(8f, 8f)
         )
