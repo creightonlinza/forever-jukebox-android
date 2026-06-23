@@ -14,7 +14,7 @@ class TuningCoordinatorCastPolicyTest {
             resetThreshold = 34
         )
 
-        assertEquals("jb=0&lg=0&sq=1&thresh=34&bp=18,50,10&d=&am=off", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=off", params)
     }
 
     @Test
@@ -26,7 +26,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 25,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLong = false,
+            minJumpDistancePercent = 0,
             removeSequential = true
         )
 
@@ -38,7 +38,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 0.05,
             highlightAnchorBranch = true,
             justBackwards = true,
-            justLongBranches = false,
+            minJumpDistancePercent = 0,
             removeSequentialBranches = true,
             randomBranchDeltaPercentScale = 500.0
         )
@@ -56,7 +56,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 25,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLong = false,
+            minJumpDistancePercent = 0,
             removeSequential = true
         )
 
@@ -69,7 +69,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 0.05,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLongBranches = false,
+            minJumpDistancePercent = 0,
             removeSequentialBranches = true,
             randomBranchDeltaPercentScale = 500.0,
             audioMode = JukeboxAudioMode.Lofi
@@ -83,7 +83,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 0.05,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLongBranches = false,
+            minJumpDistancePercent = 0,
             removeSequentialBranches = true,
             randomBranchDeltaPercentScale = 500.0,
             audioMode = JukeboxAudioMode.Off
@@ -102,7 +102,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 25,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLong = false,
+            minJumpDistancePercent = 0,
             removeSequential = true
         )
 
@@ -126,7 +126,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 25,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLong = false,
+            minJumpDistancePercent = 0,
             removeSequential = true
         )
 
@@ -140,7 +140,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 0.05,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLongBranches = false,
+            minJumpDistancePercent = 0,
             removeSequentialBranches = true,
             randomBranchDeltaPercentScale = 500.0,
             audioMode = JukeboxAudioMode.Off,
@@ -159,7 +159,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 25,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLong = false,
+            minJumpDistancePercent = 0,
             removeSequential = true
         )
 
@@ -172,7 +172,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 0.05,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLongBranches = false,
+            minJumpDistancePercent = 0,
             removeSequentialBranches = true,
             randomBranchDeltaPercentScale = 500.0,
             audioMode = JukeboxAudioMode.Lofi
@@ -190,7 +190,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 25,
             highlightAnchorBranch = false,
             justBackwards = true,
-            justLong = false,
+            minJumpDistancePercent = 0,
             removeSequential = true
         )
 
@@ -203,13 +203,44 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 0.10,
             highlightAnchorBranch = true,
             justBackwards = true,
-            justLongBranches = false,
+            minJumpDistancePercent = 0,
             removeSequentialBranches = true,
             randomBranchDeltaPercentScale = 500.0,
             audioMode = JukeboxAudioMode.Vaporwave
         )
 
         assertEquals("bp=10,40,50&ah=1&am=vaporwave", update.castParams)
+    }
+
+    @Test
+    fun buildCastTuningUpdateUsesBranchLengthAndExplicitDisableValues() {
+        val enabled = buildCastTuningUpdate(
+            currentTuning = TuningState(minJumpDistancePercent = 0),
+            threshold = 2,
+            minProb = 0.18,
+            maxProb = 0.50,
+            ramp = 0.02,
+            highlightAnchorBranch = false,
+            justBackwards = false,
+            minJumpDistancePercent = 30,
+            removeSequentialBranches = false,
+            randomBranchDeltaPercentScale = 500.0
+        )
+        val disabled = buildCastTuningUpdate(
+            currentTuning = enabled.nextTuning,
+            threshold = 2,
+            minProb = 0.18,
+            maxProb = 0.50,
+            ramp = 0.02,
+            highlightAnchorBranch = false,
+            justBackwards = false,
+            minJumpDistancePercent = 0,
+            removeSequentialBranches = false,
+            randomBranchDeltaPercentScale = 500.0
+        )
+
+        assertEquals("bl=30", enabled.castParams)
+        assertEquals("bl=0", disabled.castParams)
     }
 
     @Test
@@ -222,7 +253,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = 1.0,
             highlightAnchorBranch = false,
             justBackwards = false,
-            justLongBranches = false,
+            minJumpDistancePercent = 0,
             removeSequentialBranches = false,
             randomBranchDeltaPercentScale = 500.0
         )
@@ -246,7 +277,7 @@ class TuningCoordinatorCastPolicyTest {
             ramp = current.ramp / 500.0,
             highlightAnchorBranch = current.highlightAnchorBranch,
             justBackwards = current.justBackwards,
-            justLongBranches = current.justLong,
+            minJumpDistancePercent = current.minJumpDistancePercent,
             removeSequentialBranches = current.removeSequential,
             randomBranchDeltaPercentScale = 500.0,
             audioMode = audioMode

@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.engine
 
+const val DEFAULT_MIN_LONG_BRANCH_PERCENT = 20
+
 data class TrackMeta(
     val title: String? = null,
     val artist: String? = null,
@@ -19,6 +21,7 @@ data class JukeboxConfig(
     val maxRandomBranchChance: Double = 0.5,
     val randomBranchChanceDelta: Double = 0.02,
     val minLongBranch: Int = 0,
+    val minLongBranchPercent: Int = DEFAULT_MIN_LONG_BRANCH_PERCENT,
     val preferredAnchorBeat: Int? = null
 )
 
@@ -33,6 +36,7 @@ data class JukeboxConfigUpdate(
     val maxRandomBranchChance: Double? = null,
     val randomBranchChanceDelta: Double? = null,
     val minLongBranch: Int? = null,
+    val minLongBranchPercent: Int? = null,
     val preferredAnchorBeat: Int? = null
 )
 
@@ -48,6 +52,7 @@ fun JukeboxConfig.applyUpdate(update: JukeboxConfigUpdate): JukeboxConfig {
         maxRandomBranchChance = update.maxRandomBranchChance ?: maxRandomBranchChance,
         randomBranchChanceDelta = update.randomBranchChanceDelta ?: randomBranchChanceDelta,
         minLongBranch = update.minLongBranch ?: minLongBranch,
+        minLongBranchPercent = update.minLongBranchPercent ?: minLongBranchPercent,
         preferredAnchorBeat = update.preferredAnchorBeat ?: preferredAnchorBeat
     )
 }
@@ -64,7 +69,15 @@ fun JukeboxConfig.toUpdate(): JukeboxConfigUpdate {
         maxRandomBranchChance = maxRandomBranchChance,
         randomBranchChanceDelta = randomBranchChanceDelta,
         minLongBranch = minLongBranch,
+        minLongBranchPercent = minLongBranchPercent,
         preferredAnchorBeat = preferredAnchorBeat
+    )
+}
+
+fun JukeboxConfig.withMinimumJumpDistancePercent(percent: Int): JukeboxConfig {
+    return copy(
+        justLongBranches = percent > 0,
+        minLongBranchPercent = percent.takeIf { it > 0 } ?: DEFAULT_MIN_LONG_BRANCH_PERCENT
     )
 }
 

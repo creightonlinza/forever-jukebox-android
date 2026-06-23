@@ -277,7 +277,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             initialRamp = tuning.ramp,
             initialHighlightAnchorBranch = tuning.highlightAnchorBranch,
             initialJustBackwards = tuning.justBackwards,
-            initialJustLong = tuning.justLong,
+            initialMinJumpDistancePercent = tuning.minJumpDistancePercent,
             initialRemoveSequential = tuning.removeSequential,
             initialAudioModeWireValue = if (playback.isCasting) {
                 playback.castAudioModeWireValue

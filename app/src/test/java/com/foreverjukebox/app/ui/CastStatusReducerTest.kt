@@ -48,7 +48,8 @@ class CastStatusReducerTest {
               ],
               "tuning":{
                 "justBackwards":true,
-                "justLongBranches":false,
+                "justLongBranches":true,
+                "minLongBranchPercent":30,
                 "removeSequentialBranches":true,
                 "threshold":28,
                 "computedThreshold":31,
@@ -94,7 +95,55 @@ class CastStatusReducerTest {
         assertEquals(20, parsed?.tuning?.branchProbability?.deltaPercent)
         assertEquals(listOf(2, 5), parsed?.tuning?.deletedEdgeIds)
         assertTrue(parsed?.tuning?.justBackwards == true)
+        assertEquals(30, parsed?.tuning?.minLongBranchPercent)
         assertTrue(parsed?.tuning?.highlightAnchorBranch == true)
+    }
+
+    @Test
+    fun parseCastStatusMessageFallsBackForOlderReceiverBranchStatus() {
+        val enabled = parseCastStatusMessage(
+            """
+            {
+              "type":"status",
+              "tuning":{
+                "justLongBranches":true,
+                "branchProbability":{}
+              }
+            }
+            """.trimIndent()
+        )
+        val disabled = parseCastStatusMessage(
+            """
+            {
+              "type":"status",
+              "tuning":{
+                "justLongBranches":false,
+                "branchProbability":{}
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertEquals(20, enabled?.tuning?.minLongBranchPercent)
+        assertEquals(0, disabled?.tuning?.minLongBranchPercent)
+    }
+
+    @Test
+    fun parseCastStatusMessageRejectsInvalidBranchPercentBeforeLegacyFallback() {
+        val parsed = parseCastStatusMessage(
+            """
+            {
+              "type":"status",
+              "tuning":{
+                "justLongBranches":true,
+                "minLongBranchPercent":15,
+                "branchProbability":{}
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertEquals(20, parsed?.tuning?.minLongBranchPercent)
     }
 
     @Test
@@ -299,6 +348,7 @@ class CastStatusReducerTest {
             supportedAudioModes = supportedAudioModes(),
             tuning = castTuning(
                 justBackwards = true,
+                minLongBranchPercent = 30,
                 removeSequentialBranches = true,
                 threshold = 31,
                 computedThreshold = 29,
@@ -322,6 +372,7 @@ class CastStatusReducerTest {
         assertEquals(45, next.tuning.maxProb)
         assertEquals(20, next.tuning.ramp)
         assertTrue(next.tuning.justBackwards)
+        assertEquals(30, next.tuning.minJumpDistancePercent)
         assertTrue(next.tuning.removeSequential)
         assertTrue(next.tuning.highlightAnchorBranch)
     }
@@ -883,6 +934,7 @@ class CastStatusReducerTest {
     private fun castTuning(
         justBackwards: Boolean = false,
         justLongBranches: Boolean = false,
+        minLongBranchPercent: Int = if (justLongBranches) 20 else 0,
         removeSequentialBranches: Boolean = false,
         threshold: Int? = null,
         computedThreshold: Int? = null,
@@ -897,6 +949,7 @@ class CastStatusReducerTest {
         return CastTuningStatus(
             justBackwards = justBackwards,
             justLongBranches = justLongBranches,
+            minLongBranchPercent = minLongBranchPercent,
             removeSequentialBranches = removeSequentialBranches,
             threshold = threshold,
             computedThreshold = computedThreshold,

@@ -45,6 +45,50 @@ class GraphCoreParityTest {
     }
 
     @Test
+    fun longBranchFilterUsesAbsoluteBeatDistanceAndIncludesThreshold() {
+        val analysis = normalizeAnalysis(makeAnalysisPayload(count = 6))
+        val beats = analysis.beats
+        beats.forEach {
+            it.allNeighbors = mutableListOf()
+            it.neighbors = mutableListOf()
+        }
+        var edgeId = 0
+        fun addEdge(src: Int, dest: Int) {
+            beats[src].allNeighbors += Edge(
+                id = edgeId++,
+                src = beats[src],
+                dest = beats[dest],
+                distance = 10.0,
+                deleted = false
+            )
+        }
+        addEdge(0, 2)
+        addEdge(1, 2)
+        addEdge(1, 3)
+        addEdge(5, 4)
+        addEdge(5, 3)
+        addEdge(5, 0)
+
+        buildJumpGraph(
+            analysis,
+            config(
+                currentThreshold = 20,
+                justLongBranches = true,
+                minLongBranch = 2
+            )
+        )
+
+        val retained = beats.flatMap { beat ->
+            beat.neighbors.map { edge -> edge.src.which to edge.dest.which }
+        }.toSet()
+        assertTrue((0 to 2) in retained)
+        assertTrue((1 to 3) in retained)
+        assertTrue((5 to 3) in retained)
+        assertFalse((1 to 2) in retained)
+        assertFalse((5 to 4) in retained)
+    }
+
+    @Test
     fun filtersSequentialBranchesWhenEnabled() {
         val analysis = normalizeAnalysis(makeAnalysisPayload())
         val graph = buildJumpGraph(
@@ -123,13 +167,13 @@ class GraphCoreParityTest {
         )
     }
 
-    private fun makeAnalysisPayload(): JsonElement {
+    private fun makeAnalysisPayload(count: Int = 4): JsonElement {
         val sections = JsonArray(
             listOf(
                 JsonObject(
                     mapOf(
                         "start" to JsonPrimitive(0.0),
-                        "duration" to JsonPrimitive(4.0),
+                        "duration" to JsonPrimitive(count.toDouble()),
                         "confidence" to JsonPrimitive(1.0)
                     )
                 )
@@ -153,7 +197,7 @@ class GraphCoreParityTest {
                 )
             )
         )
-        val beats = JsonArray((0 until 4).map { i ->
+        val beats = JsonArray((0 until count).map { i ->
             JsonObject(
                 mapOf(
                     "start" to JsonPrimitive(i.toDouble()),
@@ -162,7 +206,7 @@ class GraphCoreParityTest {
                 )
             )
         })
-        val tatums = JsonArray((0 until 4).map { i ->
+        val tatums = JsonArray((0 until count).map { i ->
             JsonObject(
                 mapOf(
                     "start" to JsonPrimitive(i * 0.5),
@@ -171,7 +215,7 @@ class GraphCoreParityTest {
                 )
             )
         })
-        val segments = JsonArray((0 until 4).map { i ->
+        val segments = JsonArray((0 until count).map { i ->
             JsonObject(
                 mapOf(
                     "start" to JsonPrimitive(i.toDouble()),
@@ -193,7 +237,7 @@ class GraphCoreParityTest {
                 "beats" to beats,
                 "tatums" to tatums,
                 "segments" to segments,
-                "track" to JsonObject(mapOf("duration" to JsonPrimitive(4.0)))
+                "track" to JsonObject(mapOf("duration" to JsonPrimitive(count.toDouble())))
             )
         )
     }

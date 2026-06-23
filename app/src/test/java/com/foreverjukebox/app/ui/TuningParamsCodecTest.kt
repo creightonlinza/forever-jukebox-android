@@ -20,7 +20,7 @@ class TuningParamsCodecTest {
         assertEquals(56, parsed?.rampPercent)
         assertTrue(parsed?.highlightAnchorBranch == true)
         assertTrue(parsed?.justBackwards == true)
-        assertFalse(parsed?.justLongBranches == true)
+        assertEquals(0, parsed?.minJumpDistancePercent)
         assertTrue(parsed?.removeSequentialBranches == true)
         assertEquals(listOf(3, 8), parsed?.deletedEdgeIds)
         assertEquals(22, parsed?.anchorBeat)
@@ -54,7 +54,7 @@ class TuningParamsCodecTest {
         val parsed = TuningParamsCodec.parse("jb=TRUE&lg=False")
 
         assertTrue(parsed?.justBackwards == true)
-        assertFalse(parsed?.justLongBranches == true)
+        assertEquals(0, parsed?.minJumpDistancePercent)
     }
 
     @Test
@@ -148,6 +148,47 @@ class TuningParamsCodecTest {
     }
 
     @Test
+    fun parseAcceptsCanonicalBranchLengths() {
+        for (percent in listOf(5, 10, 20, 30)) {
+            assertEquals(
+                percent,
+                TuningParamsCodec.parse("bl=$percent")?.minJumpDistancePercent
+            )
+        }
+    }
+
+    @Test
+    fun parseSupportsLegacyLongBranchValues() {
+        assertEquals(20, TuningParamsCodec.parse("lg=1")?.minJumpDistancePercent)
+        assertEquals(0, TuningParamsCodec.parse("lg=0")?.minJumpDistancePercent)
+    }
+
+    @Test
+    fun parseCanonicalBranchLengthOverridesLegacyValue() {
+        assertEquals(
+            5,
+            TuningParamsCodec.parse("bl=5&lg=1")?.minJumpDistancePercent
+        )
+        assertEquals(
+            30,
+            TuningParamsCodec.parse("bl=30&lg=0")?.minJumpDistancePercent
+        )
+    }
+
+    @Test
+    fun parseInvalidBranchLengthFallsBackToLegacyValue() {
+        assertEquals(
+            20,
+            TuningParamsCodec.parse("bl=15&lg=1")?.minJumpDistancePercent
+        )
+        assertEquals(
+            0,
+            TuningParamsCodec.parse("bl=15&lg=0")?.minJumpDistancePercent
+        )
+        assertNull(TuningParamsCodec.parse("bl=15")?.minJumpDistancePercent)
+    }
+
+    @Test
     fun buildCastLoadPayloadReturnsSparsePrefsOnlyWhenRawIsMissing() {
         val highlighted = TuningParamsCodec.buildCastLoadPayload(
             raw = null,
@@ -170,6 +211,30 @@ class TuningParamsCodecTest {
         )
 
         assertEquals("thresh=35&jb=1&ah=1&bp=1,2,3&d=4,9&ab=22&am=lofi", payload)
+    }
+
+    @Test
+    fun buildCastLoadPayloadCanonicalizesBranchLength() {
+        assertEquals(
+            "bl=30&jb=1",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "lg=1&jb=1&bl=30",
+                highlightAnchorBranch = false
+            )
+        )
+        assertEquals(
+            "bl=20",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "lg=1",
+                highlightAnchorBranch = false
+            )
+        )
+        assertNull(
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "lg=0",
+                highlightAnchorBranch = false
+            )
+        )
     }
 
     @Test
@@ -243,6 +308,21 @@ class TuningParamsCodecTest {
         assertEquals(0, parsed?.minProbPercent)
         assertEquals(100, parsed?.maxProbPercent)
         assertEquals(100, parsed?.rampPercent)
+    }
+
+    @Test
+    fun buildFromTuningStateEmitsBlAndNeverLg() {
+        val enabled = TuningParamsCodec.buildFromTuningState(
+            TuningState(minJumpDistancePercent = 30)
+        )
+        val disabled = TuningParamsCodec.buildFromTuningState(
+            TuningState(minJumpDistancePercent = 0)
+        )
+
+        assertTrue(enabled.contains("bl=30"))
+        assertFalse(enabled.contains("lg="))
+        assertFalse(disabled.contains("bl="))
+        assertFalse(disabled.contains("lg="))
     }
 
     @Test
@@ -326,7 +406,7 @@ class TuningParamsCodecTest {
             ramp = 15,
             highlightAnchorBranch = true,
             justBackwards = true,
-            justLong = true,
+            minJumpDistancePercent = 30,
             removeSequential = true
         )
         val parsed = TuningParamsCodec.parse("jb=0")
@@ -338,7 +418,7 @@ class TuningParamsCodecTest {
         assertEquals(15, merged.ramp)
         assertEquals(true, merged.highlightAnchorBranch)
         assertEquals(false, merged.justBackwards)
-        assertEquals(true, merged.justLong)
+        assertEquals(30, merged.minJumpDistancePercent)
         assertEquals(true, merged.removeSequential)
     }
 
@@ -351,7 +431,7 @@ class TuningParamsCodecTest {
             ramp = 17,
             highlightAnchorBranch = true,
             justBackwards = true,
-            justLong = false,
+            minJumpDistancePercent = 30,
             removeSequential = true
         )
         val raw = TuningParamsCodec.buildFromTuningState(original)
@@ -364,7 +444,7 @@ class TuningParamsCodecTest {
         assertEquals(original.ramp, merged.ramp)
         assertEquals(original.highlightAnchorBranch, merged.highlightAnchorBranch)
         assertEquals(original.justBackwards, merged.justBackwards)
-        assertEquals(original.justLong, merged.justLong)
+        assertEquals(original.minJumpDistancePercent, merged.minJumpDistancePercent)
         assertEquals(original.removeSequential, merged.removeSequential)
     }
 }

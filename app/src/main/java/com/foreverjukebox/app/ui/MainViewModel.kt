@@ -2914,7 +2914,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ramp: Double,
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
-        justLongBranches: Boolean,
+        minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioModeWireValue: String? = null
     ) {
@@ -2946,7 +2946,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ramp = ramp,
                 highlightAnchorBranch = highlightAnchorBranch,
                 justBackwards = justBackwards,
-                justLongBranches = justLongBranches,
+                minJumpDistancePercent = minJumpDistancePercent,
                 removeSequentialBranches = removeSequentialBranches,
                 audioMode = requestedAudioMode,
                 audioModeWireValue = requestedAudioModeWireValue

@@ -290,7 +290,7 @@ data class TuningState(
     val ramp: Int = 10,
     val highlightAnchorBranch: Boolean = false,
     val justBackwards: Boolean = false,
-    val justLong: Boolean = false,
+    val minJumpDistancePercent: Int = 0,
     val removeSequential: Boolean = false
 )
 

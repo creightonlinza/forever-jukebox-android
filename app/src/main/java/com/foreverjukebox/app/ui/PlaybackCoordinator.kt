@@ -14,6 +14,7 @@ import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
+import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
@@ -128,7 +129,7 @@ class PlaybackCoordinator(
             params.add("jb=1")
         }
         if (config.justLongBranches) {
-            params.add("lg=1")
+            params.add("bl=${config.minLongBranchPercent}")
         }
         if (config.removeSequentialBranches) {
             params.add("sq=0")
@@ -939,7 +940,11 @@ class PlaybackCoordinator(
                     maxProb = (config.maxRandomBranchChance * 100).toInt(),
                     ramp = (config.randomBranchChanceDelta * RANDOM_BRANCH_DELTA_PERCENT_SCALE).toInt(),
                     justBackwards = config.justBackwards,
-                    justLong = config.justLongBranches,
+                    minJumpDistancePercent = if (config.justLongBranches) {
+                        config.minLongBranchPercent
+                    } else {
+                        0
+                    },
                     removeSequential = config.removeSequentialBranches
                 )
             )
@@ -1164,8 +1169,8 @@ class PlaybackCoordinator(
         parsed.justBackwards?.let { value ->
             config = config.copy(justBackwards = value)
         }
-        parsed.justLongBranches?.let { value ->
-            config = config.copy(justLongBranches = value)
+        parsed.minJumpDistancePercent?.let { percent ->
+            config = config.withMinimumJumpDistancePercent(percent)
         }
         parsed.removeSequentialBranches?.let { value ->
             config = config.copy(removeSequentialBranches = value)

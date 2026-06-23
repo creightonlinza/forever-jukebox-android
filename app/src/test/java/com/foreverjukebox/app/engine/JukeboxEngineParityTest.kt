@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -75,6 +76,37 @@ class JukeboxEngineParityTest {
 
         assertEquals(2, engine.getConfig().minLongBranch)
         assertNotNull(engine.getGraphState())
+    }
+
+    @Test
+    fun anyDistanceDisablesFilteringButKeepsTwentyPercentAnchorBaseline() {
+        val selected = JukeboxConfig().withMinimumJumpDistancePercent(0)
+        val engine = JukeboxEngine(FakePlayer())
+        engine.updateConfig(selected)
+
+        engine.loadAnalysis(makeAnalysisPayload(10))
+
+        assertFalse(engine.getConfig().justLongBranches)
+        assertEquals(DEFAULT_MIN_LONG_BRANCH_PERCENT, engine.getConfig().minLongBranchPercent)
+        assertEquals(2, engine.getConfig().minLongBranch)
+    }
+
+    @Test
+    fun thirtyPercentResolvesAgainstLoadedBeatCount() {
+        val engine = JukeboxEngine(
+            FakePlayer(),
+            JukeboxEngineOptions(
+                config = JukeboxConfigUpdate(
+                    minLongBranchPercent = 30,
+                    justLongBranches = true
+                )
+            )
+        )
+
+        engine.loadAnalysis(makeAnalysisPayload(100))
+
+        assertEquals(30, engine.getConfig().minLongBranchPercent)
+        assertEquals(30, engine.getConfig().minLongBranch)
     }
 
     @Test

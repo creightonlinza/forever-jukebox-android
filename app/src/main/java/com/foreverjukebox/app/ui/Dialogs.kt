@@ -40,6 +40,24 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
 
+internal val MIN_JUMP_DISTANCE_OPTIONS = listOf(0, 5, 10, 20, 30)
+
+internal fun minJumpDistancePercentForIndex(index: Int): Int {
+    return MIN_JUMP_DISTANCE_OPTIONS[index.coerceIn(MIN_JUMP_DISTANCE_OPTIONS.indices)]
+}
+
+internal fun minJumpDistanceIndexForPercent(percent: Int): Int {
+    return MIN_JUMP_DISTANCE_OPTIONS.indexOf(percent).coerceAtLeast(0)
+}
+
+internal fun minimumJumpDistanceLabel(percent: Int): String {
+    return if (percent == 0) {
+        "Minimum Jump Distance: Any distance"
+    } else {
+        "Minimum Jump Distance: >$percent% of track"
+    }
+}
+
 internal data class SleepTimerDialogSelectionState(
     val appliedOption: SleepTimerOption,
     val pendingOption: SleepTimerOption
@@ -69,7 +87,7 @@ fun TuningDialog(
     initialRamp: Int,
     initialHighlightAnchorBranch: Boolean,
     initialJustBackwards: Boolean,
-    initialJustLong: Boolean,
+    initialMinJumpDistancePercent: Int,
     initialRemoveSequential: Boolean,
     initialAudioModeWireValue: String,
     audioModeOptions: List<AudioModeOption>,
@@ -83,7 +101,7 @@ fun TuningDialog(
         ramp: Double,
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
-        justLongBranches: Boolean,
+        minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioModeWireValue: String
     ) -> Unit
@@ -96,7 +114,11 @@ fun TuningDialog(
         mutableStateOf(initialHighlightAnchorBranch)
     }
     var justBackwards by remember(initialJustBackwards) { mutableStateOf(initialJustBackwards) }
-    var justLong by remember(initialJustLong) { mutableStateOf(initialJustLong) }
+    var minJumpIndex by remember(initialMinJumpDistancePercent) {
+        mutableFloatStateOf(
+            minJumpDistanceIndexForPercent(initialMinJumpDistancePercent).toFloat()
+        )
+    }
     var removeSequential by remember(initialRemoveSequential) { mutableStateOf(initialRemoveSequential) }
     var audioModeWireValue by remember(initialAudioModeWireValue) {
         mutableStateOf(initialAudioModeWireValue)
@@ -106,6 +128,8 @@ fun TuningDialog(
         .firstOrNull { it.wireValue == audioModeWireValue }
         ?.label
         ?: "Unavailable"
+    val selectedMinJumpDistancePercent =
+        minJumpDistancePercentForIndex(minJumpIndex.toInt())
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -162,7 +186,7 @@ fun TuningDialog(
                                 rampVal,
                                 highlightAnchorBranch,
                                 justBackwards,
-                                justLong,
+                                selectedMinJumpDistancePercent,
                                 removeSequential,
                                 audioModeWireValue
                             )
@@ -194,6 +218,13 @@ fun TuningDialog(
                     onValueChange = { threshold = it },
                     valueRange = 2f..80f,
                     steps = 77
+                )
+                Text(minimumJumpDistanceLabel(selectedMinJumpDistancePercent))
+                Slider(
+                    value = minJumpIndex,
+                    onValueChange = { minJumpIndex = it },
+                    valueRange = 0f..4f,
+                    steps = 3
                 )
                 Text("Branch Probability Min: ${minProb.toInt()}%")
                 Slider(
@@ -256,11 +287,6 @@ fun TuningDialog(
                     Switch(checked = justBackwards, onCheckedChange = { justBackwards = it })
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Allow only reverse branches")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(checked = justLong, onCheckedChange = { justLong = it })
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Allow only long branches")
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = removeSequential, onCheckedChange = { removeSequential = it })
