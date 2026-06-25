@@ -198,7 +198,11 @@ fun FaqPanel() {
                     )
                 )
                 BulletListItem("Essentia — on-device audio analysis (AGPLv3).")
-                BulletListItem("madmom-beats-port — beat and downbeat detection (code Apache-2.0/MIT; bundled models CC BY-NC-SA 4.0, non-commercial — this app is non-commercial, with no ads or purchases).")
+                BulletListItem(
+                    "madmom-beats-port — beat and downbeat detection " +
+                        "(code BSD 2-Clause; bundled models CC BY-NC-SA 4.0, " +
+                        "non-commercial — this app is non-commercial, with no ads or purchases)."
+                )
                 BulletListItem("SpeexDSP — audio resampling (BSD 3-Clause).")
                 BulletListItem("Oboe, AndroidX/Jetpack Compose, OkHttp, Coil, kotlinx, and Google Cast (Apache-2.0); Sentry crash reporting (MIT).")
                 val noticeText = buildAnnotatedString {

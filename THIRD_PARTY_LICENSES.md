@@ -33,8 +33,14 @@ This non-commercial nature is relevant to the madmom terms noted below.
   `madmom_beats_port_ffi` shared library and the bundled bidirectional-LSTM
   model files (`app/src/main/assets/madmom_beats_port_models/downbeats_blstm.json`
   and `downbeats_blstm_weights.npz`).
-- **Port code (the `.so`):** Apache License 2.0 OR MIT, at your option.
-  Source: <https://github.com/creightonlinza/madmom-beats-port> (v4.1.0).
+- **Port code/runtime (the `.so`):** BSD 2-Clause. Source:
+  <https://github.com/creightonlinza/madmom-beats-port> (v4.1.1). The runtime
+  includes portions derived from upstream `madmom`, also under BSD 2-Clause.
+  License map and notices:
+  [`third_party/madmom_beats_port_ffi/LICENSE`](third_party/madmom_beats_port_ffi/LICENSE),
+  [`third_party/madmom_beats_port_ffi/NOTICE`](third_party/madmom_beats_port_ffi/NOTICE),
+  and
+  [`third_party/madmom_beats_port_ffi/LICENSES/THIRD_PARTY.md`](third_party/madmom_beats_port_ffi/LICENSES/THIRD_PARTY.md).
 - **Bundled models:** Exported from
   [`madmom_models`](https://github.com/CPJKU/madmom_models) and licensed
   **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0)**.
@@ -43,8 +49,9 @@ This non-commercial nature is relevant to the madmom terms noted below.
   Institute of Computational Perception, Johannes Kepler University Linz (CPJKU).
   Commercial licensing inquiries: Gerhard Widmer
   (<http://www.cp.jku.at/people/widmer/>).
-- **Upstream madmom** (MIT; referenced only to regenerate models, not shipped):
-  <https://github.com/CPJKU/madmom>.
+- **Upstream madmom:** <https://github.com/CPJKU/madmom>. Portions of
+  `madmom-beats-port` are a Rust port / derivative work of upstream `madmom`;
+  its BSD 2-Clause notice applies to redistributed source and binaries.
 - **Citation:** Böck, Korzeniowski, Schlüter, Krebs, Widmer, "madmom: a new
   Python Audio and Music Signal Processing Library," ACM Multimedia 2016.
 

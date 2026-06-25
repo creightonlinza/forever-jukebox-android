@@ -86,8 +86,10 @@ corresponding source is this repository:
 
 Copyright © Creighton Linza and contributors.
 
-Third-party components and their licenses (Essentia, madmom, SpeexDSP, Oboe,
-and others) are documented in [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
-The app is non-commercial (no ads, no purchases); this matters because the
-bundled madmom beat-detection models are licensed CC BY-NC-SA 4.0
-(non-commercial) — see that file for details.
+Third-party components and their licenses (Essentia, madmom-beats-port/madmom
+models, SpeexDSP, Oboe, and others) are documented in
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). The
+madmom-beats-port runtime code is BSD 2-Clause; the app is non-commercial
+(no ads, no purchases), which matters because the bundled madmom beat-detection
+models are licensed CC BY-NC-SA 4.0 (non-commercial) — see that file for
+details.

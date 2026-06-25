@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-2-Clause
+
 #ifndef MADMOM_BEATS_PORT_FFI_H
 #define MADMOM_BEATS_PORT_FFI_H
 
