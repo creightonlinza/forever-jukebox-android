@@ -155,6 +155,18 @@ extensions.configure<ApplicationExtension>("android") {
         }
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "false")
+        }
+        create("full") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "true")
+        }
+    }
+
     signingConfigs {
         if (hasReleaseSigningConfig) {
             create("release") {
@@ -173,8 +185,8 @@ extensions.configure<ApplicationExtension>("android") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (hasReleaseSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }

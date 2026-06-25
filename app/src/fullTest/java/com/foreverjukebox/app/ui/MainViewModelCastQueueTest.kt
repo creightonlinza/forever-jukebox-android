@@ -100,8 +100,8 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
-    fun resolveYoutubeTrackSelectionPrefersPendingSpotifyMetadata() {
-        val selection = resolveYoutubeTrackSelection(
+    fun resolveRemoteVideoSelectionPrefersPendingSpotifyMetadata() {
+        val selection = resolveRemoteVideoSelection(
             item = YoutubeSearchItem(
                 id = "yt1",
                 title = "Official Video With Extra Words"
@@ -118,8 +118,8 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
-    fun resolveYoutubeTrackSelectionNormalizesPendingSpotifyMetadata() {
-        val selection = resolveYoutubeTrackSelection(
+    fun resolveRemoteVideoSelectionNormalizesPendingSpotifyMetadata() {
+        val selection = resolveRemoteVideoSelection(
             item = YoutubeSearchItem(
                 id = " yt1 ",
                 title = "YouTube Title"
@@ -136,8 +136,8 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
-    fun resolveYoutubeTrackSelectionUsesYoutubeTitleWithoutPendingMetadata() {
-        val selection = resolveYoutubeTrackSelection(
+    fun resolveRemoteVideoSelectionUsesYoutubeTitleWithoutPendingMetadata() {
+        val selection = resolveRemoteVideoSelection(
             item = YoutubeSearchItem(
                 id = "yt1",
                 title = " YouTube Title "
@@ -151,8 +151,8 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
-    fun resolveYoutubeTrackSelectionRejectsBlankYoutubeId() {
-        val selection = resolveYoutubeTrackSelection(
+    fun resolveRemoteVideoSelectionRejectsBlankYoutubeId() {
+        val selection = resolveRemoteVideoSelection(
             item = YoutubeSearchItem(
                 id = "   ",
                 title = "YouTube Title"

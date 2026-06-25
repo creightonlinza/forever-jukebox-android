@@ -1,14 +1,12 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.autocanonizer.AutocanonizerData
+import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.DEFAULT_MAX_FAVORITES
 import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteTrack
-import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
-import com.foreverjukebox.app.data.TopSongItem
-import com.foreverjukebox.app.data.YoutubeSearchItem
 import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.visualization.JumpLine
@@ -164,18 +162,18 @@ data class WhatsNewPrompt(
 
 data class SearchState(
     val query: String = "",
-    val topSongs: List<TopSongItem> = emptyList(),
+    val topSongs: List<RemoteSongItem> = emptyList(),
     val topSongsLoading: Boolean = false,
     val topSongsErrorMessage: String? = null,
-    val trendingSongs: List<TopSongItem> = emptyList(),
+    val trendingSongs: List<RemoteSongItem> = emptyList(),
     val trendingSongsLoading: Boolean = false,
     val trendingSongsErrorMessage: String? = null,
-    val recentSongs: List<TopSongItem> = emptyList(),
+    val recentSongs: List<RemoteSongItem> = emptyList(),
     val recentSongsLoading: Boolean = false,
     val recentSongsErrorMessage: String? = null,
-    val spotifyResults: List<SpotifySearchItem> = emptyList(),
+    val spotifyResults: List<RemoteMusicSearchItem> = emptyList(),
     val spotifyLoading: Boolean = false,
-    val youtubeMatches: List<YoutubeSearchItem> = emptyList(),
+    val videoMatches: List<RemoteVideoSearchItem> = emptyList(),
     val youtubeLoading: Boolean = false,
     val pendingTrackName: String? = null,
     val pendingTrackArtist: String? = null
@@ -311,6 +309,9 @@ val localModeTabs: List<TabId> = listOf(TabId.Input, TabId.Play, TabId.Faq)
 val defaultOnboardingMode: AppMode = AppMode.Local
 
 fun tabsForMode(mode: AppMode?): List<TabId> {
+    if (!BuildConfig.SERVER_MODE_AVAILABLE) {
+        return localModeTabs
+    }
     return when (mode) {
         AppMode.Local -> localModeTabs
         AppMode.Server, null -> serverModeTabs
@@ -318,6 +319,9 @@ fun tabsForMode(mode: AppMode?): List<TabId> {
 }
 
 fun defaultTabForMode(mode: AppMode?): TabId {
+    if (!BuildConfig.SERVER_MODE_AVAILABLE) {
+        return TabId.Input
+    }
     return when (mode) {
         AppMode.Local -> TabId.Input
         AppMode.Server, null -> TabId.Top
@@ -332,20 +336,26 @@ fun coerceTabForMode(mode: AppMode?, tabId: TabId): TabId {
     }
 }
 
-fun shouldShowAppModeGate(mode: AppMode?): Boolean = mode == null
+fun shouldShowAppModeGate(mode: AppMode?): Boolean {
+    return BuildConfig.SERVER_MODE_AVAILABLE && mode == null
+}
 
 fun shouldShowBaseUrlPrompt(mode: AppMode?, baseUrl: String): Boolean {
+    if (!BuildConfig.SERVER_MODE_AVAILABLE) return false
     return mode == AppMode.Server && !isValidBaseUrl(baseUrl)
 }
 
-fun shouldShowServerListenActions(mode: AppMode?): Boolean = mode == AppMode.Server
+fun shouldShowServerListenActions(mode: AppMode?): Boolean {
+    return BuildConfig.SERVER_MODE_AVAILABLE && mode == AppMode.Server
+}
 
 fun shouldShowDeleteTrackAction(
     mode: AppMode?,
     playback: PlaybackState,
     adminKey: String
 ): Boolean {
-    return mode == AppMode.Server &&
+    return BuildConfig.SERVER_MODE_AVAILABLE &&
+        mode == AppMode.Server &&
         !playback.lastJobId.isNullOrBlank() &&
         (playback.deleteEligible || adminKey.isNotBlank())
 }
@@ -403,7 +413,8 @@ fun resolveLoadingTrackMetadata(
 }
 
 fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
-    return state.appMode == AppMode.Server &&
+    return BuildConfig.SERVER_MODE_AVAILABLE &&
+        state.appMode == AppMode.Server &&
         !state.playback.analysisErrorMessage.isNullOrBlank() &&
         !state.playback.isTrackLoading() &&
         !state.playback.shareTrackIdOrNull().isNullOrBlank()
@@ -538,14 +549,15 @@ fun stateAfterModeChangeReset(
     targetMode: AppMode,
     castEnabled: Boolean
 ): UiState {
+    val resolvedTargetMode = if (BuildConfig.SERVER_MODE_AVAILABLE) targetMode else AppMode.Local
     return current.copy(
-        appMode = targetMode,
+        appMode = resolvedTargetMode,
         showAppModeGate = false,
-        showBaseUrlPrompt = shouldShowBaseUrlPrompt(targetMode, current.baseUrl),
+        showBaseUrlPrompt = shouldShowBaseUrlPrompt(resolvedTargetMode, current.baseUrl),
         castEnabled = castEnabled,
         localSelectedFileName = null,
         localAnalysisJsonPath = null,
-        activeTab = defaultTabForMode(targetMode),
+        activeTab = defaultTabForMode(resolvedTargetMode),
         topSongsTab = TopSongsTab.TopSongs,
         search = SearchState(),
         playback = PlaybackState(),

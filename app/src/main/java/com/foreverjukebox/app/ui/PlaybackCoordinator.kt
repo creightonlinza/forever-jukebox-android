@@ -6,8 +6,6 @@ import android.os.SystemClock
 import android.util.Log
 import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
-import com.foreverjukebox.app.data.ApiClient
-import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.canonicalJobId
@@ -69,7 +67,7 @@ internal fun resolveAutocanonizerTrackDuration(
 class PlaybackCoordinator(
     private val application: Application,
     private val scope: CoroutineScope,
-    private val api: ApiClient,
+    private val serverGateway: ServerGateway,
     private val controller: PlaybackController,
     private val engine: JukeboxEngine,
     private val json: Json,
@@ -248,11 +246,11 @@ class PlaybackCoordinator(
         val cached = withContext(Dispatchers.IO) {
             val analysisPath = analysisFile(jobId)
             val audioPath = audioFile(jobId)
-            if (!hasCompleteServerTrackCache(cacheDir(), jobId)) {
+            if (!hasCompleteTrackCache(jobId)) {
                 return@withContext null
             }
             val analysisText = analysisPath.readText()
-            val response = json.decodeFromString<AnalysisResponse>(analysisText)
+            val response = json.decodeFromString<TrackAnalysisResult>(analysisText)
             response to audioPath
         }
         if (cached == null) {
@@ -321,7 +319,7 @@ class PlaybackCoordinator(
         }
     }
 
-    fun updateDeleteEligibility(response: AnalysisResponse) {
+    fun updateDeleteEligibility(response: TrackAnalysisResult) {
         val jobId = canonicalJobId(response.id) ?: canonicalJobId(lastJobId) ?: return
         if (deleteEligibilityJobId == jobId) {
             return
@@ -362,8 +360,8 @@ class PlaybackCoordinator(
         setAnalysisProgress(0, "Loading audio")
         val target = audioFile(jobId)
         try {
-            retryTransientServerLoad {
-                api.fetchAudioToFile(baseUrl, jobId, target)
+            retryTransientRemoteLoad {
+                serverGateway.fetchAudioToFile(baseUrl, jobId, target)
             }
             if (!isActiveJobId(jobId)) {
                 return false
@@ -490,7 +488,7 @@ class PlaybackCoordinator(
         }
     }
 
-    suspend fun applyAnalysisResult(response: AnalysisResponse): Boolean {
+    suspend fun applyAnalysisResult(response: TrackAnalysisResult): Boolean {
         val responseJobId = canonicalJobId(response.id)
         if (response.id != null && (responseJobId == null || !isActiveJobId(responseJobId))) {
             return false
@@ -1038,8 +1036,8 @@ class PlaybackCoordinator(
             if (!isActiveJobId(jobId)) {
                 return
             }
-            val response = retryTransientServerLoad {
-                api.getAnalysis(baseUrl, jobId)
+            val response = retryTransientRemoteLoad {
+                    serverGateway.getAnalysis(baseUrl, jobId)
             }
             if (!isActiveJobId(jobId)) {
                 return
@@ -1121,13 +1119,17 @@ class PlaybackCoordinator(
     }
 
     private fun analysisFile(jobId: String): File =
-        serverTrackAnalysisFile(cacheDir(), jobId)
+        File(cacheDir(), "$jobId.analysis.json")
 
-    private fun audioFile(jobId: String): File = serverTrackAudioFile(cacheDir(), jobId)
+    private fun audioFile(jobId: String): File = File(cacheDir(), "$jobId.audio")
+
+    private fun hasCompleteTrackCache(jobId: String): Boolean {
+        return analysisFile(jobId).exists() && audioFile(jobId).exists()
+    }
 
     private fun cacheAnalysis(
         jobId: String,
-        response: AnalysisResponse
+        response: TrackAnalysisResult
     ) {
         scope.launch(Dispatchers.IO) {
             ignoreFailures {
@@ -1142,7 +1144,7 @@ class PlaybackCoordinator(
         lastPlayCountedJobId = jobId
         scope.launch {
             try {
-                api.postPlay(getState().baseUrl, jobId)
+                serverGateway.postPlay(getState().baseUrl, jobId)
             } catch (_: Exception) {
                 lastPlayCountedJobId = null
             }

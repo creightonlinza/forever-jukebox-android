@@ -114,9 +114,9 @@ class AppPreferences(private val context: Context) {
         prefs[KEY_FAVORITES_SORT_DIRECTION]
     }
 
-    val appConfig: Flow<AppConfigResponse?> = context.dataStore.data.map { prefs ->
+    val appConfig: Flow<ServerAppConfig?> = context.dataStore.data.map { prefs ->
         val raw = prefs[KEY_APP_CONFIG] ?: return@map null
-        runCatching { json.decodeFromString<AppConfigResponse>(raw) }.getOrNull()
+        runCatching { json.decodeFromString<ServerAppConfig>(raw) }.getOrNull()
     }
 
     val canonizerFinishOutSong: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -198,7 +198,7 @@ class AppPreferences(private val context: Context) {
         }
     }
 
-    suspend fun setAppConfig(config: AppConfigResponse) {
+    suspend fun setAppConfig(config: ServerAppConfig) {
         context.dataStore.edit { prefs ->
             prefs[KEY_APP_CONFIG] = json.encodeToString(config)
         }

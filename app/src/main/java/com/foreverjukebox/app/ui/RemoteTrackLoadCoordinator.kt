@@ -1,33 +1,32 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.canonicalJobId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-class ServerTrackLoadCoordinator(
+class RemoteTrackLoadCoordinator(
     private val scope: CoroutineScope,
     private val playbackCoordinator: PlaybackCoordinator,
     private val getState: () -> UiState
 ) {
-    private var serverTrackLoadJob: Job? = null
+    private var remoteTrackLoadJob: Job? = null
 
-    fun isRunning(): Boolean = serverTrackLoadJob?.isActive == true
+    fun isRunning(): Boolean = remoteTrackLoadJob?.isActive == true
 
     fun launch(block: suspend () -> Unit) {
         cancel()
-        serverTrackLoadJob = scope.launch {
+        remoteTrackLoadJob = scope.launch {
             block()
         }
     }
 
     fun cancel() {
-        serverTrackLoadJob?.cancel()
-        serverTrackLoadJob = null
+        remoteTrackLoadJob?.cancel()
+        remoteTrackLoadJob = null
     }
 
-    suspend fun loadOrPoll(response: AnalysisResponse, fallbackJobId: String? = null): Boolean {
+    suspend fun loadOrPoll(response: TrackAnalysisResult, fallbackJobId: String? = null): Boolean {
         val jobId = canonicalJobId(response.id) ?: canonicalJobId(fallbackJobId) ?: return false
         playbackCoordinator.setLastJobId(jobId)
         playbackCoordinator.updateDeleteEligibility(response)

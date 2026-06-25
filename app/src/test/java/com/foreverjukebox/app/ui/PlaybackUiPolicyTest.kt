@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.engine.JukeboxState
 import org.junit.Assert.assertEquals
@@ -178,7 +179,7 @@ class PlaybackUiPolicyTest {
             )
         )
 
-        assertTrue(shouldRetryFailedLoadFromTransport(state))
+        assertEquals(BuildConfig.SERVER_MODE_AVAILABLE, shouldRetryFailedLoadFromTransport(state))
     }
 
     @Test

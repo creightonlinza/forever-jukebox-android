@@ -26,18 +26,6 @@ fun formatTrackDuration(seconds: Double?): String {
     }
 }
 
-internal fun youtubeThumbnailUrl(videoId: String): String {
-    val normalizedVideoId = videoId.trim()
-    require(normalizedVideoId.isNotEmpty()) { "videoId must not be blank" }
-    return "https://i.ytimg.com/vi/$normalizedVideoId/hqdefault.jpg"
-}
-
-internal fun youtubeWatchUrl(videoId: String): String {
-    val normalizedVideoId = videoId.trim()
-    require(normalizedVideoId.isNotEmpty()) { "videoId must not be blank" }
-    return "https://www.youtube.com/watch?v=$normalizedVideoId"
-}
-
 fun formatCursorTime(seconds: Double): String {
     val total = if (seconds.isFinite()) {
         floor(seconds).toLong().coerceAtLeast(0)

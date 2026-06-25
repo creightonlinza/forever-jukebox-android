@@ -1,6 +1,5 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.playback.PlaybackController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -32,11 +31,11 @@ internal fun resolveVersionUpdatePrompt(
 
 class AppLifecycleCoordinator(
     private val scope: CoroutineScope,
-    private val api: ApiClient,
+    private val serverGateway: ServerGateway,
     private val controller: PlaybackController,
     private val playbackCoordinator: PlaybackCoordinator,
     private val localAnalysisCoordinator: LocalAnalysisCoordinator,
-    private val serverTrackLoadCoordinator: ServerTrackLoadCoordinator,
+    private val cancelServerTrackLoad: () -> Unit,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val isDebugBuild: Boolean,
     private val currentVersionName: String,
@@ -46,7 +45,7 @@ class AppLifecycleCoordinator(
     private var versionCheckAttempted = false
 
     fun prepareForExit() {
-        serverTrackLoadCoordinator.cancel()
+        cancelServerTrackLoad()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         playbackCoordinator.resetForNewTrack()
         controller.engine.clearAnalysis()
@@ -69,15 +68,15 @@ class AppLifecycleCoordinator(
         versionCheckAttempted = true
         scope.launch {
             val latest = runCatching {
-                api.fetchLatestGitHubRelease(
+                serverGateway.fetchLatestRelease(
                     owner = githubRepoOwner,
                     repo = githubRepoName
                 )
             }.getOrNull() ?: return@launch
             val prompt = resolveVersionUpdatePrompt(
                 currentVersionName = currentVersionName,
-                latestVersionRaw = latest.tagName,
-                downloadUrlRaw = latest.htmlUrl
+                latestVersionRaw = latest.latestVersion,
+                downloadUrlRaw = latest.downloadUrl
             ) ?: return@launch
             updateState {
                 it.copy(versionUpdatePrompt = prompt)

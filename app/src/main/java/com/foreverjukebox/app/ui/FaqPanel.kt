@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.R
 
 @Composable
@@ -130,7 +131,12 @@ fun FaqPanel() {
                 expanded = expandedSectionIndex == 3,
                 onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(3) }
             ) {
-                BulletListItem("The track must be analyzed locally or by the server before it can play.")
+                val analysisSource = if (BuildConfig.SERVER_MODE_AVAILABLE) {
+                    "locally or by the server"
+                } else {
+                    "locally on this device"
+                }
+                BulletListItem("The track must be analyzed $analysisSource before it can play.")
                 BulletListItem("The entire track must also be decoded and loaded into memory so the Jukebox can jump instantly. Longer tracks take longer, even when analysis is cached.")
                 BulletListItem("For best results, keep the screen on and the app open until loading finishes. Loading may slow considerably when the device is locked or the app is in the background.")
             }
@@ -146,13 +152,68 @@ fun FaqPanel() {
             }
 
             FaqAccordionSection(
-                title = "How do Favorites work? (server mode only)",
+                title = if (BuildConfig.SERVER_MODE_AVAILABLE) {
+                    "How do Favorites work? (server mode only)"
+                } else {
+                    "How do Favorites work?"
+                },
                 expanded = expandedSectionIndex == 5,
                 onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(5) }
             ) {
-                BulletListItem("Favorites are saved/unsaved by clicking the star icon on a track. They are stored locally in your browser and can optionally be synced across devices using a sync code obtained from the Favorites sync menu.")
+                if (BuildConfig.SERVER_MODE_AVAILABLE) {
+                    BulletListItem("Favorites are saved/unsaved by clicking the star icon on a track. They are stored locally in your browser and can optionally be synced across devices using a sync code obtained from the Favorites sync menu.")
+                } else {
+                    BulletListItem("Favorites are saved/unsaved by clicking the star icon on a track and stored on this device.")
+                }
                 BulletListItem("When you favorite a track, its tuning is saved too, so future loads restore your chosen parameters.")
                 BulletListItem("Use Reset in the Tune panel to restore default tuning (must be re-favorited to save changes).")
+            }
+
+            FaqAccordionSection(
+                title = "Open source & licenses",
+                expanded = expandedSectionIndex == 6,
+                onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(6) }
+            ) {
+                val licenseIntro = buildAnnotatedString {
+                    append("Forever Jukebox is free, open-source software licensed under the ")
+                    withLink(LinkAnnotation.Url(url = AGPL_LICENSE_URL)) {
+                        withStyle(linkStyle) { append("GNU AGPL v3.0") }
+                    }
+                    append(". The complete source code is available on ")
+                    withLink(LinkAnnotation.Url(url = GITHUB_PROJECT_URL)) {
+                        withStyle(linkStyle) { append("GitHub") }
+                    }
+                    append(".")
+                }
+                Text(
+                    text = licenseIntro,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+                Text(
+                    "This app uses the following third-party components:",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+                BulletListItem("Essentia — on-device audio analysis (AGPLv3).")
+                BulletListItem("madmom-beats-port — beat and downbeat detection (code Apache-2.0/MIT; bundled models CC BY-NC-SA 4.0, non-commercial — this app is non-commercial, with no ads or purchases).")
+                BulletListItem("SpeexDSP — audio resampling (BSD 3-Clause).")
+                BulletListItem("Oboe, AndroidX/Jetpack Compose, OkHttp, Coil, kotlinx, and Google Cast (Apache-2.0); Sentry crash reporting (MIT).")
+                val noticeText = buildAnnotatedString {
+                    append("Full attributions and license texts are in ")
+                    withLink(LinkAnnotation.Url(url = THIRD_PARTY_LICENSES_URL)) {
+                        withStyle(linkStyle) { append("THIRD_PARTY_LICENSES.md") }
+                    }
+                    append(".")
+                }
+                Text(
+                    text = noticeText,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                )
             }
         }
     }
@@ -273,3 +334,6 @@ private fun BulletListItem(text: String) {
 private const val REDDIT_COMMUNITY_URL = "https://www.reddit.com/r/infinitejukebox/"
 private const val DISCORD_SERVER_URL = "https://discord.com/invite/KWN5BfD"
 private const val GITHUB_PROJECT_URL = "https://github.com/creightonlinza/forever-jukebox-android/"
+private const val AGPL_LICENSE_URL = "https://github.com/creightonlinza/forever-jukebox-android/blob/main/LICENSE"
+private const val THIRD_PARTY_LICENSES_URL =
+    "https://github.com/creightonlinza/forever-jukebox-android/blob/main/THIRD_PARTY_LICENSES.md"

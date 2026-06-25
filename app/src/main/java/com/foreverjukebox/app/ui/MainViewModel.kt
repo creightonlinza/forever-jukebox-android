@@ -12,26 +12,19 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.BuildConfig
-import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
-import com.foreverjukebox.app.data.AnalysisResponse
-import com.foreverjukebox.app.data.AnalysisStartResponse
 import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.SavedPlaylistTrack
-import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.ThemeMode
-import com.foreverjukebox.app.data.YoutubeSearchItem
 import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.parseTrackId
 import com.foreverjukebox.app.data.sanitizeMaxFavorites
-import com.foreverjukebox.app.data.trackIdFromTopSong
-import com.foreverjukebox.app.data.youtubeTrackIdFromTopSong
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
@@ -60,7 +53,7 @@ internal suspend fun tryQueueYoutubeAnalysisForCast(
     youtubeId: String,
     title: String?,
     artist: String?,
-    startAnalysis: suspend (baseUrl: String, youtubeId: String, title: String?, artist: String?) -> AnalysisStartResponse
+    startAnalysis: suspend (baseUrl: String, youtubeId: String, title: String?, artist: String?) -> TrackAnalysisStartResult
 ): String? {
     val normalizedBaseUrl = baseUrl.trim()
     if (normalizedBaseUrl.isBlank()) {
@@ -75,14 +68,14 @@ internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchSta
     return search.copy(
         query = "",
         spotifyResults = emptyList(),
-        youtubeMatches = emptyList(),
+        videoMatches = emptyList(),
         youtubeLoading = false,
         pendingTrackName = null,
         pendingTrackArtist = null
     )
 }
 
-internal data class YoutubeTrackSelection(
+internal data class RemoteVideoSelection(
     val youtubeId: String,
     val title: String?,
     val artist: String?
@@ -93,10 +86,10 @@ internal data class TrackMetadata(
     val artist: String? = null
 )
 
-internal fun resolveYoutubeTrackSelection(
-    item: YoutubeSearchItem,
+internal fun resolveRemoteVideoSelection(
+    item: RemoteVideoSearchItem,
     search: SearchState
-): YoutubeTrackSelection? {
+): RemoteVideoSelection? {
     val youtubeId = item.id.takeIfNotBlank() ?: return null
     val pendingTitle = search.pendingTrackName.takeIfNotBlank()
     val pendingArtist = search.pendingTrackArtist.takeIfNotBlank()
@@ -107,7 +100,7 @@ internal fun resolveYoutubeTrackSelection(
         item.title.takeIfNotBlank()
     }
     val artist = if (hasPendingTrackMeta) pendingArtist else null
-    return YoutubeTrackSelection(
+    return RemoteVideoSelection(
         youtubeId = youtubeId,
         title = title,
         artist = artist
@@ -129,8 +122,8 @@ internal fun resolveTrackMeta(
     )
         .flatten()
         .firstOrNull { item ->
-            canonicalTrackId(trackIdFromTopSong(item)) == canonicalTarget ||
-                canonicalTrackId(youtubeTrackIdFromTopSong(item)) == canonicalTarget
+            canonicalTrackId(trackIdFromRemoteSong(item)) == canonicalTarget ||
+                canonicalTrackId(videoTrackIdFromRemoteSong(item)) == canonicalTarget
         }
     if (feedMatch != null) {
         return TrackMetadata(
@@ -191,7 +184,7 @@ internal fun hasBaseUrlServerChanged(previous: String?, next: String?): Boolean 
     return normalizedBaseUrlForComparison(previous) != normalizedBaseUrlForComparison(next)
 }
 
-internal fun shouldReuseLookupJob(response: AnalysisResponse?): Boolean {
+internal fun shouldReuseLookupJob(response: TrackAnalysisResult?): Boolean {
     val jobId = canonicalJobId(response?.id)
     return response != null &&
         jobId != null
@@ -291,7 +284,7 @@ private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotB
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
-    private val api = ApiClient()
+    private val serverGateway = createServerGateway()
     private val controller = PlaybackControllerHolder.get(application)
     private val engine = controller.engine
     private val defaultConfig = engine.getConfig()
@@ -320,9 +313,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onSyncCastNotification = ::syncCastNotification,
         castTrackLengthLimitErrorMessage = ::castTrackLengthLimitErrorMessage
     )
-    private val searchCoordinator = SearchCoordinator(
+    private val searchCoordinator = createRemoteSearchController(
         scope = viewModelScope,
-        api = api,
+        serverGateway = serverGateway,
         getState = { state.value },
         updateSearchState = ::updateSearchState,
         setSearchQuery = ::setSearchQuery,
@@ -330,7 +323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     private val favoritesController = FavoritesController(
         scope = viewModelScope,
-        api = api,
+        serverGateway = serverGateway,
         preferences = preferences,
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
@@ -339,7 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val playbackCoordinator = PlaybackCoordinator(
         application = getApplication(),
         scope = viewModelScope,
-        api = api,
+        serverGateway = serverGateway,
         controller = controller,
         engine = engine,
         json = json,
@@ -350,7 +343,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         applyActiveTab = ::applyActiveTab,
         onStableTrackLoaded = ::handleStableTrackLoaded
     )
-    private val serverTrackLoadCoordinator = ServerTrackLoadCoordinator(
+    private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
         scope = viewModelScope,
         playbackCoordinator = playbackCoordinator,
         getState = { state.value }
@@ -383,7 +376,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         controller = controller,
         castPlaybackCoordinator = castPlaybackCoordinator,
         playbackCoordinator = playbackCoordinator,
-        serverTrackLoadCoordinator = serverTrackLoadCoordinator,
+        cancelServerTrackLoad = remoteTrackLoadCoordinator::cancel,
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         applyActiveTab = ::applyActiveTab,
@@ -397,11 +390,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     private val appLifecycleCoordinator = AppLifecycleCoordinator(
         scope = viewModelScope,
-        api = api,
+        serverGateway = serverGateway,
         controller = controller,
         playbackCoordinator = playbackCoordinator,
         localAnalysisCoordinator = localAnalysisCoordinator,
-        serverTrackLoadCoordinator = serverTrackLoadCoordinator,
+        cancelServerTrackLoad = remoteTrackLoadCoordinator::cancel,
         updateState = { updater -> _state.update(updater) },
         isDebugBuild = BuildConfig.DEBUG,
         currentVersionName = BuildConfig.VERSION_NAME,
@@ -450,15 +443,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         viewModelScope.launch {
             preferences.appMode.collect { mode ->
+                val effectiveMode = if (BuildConfig.SERVER_MODE_AVAILABLE) {
+                    mode
+                } else {
+                    AppMode.Local
+                }
                 _state.update { current ->
                     val resolvedAppId = CastAppIdResolver.resolve(getApplication(), current.baseUrl)
-                    val nextActiveTab = coerceTabForMode(mode, current.activeTab)
+                    val nextActiveTab = coerceTabForMode(effectiveMode, current.activeTab)
                     current.copy(
-                        appMode = mode,
+                        appMode = effectiveMode,
                         activeTab = nextActiveTab,
-                        showAppModeGate = shouldShowAppModeGate(mode),
-                        showBaseUrlPrompt = shouldShowBaseUrlPrompt(mode, current.baseUrl),
-                        castEnabled = mode == AppMode.Server && !resolvedAppId.isNullOrBlank()
+                        showAppModeGate = shouldShowAppModeGate(effectiveMode),
+                        showBaseUrlPrompt = shouldShowBaseUrlPrompt(effectiveMode, current.baseUrl),
+                        castEnabled = effectiveMode == AppMode.Server && !resolvedAppId.isNullOrBlank()
                     )
                 }
                 hydrateSavedPlaylistIfInactive()
@@ -736,7 +734,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        serverTrackLoadCoordinator.cancel()
+        remoteTrackLoadCoordinator.cancel()
         cancelCastSelection()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         runCatching {
@@ -996,7 +994,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!appConfigLoaded) {
             appConfigLoaded = true
             viewModelScope.launch {
-                runCatching { api.getAppConfig(baseUrl).also { preferences.setAppConfig(it) } }
+                runCatching { serverGateway.getAppConfig(baseUrl).also { preferences.setAppConfig(it) } }
             }
         }
         searchCoordinator.maybeRefreshForState(currentState)
@@ -1004,7 +1002,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resetRuntimeForModeChange(targetMode: AppMode) {
-        serverTrackLoadCoordinator.cancel()
+        remoteTrackLoadCoordinator.cancel()
         cancelCastSelection()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         searchCoordinator.resetRuntimeState()
@@ -1031,7 +1029,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resetRuntimeForServerSwitch(nextBaseUrl: String) {
-        serverTrackLoadCoordinator.cancel()
+        remoteTrackLoadCoordinator.cancel()
         cancelCastSelection()
         searchCoordinator.resetRuntimeState()
         favoritesController.resetRuntimeState()
@@ -1488,7 +1486,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         addTrackToPlaylistFromLongPress(track)
     }
 
-    fun selectSpotifyTrack(item: SpotifySearchItem) {
+    fun selectSpotifyTrack(item: RemoteMusicSearchItem) {
         if (blockPlaybackChangeWhileLoading()) return
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         val baseUrl = state.value.baseUrl
@@ -1499,11 +1497,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
         }
-        serverTrackLoadCoordinator.launch {
+        remoteTrackLoadCoordinator.launch {
             if (artist.isNotBlank()) {
                 try {
-                    val response = retryTransientServerLoad {
-                        api.getJobByTrack(baseUrl, name, artist)
+                    val response = retryTransientRemoteLoad {
+                        serverGateway.getJobByTrack(baseUrl, name, artist)
                     }
                     if (shouldReuseLookupJob(response)) {
                         val jobId = canonicalJobId(response!!.id) ?: return@launch
@@ -1558,10 +1556,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun selectYoutubeTrack(item: YoutubeSearchItem) {
+    fun selectYoutubeTrack(item: RemoteVideoSearchItem) {
         if (blockPlaybackChangeWhileLoading()) return
         clearInactiveSavedPlaylistBeforeOutsideSelection()
-        val selection = resolveYoutubeTrackSelection(item, state.value.search) ?: return
+        val selection = resolveRemoteVideoSelection(item, state.value.search) ?: return
         val duration = item.duration
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
@@ -1603,8 +1601,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launchCastSelection
                 }
                 try {
-                    val existing = retryTransientServerLoad {
-                        api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
+                    val existing = retryTransientRemoteLoad {
+                        serverGateway.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
                     }
                     val resolvedJobId = canonicalJobId(existing?.id)
                     if (!resolvedJobId.isNullOrBlank()) {
@@ -1669,8 +1667,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = null,
             failureLogMessage = "Failed to start YouTube analysis"
         ) {
-            val existing = retryTransientServerLoad {
-                api.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
+            val existing = retryTransientRemoteLoad {
+                serverGateway.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
             }
             if (existing != null) {
                 val jobId = canonicalJobId(existing.id)
@@ -1679,13 +1677,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 maybeSelectPlaylistTrack(
                     playlistTrackForServerTrack(jobId, resolvedTitle, resolvedArtist, null)
                 )
-                return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(
+                return@launchServerTrackLoadWithCache remoteTrackLoadCoordinator.loadOrPoll(
                     existing,
                     fallbackJobId = jobId
                 )
             }
-            val response = retryTransientServerLoad {
-                api.startYoutubeAnalysis(
+            val response = retryTransientRemoteLoad {
+                serverGateway.startVideoAnalysis(
                     baseUrl,
                     trackId,
                     resolvedTitle,
@@ -1855,8 +1853,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (provider == SOURCE_PROVIDER_YOUTUBE) {
                     try {
-                        val existing = retryTransientServerLoad {
-                            api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                        val existing = retryTransientRemoteLoad {
+                            serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
                         }
                         val resolvedJobId = canonicalJobId(existing?.id)
                         if (!resolvedJobId.isNullOrBlank()) {
@@ -1913,8 +1911,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 try {
-                    val existing = retryTransientServerLoad {
-                        api.getJobBySource(baseUrl, provider, normalizedSourceId)
+                    val existing = retryTransientRemoteLoad {
+                        serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
                     }
                     val resolvedJobId = canonicalJobId(existing?.id)
                     if (resolvedJobId.isNullOrBlank()) {
@@ -1971,8 +1969,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = null,
             failureLogMessage = "Failed to load track by source"
         ) {
-            val existing = retryTransientServerLoad {
-                api.getJobBySource(baseUrl, provider, normalizedSourceId)
+            val existing = retryTransientRemoteLoad {
+                serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
             }
             if (existing != null) {
                 val jobId = canonicalJobId(existing.id)
@@ -1987,7 +1985,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 maybeSelectPlaylistTrack(
                     playlistTrackForServerTrack(jobId, resolvedTitle, resolvedArtist, tuningParams)
                 )
-                return@launchServerTrackLoadWithCache serverTrackLoadCoordinator.loadOrPoll(
+                return@launchServerTrackLoadWithCache remoteTrackLoadCoordinator.loadOrPoll(
                     existing,
                     fallbackJobId = jobId
                 )
@@ -1995,10 +1993,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (provider != SOURCE_PROVIDER_YOUTUBE) {
                 return@launchServerTrackLoadWithCache false
             }
-            val started = retryTransientServerLoad {
-                api.startYoutubeAnalysis(
+            val started = retryTransientRemoteLoad {
+                serverGateway.startVideoAnalysis(
                     baseUrl = baseUrl,
-                    youtubeId = normalizedSourceId,
+                    videoId = normalizedSourceId,
                     title = resolvedTitle,
                     artist = resolvedArtist
                 )
@@ -2097,24 +2095,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = normalizedJobId,
             failureLogMessage = "Failed to load track by job id"
         ) {
-            val response = loadExplicitJobInitialResponse(
+            val response = loadRemoteExplicitJobInitialResponse(
                 fetchJob = {
-                    retryTransientServerLoad {
-                        api.getAnalysis(baseUrl, normalizedJobId)
+                    retryTransientRemoteLoad {
+                        serverGateway.getAnalysis(baseUrl, normalizedJobId)
                     }
                 },
                 retryJob = {
-                    api.retryJob(baseUrl, normalizedJobId)
+                    serverGateway.retryJob(baseUrl, normalizedJobId)
                 }
             )
-            serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = normalizedJobId)
+            remoteTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = normalizedJobId)
         }
     }
 
     private suspend fun loadExistingJob(
         jobId: String,
         trackId: String,
-        response: AnalysisResponse,
+        response: TrackAnalysisResult,
         title: String? = null,
         artist: String? = null
     ) {
@@ -2146,7 +2144,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         applyActiveTab(TabId.Play, recordHistory = true)
         playbackCoordinator.setAnalysisQueued(null, response.message)
         try {
-            val handled = serverTrackLoadCoordinator.loadOrPoll(
+            val handled = remoteTrackLoadCoordinator.loadOrPoll(
                 response,
                 fallbackJobId = canonicalJobTrackId
             )
@@ -2172,7 +2170,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tuningParams: String?,
         stateUpdate: (UiState) -> UiState
     ) {
-        serverTrackLoadCoordinator.cancel()
+        remoteTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         playbackCoordinator.setPendingTuningParams(tuningParams)
         _state.update(stateUpdate)
@@ -2184,7 +2182,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         failureLogMessage: String,
         request: suspend () -> Boolean
     ) {
-        serverTrackLoadCoordinator.launch {
+        remoteTrackLoadCoordinator.launch {
             if (cachedJobId != null && playbackCoordinator.tryLoadCachedTrack(cachedJobId)) {
                 return@launch
             }
@@ -2514,10 +2512,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return null
         }
         return try {
-            val started = retryTransientServerLoad {
-                api.startYoutubeAnalysis(
+            val started = retryTransientRemoteLoad {
+                serverGateway.startVideoAnalysis(
                     baseUrl = normalizedBaseUrl,
-                    youtubeId = youtubeId,
+                    videoId = youtubeId,
                     title = title,
                     artist = artist
                 )
@@ -2577,7 +2575,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { showToast("Nothing to retry.") }
             return
         }
-        serverTrackLoadCoordinator.cancel()
+        remoteTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack()
         loadTrackById(
             trackId = retryRequest.trackId,
@@ -2604,7 +2602,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         updatePlaybackState { it.copy(deleteInFlight = true) }
         return try {
-            api.deleteJob(baseUrl, jobId, adminKey)
+            serverGateway.deleteJob(baseUrl, jobId, adminKey)
             if (playback.isCasting) {
                 sendCastCommand("reset")
             }
@@ -3084,19 +3082,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (baseUrl.isBlank()) {
             return
         }
-        if (serverTrackLoadCoordinator.isRunning() || playbackCoordinator.hasActiveServerLoadWork()) {
+        if (remoteTrackLoadCoordinator.isRunning() || playbackCoordinator.hasActiveServerLoadWork()) {
             return
         }
-        serverTrackLoadCoordinator.launch {
+        remoteTrackLoadCoordinator.launch {
             playbackCoordinator.setAnalysisQueued(
                 playback.analysisProgress,
                 playback.analysisMessage ?: "Resuming load..."
             )
             try {
-                val response = retryTransientServerLoad {
-                    api.getAnalysis(baseUrl, jobId)
+                val response = retryTransientRemoteLoad {
+                    serverGateway.getAnalysis(baseUrl, jobId)
                 }
-                val handled = serverTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = jobId)
+                val handled = remoteTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = jobId)
                 if (!handled) {
                     playbackCoordinator.setAnalysisError("Loading failed.")
                 }

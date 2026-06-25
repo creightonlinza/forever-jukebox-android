@@ -1,8 +1,6 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.TOP_SONGS_LIMIT
-import com.foreverjukebox.app.data.TopSongItem
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -12,12 +10,12 @@ import kotlinx.coroutines.launch
 
 class SearchCoordinator(
     private val scope: CoroutineScope,
-    private val api: ApiClient,
+    private val serverGateway: ServerGateway,
     private val getState: () -> UiState,
     private val updateSearchState: ((SearchState) -> SearchState) -> Unit,
     private val setSearchQuery: (String) -> Unit,
     private val logError: (String, Throwable) -> Unit
-) {
+) : RemoteSearchController {
     private enum class SongsFeed {
         Top,
         Recent,
@@ -29,13 +27,13 @@ class SearchCoordinator(
     private var recentSongsRefreshJob: Job? = null
     private var trendingSongsRefreshJob: Job? = null
     private var spotifySearchJob: Job? = null
-    private var youtubeMatchesJob: Job? = null
+    private var videoMatchesJob: Job? = null
     private var requestGeneration = 0L
     private var topSongsLoaded = false
     private var trendingSongsLoaded = false
     private var recentSongsLoaded = false
 
-    fun resetRuntimeState() {
+    override fun resetRuntimeState() {
         requestGeneration += 1
         cancelAllJobs()
         topSongsLoaded = false
@@ -43,11 +41,11 @@ class SearchCoordinator(
         recentSongsLoaded = false
     }
 
-    fun onTopTabActivated() {
+    override fun onTopTabActivated() {
         scheduleSongsRefresh(SongsFeed.Top)
     }
 
-    fun onTopSongsTabSelected(tab: TopSongsTab) {
+    override fun onTopSongsTabSelected(tab: TopSongsTab) {
         when (tab) {
             TopSongsTab.TopSongs -> scheduleSongsRefresh(SongsFeed.Top)
             TopSongsTab.Recent -> scheduleSongsRefresh(SongsFeed.Recent)
@@ -56,7 +54,7 @@ class SearchCoordinator(
         }
     }
 
-    fun maybeRefreshForState(currentState: UiState) {
+    override fun maybeRefreshForState(currentState: UiState) {
         if (currentState.activeTab != TabId.Top || currentState.baseUrl.isBlank()) {
             return
         }
@@ -71,19 +69,19 @@ class SearchCoordinator(
         }
     }
 
-    fun refreshTopSongs() {
+    override fun refreshTopSongs() {
         refreshSongs(SongsFeed.Top)
     }
 
-    fun refreshRecentSongs() {
+    override fun refreshRecentSongs() {
         refreshSongs(SongsFeed.Recent)
     }
 
-    fun refreshTrendingSongs() {
+    override fun refreshTrendingSongs() {
         refreshSongs(SongsFeed.Trending)
     }
 
-    fun runSpotifySearch(query: String) {
+    override fun runSpotifySearch(query: String) {
         val baseUrl = getState().baseUrl.trim()
         if (baseUrl.isBlank()) return
         if (getState().search.spotifyLoading) return
@@ -91,7 +89,7 @@ class SearchCoordinator(
         setSearchQuery(query)
         updateSearchState {
             it.copy(
-                youtubeMatches = emptyList(),
+                videoMatches = emptyList(),
                 spotifyResults = emptyList(),
                 spotifyLoading = true
             )
@@ -99,7 +97,7 @@ class SearchCoordinator(
         spotifySearchJob?.cancel()
         spotifySearchJob = scope.launch {
             try {
-                val items = api.searchSpotify(baseUrl, query)
+                val items = serverGateway.searchMusic(baseUrl, query)
                 if (!isRequestCurrent(generation, baseUrl)) {
                     return@launch
                 }
@@ -132,7 +130,7 @@ class SearchCoordinator(
         }
     }
 
-    fun fetchYoutubeMatches(name: String, artist: String, duration: Double) {
+    override fun fetchYoutubeMatches(name: String, artist: String, duration: Double) {
         val baseUrl = getState().baseUrl.trim()
         if (baseUrl.isBlank()) return
         val generation = requestGeneration
@@ -142,18 +140,18 @@ class SearchCoordinator(
                 pendingTrackName = name,
                 pendingTrackArtist = artist,
                 spotifyResults = emptyList(),
-                youtubeMatches = emptyList(),
+                videoMatches = emptyList(),
                 youtubeLoading = true
             )
         }
-        youtubeMatchesJob?.cancel()
-        youtubeMatchesJob = scope.launch {
+        videoMatchesJob?.cancel()
+        videoMatchesJob = scope.launch {
             try {
-                val items = api.searchYoutube(baseUrl, query, duration)
+                val items = serverGateway.searchVideos(baseUrl, query, duration)
                 if (!isRequestCurrent(generation, baseUrl)) {
                     return@launch
                 }
-                updateSearchState { it.copy(youtubeMatches = items) }
+                updateSearchState { it.copy(videoMatches = items) }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
@@ -161,19 +159,19 @@ class SearchCoordinator(
                     return@launch
                 }
                 logError("YouTube match search failed", error)
-                updateSearchState { it.copy(youtubeMatches = emptyList()) }
+                updateSearchState { it.copy(videoMatches = emptyList()) }
             } catch (error: IllegalArgumentException) {
                 if (!isRequestCurrent(generation, baseUrl)) {
                     return@launch
                 }
                 logError("YouTube match search failed", error)
-                updateSearchState { it.copy(youtubeMatches = emptyList()) }
+                updateSearchState { it.copy(videoMatches = emptyList()) }
             } catch (error: IllegalStateException) {
                 if (!isRequestCurrent(generation, baseUrl)) {
                     return@launch
                 }
                 logError("YouTube match search failed", error)
-                updateSearchState { it.copy(youtubeMatches = emptyList()) }
+                updateSearchState { it.copy(videoMatches = emptyList()) }
             } finally {
                 if (isRequestCurrent(generation, baseUrl)) {
                     updateSearchState { it.copy(youtubeLoading = false) }
@@ -258,11 +256,11 @@ class SearchCoordinator(
         setFeedJob(feed, feedJob)
     }
 
-    private suspend fun fetchSongs(feed: SongsFeed, baseUrl: String): List<TopSongItem> {
+    private suspend fun fetchSongs(feed: SongsFeed, baseUrl: String): List<RemoteSongItem> {
         return when (feed) {
-            SongsFeed.Top -> api.fetchTopSongs(baseUrl, TOP_SONGS_LIMIT)
-            SongsFeed.Recent -> api.fetchRecentSongs(baseUrl, TOP_SONGS_LIMIT)
-            SongsFeed.Trending -> api.fetchTrendingSongs(baseUrl)
+            SongsFeed.Top -> serverGateway.fetchTopSongs(baseUrl, TOP_SONGS_LIMIT)
+            SongsFeed.Recent -> serverGateway.fetchRecentSongs(baseUrl, TOP_SONGS_LIMIT)
+            SongsFeed.Trending -> serverGateway.fetchTrendingSongs(baseUrl)
         }
     }
 
@@ -274,7 +272,11 @@ class SearchCoordinator(
         }
     }
 
-    private fun setFeedItems(search: SearchState, feed: SongsFeed, items: List<TopSongItem>): SearchState {
+    private fun setFeedItems(
+        search: SearchState,
+        feed: SongsFeed,
+        items: List<RemoteSongItem>
+    ): SearchState {
         return when (feed) {
             SongsFeed.Top -> search.copy(topSongs = items)
             SongsFeed.Recent -> search.copy(recentSongs = items)
@@ -341,7 +343,7 @@ class SearchCoordinator(
         trendingSongsRefreshJob = null
         spotifySearchJob?.cancel()
         spotifySearchJob = null
-        youtubeMatchesJob?.cancel()
-        youtubeMatchesJob = null
+        videoMatchesJob?.cancel()
+        videoMatchesJob = null
     }
 }
