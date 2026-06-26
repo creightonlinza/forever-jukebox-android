@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import android.app.Application
+import android.media.MediaCodec
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
@@ -36,6 +37,19 @@ import kotlinx.serialization.json.jsonObject
 
 internal fun isAnalysisInProgressStatus(status: String?): Boolean {
     return status == "downloading" || status == "queued" || status == "processing"
+}
+
+// A decode failure that does NOT mean the audio file itself is bad. MediaCodec decoder
+// creation/configuration can fail transiently when hardware decoders are contended or have
+// been reclaimed (common while the app is backgrounded with the screen off), and an
+// OutOfMemoryError reflects momentary heap pressure, not a corrupt file. Cached audio must
+// not be discarded on these — the same file decodes fine once resources free up.
+internal fun isTransientDecodeError(error: Throwable): Boolean {
+    return when (error) {
+        is OutOfMemoryError -> true
+        is MediaCodec.CodecException -> error.isTransient || error.isRecoverable
+        else -> false
+    }
 }
 
 internal data class ResolvedLoadedTrackMeta(
@@ -261,36 +275,33 @@ class PlaybackCoordinator(
             return false
         }
         setAnalysisProgress(0, "Loading audio")
-        try {
-            withContext(Dispatchers.Default) {
-                controller.player.loadFile(audioPath) { percent ->
-                    scope.launch(Dispatchers.Main) {
-                        setAnalysisProgress(percent, "Loading audio")
-                    }
-                }
-                engine.refreshAnchorJump()
+        val decoded = try {
+            // Retry transient codec failures the same way the server load path does, so a
+            // momentary MediaCodec hiccup (e.g. backgrounded with the screen off) does not
+            // get mistaken for a corrupt cache entry.
+            decodeAudioFileWithRetry(jobId, audioPath) { percent ->
+                setAnalysisProgress(percent, "Loading audio")
             }
         } catch (cancel: CancellationException) {
             throw cancel
-        } catch (err: OutOfMemoryError) {
-            // The cached audio could not be loaded (out of memory, or a corrupt /
-            // truncated cache entry that fails to decode — e.g. MediaCodec throws
-            // CodecException, an IllegalStateException). Drop the unusable file and
-            // return false so the caller re-fetches it from the server instead of
-            // crashing on the bad cache entry.
-            discardUnusableCachedAudio(jobId, err)
-            return false
-        } catch (err: IOException) {
-            discardUnusableCachedAudio(jobId, err)
-            return false
-        } catch (err: IllegalStateException) {
-            discardUnusableCachedAudio(jobId, err)
-            return false
-        } catch (err: IllegalArgumentException) {
-            discardUnusableCachedAudio(jobId, err)
+        } catch (error: Throwable) {
+            // Decoding failed even after retries. A transient/recoverable codec failure or
+            // an OutOfMemoryError does NOT mean the file is bad — keep it and let the caller
+            // re-fetch/retry rather than deleting a track the user plays daily. Only files
+            // that are genuinely unreadable are discarded.
+            if (isTransientDecodeError(error)) {
+                AppLog.warn(
+                    TAG,
+                    "Transient decode failure for cached audio $jobId; keeping cache",
+                    error
+                )
+                controller.player.clear()
+            } else {
+                discardUnusableCachedAudio(jobId, error)
+            }
             return false
         }
-        if (!isActiveJobId(jobId)) {
+        if (!decoded || !isActiveJobId(jobId)) {
             return false
         }
         audioLoadInFlight = false
@@ -430,13 +441,28 @@ class PlaybackCoordinator(
     }
 
     private suspend fun loadServerAudioFileWithRetry(jobId: String, target: File): Boolean {
+        return decodeAudioFileWithRetry(jobId, target) { percent ->
+            setDecodeProgress(percent)
+        }
+    }
+
+    // Decode an audio file into the player, retrying transient codec failures the same way
+    // for both freshly-downloaded and cached files. MediaCodec decoder creation/config can
+    // fail transiently under resource pressure (e.g. backgrounded with the screen off), so a
+    // single failure must not be treated as fatal. Returns true on success, false if the job
+    // is no longer active, and throws the final error once retries are exhausted.
+    private suspend fun decodeAudioFileWithRetry(
+        jobId: String,
+        file: File,
+        reportProgress: (Int) -> Unit
+    ): Boolean {
         var attempt = 1
         while (true) {
             try {
                 withContext(Dispatchers.Default) {
-                    controller.player.loadFile(target) { percent ->
+                    controller.player.loadFile(file) { percent ->
                         scope.launch(Dispatchers.Main) {
-                            setDecodeProgress(percent)
+                            reportProgress(percent)
                         }
                     }
                     engine.refreshAnchorJump()
@@ -478,6 +504,9 @@ class PlaybackCoordinator(
         syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
     }
 
+    // Only for genuinely unreadable/corrupt cache entries (decode failed after retries with
+    // a non-transient error). Transient codec/OOM failures are handled by the caller without
+    // deleting the file — see tryLoadCachedTrack and isTransientDecodeError.
     private suspend fun discardUnusableCachedAudio(jobId: String, error: Throwable) {
         AppLog.warn(TAG, "Discarding unusable cached audio for $jobId", error)
         controller.player.clear()
@@ -868,43 +897,42 @@ class PlaybackCoordinator(
         if (cachedAudio.exists()) {
             setAudioLoading(true)
             setAnalysisProgress(0, "Loading audio")
-            try {
-                withContext(Dispatchers.Default) {
-                    controller.player.loadFile(cachedAudio) { percent ->
-                        scope.launch(Dispatchers.Main) {
-                            setDecodeProgress(percent)
-                        }
-                    }
-                    engine.refreshAnchorJump()
+            val decoded = try {
+                // Retry transient codec failures the same way tryLoadCachedTrack does, so a
+                // momentary MediaCodec hiccup (e.g. backgrounded with the screen off) does not
+                // get mistaken for a corrupt cache entry.
+                decodeAudioFileWithRetry(cachedId, cachedAudio) { percent ->
+                    setDecodeProgress(percent)
                 }
-                updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
-                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-                return true
-            } catch (_: OutOfMemoryError) {
-                withContext(Dispatchers.IO) {
-                    cachedAudio.delete()
-                }
-                updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-                return false
             } catch (cancel: CancellationException) {
                 throw cancel
-            } catch (error: IOException) {
-                AppLog.warn(TAG, "Failed to load cached audio for $cachedId", error)
-                updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-                return false
-            } catch (error: IllegalArgumentException) {
-                AppLog.warn(TAG, "Failed to load cached audio for $cachedId", error)
-                updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
-                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-                return false
-            } catch (error: IllegalStateException) {
-                AppLog.warn(TAG, "Failed to load cached audio for $cachedId", error)
+            } catch (error: Throwable) {
+                // Decoding failed even after retries. A transient/recoverable codec failure or
+                // an OutOfMemoryError does NOT mean the file is bad — keep it and re-fetch from
+                // the server rather than deleting a track the user plays often. Only genuinely
+                // unreadable files are discarded.
+                if (isTransientDecodeError(error)) {
+                    AppLog.warn(
+                        TAG,
+                        "Transient decode failure for cached audio $cachedId; keeping cache",
+                        error
+                    )
+                    controller.player.clear()
+                } else {
+                    discardUnusableCachedAudio(cachedId, error)
+                }
                 updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
                 syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
                 return false
             }
+            if (!decoded) {
+                updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
+                syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+                return false
+            }
+            updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
+            syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
+            return true
         }
         val jobId = playback.lastJobId ?: return false
         return try {

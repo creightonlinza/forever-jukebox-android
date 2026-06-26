@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import java.io.IOException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -7,6 +8,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackCoordinatorStatusPolicyTest {
+
+    @Test
+    fun outOfMemoryIsTreatedAsTransientDecodeError() {
+        // Heap pressure is momentary and unrelated to the cached file's integrity, so a
+        // cached track must not be discarded when decoding it runs out of memory.
+        assertTrue(isTransientDecodeError(OutOfMemoryError("decode")))
+    }
+
+    @Test
+    fun genuineDecodeFailuresAreNotTransient() {
+        // Non-transient errors (e.g. an unreadable/corrupt file) should still allow the
+        // cache entry to be discarded and re-fetched.
+        assertFalse(isTransientDecodeError(IOException("bad file")))
+        assertFalse(isTransientDecodeError(IllegalStateException("No audio track found")))
+        assertFalse(isTransientDecodeError(IllegalArgumentException("bad format")))
+        assertFalse(isTransientDecodeError(RuntimeException("boom")))
+    }
 
     @Test
     fun analysisInProgressStatusIncludesQueuedDownloadingAndProcessing() {
