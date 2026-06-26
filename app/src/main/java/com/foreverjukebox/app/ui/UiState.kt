@@ -363,7 +363,9 @@ fun shouldShowDeleteTrackAction(
 fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boolean {
     return mode == AppMode.Local &&
         !playback.isCasting &&
-        playback.isLoading()
+        playback.analysisInFlight &&
+        !playback.audioLoading &&
+        playback.analysisMessage != "Loading audio"
 }
 
 fun shouldShowPlayAfterLoadedOption(mode: AppMode?, playback: PlaybackState): Boolean {

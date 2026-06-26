@@ -64,6 +64,61 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun localLoadingCancelShowsOnlyDuringLocalAnalysisPhase() {
+        val analyzing = PlaybackState(
+            analysisInFlight = true,
+            analysisMessage = "Detecting beats"
+        )
+
+        assertTrue(shouldShowLocalLoadingCancel(AppMode.Local, analyzing))
+        assertTrue(
+            shouldShowLocalLoadingCancel(
+                AppMode.Local,
+                analyzing.copy(analysisMessage = null)
+            )
+        )
+    }
+
+    @Test
+    fun localLoadingCancelHidesDuringAudioLoadAndOtherPhases() {
+        val analyzing = PlaybackState(
+            analysisInFlight = true,
+            analysisMessage = "Detecting beats"
+        )
+
+        assertFalse(
+            shouldShowLocalLoadingCancel(
+                AppMode.Local,
+                PlaybackState(analysisInFlight = true, analysisMessage = "Loading audio")
+            )
+        )
+        assertFalse(
+            shouldShowLocalLoadingCancel(
+                AppMode.Local,
+                PlaybackState(audioLoading = true)
+            )
+        )
+        assertFalse(
+            shouldShowLocalLoadingCancel(
+                AppMode.Local,
+                analyzing.copy(audioLoading = true)
+            )
+        )
+        assertFalse(
+            shouldShowLocalLoadingCancel(
+                AppMode.Local,
+                PlaybackState(analysisCalculating = true)
+            )
+        )
+        assertFalse(shouldShowLocalLoadingCancel(AppMode.Server, analyzing))
+        assertFalse(shouldShowLocalLoadingCancel(null, analyzing))
+        assertFalse(
+            shouldShowLocalLoadingCancel(AppMode.Local, analyzing.copy(isCasting = true))
+        )
+        assertFalse(shouldShowLocalLoadingCancel(AppMode.Local, PlaybackState()))
+    }
+
+    @Test
     fun playAfterLoadedStartsOnlyWhenCheckedAndStableReady() {
         val ready = PlaybackState(
             playAfterLoaded = true,

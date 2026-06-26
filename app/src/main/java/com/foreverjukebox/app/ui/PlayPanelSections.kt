@@ -978,6 +978,20 @@ internal fun LoadingStatus(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            if (showCancel) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .height(SmallButtonHeight)
+                ) {
+                    Text("Cancel Analysis", style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
         Spacer(modifier = Modifier.weight(1f))
         Column(
@@ -1011,20 +1025,6 @@ internal fun LoadingStatus(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-            if (showCancel) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    colors = pillOutlinedButtonColors(),
-                    border = pillButtonBorder(),
-                    shape = PillShape,
-                    contentPadding = SmallButtonPadding,
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .height(SmallButtonHeight)
-                ) {
-                    Text("Cancel Analysis", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

@@ -229,6 +229,13 @@ extensions.configure<ApplicationExtension>("android") {
         }
     }
 
+    // Android Studio can fail local non-debuggable APK deploys while installing
+    // generated baseline profiles. Keep profiles packaged for release artifacts,
+    // but do not make local APK install depend on the deploy-time profile step.
+    installation {
+        enableBaselineProfile = false
+    }
+
     splits {
         abi {
             isEnable = false

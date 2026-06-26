@@ -253,6 +253,10 @@ class PlaybackCoordinator(
         }
     }
 
+    // Catches Throwable around audio decoding on purpose: an OutOfMemoryError (not an
+    // Exception) must be treated as a transient/recoverable decode failure, not a corrupt
+    // cache entry. See the catch block below.
+    @Suppress("TooGenericExceptionCaught")
     suspend fun tryLoadCachedTrack(jobId: String): Boolean {
         if (!isActiveJobId(jobId)) {
             return false
@@ -884,6 +888,10 @@ class PlaybackCoordinator(
         syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
     }
 
+    // Catches Throwable around audio decoding on purpose: an OutOfMemoryError (not an
+    // Exception) must be treated as a transient/recoverable decode failure, not a corrupt
+    // cache entry. See the catch block below.
+    @Suppress("TooGenericExceptionCaught")
     suspend fun ensureAudioReady(): Boolean {
         if (controller.player.hasAudio()) {
             return true
