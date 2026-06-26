@@ -1,7 +1,5 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.data.ApiClient
-import com.foreverjukebox.app.data.TopSongItem
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,7 +32,7 @@ class SearchCoordinatorStateGuardTest {
         val loggedErrors = mutableListOf<String>()
         val coordinator = SearchCoordinator(
             scope = this,
-            api = ApiClient(),
+            serverGateway = createServerGateway(),
             getState = { currentState.copy(search = searchState) },
             updateSearchState = { transform ->
                 searchState = transform(searchState)
@@ -83,7 +81,7 @@ class SearchCoordinatorStateGuardTest {
             var searchState = SearchState()
             val coordinator = SearchCoordinator(
                 scope = this,
-                api = ApiClient(),
+                serverGateway = createServerGateway(),
                 getState = { currentState.copy(search = searchState) },
                 updateSearchState = { transform ->
                     searchState = transform(searchState)
@@ -117,7 +115,11 @@ class SearchCoordinatorStateGuardTest {
     @Test
     fun topFeedFailureSetsErrorAndAutomaticRetryCanRecover() = runTest {
         val server = MockWebServer()
-        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        // The gateway auto-retries transient failures, so the first refresh only surfaces an
+        // error once the whole retry budget is exhausted.
+        repeat(REMOTE_LOAD_RETRY_MAX_ATTEMPTS) {
+            server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        }
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
@@ -133,7 +135,7 @@ class SearchCoordinatorStateGuardTest {
             val loggedErrors = mutableListOf<String>()
             val coordinator = SearchCoordinator(
                 scope = this,
-                api = ApiClient(),
+                serverGateway = createServerGateway(),
                 getState = { currentState.copy(search = searchState) },
                 updateSearchState = { transform ->
                     searchState = transform(searchState)
@@ -158,7 +160,7 @@ class SearchCoordinatorStateGuardTest {
             advanceUntilCondition { searchState.topSongs.isNotEmpty() }
 
             assertNull(searchState.topSongsErrorMessage)
-            assertEquals(listOf(TopSongItem(id = "job_top", title = "Top Song")), searchState.topSongs)
+            assertEquals(listOf(RemoteSongItem(id = "job_top", title = "Top Song")), searchState.topSongs)
             assertFalse(searchState.topSongsLoading)
         } finally {
             server.shutdown()
@@ -168,10 +170,13 @@ class SearchCoordinatorStateGuardTest {
     @Test
     fun topFeedFailurePreservesExistingItems() = runTest {
         val server = MockWebServer()
-        server.enqueue(MockResponse().setResponseCode(503).setBody("unavailable"))
+        // Exhaust the gateway retry budget so the transient failure actually surfaces.
+        repeat(REMOTE_LOAD_RETRY_MAX_ATTEMPTS) {
+            server.enqueue(MockResponse().setResponseCode(503).setBody("unavailable"))
+        }
         server.start()
         try {
-            val existingItems = listOf(TopSongItem(id = "job_old", title = "Old Top Song"))
+            val existingItems = listOf(RemoteSongItem(id = "job_old", title = "Old Top Song"))
             var currentState = UiState(
                 baseUrl = server.url("/").toString(),
                 activeTab = TabId.Top
@@ -179,7 +184,7 @@ class SearchCoordinatorStateGuardTest {
             var searchState = SearchState(topSongs = existingItems)
             val coordinator = SearchCoordinator(
                 scope = this,
-                api = ApiClient(),
+                serverGateway = createServerGateway(),
                 getState = { currentState.copy(search = searchState) },
                 updateSearchState = { transform ->
                     searchState = transform(searchState)
@@ -206,7 +211,10 @@ class SearchCoordinatorStateGuardTest {
     @Test
     fun recentFeedFailureSetsErrorInsteadOfEmptyState() = runTest {
         val server = MockWebServer()
-        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        // Exhaust the gateway retry budget so the transient failure actually surfaces.
+        repeat(REMOTE_LOAD_RETRY_MAX_ATTEMPTS) {
+            server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        }
         server.start()
         try {
             var currentState = UiState(
@@ -218,7 +226,7 @@ class SearchCoordinatorStateGuardTest {
             val loggedErrors = mutableListOf<String>()
             val coordinator = SearchCoordinator(
                 scope = this,
-                api = ApiClient(),
+                serverGateway = createServerGateway(),
                 getState = { currentState.copy(search = searchState) },
                 updateSearchState = { transform ->
                     searchState = transform(searchState)

@@ -360,9 +360,7 @@ class PlaybackCoordinator(
         setAnalysisProgress(0, "Loading audio")
         val target = audioFile(jobId)
         try {
-            retryTransientRemoteLoad {
-                serverGateway.fetchAudioToFile(baseUrl, jobId, target)
-            }
+            serverGateway.fetchAudioToFile(baseUrl, jobId, target)
             if (!isActiveJobId(jobId)) {
                 return false
             }
@@ -1036,9 +1034,7 @@ class PlaybackCoordinator(
             if (!isActiveJobId(jobId)) {
                 return
             }
-            val response = retryTransientRemoteLoad {
-                    serverGateway.getAnalysis(baseUrl, jobId)
-            }
+            val response = serverGateway.getAnalysis(baseUrl, jobId)
             if (!isActiveJobId(jobId)) {
                 return
             }

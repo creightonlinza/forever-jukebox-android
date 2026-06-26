@@ -1,11 +1,6 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.data.AnalysisResponse
-import com.foreverjukebox.app.data.AnalysisStartResponse
 import com.foreverjukebox.app.data.FavoriteTrack
-import com.foreverjukebox.app.data.SpotifySearchItem
-import com.foreverjukebox.app.data.TopSongItem
-import com.foreverjukebox.app.data.YoutubeSearchItem
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -30,7 +25,7 @@ class MainViewModelCastQueueTest {
             artist = "Artist"
         ) { _, _, _, _ ->
             called = true
-            AnalysisStartResponse(id = jobId)
+            TrackAnalysisStartResult(id = jobId)
         }
 
         assertNull(queuedJobId)
@@ -54,7 +49,7 @@ class MainViewModelCastQueueTest {
             resolvedYoutubeId = youtubeId
             resolvedTitle = title
             resolvedArtist = artist
-            AnalysisStartResponse(id = jobId)
+            TrackAnalysisStartResult(id = jobId)
         }
 
         assertEquals(jobId, queuedJobId)
@@ -91,7 +86,7 @@ class MainViewModelCastQueueTest {
         ) { _, _, title, artist ->
             resolvedTitle = title
             resolvedArtist = artist
-            AnalysisStartResponse(id = jobId)
+            TrackAnalysisStartResult(id = jobId)
         }
 
         assertEquals(jobId, queuedJobId)
@@ -102,7 +97,7 @@ class MainViewModelCastQueueTest {
     @Test
     fun resolveRemoteVideoSelectionPrefersPendingSpotifyMetadata() {
         val selection = resolveRemoteVideoSelection(
-            item = YoutubeSearchItem(
+            item = RemoteVideoSearchItem(
                 id = "yt1",
                 title = "Official Video With Extra Words"
             ),
@@ -120,7 +115,7 @@ class MainViewModelCastQueueTest {
     @Test
     fun resolveRemoteVideoSelectionNormalizesPendingSpotifyMetadata() {
         val selection = resolveRemoteVideoSelection(
-            item = YoutubeSearchItem(
+            item = RemoteVideoSearchItem(
                 id = " yt1 ",
                 title = "YouTube Title"
             ),
@@ -138,7 +133,7 @@ class MainViewModelCastQueueTest {
     @Test
     fun resolveRemoteVideoSelectionUsesYoutubeTitleWithoutPendingMetadata() {
         val selection = resolveRemoteVideoSelection(
-            item = YoutubeSearchItem(
+            item = RemoteVideoSearchItem(
                 id = "yt1",
                 title = " YouTube Title "
             ),
@@ -153,7 +148,7 @@ class MainViewModelCastQueueTest {
     @Test
     fun resolveRemoteVideoSelectionRejectsBlankYoutubeId() {
         val selection = resolveRemoteVideoSelection(
-            item = YoutubeSearchItem(
+            item = RemoteVideoSearchItem(
                 id = "   ",
                 title = "YouTube Title"
             ),
@@ -170,8 +165,8 @@ class MainViewModelCastQueueTest {
     fun resetSearchStateAfterTrackSelectionClearsTransientSelectionFields() {
         val original = SearchState(
             query = "daft punk",
-            spotifyResults = listOf(SpotifySearchItem(id = "sp1", name = "Track")),
-            youtubeMatches = listOf(YoutubeSearchItem(id = "yt1", title = "Track")),
+            spotifyResults = listOf(RemoteMusicSearchItem(id = "sp1", name = "Track")),
+            videoMatches = listOf(RemoteVideoSearchItem(id = "yt1", title = "Track")),
             youtubeLoading = true,
             pendingTrackName = "Track",
             pendingTrackArtist = "Artist"
@@ -181,7 +176,7 @@ class MainViewModelCastQueueTest {
 
         assertEquals("", reset.query)
         assertTrue(reset.spotifyResults.isEmpty())
-        assertTrue(reset.youtubeMatches.isEmpty())
+        assertTrue(reset.videoMatches.isEmpty())
         assertFalse(reset.youtubeLoading)
         assertNull(reset.pendingTrackName)
         assertNull(reset.pendingTrackArtist)
@@ -189,9 +184,9 @@ class MainViewModelCastQueueTest {
 
     @Test
     fun resetSearchStateAfterTrackSelectionPreservesLibraryAndLoadingState() {
-        val topSong = TopSongItem(youtubeId = "yt_top", title = "Top")
-        val trendingSong = TopSongItem(youtubeId = "yt_trending", title = "Trending")
-        val recentSong = TopSongItem(youtubeId = "yt_recent", title = "Recent")
+        val topSong = RemoteSongItem(legacyVideoId = "yt_top", title = "Top")
+        val trendingSong = RemoteSongItem(legacyVideoId = "yt_trending", title = "Trending")
+        val recentSong = RemoteSongItem(legacyVideoId = "yt_recent", title = "Recent")
         val original = SearchState(
             topSongs = listOf(topSong),
             topSongsLoading = true,
@@ -266,7 +261,7 @@ class MainViewModelCastQueueTest {
         val state = UiState(
             search = SearchState(
                 topSongs = listOf(
-                    TopSongItem(
+                    RemoteSongItem(
                         id = jobId,
                         sourceProvider = "soundcloud",
                         sourceId = "sc_123",
@@ -290,7 +285,7 @@ class MainViewModelCastQueueTest {
         val state = UiState(
             search = SearchState(
                 trendingSongs = listOf(
-                    TopSongItem(
+                    RemoteSongItem(
                         id = secondJobId,
                         sourceProvider = "bandcamp",
                         sourceId = "bc_42",
@@ -298,7 +293,7 @@ class MainViewModelCastQueueTest {
                     )
                 ),
                 recentSongs = listOf(
-                    TopSongItem(
+                    RemoteSongItem(
                         id = thirdJobId,
                         sourceProvider = "upload",
                         sourceId = "upload_9",
@@ -328,7 +323,7 @@ class MainViewModelCastQueueTest {
         val state = UiState(
             search = SearchState(
                 topSongs = listOf(
-                    TopSongItem(
+                    RemoteSongItem(
                         id = null,
                         sourceProvider = "soundcloud",
                         sourceId = "sc_123",
@@ -363,9 +358,9 @@ class MainViewModelCastQueueTest {
 
     @Test
     fun shouldReuseLookupJobReturnsTrueForFailedLookupResponse() {
-        val failed = AnalysisResponse(
+        val failed = TrackAnalysisResult(
             id = jobId,
-            youtubeId = "dQw4w9WgXcQ",
+            legacyVideoId = "dQw4w9WgXcQ",
             status = "failed",
             error = "Blocked"
         )
@@ -375,9 +370,9 @@ class MainViewModelCastQueueTest {
 
     @Test
     fun shouldReuseLookupJobReturnsTrueForInProgressLookupResponse() {
-        val queued = AnalysisResponse(
+        val queued = TrackAnalysisResult(
             id = jobId,
-            youtubeId = "dQw4w9WgXcQ",
+            legacyVideoId = "dQw4w9WgXcQ",
             status = "queued"
         )
         val downloading = queued.copy(status = "downloading")
@@ -390,9 +385,9 @@ class MainViewModelCastQueueTest {
 
     @Test
     fun shouldReuseLookupJobReturnsTrueForCompleteLookupResponse() {
-        val complete = AnalysisResponse(
+        val complete = TrackAnalysisResult(
             id = jobId,
-            youtubeId = "dQw4w9WgXcQ",
+            legacyVideoId = "dQw4w9WgXcQ",
             status = "complete"
         )
 
@@ -404,18 +399,18 @@ class MainViewModelCastQueueTest {
         assertFalse(shouldReuseLookupJob(null))
         assertFalse(
             shouldReuseLookupJob(
-                AnalysisResponse(
+                TrackAnalysisResult(
                     id = null,
-                    youtubeId = "dQw4w9WgXcQ",
+                    legacyVideoId = "dQw4w9WgXcQ",
                     status = "complete"
                 )
             )
         )
         assertFalse(
             shouldReuseLookupJob(
-                AnalysisResponse(
+                TrackAnalysisResult(
                     id = "job_1",
-                    youtubeId = null,
+                    legacyVideoId = null,
                     status = "complete"
                 )
             )

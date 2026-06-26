@@ -10,41 +10,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-class ServerLoadRetryTest {
+class RemoteLoadRetryTest {
 
     @Test
     fun retriesPlainIoExceptionWithExponentialBackoff() = runTest {
         val delays = mutableListOf<Long>()
         var attempts = 0
 
-        val result = retryTransientServerLoad(
+        val result = retryTransientRemoteLoad(
             delayFn = { delays += it }
         ) {
             attempts += 1
-            if (attempts < SERVER_LOAD_RETRY_MAX_ATTEMPTS) {
+            if (attempts < REMOTE_LOAD_RETRY_MAX_ATTEMPTS) {
                 throw IOException("transient")
             }
             "loaded"
         }
 
         assertEquals("loaded", result)
-        assertEquals(SERVER_LOAD_RETRY_MAX_ATTEMPTS, attempts)
+        assertEquals(REMOTE_LOAD_RETRY_MAX_ATTEMPTS, attempts)
         assertEquals(listOf(1_000L, 2_000L, 4_000L), delays)
     }
 
     @Test
     fun retriesRetryableHttpStatusFailures() {
-        assertTrue(shouldRetryServerLoadFailure(HttpStatusException(408)))
-        assertTrue(shouldRetryServerLoadFailure(HttpStatusException(429)))
-        assertTrue(shouldRetryServerLoadFailure(HttpStatusException(500)))
-        assertTrue(shouldRetryServerLoadFailure(HttpStatusException(503)))
+        assertTrue(shouldRetryRemoteLoadFailure(HttpStatusException(408)))
+        assertTrue(shouldRetryRemoteLoadFailure(HttpStatusException(429)))
+        assertTrue(shouldRetryRemoteLoadFailure(HttpStatusException(500)))
+        assertTrue(shouldRetryRemoteLoadFailure(HttpStatusException(503)))
     }
 
     @Test
     fun doesNotRetryNonRetryableHttpStatusFailures() {
-        assertFalse(shouldRetryServerLoadFailure(HttpStatusException(404)))
-        assertFalse(shouldRetryServerLoadFailure(HttpStatusException(422)))
-        assertFalse(shouldRetryServerLoadFailure(HttpStatusException(400)))
+        assertFalse(shouldRetryRemoteLoadFailure(HttpStatusException(404)))
+        assertFalse(shouldRetryRemoteLoadFailure(HttpStatusException(422)))
+        assertFalse(shouldRetryRemoteLoadFailure(HttpStatusException(400)))
     }
 
     @Test
@@ -53,7 +53,7 @@ class ServerLoadRetryTest {
         var attempts = 0
 
         try {
-            retryTransientServerLoad(
+            retryTransientRemoteLoad(
                 delayFn = { delays += it }
             ) {
                 attempts += 1
@@ -74,7 +74,7 @@ class ServerLoadRetryTest {
         var attempts = 0
 
         try {
-            retryTransientServerLoad(
+            retryTransientRemoteLoad(
                 delayFn = { delays += it }
             ) {
                 attempts += 1
@@ -85,7 +85,7 @@ class ServerLoadRetryTest {
             assertEquals(503, expected.statusCode)
         }
 
-        assertEquals(SERVER_LOAD_RETRY_MAX_ATTEMPTS, attempts)
+        assertEquals(REMOTE_LOAD_RETRY_MAX_ATTEMPTS, attempts)
         assertEquals(listOf(1_000L, 2_000L, 4_000L), delays)
     }
 
@@ -95,7 +95,7 @@ class ServerLoadRetryTest {
         var attempts = 0
 
         try {
-            retryTransientServerLoad(
+            retryTransientRemoteLoad(
                 delayFn = { delays += it }
             ) {
                 attempts += 1

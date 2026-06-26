@@ -2,7 +2,6 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
-import com.foreverjukebox.app.data.TopSongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -70,7 +69,7 @@ class TrackMetadataPolicyTest {
             trackId = jobId,
             search = SearchState(
                 trendingSongs = listOf(
-                    TopSongItem(
+                    RemoteSongItem(
                         id = jobId,
                         title = "Trending Track",
                         artist = "Trending Artist"
@@ -123,7 +122,7 @@ class TrackMetadataPolicyTest {
     ): SearchState {
         return SearchState(
             topSongs = listOf(
-                TopSongItem(
+                RemoteSongItem(
                     sourceId = sourceId,
                     sourceProvider = SOURCE_PROVIDER_YOUTUBE,
                     title = title,

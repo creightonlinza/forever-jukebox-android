@@ -1500,9 +1500,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         remoteTrackLoadCoordinator.launch {
             if (artist.isNotBlank()) {
                 try {
-                    val response = retryTransientRemoteLoad {
-                        serverGateway.getJobByTrack(baseUrl, name, artist)
-                    }
+                    val response = serverGateway.getJobByTrack(baseUrl, name, artist)
                     if (shouldReuseLookupJob(response)) {
                         val jobId = canonicalJobId(response!!.id) ?: return@launch
                         val trackId = jobId
@@ -1601,9 +1599,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launchCastSelection
                 }
                 try {
-                    val existing = retryTransientRemoteLoad {
-                        serverGateway.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
-                    }
+                    val existing = serverGateway.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, youtubeId)
                     val resolvedJobId = canonicalJobId(existing?.id)
                     if (!resolvedJobId.isNullOrBlank()) {
                         migrateLegacyServerTrackId(
@@ -1667,9 +1663,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = null,
             failureLogMessage = "Failed to start YouTube analysis"
         ) {
-            val existing = retryTransientRemoteLoad {
-                serverGateway.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
-            }
+            val existing = serverGateway.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, trackId)
             if (existing != null) {
                 val jobId = canonicalJobId(existing.id)
                     ?: return@launchServerTrackLoadWithCache false
@@ -1682,14 +1676,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fallbackJobId = jobId
                 )
             }
-            val response = retryTransientRemoteLoad {
-                serverGateway.startVideoAnalysis(
-                    baseUrl,
-                    trackId,
-                    resolvedTitle,
-                    resolvedArtist
-                )
-            }
+            val response = serverGateway.startVideoAnalysis(
+                baseUrl,
+                trackId,
+                resolvedTitle,
+                resolvedArtist
+            )
             if (response.status == "failed") {
                 playbackCoordinator.setAnalysisError(
                     ErrorDisplay.format(
@@ -1853,9 +1845,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (provider == SOURCE_PROVIDER_YOUTUBE) {
                     try {
-                        val existing = retryTransientRemoteLoad {
-                            serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
-                        }
+                        val existing = serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
                         val resolvedJobId = canonicalJobId(existing?.id)
                         if (!resolvedJobId.isNullOrBlank()) {
                             migrateLegacyServerTrackId(
@@ -1911,9 +1901,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 try {
-                    val existing = retryTransientRemoteLoad {
-                        serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
-                    }
+                    val existing = serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
                     val resolvedJobId = canonicalJobId(existing?.id)
                     if (resolvedJobId.isNullOrBlank()) {
                         showToast("Unable to queue this track for casting.")
@@ -1969,9 +1957,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cachedJobId = null,
             failureLogMessage = "Failed to load track by source"
         ) {
-            val existing = retryTransientRemoteLoad {
-                serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
-            }
+            val existing = serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
             if (existing != null) {
                 val jobId = canonicalJobId(existing.id)
                     ?: return@launchServerTrackLoadWithCache false
@@ -1993,14 +1979,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (provider != SOURCE_PROVIDER_YOUTUBE) {
                 return@launchServerTrackLoadWithCache false
             }
-            val started = retryTransientRemoteLoad {
-                serverGateway.startVideoAnalysis(
-                    baseUrl = baseUrl,
-                    videoId = normalizedSourceId,
-                    title = resolvedTitle,
-                    artist = resolvedArtist
-                )
-            }
+            val started = serverGateway.startVideoAnalysis(
+                baseUrl = baseUrl,
+                videoId = normalizedSourceId,
+                title = resolvedTitle,
+                artist = resolvedArtist
+            )
             if (started.status == "failed") {
                 playbackCoordinator.setAnalysisError(
                     ErrorDisplay.format(
@@ -2097,9 +2081,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ) {
             val response = loadRemoteExplicitJobInitialResponse(
                 fetchJob = {
-                    retryTransientRemoteLoad {
-                        serverGateway.getAnalysis(baseUrl, normalizedJobId)
-                    }
+                    serverGateway.getAnalysis(baseUrl, normalizedJobId)
                 },
                 retryJob = {
                     serverGateway.retryJob(baseUrl, normalizedJobId)
@@ -2512,14 +2494,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return null
         }
         return try {
-            val started = retryTransientRemoteLoad {
-                serverGateway.startVideoAnalysis(
-                    baseUrl = normalizedBaseUrl,
-                    videoId = youtubeId,
-                    title = title,
-                    artist = artist
-                )
-            }
+            val started = serverGateway.startVideoAnalysis(
+                baseUrl = normalizedBaseUrl,
+                videoId = youtubeId,
+                title = title,
+                artist = artist
+            )
             if (started.status == "failed") {
                 showToast(
                     ErrorDisplay.format(
@@ -3091,9 +3071,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playback.analysisMessage ?: "Resuming load..."
             )
             try {
-                val response = retryTransientRemoteLoad {
-                    serverGateway.getAnalysis(baseUrl, jobId)
-                }
+                val response = serverGateway.getAnalysis(baseUrl, jobId)
                 val handled = remoteTrackLoadCoordinator.loadOrPoll(response, fallbackJobId = jobId)
                 if (!handled) {
                     playbackCoordinator.setAnalysisError("Loading failed.")

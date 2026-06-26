@@ -20,103 +20,97 @@ private class FullServerGateway(
 ) : ServerGateway {
     override val isAvailable: Boolean = true
 
-    override suspend fun searchMusic(baseUrl: String, query: String): List<RemoteMusicSearchItem> {
-        return api.searchSpotify(baseUrl, query).map { it.toRemoteMusicSearchItem() }
-    }
+    // All network calls are routed through retryTransientRemoteLoad here, so every gateway
+    // method (current and future) gets uniform exponential-backoff retry on transient failures
+    // without each call site having to remember to wrap it.
+    private suspend fun <T> withRetry(block: suspend () -> T): T =
+        retryTransientRemoteLoad(block = block)
+
+    override suspend fun searchMusic(baseUrl: String, query: String): List<RemoteMusicSearchItem> =
+        withRetry { api.searchSpotify(baseUrl, query).map { it.toRemoteMusicSearchItem() } }
 
     override suspend fun searchVideos(
         baseUrl: String,
         query: String,
         duration: Double
-    ): List<RemoteVideoSearchItem> {
-        return api.searchYoutube(baseUrl, query, duration).map { it.toRemoteVideoSearchItem() }
-    }
+    ): List<RemoteVideoSearchItem> =
+        withRetry { api.searchYoutube(baseUrl, query, duration).map { it.toRemoteVideoSearchItem() } }
 
-    override suspend fun fetchTopSongs(baseUrl: String, limit: Int): List<RemoteSongItem> {
-        return api.fetchTopSongs(baseUrl, limit).map { it.toRemoteSongItem() }
-    }
+    override suspend fun fetchTopSongs(baseUrl: String, limit: Int): List<RemoteSongItem> =
+        withRetry { api.fetchTopSongs(baseUrl, limit).map { it.toRemoteSongItem() } }
 
-    override suspend fun fetchTrendingSongs(baseUrl: String): List<RemoteSongItem> {
-        return api.fetchTrendingSongs(baseUrl).map { it.toRemoteSongItem() }
-    }
+    override suspend fun fetchTrendingSongs(baseUrl: String): List<RemoteSongItem> =
+        withRetry { api.fetchTrendingSongs(baseUrl).map { it.toRemoteSongItem() } }
 
-    override suspend fun fetchRecentSongs(baseUrl: String, limit: Int): List<RemoteSongItem> {
-        return api.fetchRecentSongs(baseUrl, limit).map { it.toRemoteSongItem() }
-    }
+    override suspend fun fetchRecentSongs(baseUrl: String, limit: Int): List<RemoteSongItem> =
+        withRetry { api.fetchRecentSongs(baseUrl, limit).map { it.toRemoteSongItem() } }
 
-    override suspend fun getAppConfig(baseUrl: String): ServerAppConfig {
-        return api.getAppConfig(baseUrl).toServerAppConfig()
-    }
+    override suspend fun getAppConfig(baseUrl: String): ServerAppConfig =
+        withRetry { api.getAppConfig(baseUrl).toServerAppConfig() }
 
-    override suspend fun getAnalysis(baseUrl: String, jobId: String): TrackAnalysisResult {
-        return api.getAnalysis(baseUrl, jobId).toTrackAnalysisResult()
-    }
+    override suspend fun getAnalysis(baseUrl: String, jobId: String): TrackAnalysisResult =
+        withRetry { api.getAnalysis(baseUrl, jobId).toTrackAnalysisResult() }
 
-    override suspend fun retryJob(baseUrl: String, jobId: String): TrackAnalysisResult {
-        return api.retryJob(baseUrl, jobId).toTrackAnalysisResult()
-    }
+    override suspend fun retryJob(baseUrl: String, jobId: String): TrackAnalysisResult =
+        withRetry { api.retryJob(baseUrl, jobId).toTrackAnalysisResult() }
 
     override suspend fun getJobBySource(
         baseUrl: String,
         sourceProvider: String,
         sourceId: String
-    ): TrackAnalysisResult? {
-        return api.getJobBySource(baseUrl, sourceProvider, sourceId)?.toTrackAnalysisResult()
-    }
+    ): TrackAnalysisResult? =
+        withRetry { api.getJobBySource(baseUrl, sourceProvider, sourceId)?.toTrackAnalysisResult() }
 
     override suspend fun getJobByTrack(
         baseUrl: String,
         title: String,
         artist: String
-    ): TrackAnalysisResult? {
-        return api.getJobByTrack(baseUrl, title, artist)?.toTrackAnalysisResult()
-    }
+    ): TrackAnalysisResult? =
+        withRetry { api.getJobByTrack(baseUrl, title, artist)?.toTrackAnalysisResult() }
 
     override suspend fun startVideoAnalysis(
         baseUrl: String,
         videoId: String,
         title: String?,
         artist: String?
-    ): TrackAnalysisStartResult {
-        return api.startYoutubeAnalysis(baseUrl, videoId, title, artist).toTrackAnalysisStartResult()
-    }
+    ): TrackAnalysisStartResult =
+        withRetry {
+            api.startYoutubeAnalysis(baseUrl, videoId, title, artist).toTrackAnalysisStartResult()
+        }
 
     override suspend fun postPlay(baseUrl: String, jobId: String) {
-        api.postPlay(baseUrl, jobId)
+        withRetry { api.postPlay(baseUrl, jobId) }
     }
 
-    override suspend fun fetchAudioToFile(baseUrl: String, jobId: String, target: File): File {
-        return api.fetchAudioToFile(baseUrl, jobId, target)
-    }
+    override suspend fun fetchAudioToFile(baseUrl: String, jobId: String, target: File): File =
+        withRetry { api.fetchAudioToFile(baseUrl, jobId, target) }
 
     override suspend fun deleteJob(baseUrl: String, jobId: String, adminKey: String?) {
-        api.deleteJob(baseUrl, jobId, adminKey)
+        withRetry { api.deleteJob(baseUrl, jobId, adminKey) }
     }
 
     override suspend fun createFavoritesSync(
         baseUrl: String,
         favorites: List<FavoriteTrack>,
         maxFavorites: Int
-    ): FavoritesSyncResult {
-        return api.createFavoritesSync(baseUrl, favorites, maxFavorites).toFavoritesSyncResult()
-    }
+    ): FavoritesSyncResult =
+        withRetry { api.createFavoritesSync(baseUrl, favorites, maxFavorites).toFavoritesSyncResult() }
 
     override suspend fun updateFavoritesSync(
         baseUrl: String,
         code: String,
         favorites: List<FavoriteTrack>,
         maxFavorites: Int
-    ): FavoritesSyncResult {
-        return api.updateFavoritesSync(baseUrl, code, favorites, maxFavorites).toFavoritesSyncResult()
-    }
+    ): FavoritesSyncResult =
+        withRetry {
+            api.updateFavoritesSync(baseUrl, code, favorites, maxFavorites).toFavoritesSyncResult()
+        }
 
-    override suspend fun fetchFavoritesSync(baseUrl: String, code: String): List<FavoriteTrack> {
-        return api.fetchFavoritesSync(baseUrl, code)
-    }
+    override suspend fun fetchFavoritesSync(baseUrl: String, code: String): List<FavoriteTrack> =
+        withRetry { api.fetchFavoritesSync(baseUrl, code) }
 
-    override suspend fun fetchLatestRelease(owner: String, repo: String): ReleaseInfo? {
-        return api.fetchLatestGitHubRelease(owner, repo).toReleaseInfo()
-    }
+    override suspend fun fetchLatestRelease(owner: String, repo: String): ReleaseInfo? =
+        withRetry { api.fetchLatestGitHubRelease(owner, repo).toReleaseInfo() }
 }
 
 private fun SpotifySearchItem.toRemoteMusicSearchItem(): RemoteMusicSearchItem {
