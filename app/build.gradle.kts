@@ -159,6 +159,9 @@ extensions.configure<ApplicationExtension>("android") {
     productFlavors {
         create("play") {
             dimension = "distribution"
+            // Distinct id so the local-only Play app and the bare-id GitHub `full`
+            // build (com.foreverjukebox.app) can coexist and never signature-conflict.
+            applicationIdSuffix = ".local"
             buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "false")
         }
         create("full") {

@@ -1,28 +1,35 @@
-name: Build Release APK
+name: Build Play Release AAB
+
+# Builds the local-only `play` flavor as a signed Android App Bundle (.aab) for
+# Google Play. The AAB is uploaded ONLY as a private workflow artifact (visible to
+# repo collaborators, short retention) — it is never attached to a public Release.
+# Download it from the run's Artifacts and upload it manually in the Play Console.
+#
+# Signing: the keystore here is the Play *upload key*. With Play App Signing,
+# Google holds the real app signing key and re-signs the APKs delivered to users.
 
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag (e.g. v2026.02.01)"
-        required: true
-  push:
-    tags:
-      - "*"
+      version:
+        description: "Version name for the Play build (e.g. 2026.06.01). Optional; defaults to yyyy.MM.<run>."
+        required: false
 
 concurrency:
-  group: "release-build"
+  group: "play-release-build"
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      APP_VERSION_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      APP_VERSION_CODE_BASE: "20"
+      APP_VERSION_TAG: ${{ github.event.inputs.version }}
+      # Play requires a unique, monotonically increasing versionCode per upload.
+      # This workflow's own run number provides the increase (com.foreverjukebox.app.local
+      # is a separate id from the GitHub `full` build, so the namespaces don't collide).
+      APP_VERSION_CODE_BASE: "0"
     permissions:
-      contents: write
-      packages: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -59,28 +66,17 @@ jobs:
           EOF
 
       - name: Run Unit Tests
-        run: ./gradlew :app:test
+        run: ./gradlew :app:testPlayReleaseUnitTest
 
-      - name: Build Full Release APK
-        run: ./gradlew :app:assembleFullRelease
+      - name: Build Play Release AAB
+        run: ./gradlew :app:bundlePlayRelease
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release
-          path: app/build/outputs/apk/full/release/*.apk
+          name: play-release-aab
+          path: app/build/outputs/bundle/playRelease/*.aab
           if-no-files-found: error
-
-      - uses: softprops/action-gh-release@v2
-        name: Create Release
-        id: publish_release
-        with:
-          tag_name: ${{ env.APP_VERSION_TAG }}
-          name: Release ${{ env.APP_VERSION_TAG }}
-          files: app/build/outputs/apk/full/release/*.apk
-          generate_release_notes: true
-          make_latest: true
-          prerelease: false
-          draft: true
+          retention-days: 7
 
       - name: Cleanup signing files
         if: always()
