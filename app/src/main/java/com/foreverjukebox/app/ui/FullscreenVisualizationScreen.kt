@@ -460,7 +460,7 @@ private fun fullscreenNowPlaying(playback: PlaybackState): String {
     return when {
         displayTitle.isNotBlank() && artist.isNotBlank() -> "$displayTitle - $artist"
         displayTitle.isNotBlank() -> displayTitle
-        else -> "The Forever Jukebox"
+        else -> "Forever Jukebox"
     }
 }
 

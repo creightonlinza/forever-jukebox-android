@@ -252,7 +252,7 @@ private fun HeroTitle() {
                 shadow = titleShadow
             )
         ) {
-            append("THE FOREVER\u00A0")
+            append("FOREVER\u00A0")
         }
         withStyle(
             style = SpanStyle(
