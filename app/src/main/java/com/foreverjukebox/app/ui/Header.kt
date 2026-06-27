@@ -252,7 +252,7 @@ private fun HeroTitle() {
                 shadow = titleShadow
             )
         ) {
-            append("THE FOREVER\u00A0")
+            append("FOREVER\u00A0")
         }
         withStyle(
             style = SpanStyle(
@@ -492,17 +492,21 @@ private fun SettingsDialog(
                         onCheckedChange = onLoadingAudioFeedbackChange
                     )
                 }
-                Text("Cache")
-                OutlinedButton(
-                    onClick = onClearCache,
-                    enabled = cacheEnabled,
-                    colors = pillOutlinedButtonColors(),
-                    border = pillButtonBorder(),
-                    shape = PillShape,
-                    contentPadding = SmallButtonPadding,
-                    modifier = Modifier.height(SmallButtonHeight)
-                ) {
-                    Text("Clear $cacheLabel", style = MaterialTheme.typography.labelSmall)
+                // Clearing the cache only applies to server-mode downloads. In local
+                // mode, stored analyses are removed individually from the Input screen.
+                if (BuildConfig.SERVER_MODE_AVAILABLE && selectedMode == AppMode.Server) {
+                    Text("Cache")
+                    OutlinedButton(
+                        onClick = onClearCache,
+                        enabled = cacheEnabled,
+                        colors = pillOutlinedButtonColors(),
+                        border = pillButtonBorder(),
+                        shape = PillShape,
+                        contentPadding = SmallButtonPadding,
+                        modifier = Modifier.height(SmallButtonHeight)
+                    ) {
+                        Text("Clear $cacheLabel", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }

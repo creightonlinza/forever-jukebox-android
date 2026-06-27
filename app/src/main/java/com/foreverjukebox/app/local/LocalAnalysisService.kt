@@ -113,7 +113,42 @@ class LocalAnalysisService(
             val file = metadataFile(cacheKey)
             if (file.exists()) file.delete() else false
         }.getOrDefault(false)
-        analysisDeleted || metadataDeleted
+        val tuningDeleted = runCatching {
+            val file = tuningFile(cacheKey)
+            if (file.exists()) file.delete() else false
+        }.getOrDefault(false)
+        analysisDeleted || metadataDeleted || tuningDeleted
+    }
+
+    suspend fun readSavedTuning(localId: String): String? = withContext(Dispatchers.IO) {
+        val cacheKey = parseCacheKeyFromLocalId(localId) ?: return@withContext null
+        val file = tuningFile(cacheKey)
+        if (!file.exists()) return@withContext null
+        runCatching { file.readText() }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun saveTuning(localId: String, params: String?) {
+        withContext(Dispatchers.IO) {
+            val cacheKey = parseCacheKeyFromLocalId(localId) ?: return@withContext
+            val file = tuningFile(cacheKey)
+            if (params.isNullOrBlank()) {
+                runCatching { if (file.exists()) file.delete() }
+            } else {
+                runCatching { file.writeText(params) }
+            }
+        }
+    }
+
+    suspend fun clearSavedTuning(localId: String) {
+        withContext(Dispatchers.IO) {
+            val cacheKey = parseCacheKeyFromLocalId(localId) ?: return@withContext
+            runCatching {
+                val file = tuningFile(cacheKey)
+                if (file.exists()) file.delete()
+            }
+        }
     }
 
     fun analyze(
@@ -215,6 +250,9 @@ class LocalAnalysisService(
                 val madmomBeatsPortModels = modelExtractor.ensureExtracted()
                 logInfo("madmom_beats_port models ready: count=${madmomBeatsPortModels.size}")
 
+                val resolvedTitle = decoded.tagTitle ?: decoded.displayName ?: fallbackTitle
+                val resolvedArtist = decoded.tagArtist
+
                 val analysisJson = analyzer.analyze(
                     essentiaSamples = essentiaSamples,
                     essentiaSampleRate = essentiaSampleRate,
@@ -222,8 +260,8 @@ class LocalAnalysisService(
                     madmomSampleRate = madmomSampleRate,
                     essentiaProfile = essentiaProfile,
                     durationSeconds = decoded.durationSeconds,
-                    title = decoded.displayName ?: fallbackTitle,
-                    artist = null,
+                    title = resolvedTitle,
+                    artist = resolvedArtist,
                     madmomBeatsPortModels = madmomBeatsPortModels
                 ) { stage, stagePercent ->
                     val mapped = when (stage) {
@@ -245,13 +283,12 @@ class LocalAnalysisService(
 
                 emitProgress(95, "Wrapping up")
                 analysisFile.writeText(analysisJson.toString())
-                val resolvedTitle = decoded.displayName ?: fallbackTitle
                 writeMetadata(
                     cacheKey = cacheKey,
                     metadata = CachedLocalAnalysisMetadata(
                         sourceUri = decoded.sourceUri,
                         title = resolvedTitle,
-                        artist = null,
+                        artist = resolvedArtist,
                         updatedAtEpochMs = System.currentTimeMillis()
                     )
                 )
@@ -265,7 +302,7 @@ class LocalAnalysisService(
                             analysisJsonFile = analysisFile,
                             sourceUri = decoded.sourceUri,
                             title = resolvedTitle,
-                            artist = null
+                            artist = resolvedArtist
                         )
                     )
                 )
@@ -310,6 +347,9 @@ class LocalAnalysisService(
     private fun metadataFile(cacheKey: String): File =
         cacheDir.resolve("$cacheKey$METADATA_FILE_SUFFIX")
 
+    private fun tuningFile(cacheKey: String): File =
+        cacheDir.resolve("$cacheKey$TUNING_FILE_SUFFIX")
+
     private fun readMetadata(cacheKey: String): CachedLocalAnalysisMetadata? {
         val file = metadataFile(cacheKey)
         if (!file.exists()) return null
@@ -348,6 +388,7 @@ class LocalAnalysisService(
         private const val LOCAL_ID_PREFIX = "local-"
         private const val ANALYSIS_FILE_SUFFIX = ".analysis.json"
         private const val METADATA_FILE_SUFFIX = ".meta.json"
+        private const val TUNING_FILE_SUFFIX = ".tuning"
 
         private fun heapSummary(): String {
             val runtime = Runtime.getRuntime()

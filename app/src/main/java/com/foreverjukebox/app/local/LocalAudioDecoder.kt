@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.OpenableColumns
@@ -34,7 +35,39 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
     ): DecodedLocalAudio = withContext(Dispatchers.IO) {
         val uri = uriString.toUri()
         val displayName = queryDisplayName(uri)
-        decodeUri(uri, displayName, onDecodeProgress)
+        val tags = readTags(uri)
+        decodeUri(uri, displayName, tags, onDecodeProgress)
+    }
+
+    private data class AudioTags(val title: String?, val artist: String?)
+
+    private fun readTags(uri: Uri): AudioTags {
+        return runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                if (uri.scheme.equals("file", ignoreCase = true)) {
+                    val path = uri.path
+                    if (path != null) {
+                        retriever.setDataSource(path)
+                    } else {
+                        return AudioTags(null, null)
+                    }
+                } else {
+                    retriever.setDataSource(context, uri)
+                }
+                val title = retriever
+                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                val artist = retriever
+                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                AudioTags(title, artist)
+            } finally {
+                retriever.release()
+            }
+        }.getOrElse { AudioTags(null, null) }
     }
 
     private fun queryDisplayName(uri: Uri): String? {
@@ -52,6 +85,7 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
     private suspend fun decodeUri(
         uri: Uri,
         displayName: String?,
+        tags: AudioTags,
         onDecodeProgress: (Int) -> Unit
     ): DecodedLocalAudio {
         val extractor = MediaExtractor()
@@ -289,7 +323,9 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
             sampleRate = sampleRate,
             durationSeconds = durationSeconds,
             sourceUri = uri.toString(),
-            displayName = displayName
+            displayName = displayName,
+            tagTitle = tags.title,
+            tagArtist = tags.artist
         )
     }
 

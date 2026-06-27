@@ -130,7 +130,7 @@ class ForegroundPlaybackServiceNotificationTest {
             )
         )
         assertEquals(
-            "The Forever Jukebox",
+            "Forever Jukebox",
             localPlaybackNotificationTitle(
                 baseTitle = null,
                 audioMode = JukeboxAudioMode.Off,
@@ -175,14 +175,14 @@ class ForegroundPlaybackServiceNotificationTest {
     @Test
     fun localNotificationArtistUsesAppNameWhileLoading() {
         assertEquals(
-            "The Forever Jukebox",
+            "Forever Jukebox",
             localPlaybackNotificationArtist(
                 baseArtist = null,
                 isLoading = true
             )
         )
         assertEquals(
-            "The Forever Jukebox",
+            "Forever Jukebox",
             localPlaybackNotificationArtist(
                 baseArtist = "Artist",
                 isLoading = true
@@ -193,7 +193,7 @@ class ForegroundPlaybackServiceNotificationTest {
     @Test
     fun localNotificationArtistUsesAppNameForLoadFailure() {
         assertEquals(
-            "The Forever Jukebox",
+            "Forever Jukebox",
             localPlaybackNotificationArtist(
                 baseArtist = "Artist",
                 isLoading = false,

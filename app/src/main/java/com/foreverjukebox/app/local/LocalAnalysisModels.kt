@@ -8,7 +8,9 @@ data class DecodedLocalAudio(
     val sampleRate: Int,
     val durationSeconds: Double,
     val sourceUri: String,
-    val displayName: String?
+    val displayName: String?,
+    val tagTitle: String? = null,
+    val tagArtist: String? = null
 )
 
 data class LocalAnalysisArtifact(

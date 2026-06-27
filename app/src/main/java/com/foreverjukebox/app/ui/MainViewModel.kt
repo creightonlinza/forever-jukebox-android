@@ -370,7 +370,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         castPlaybackCoordinator = castPlaybackCoordinator,
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
-        randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE
+        randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE,
+        persistLocalTrackTuning = { localId, params -> localAnalysisService.saveTuning(localId, params) },
+        clearLocalTrackTuning = { localId -> localAnalysisService.clearSavedTuning(localId) }
     )
     private val castSessionCoordinator = CastSessionCoordinator(
         controller = controller,

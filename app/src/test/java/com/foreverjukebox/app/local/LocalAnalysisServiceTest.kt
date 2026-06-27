@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -213,6 +214,7 @@ class LocalAnalysisServiceTest {
         )
 
         service.analyze(uri, "Fixture Track").toList()
+        service.saveTuning("local-$cacheKey", "thresh=10")
         val retainedAudio = File(cacheDir, "$cacheKey.audio").apply { writeText("audio-bytes") }
 
         val deleted = service.deleteCachedAnalysis("local-$cacheKey")
@@ -220,7 +222,113 @@ class LocalAnalysisServiceTest {
         assertTrue(deleted)
         assertFalse(File(cacheDir, "$cacheKey.analysis.json").exists())
         assertFalse(File(cacheDir, "$cacheKey.meta.json").exists())
+        assertFalse(File(cacheDir, "$cacheKey.tuning").exists())
         assertTrue(retainedAudio.exists())
+    }
+
+    @Test
+    fun savedTuningRoundTripsForLocalId() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val service = newTuningService(cacheDir)
+        val localId = "local-abc123"
+
+        service.saveTuning(localId, "thresh=12&bp=20,55,8")
+
+        assertEquals("thresh=12&bp=20,55,8", service.readSavedTuning(localId))
+        assertTrue(File(cacheDir, "abc123.tuning").exists())
+    }
+
+    @Test
+    fun saveTuningWithNullOrBlankClearsExistingTuning() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val service = newTuningService(cacheDir)
+        val localId = "local-abc123"
+        service.saveTuning(localId, "thresh=12")
+
+        service.saveTuning(localId, null)
+        assertNull(service.readSavedTuning(localId))
+        assertFalse(File(cacheDir, "abc123.tuning").exists())
+
+        service.saveTuning(localId, "thresh=12")
+        service.saveTuning(localId, "   ")
+        assertNull(service.readSavedTuning(localId))
+        assertFalse(File(cacheDir, "abc123.tuning").exists())
+    }
+
+    @Test
+    fun clearSavedTuningRemovesTuningFile() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val service = newTuningService(cacheDir)
+        val localId = "local-abc123"
+        service.saveTuning(localId, "thresh=12")
+
+        service.clearSavedTuning(localId)
+
+        assertNull(service.readSavedTuning(localId))
+        assertFalse(File(cacheDir, "abc123.tuning").exists())
+    }
+
+    @Test
+    fun readSavedTuningReturnsNullForUnknownOrInvalidLocalId() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val service = newTuningService(cacheDir)
+
+        assertNull(service.readSavedTuning("local-missing"))
+        assertNull(service.readSavedTuning("not-a-local-id"))
+        assertNull(service.readSavedTuning("local-"))
+    }
+
+    private fun newTuningService(cacheDir: File): LocalAnalysisService = LocalAnalysisService(
+        decoder = FakeDecoder(),
+        resampler = PassThroughResampler(),
+        analyzer = FakeAnalyzer(),
+        modelExtractor = NoopModelProvider(),
+        cacheDir = cacheDir
+    )
+
+    @Test
+    fun usesEmbeddedTagTitleAndArtistForFreshAnalysis() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val uri = "file:///tmp/tagged.mp3"
+        val cacheKey = analysisCacheKey(uri)
+        val service = LocalAnalysisService(
+            decoder = TaggedDecoder(tagTitle = "Tag Title", tagArtist = "Tag Artist"),
+            resampler = PassThroughResampler(),
+            analyzer = FakeAnalyzer(),
+            modelExtractor = NoopModelProvider(),
+            cacheDir = cacheDir
+        )
+
+        val updates = service.analyze(uri, "Fixture Track").toList()
+        val completed = updates.filterIsInstance<LocalAnalysisUpdate.Completed>().single()
+
+        assertEquals("Tag Title", completed.artifact.title)
+        assertEquals("Tag Artist", completed.artifact.artist)
+
+        val entries = service.listCachedAnalyses()
+        assertEquals("Tag Title", entries.single().title)
+        assertEquals("Tag Artist", entries.single().artist)
+        assertTrue(File(cacheDir, "$cacheKey.meta.json").exists())
+    }
+
+    @Test
+    fun fallsBackToDisplayNameWhenNoTagTitle() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val service = LocalAnalysisService(
+            decoder = TaggedDecoder(tagTitle = null, tagArtist = null, displayName = "File Name.mp3"),
+            resampler = PassThroughResampler(),
+            analyzer = FakeAnalyzer(),
+            modelExtractor = NoopModelProvider(),
+            cacheDir = cacheDir
+        )
+
+        val completed = service.analyze("file:///tmp/untagged.mp3", "Fixture Track")
+            .toList()
+            .filterIsInstance<LocalAnalysisUpdate.Completed>()
+            .single()
+
+        assertEquals("File Name.mp3", completed.artifact.title)
+        assertEquals(null, completed.artifact.artist)
     }
 
     private fun analysisCacheKey(uriString: String): String {
@@ -244,6 +352,28 @@ private class FakeDecoder : LocalAudioDecoderPort {
             durationSeconds = 1.0,
             sourceUri = uriString,
             displayName = "Fixture Track"
+        )
+    }
+}
+
+private class TaggedDecoder(
+    private val tagTitle: String?,
+    private val tagArtist: String?,
+    private val displayName: String? = "Fixture Track"
+) : LocalAudioDecoderPort {
+    override suspend fun decodeToMono(
+        uriString: String,
+        onDecodeProgress: (Int) -> Unit
+    ): DecodedLocalAudio {
+        onDecodeProgress(100)
+        return DecodedLocalAudio(
+            monoSamples = FloatArray(22_050) { 0f },
+            sampleRate = 22_050,
+            durationSeconds = 1.0,
+            sourceUri = uriString,
+            displayName = displayName,
+            tagTitle = tagTitle,
+            tagArtist = tagArtist
         )
     }
 }

@@ -193,7 +193,7 @@ private object PlaybackServiceConstants {
 }
 
 private const val NOTIFICATION_ACCENT = "#4AC7FF"
-private const val DEFAULT_NOTIFICATION_TITLE = "The Forever Jukebox"
+private const val DEFAULT_NOTIFICATION_TITLE = "Forever Jukebox"
 private const val LOADING_NOTIFICATION_TITLE = "Loading"
 private const val LOAD_FAILED_NOTIFICATION_TITLE = "Loading Failed"
 private const val CAST_FALLBACK_DEVICE_LABEL = "Other device"
