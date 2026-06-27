@@ -3,7 +3,6 @@ package com.foreverjukebox.app.ui
 import android.app.Application
 import android.net.Uri
 import androidx.core.net.toUri
-import com.foreverjukebox.app.data.AnalysisResponse
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.local.LocalAnalysisArtifact
 import com.foreverjukebox.app.local.LocalAnalysisService
@@ -190,7 +189,8 @@ class LocalAnalysisCoordinator(
                         localId = cached.localId,
                         title = cached.title,
                         artist = cached.artist,
-                        sourceUri = cached.sourceUri
+                        sourceUri = cached.sourceUri,
+                        durationSeconds = cached.durationSeconds
                     )
                 }
             updateState { it.copy(localCachedTracks = cachedTracks) }
@@ -227,9 +227,9 @@ class LocalAnalysisCoordinator(
             )
         }
         playbackCoordinator.applyAnalysisResult(
-            AnalysisResponse(
+            TrackAnalysisResult(
                 status = "complete",
-                youtubeId = artifact.localId,
+                legacyVideoId = artifact.localId,
                 result = artifact.analysisJson
             )
         )

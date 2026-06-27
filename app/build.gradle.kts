@@ -24,7 +24,7 @@ plugins {
 }
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-val madmomBeatsPortFfiVersion = "4.1.0"
+val madmomBeatsPortFfiVersion = "4.1.1"
 val madmomBeatsPortFfiZipUrlProperty: Provider<String> = providers.gradleProperty("madmomBeatsPortFfiZipUrl")
 val madmomBeatsPortFfiZipPathProperty: Provider<String> = providers.gradleProperty("madmomBeatsPortFfiZipPath")
 val madmomBeatsPortFfiZipUrl: Provider<String> = madmomBeatsPortFfiZipUrlProperty.orElse(
@@ -155,6 +155,21 @@ extensions.configure<ApplicationExtension>("android") {
         }
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            // Distinct id so the local-only Play app and the bare-id GitHub `full`
+            // build (com.foreverjukebox.app) can coexist and never signature-conflict.
+            applicationIdSuffix = ".local"
+            buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "false")
+        }
+        create("full") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "true")
+        }
+    }
+
     signingConfigs {
         if (hasReleaseSigningConfig) {
             create("release") {
@@ -173,8 +188,8 @@ extensions.configure<ApplicationExtension>("android") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             if (hasReleaseSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -212,6 +227,13 @@ extensions.configure<ApplicationExtension>("android") {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    // Android Studio can fail local non-debuggable APK deploys while installing
+    // generated baseline profiles. Keep profiles packaged for release artifacts,
+    // but do not make local APK install depend on the deploy-time profile step.
+    installation {
+        enableBaselineProfile = false
     }
 
     splits {

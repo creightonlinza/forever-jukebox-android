@@ -576,7 +576,8 @@ fun AppModeDialog(
     var selectedMode by remember(initialMode) { mutableStateOf(initialMode) }
     var urlInput by remember(initialValue) { mutableStateOf(initialValue) }
     val trimmedUrl = urlInput.trim()
-    val requiresServerUrl = selectedMode == AppMode.Server
+    val requiresServerUrl = com.foreverjukebox.app.BuildConfig.SERVER_MODE_AVAILABLE &&
+        selectedMode == AppMode.Server
     val isValidServerUrl = isValidBaseUrl(trimmedUrl)
     val canConfirm = !requiresServerUrl || isValidServerUrl
     AlertDialog(
@@ -598,7 +599,7 @@ fun AppModeDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Choose how this app connects.")
-                AppModeSliderToggle(
+                AppModeDialogModeToggle(
                     selectedMode = selectedMode,
                     onModeChange = { selectedMode = it },
                     modifier = Modifier.height(SmallButtonHeight)

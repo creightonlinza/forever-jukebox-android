@@ -36,30 +36,6 @@ class FormatAndUrlPolicyTest {
     }
 
     @Test
-    fun youtubeUrlsUseTheVideoIdWithoutChangingTheSearchApi() {
-        assertEquals(
-            "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-            youtubeThumbnailUrl("dQw4w9WgXcQ")
-        )
-        assertEquals(
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            youtubeWatchUrl("dQw4w9WgXcQ")
-        )
-    }
-
-    @Test
-    fun youtubeUrlsTrimValidVideoIds() {
-        assertEquals(
-            "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-            youtubeThumbnailUrl(" dQw4w9WgXcQ ")
-        )
-        assertEquals(
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            youtubeWatchUrl(" dQw4w9WgXcQ ")
-        )
-    }
-
-    @Test
     fun formatCursorTimeUsesUnboundedMinutesAndSafeInvalidDefaults() {
         assertEquals("0:00", formatCursorTime(0.0))
         assertEquals("1:02", formatCursorTime(62.9))

@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppPreferences
-import com.foreverjukebox.app.data.ApiClient
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.sanitizeMaxFavorites
@@ -12,7 +11,7 @@ import kotlinx.coroutines.launch
 
 class FavoritesController(
     private val scope: CoroutineScope,
-    private val api: ApiClient,
+    private val serverGateway: ServerGateway,
     private val preferences: AppPreferences,
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
@@ -100,7 +99,7 @@ class FavoritesController(
             val snapshot = currentSyncSnapshot(requireCode = false) ?: return@launch
             try {
                 val favorites = state.favorites
-                val response = api.createFavoritesSync(
+                val response = serverGateway.createFavoritesSync(
                     baseUrl = baseUrl,
                     favorites = favorites,
                     maxFavorites = state.maxFavorites
@@ -231,7 +230,7 @@ class FavoritesController(
                 return
             }
             val merged = applyFavoritesDelta(serverFavorites, delta)
-            val response = api.updateFavoritesSync(
+            val response = serverGateway.updateFavoritesSync(
                 baseUrl = snapshot.baseUrl,
                 code = code,
                 favorites = merged,
@@ -319,7 +318,7 @@ class FavoritesController(
         if (!state.allowFavoritesSync) return null
         val code = snapshot.code ?: return null
         return try {
-            api.fetchFavoritesSync(snapshot.baseUrl, code)
+            serverGateway.fetchFavoritesSync(snapshot.baseUrl, code)
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) {

@@ -151,6 +151,14 @@ fun InputPanel(
                                         )
                                     }
                                 }
+                                track.durationSeconds?.let { seconds ->
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = formatTrackDuration(seconds),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 SquareIconButton(
                                     onClick = { onDeleteCachedTrack(track.localId) },

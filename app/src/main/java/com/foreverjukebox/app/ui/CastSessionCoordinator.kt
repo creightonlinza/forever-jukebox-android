@@ -41,7 +41,7 @@ class CastSessionCoordinator(
     private val controller: PlaybackController,
     private val castPlaybackCoordinator: CastPlaybackCoordinator,
     private val playbackCoordinator: PlaybackCoordinator,
-    private val serverTrackLoadCoordinator: ServerTrackLoadCoordinator,
+    private val cancelServerTrackLoad: () -> Unit,
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
@@ -96,7 +96,7 @@ class CastSessionCoordinator(
             )
         }
         castPlaybackCoordinator.resetStatusListener()
-        serverTrackLoadCoordinator.cancel()
+        cancelServerTrackLoad()
         playbackCoordinator.resetForNewTrack()
 
         if (preservedTrack != null) {
@@ -131,7 +131,7 @@ class CastSessionCoordinator(
         }
         updateState(::stateAfterCastDisconnect)
         castPlaybackCoordinator.resetStatusListener()
-        serverTrackLoadCoordinator.cancel()
+        cancelServerTrackLoad()
         playbackCoordinator.resetForNewTrack()
         applyActiveTab(TabId.Top, true)
     }

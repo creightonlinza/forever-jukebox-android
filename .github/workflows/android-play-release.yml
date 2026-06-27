@@ -1,0 +1,83 @@
+name: Build Play Release AAB
+
+# Builds the local-only `play` flavor as a signed Android App Bundle (.aab) for
+# Google Play. The AAB is uploaded ONLY as a private workflow artifact (visible to
+# repo collaborators, short retention) — it is never attached to a public Release.
+# Download it from the run's Artifacts and upload it manually in the Play Console.
+#
+# Signing: the keystore here is the Play *upload key*. With Play App Signing,
+# Google holds the real app signing key and re-signs the APKs delivered to users.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name for the Play build (e.g. 2026.06.01). Optional; defaults to yyyy.MM.<run>."
+        required: false
+
+concurrency:
+  group: "play-release-build"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION_TAG: ${{ github.event.inputs.version }}
+      # Play requires a unique, monotonically increasing versionCode per upload.
+      # This workflow's own run number provides the increase (com.foreverjukebox.app.local
+      # is a separate id from the GitHub `full` build, so the namespaces don't collide).
+      APP_VERSION_CODE_BASE: "0"
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Prepare Essentia Native Artifacts
+        run: ./third_party/essentia/fetch_prebuilt_from_rn_essentia_static.sh
+
+      - name: Validate signing secrets
+        env:
+          KEY_BASE64: ${{ secrets.KEY_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+        run: |
+          test -n "${KEY_BASE64}" || (echo "Missing secret: KEY_BASE64" && exit 1)
+          test -n "${KEYSTORE_PASS}" || (echo "Missing secret: KEYSTORE_PASS" && exit 1)
+
+      - name: Create signing files
+        env:
+          KEY_BASE64: ${{ secrets.KEY_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+        run: |
+          echo "${KEY_BASE64}" | base64 --decode > release.keystore
+          cat > keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${KEYSTORE_PASS}
+          keyAlias=release
+          keyPassword=${KEYSTORE_PASS}
+          EOF
+
+      - name: Run Unit Tests
+        run: ./gradlew :app:testPlayReleaseUnitTest
+
+      - name: Build Play Release AAB
+        run: ./gradlew :app:bundlePlayRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: play-release-aab
+          path: app/build/outputs/bundle/playRelease/*.aab
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup signing files
+        if: always()
+        run: rm -f release.keystore keystore.properties

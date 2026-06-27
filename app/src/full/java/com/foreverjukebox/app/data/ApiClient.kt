@@ -13,11 +13,6 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class HttpStatusException(
-    val statusCode: Int,
-    val responseBody: String? = null
-) : IOException("HTTP $statusCode")
-
 class ApiClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val githubApiBaseUrl: String = DEFAULT_GITHUB_API_BASE_URL

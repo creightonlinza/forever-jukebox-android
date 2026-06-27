@@ -72,3 +72,24 @@ This populates:
 Optional advanced path: build Essentia from upstream source using
 `./third_party/essentia/build_android_from_upstream.sh` (requires
 `pkg-config` + `eigen3` development headers).
+
+## License
+
+Forever Jukebox Android is free, open-source software licensed under the
+**GNU Affero General Public License v3.0** — see [`LICENSE`](LICENSE).
+
+The whole app is AGPLv3 because it statically links
+[Essentia](https://essentia.upf.edu/) (AGPLv3) for on-device audio analysis,
+which makes the combined work a derivative covered by AGPLv3. The complete
+corresponding source is this repository:
+<https://github.com/creightonlinza/forever-jukebox-android>.
+
+Copyright © Creighton Linza and contributors.
+
+Third-party components and their licenses (Essentia, madmom-beats-port/madmom
+models, SpeexDSP, Oboe, and others) are documented in
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). The
+madmom-beats-port runtime code is BSD 2-Clause; the app is non-commercial
+(no ads, no purchases), which matters because the bundled madmom beat-detection
+models are licensed CC BY-NC-SA 4.0 (non-commercial) — see that file for
+details.

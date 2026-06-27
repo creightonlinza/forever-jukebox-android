@@ -4,11 +4,11 @@ import com.foreverjukebox.app.data.HttpStatusException
 import java.io.IOException
 import kotlinx.coroutines.delay
 
-internal const val SERVER_LOAD_RETRY_MAX_ATTEMPTS = 4
-internal const val SERVER_LOAD_RETRY_DELAY_INITIAL_MS = 1_000L
-internal const val SERVER_LOAD_RETRY_DELAY_MULTIPLIER = 2L
+internal const val REMOTE_LOAD_RETRY_MAX_ATTEMPTS = 4
+internal const val REMOTE_LOAD_RETRY_DELAY_INITIAL_MS = 1_000L
+internal const val REMOTE_LOAD_RETRY_DELAY_MULTIPLIER = 2L
 
-internal fun shouldRetryServerLoadFailure(error: IOException): Boolean {
+internal fun shouldRetryRemoteLoadFailure(error: IOException): Boolean {
     return when (error) {
         is HttpStatusException -> {
             error.statusCode == 408 ||
@@ -19,10 +19,10 @@ internal fun shouldRetryServerLoadFailure(error: IOException): Boolean {
     }
 }
 
-internal suspend fun <T> retryTransientServerLoad(
-    maxAttempts: Int = SERVER_LOAD_RETRY_MAX_ATTEMPTS,
-    initialDelayMs: Long = SERVER_LOAD_RETRY_DELAY_INITIAL_MS,
-    delayMultiplier: Long = SERVER_LOAD_RETRY_DELAY_MULTIPLIER,
+internal suspend fun <T> retryTransientRemoteLoad(
+    maxAttempts: Int = REMOTE_LOAD_RETRY_MAX_ATTEMPTS,
+    initialDelayMs: Long = REMOTE_LOAD_RETRY_DELAY_INITIAL_MS,
+    delayMultiplier: Long = REMOTE_LOAD_RETRY_DELAY_MULTIPLIER,
     delayFn: suspend (Long) -> Unit = { delay(it) },
     block: suspend () -> T
 ): T {
@@ -36,7 +36,7 @@ internal suspend fun <T> retryTransientServerLoad(
         try {
             return block()
         } catch (error: HttpStatusException) {
-            if (attempt >= maxAttempts || !shouldRetryServerLoadFailure(error)) {
+            if (attempt >= maxAttempts || !shouldRetryRemoteLoadFailure(error)) {
                 throw error
             }
         } catch (error: IOException) {

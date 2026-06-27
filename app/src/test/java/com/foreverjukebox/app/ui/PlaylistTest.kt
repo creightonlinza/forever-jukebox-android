@@ -363,7 +363,8 @@ class PlaylistTest {
                         localId = "cached",
                         title = "Cached",
                         artist = null,
-                        sourceUri = "content://cached"
+                        sourceUri = "content://cached",
+                        durationSeconds = null
                     )
                 )
             )

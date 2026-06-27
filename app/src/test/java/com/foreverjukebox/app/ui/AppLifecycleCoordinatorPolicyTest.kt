@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -31,7 +32,8 @@ class AppLifecycleCoordinatorPolicyTest {
             )
         )
 
-        assertEquals(TabId.Top, next.activeTab)
+        val expectedTab = if (BuildConfig.SERVER_MODE_AVAILABLE) TabId.Top else TabId.Input
+        assertEquals(expectedTab, next.activeTab)
         assertEquals(TopSongsTab.TopSongs, next.topSongsTab)
     }
 

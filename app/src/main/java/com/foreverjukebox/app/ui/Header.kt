@@ -367,7 +367,7 @@ private fun SettingsDialog(
     var showServerSettings by remember { mutableStateOf(false) }
     val trimmedUrl = urlInput.trim()
     val trimmedAdminKey = adminKeyInput.trim()
-    val requiresServerUrl = selectedMode == AppMode.Server
+    val requiresServerUrl = BuildConfig.SERVER_MODE_AVAILABLE && selectedMode == AppMode.Server
     val canSave = !requiresServerUrl || isValidBaseUrl(trimmedUrl)
     val cacheLabel = formatCacheSize(state.cacheSizeBytes)
     val cacheEnabled = state.cacheSizeBytes > 0
@@ -382,7 +382,7 @@ private fun SettingsDialog(
             ) {
                 Button(
                     onClick = {
-                        if (selectedMode == AppMode.Server) {
+                        if (BuildConfig.SERVER_MODE_AVAILABLE && selectedMode == AppMode.Server) {
                             onEditBaseUrl(trimmedUrl)
                             onEditAdminKey(trimmedAdminKey)
                         }
@@ -443,31 +443,11 @@ private fun SettingsDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("App Mode")
-                AppModeSliderToggle(
+                ServerModeSettingsSection(
                     selectedMode = selectedMode,
                     onModeChange = { mode -> selectedMode = mode },
-                    modifier = Modifier.height(SmallButtonHeight)
+                    onOpenServerSettings = { showServerSettings = true }
                 )
-                if (selectedMode == AppMode.Server) {
-                    OutlinedButton(
-                        onClick = { showServerSettings = true },
-                        colors = pillOutlinedButtonColors(),
-                        border = pillButtonBorder(),
-                        shape = PillShape,
-                        contentPadding = SmallButtonPadding,
-                        modifier = Modifier.height(SmallButtonHeight)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Server Settings", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
                 Text("Theme")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(

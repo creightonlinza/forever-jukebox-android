@@ -61,13 +61,13 @@ jobs:
       - name: Run Unit Tests
         run: ./gradlew :app:test
 
-      - name: Build Release APK
-        run: ./gradlew :app:assembleRelease
+      - name: Build Full Release APK
+        run: ./gradlew :app:assembleFullRelease
 
       - uses: actions/upload-artifact@v4
         with:
           name: release
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/full/release/*.apk
           if-no-files-found: error
 
       - uses: softprops/action-gh-release@v2
@@ -76,7 +76,7 @@ jobs:
         with:
           tag_name: ${{ env.APP_VERSION_TAG }}
           name: Release ${{ env.APP_VERSION_TAG }}
-          files: app/build/outputs/apk/release/*.apk
+          files: app/build/outputs/apk/full/release/*.apk
           generate_release_notes: true
           make_latest: true
           prerelease: false

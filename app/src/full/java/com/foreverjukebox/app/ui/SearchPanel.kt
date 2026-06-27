@@ -43,16 +43,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import coil3.compose.AsyncImage
-import com.foreverjukebox.app.data.SpotifySearchItem
-import com.foreverjukebox.app.data.YoutubeSearchItem
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SearchPanel(
     state: UiState,
     onSearch: (String) -> Unit,
-    onSpotifySelect: (SpotifySearchItem) -> Unit,
-    onYoutubeSelect: (YoutubeSearchItem) -> Unit,
+    onSpotifySelect: (RemoteMusicSearchItem) -> Unit,
+    onYoutubeSelect: (RemoteVideoSearchItem) -> Unit,
     onOpenYoutube: (String) -> Unit
 ) {
     val searchState = state.search
@@ -130,10 +128,10 @@ fun SearchPanel(
 
             if (searchState.youtubeLoading) {
                 Text("Searching YouTube…", style = MaterialTheme.typography.bodySmall)
-            } else if (searchState.youtubeMatches.isNotEmpty()) {
+            } else if (searchState.videoMatches.isNotEmpty()) {
                 Text("Step 2: Choose the closest YouTube match.", style = MaterialTheme.typography.bodySmall)
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(searchState.youtubeMatches) { item ->
+                    items(searchState.videoMatches) { item ->
                         YoutubeRow(
                             item = item,
                             onSelect = onYoutubeSelect,
@@ -160,7 +158,7 @@ fun SearchPanel(
 }
 
 @Composable
-private fun SpotifyRow(item: SpotifySearchItem, onSelect: (SpotifySearchItem) -> Unit) {
+private fun SpotifyRow(item: RemoteMusicSearchItem, onSelect: (RemoteMusicSearchItem) -> Unit) {
     val name = item.name ?: "Untitled"
     val artist = item.artist ?: ""
     val duration = item.duration
@@ -187,8 +185,8 @@ private fun SpotifyRow(item: SpotifySearchItem, onSelect: (SpotifySearchItem) ->
 
 @Composable
 private fun YoutubeRow(
-    item: YoutubeSearchItem,
-    onSelect: (YoutubeSearchItem) -> Unit,
+    item: RemoteVideoSearchItem,
+    onSelect: (RemoteVideoSearchItem) -> Unit,
     onPreview: (String) -> Unit
 ) {
     val title = item.title ?: "Untitled"
