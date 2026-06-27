@@ -161,7 +161,7 @@ extensions.configure<ApplicationExtension>("android") {
             dimension = "distribution"
             // Distinct id so the local-only Play app and the bare-id GitHub `full`
             // build (com.foreverjukebox.app) can coexist and never signature-conflict.
-            applicationIdSuffix = ".local"
+            applicationIdSuffix = ".play"
             buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "false")
         }
         create("full") {
@@ -293,8 +293,10 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
-    implementation("io.coil-kt.coil3:coil-compose:3.4.0")
-    implementation("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
+    // Coil only loads remote cover art in server-mode search, which is full-flavor
+    // only. The play flavor is local-only and never fetches remote images.
+    "fullImplementation"("io.coil-kt.coil3:coil-compose:3.4.0")
+    "fullImplementation"("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.10.0")
     implementation("com.google.oboe:oboe:1.10.0")

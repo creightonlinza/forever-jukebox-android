@@ -30,16 +30,9 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="foreverjukebox.com"
-                    android:pathPrefix="/listen" />
-            </intent-filter>
+            <!-- The foreverjukebox.com/listen deep link is server-mode only and
+                 lives in the `full` flavor manifest (src/full/AndroidManifest.xml).
+                 The `play` flavor is local-only and intentionally has no App Links. -->
         </activity>
         <service
             android:name=".playback.ForegroundPlaybackService"

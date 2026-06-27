@@ -187,7 +187,7 @@ fun FaqPanel() {
                 )
                 BulletListItem("SpeexDSP — audio resampling (BSD 3-Clause).")
                 BulletListItem(
-                    "Oboe, AndroidX/Jetpack Compose, OkHttp, Coil, kotlinx, and Google Cast " +
+                    "Oboe, AndroidX/Jetpack Compose, OkHttp, kotlinx, and Google Cast " +
                         "(Apache-2.0); Sentry crash reporting (MIT)."
                 )
                 val noticeText = buildAnnotatedString {

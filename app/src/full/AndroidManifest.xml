@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Server-mode deep link, full flavor only. Merged into the MainActivity
+      declared in the main manifest by activity name. The play flavor is
+      local-only (SERVER_MODE_AVAILABLE=false) and ships without App Links.
+    -->
+    <application>
+        <activity android:name=".MainActivity">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="foreverjukebox.com"
+                    android:pathPrefix="/listen" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
