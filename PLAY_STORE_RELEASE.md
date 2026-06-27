@@ -93,12 +93,10 @@ Play requires an **Android App Bundle (.aab)**, not an APK.
   [app/build.gradle.kts:66](app/build.gradle.kts)). Decide how you'll set a
   stable, monotonic versionCode for Play uploads (e.g. a dedicated env value)
   so you don't collide or go backwards.
-- [ ] Verify the bundle installs and runs from a release build (not just debug):
-  test local-mode file pick → analysis → playback on a real device.
-- [ ] Sanity-check that **server-mode UI is hidden** in the `play` build
-  (`SERVER_MODE_AVAILABLE=false`) so the listing matches behavior. (Cast gating
-  already verified — see "Google Cast" in Locked decisions; still worth a manual
-  pass over the running build for Search/Top tabs and the mode picker.)
+- [x] Verify the bundle installs and runs from a release build — confirmed.
+- [x] Sanity-check that **server-mode UI is hidden** in the `play` build
+  (`SERVER_MODE_AVAILABLE=false`) — confirmed. (Cast gating was also verified
+  statically; see "Google Cast" in Locked decisions.)
 
 ## Phase 3 — Privacy policy
 

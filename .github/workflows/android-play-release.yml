@@ -25,7 +25,7 @@ jobs:
     env:
       APP_VERSION_TAG: ${{ github.event.inputs.version }}
       # Play requires a unique, monotonically increasing versionCode per upload.
-      # This workflow's own run number provides the increase (com.foreverjukebox.app.local
+      # This workflow's own run number provides the increase (com.foreverjukebox.app.play
       # is a separate id from the GitHub `full` build, so the namespaces don't collide).
       APP_VERSION_CODE_BASE: "0"
     permissions:
