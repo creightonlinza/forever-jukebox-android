@@ -189,7 +189,8 @@ class LocalAnalysisCoordinator(
                         localId = cached.localId,
                         title = cached.title,
                         artist = cached.artist,
-                        sourceUri = cached.sourceUri
+                        sourceUri = cached.sourceUri,
+                        durationSeconds = cached.durationSeconds
                     )
                 }
             updateState { it.copy(localCachedTracks = cachedTracks) }

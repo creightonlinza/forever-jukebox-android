@@ -195,6 +195,7 @@ class LocalAnalysisServiceTest {
         assertEquals("local-$cacheKey", entries[0].localId)
         assertEquals("Fixture Track", entries[0].title)
         assertEquals(uri, entries[0].sourceUri)
+        assertEquals(1.0, entries[0].durationSeconds)
         assertTrue(File(cacheDir, "$cacheKey.meta.json").exists())
     }
 

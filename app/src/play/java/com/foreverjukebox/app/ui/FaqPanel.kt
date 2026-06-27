@@ -162,28 +162,9 @@ fun FaqPanel() {
             }
 
             FaqAccordionSection(
-                title = "How do Favorites work?",
+                title = "Open source & licenses",
                 expanded = expandedSectionIndex == 5,
                 onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(5) }
-            ) {
-                BulletListItem(
-                    "Favorites are saved/unsaved by clicking the star icon on a track and stored " +
-                        "on this device."
-                )
-                BulletListItem(
-                    "When you favorite a track, its tuning is saved too, so future loads restore " +
-                        "your chosen parameters."
-                )
-                BulletListItem(
-                    "Use Reset in the Tune panel to restore default tuning (must be re-favorited " +
-                        "to save changes)."
-                )
-            }
-
-            FaqAccordionSection(
-                title = "Open source & licenses",
-                expanded = expandedSectionIndex == 6,
-                onToggle = { expandedSectionIndex = expandedSectionIndex.nextAccordionIndex(6) }
             ) {
                 val licenseIntro = buildAnnotatedString {
                     append("Forever Jukebox is free, open-source software licensed under the ")

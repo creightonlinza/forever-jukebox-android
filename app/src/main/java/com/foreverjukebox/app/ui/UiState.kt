@@ -139,7 +139,8 @@ data class LocalCachedTrack(
     val localId: String,
     val title: String,
     val artist: String?,
-    val sourceUri: String?
+    val sourceUri: String?,
+    val durationSeconds: Double?
 )
 
 data class FailedLoadRetryRequest(

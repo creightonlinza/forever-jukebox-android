@@ -94,6 +94,7 @@ class LocalAnalysisService(
                         ?: "Local Track",
                     artist = metadata?.artist ?: extractTrackField(analysisJson, "artist"),
                     sourceUri = metadata?.sourceUri,
+                    durationSeconds = extractTrackField(analysisJson, "duration")?.toDoubleOrNull(),
                     lastUpdatedEpochMs = analysisFile.lastModified()
                 )
             }

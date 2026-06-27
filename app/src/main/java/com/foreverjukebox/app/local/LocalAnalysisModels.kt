@@ -25,6 +25,7 @@ data class CachedLocalAnalysis(
     val title: String,
     val artist: String?,
     val sourceUri: String?,
+    val durationSeconds: Double?,
     val lastUpdatedEpochMs: Long
 )
 
