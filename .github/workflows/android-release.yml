@@ -62,6 +62,8 @@ jobs:
         run: ./gradlew :app:test
 
       - name: Build Full Release APK
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: ./gradlew :app:assembleFullRelease
 
       - uses: actions/upload-artifact@v4
