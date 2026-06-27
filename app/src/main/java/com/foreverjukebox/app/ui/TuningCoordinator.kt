@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
@@ -112,8 +113,16 @@ class TuningCoordinator(
     private val castPlaybackCoordinator: CastPlaybackCoordinator,
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
-    private val randomBranchDeltaPercentScale: Double
+    private val randomBranchDeltaPercentScale: Double,
+    private val persistLocalTrackTuning: suspend (localId: String, params: String?) -> Unit,
+    private val clearLocalTrackTuning: suspend (localId: String) -> Unit
 ) {
+    private fun currentLocalTrackId(): String? {
+        val state = getState()
+        if (state.appMode != AppMode.Local) return null
+        return state.playback.lastJobId?.takeIf { it.startsWith("local-") }
+    }
+
     suspend fun applyTuning(
         threshold: Int,
         minProb: Double,
@@ -232,6 +241,9 @@ class TuningCoordinator(
         }
         preferences.setHighlightAnchorBranch(highlightAnchorBranch)
         playbackCoordinator.syncTuningState()
+        currentLocalTrackId()?.let { localId ->
+            persistLocalTrackTuning(localId, playbackCoordinator.buildTuningParamsString())
+        }
     }
 
     private fun resetCastTuningDefaults() {
@@ -261,5 +273,6 @@ class TuningCoordinator(
             )
         }
         playbackCoordinator.syncTuningState()
+        currentLocalTrackId()?.let { localId -> clearLocalTrackTuning(localId) }
     }
 }

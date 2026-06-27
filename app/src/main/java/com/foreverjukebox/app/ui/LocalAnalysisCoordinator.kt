@@ -129,7 +129,7 @@ class LocalAnalysisCoordinator(
             updateState {
                 it.copy(
                     localCachedTrackErrorMessage =
-                        "This cached analysis has no source file pointer. Re-open the audio file to re-link it."
+                        "This analysis isn't linked to a source file. Use Add Audio to re-link it."
                 )
             }
             return
@@ -140,7 +140,7 @@ class LocalAnalysisCoordinator(
                 updateState {
                     it.copy(
                         localCachedTrackErrorMessage =
-                            "The source audio file is no longer available. Re-open the file and analyze again."
+                            "The source audio file is no longer available. Use Add Audio to analyze it again."
                     )
                 }
                 return@launch
@@ -226,6 +226,8 @@ class LocalAnalysisCoordinator(
                 )
             )
         }
+        val savedTuning = localAnalysisService.readSavedTuning(artifact.localId)
+        playbackCoordinator.setPendingTuningParams(savedTuning)
         playbackCoordinator.applyAnalysisResult(
             TrackAnalysisResult(
                 status = "complete",

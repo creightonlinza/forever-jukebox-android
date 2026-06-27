@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
@@ -113,12 +114,17 @@ fun InputPanel(
                 }
                 Button(
                     onClick = { filePicker.launch(arrayOf("audio/*")) },
-                    colors = pillButtonColors(),
-                    border = pillButtonBorder(),
+                    colors = heroButtonColors(),
                     shape = PillShape,
                     contentPadding = SmallButtonPadding
                 ) {
-                    Text("Open Audio")
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Add Audio")
                 }
                 Text("Completed Analysis", style = MaterialTheme.typography.labelLarge)
                 if (state.localCachedTracks.isEmpty()) {
@@ -128,12 +134,21 @@ fun InputPanel(
                     )
                 } else {
                     var query by remember { mutableStateOf("") }
-                    var sortAscending by remember { mutableStateOf(true) }
+                    var sortKey by remember { mutableStateOf(FavoriteSortKey.Title) }
+                    var sortDirection by remember { mutableStateOf(FavoriteSortDirection.Ascending) }
                     val trimmedQuery = query.trim()
                     val filtered = filterLocalCachedTracks(state.localCachedTracks, query)
-                    val sorted = sortLocalCachedTracksByTitle(filtered, sortAscending)
+                    val sorted = sortLocalCachedTracksForDisplay(filtered, sortKey, sortDirection)
                     val focusRequester = remember { FocusRequester() }
                     val keyboardController = LocalSoftwareKeyboardController.current
+                    val onSortSelected: (FavoriteSortKey) -> Unit = { selectedKey ->
+                        if (sortKey == selectedKey) {
+                            sortDirection = sortDirection.toggled()
+                        } else {
+                            sortKey = selectedKey
+                            sortDirection = FavoriteSortDirection.Ascending
+                        }
+                    }
 
                     OutlinedTextField(
                         value = query,
@@ -170,32 +185,26 @@ fun InputPanel(
                         )
                     } else {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { sortAscending = !sortAscending }
-                                .padding(vertical = 2.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
+                            CompletedAnalysisSortHeaderCell(
                                 text = "Title",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface
+                                column = FavoriteSortKey.Title,
+                                sortKey = sortKey,
+                                sortDirection = sortDirection,
+                                onSortSelected = onSortSelected,
+                                modifier = Modifier.weight(1f, fill = true)
                             )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Icon(
-                                Icons.Filled.ArrowDropDown,
-                                contentDescription = if (sortAscending) {
-                                    "Sorted ascending"
-                                } else {
-                                    "Sorted descending"
-                                },
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .graphicsLayer {
-                                        rotationZ = if (sortAscending) 180f else 0f
-                                    }
+                            CompletedAnalysisSortHeaderCell(
+                                text = "Artist",
+                                column = FavoriteSortKey.Artist,
+                                sortKey = sortKey,
+                                sortDirection = sortDirection,
+                                onSortSelected = onSortSelected,
+                                modifier = Modifier.weight(0.8f, fill = true)
                             )
+                            Spacer(modifier = Modifier.width(24.dp))
                         }
                         LazyColumn(
                             modifier = Modifier
@@ -204,11 +213,8 @@ fun InputPanel(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(sorted, key = { it.localId }) { track ->
-                                val display = if (!track.artist.isNullOrBlank()) {
-                                    "${track.title} — ${track.artist}"
-                                } else {
-                                    track.title
-                                }
+                                val displayTitle = track.title.ifBlank { "Untitled" }
+                                val displayArtist = favoriteDisplayArtist(track.artist)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -218,30 +224,35 @@ fun InputPanel(
                                         ),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(modifier = Modifier.weight(1f, fill = true)) {
                                         Text(
-                                            text = display,
+                                            text = displayTitle,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             style = MaterialTheme.typography.bodyMedium
                                         )
+                                        track.durationSeconds?.let { seconds ->
+                                            Text(
+                                                text = formatTrackDuration(seconds),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                         if (track.sourceUri.isNullOrBlank()) {
                                             Text(
-                                                text = "Source pointer unavailable. Re-open file to re-link.",
+                                                text = "Not linked to a source file. Use Add Audio to re-link.",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
-                                    track.durationSeconds?.let { seconds ->
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = formatTrackDuration(seconds),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = displayArtist,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(0.8f, fill = true)
+                                    )
                                     SquareIconButton(
                                         onClick = { onDeleteCachedTrack(track.localId) },
                                         modifier = Modifier.size(24.dp)
@@ -259,6 +270,57 @@ fun InputPanel(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CompletedAnalysisSortHeaderCell(
+    text: String,
+    column: FavoriteSortKey,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection,
+    onSortSelected: (FavoriteSortKey) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val active = sortKey == column
+    Row(
+        modifier = modifier
+            .clickable { onSortSelected(column) }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (active) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (active) {
+            Spacer(modifier = Modifier.width(2.dp))
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = if (sortDirection == FavoriteSortDirection.Ascending) {
+                    "Sorted ascending"
+                } else {
+                    "Sorted descending"
+                },
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .size(16.dp)
+                    .graphicsLayer {
+                        rotationZ = if (sortDirection == FavoriteSortDirection.Ascending) {
+                            180f
+                        } else {
+                            0f
+                        }
+                    }
+            )
         }
     }
 }

@@ -33,6 +33,24 @@ fun pillOutlinedButtonColors(active: Boolean = false): ButtonColors {
     )
 }
 
+/**
+ * Filled button styled with the hero title accent — used to draw extra attention to a
+ * primary action. Mirrors the fully-highlighted Listen tab: an accent fill with an
+ * inverted foreground so the label stays legible on the bright color in both themes.
+ */
+@Composable
+fun heroButtonColors(): ButtonColors {
+    val tokens = LocalThemeTokens.current
+    val container = tokens.titleAccent
+    val content = pulsingListenContentColor(tokens.onBackground, pulseAmount = 0f)
+    return ButtonDefaults.buttonColors(
+        containerColor = container,
+        contentColor = content,
+        disabledContainerColor = container.withAlpha(0.4f),
+        disabledContentColor = content.withAlpha(0.4f)
+    )
+}
+
 @Composable
 fun pillButtonBorder(): BorderStroke {
     val tokens = LocalThemeTokens.current

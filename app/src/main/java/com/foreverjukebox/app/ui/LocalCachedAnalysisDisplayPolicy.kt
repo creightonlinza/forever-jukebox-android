@@ -14,14 +14,53 @@ internal fun filterLocalCachedTracks(
     }
 }
 
-internal fun sortLocalCachedTracksByTitle(
+internal fun sortLocalCachedTracksForDisplay(
     tracks: List<LocalCachedTrack>,
-    ascending: Boolean
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection
 ): List<LocalCachedTrack> {
     if (tracks.size < 2) return tracks
 
-    val byTitle = tracks.sortedWith(
-        compareBy(String.CASE_INSENSITIVE_ORDER) { it.title.ifBlank { "Untitled" } }
+    return tracks.sortedWith { left, right ->
+        compareLocalCachedForDisplay(left, right, sortKey, sortDirection)
+    }
+}
+
+private fun compareLocalCachedForDisplay(
+    left: LocalCachedTrack,
+    right: LocalCachedTrack,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection
+): Int {
+    val secondarySortKey = when (sortKey) {
+        FavoriteSortKey.Title -> FavoriteSortKey.Artist
+        FavoriteSortKey.Artist -> FavoriteSortKey.Title
+    }
+    return compareLocalCachedField(left, right, sortKey, sortDirection)
+        .takeIf { it != 0 }
+        ?: compareLocalCachedField(left, right, secondarySortKey, sortDirection).takeIf { it != 0 }
+        ?: String.CASE_INSENSITIVE_ORDER.compare(left.localId, right.localId)
+}
+
+private fun compareLocalCachedField(
+    left: LocalCachedTrack,
+    right: LocalCachedTrack,
+    sortKey: FavoriteSortKey,
+    sortDirection: FavoriteSortDirection
+): Int {
+    val result = String.CASE_INSENSITIVE_ORDER.compare(
+        localCachedDisplayValue(left, sortKey),
+        localCachedDisplayValue(right, sortKey)
     )
-    return if (ascending) byTitle else byTitle.asReversed()
+    return when (sortDirection) {
+        FavoriteSortDirection.Ascending -> result
+        FavoriteSortDirection.Descending -> -result
+    }
+}
+
+private fun localCachedDisplayValue(track: LocalCachedTrack, sortKey: FavoriteSortKey): String {
+    return when (sortKey) {
+        FavoriteSortKey.Title -> track.title.ifBlank { "Untitled" }
+        FavoriteSortKey.Artist -> favoriteDisplayArtist(track.artist)
+    }
 }
