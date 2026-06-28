@@ -90,6 +90,8 @@ class SearchCoordinator(
         updateSearchState {
             it.copy(
                 videoMatches = emptyList(),
+                pendingTrackName = null,
+                pendingTrackArtist = null,
                 spotifyResults = emptyList(),
                 spotifyLoading = true
             )

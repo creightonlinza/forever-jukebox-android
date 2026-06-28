@@ -131,6 +131,27 @@ class MainViewModelCastQueueTest {
     }
 
     @Test
+    fun resolveRemoteVideoSelectionKeepsArtistWhenOnlyArtistPending() {
+        // Hardening: even if the title has to fall back to the video's own title, the
+        // pending artist must not be dropped. Guards the cast-connect regression where
+        // search-context metadata was partially lost.
+        val selection = resolveRemoteVideoSelection(
+            item = RemoteVideoSearchItem(
+                id = "yt1",
+                title = "YouTube Title"
+            ),
+            search = SearchState(
+                pendingTrackName = "   ",
+                pendingTrackArtist = "Spotify Artist"
+            )
+        )
+
+        assertEquals("yt1", selection?.youtubeId)
+        assertEquals("YouTube Title", selection?.title)
+        assertEquals("Spotify Artist", selection?.artist)
+    }
+
+    @Test
     fun resolveRemoteVideoSelectionUsesYoutubeTitleWithoutPendingMetadata() {
         val selection = resolveRemoteVideoSelection(
             item = RemoteVideoSearchItem(

@@ -781,9 +781,12 @@ class PlaybackCoordinator(
                     isCasting = it.playback.isCasting,
                     castDeviceName = it.playback.castDeviceName
                 ),
+                // Note: pendingTrackName/pendingTrackArtist are intentionally NOT cleared
+                // here. They are search-context metadata describing the still-visible
+                // videoMatches list (which this reset leaves intact), so their lifecycle
+                // is tied to the results list, not to a playback reset. They are cleared
+                // where videoMatches is cleared/replaced (search start, track committed).
                 search = it.search.copy(
-                    pendingTrackName = null,
-                    pendingTrackArtist = null,
                     spotifyLoading = false,
                     youtubeLoading = false
                 )

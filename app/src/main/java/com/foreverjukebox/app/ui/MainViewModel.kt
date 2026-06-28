@@ -93,13 +93,11 @@ internal fun resolveRemoteVideoSelection(
     val youtubeId = item.id.takeIfNotBlank() ?: return null
     val pendingTitle = search.pendingTrackName.takeIfNotBlank()
     val pendingArtist = search.pendingTrackArtist.takeIfNotBlank()
-    val hasPendingTrackMeta = pendingTitle != null || pendingArtist != null
-    val title = if (hasPendingTrackMeta) {
-        pendingTitle
-    } else {
-        item.title.takeIfNotBlank()
-    }
-    val artist = if (hasPendingTrackMeta) pendingArtist else null
+    // Resolve each field independently so a partial pending state can never silently
+    // drop the artist just because the title fell back to the video's own title.
+    // The video item carries no artist, so artist can only come from pending metadata.
+    val title = pendingTitle ?: item.title.takeIfNotBlank()
+    val artist = pendingArtist
     return RemoteVideoSelection(
         youtubeId = youtubeId,
         title = title,
