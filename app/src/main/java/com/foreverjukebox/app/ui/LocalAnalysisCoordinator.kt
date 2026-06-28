@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.core.net.toUri
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.local.AudioTooLargeException
 import com.foreverjukebox.app.local.LocalAnalysisArtifact
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.local.LocalAnalysisUpdate
@@ -86,6 +87,11 @@ class LocalAnalysisCoordinator(
                 // No-op: user cancelled.
             } catch (_: UnsupportedAudioFormatException) {
                 playbackCoordinator.setAnalysisError("Unsupported audio format")
+                applyActiveTab(TabId.Input, true)
+            } catch (error: AudioTooLargeException) {
+                playbackCoordinator.setAnalysisError(
+                    ErrorDisplay.clean(error.message, "This track is too large to analyze on this device.")
+                )
                 applyActiveTab(TabId.Input, true)
             } catch (error: NativeLocalAnalysisNotReadyException) {
                 playbackCoordinator.setAnalysisError(
