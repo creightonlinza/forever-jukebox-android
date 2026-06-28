@@ -223,13 +223,18 @@ class LocalAnalysisService(
                 ensureNotCancelled()
 
                 emitProgress(22, "Processing audio")
-                val monoSource = decoded.monoSamples
+                var monoSource: FloatArray? = decoded.monoSamples
                 ensureNotCancelled()
 
                 emitProgress(30, "Processing audio")
-                logInfo("Stage Resample 22050 start: sourceSamples=${monoSource.size}, heap=${heapSummary()}")
-                val mono22050 = resampler.resample(monoSource, decoded.sampleRate, 22_050)
+                logInfo("Stage Resample 22050 start: sourceSamples=${monoSource!!.size}, heap=${heapSummary()}")
+                val mono22050 = resampler.resample(monoSource!!, decoded.sampleRate, 22_050)
                 logInfo("Stage Resample 22050 complete: samples=${mono22050.size}, heap=${heapSummary()}")
+                // Free the full-rate buffer now: nothing past this point needs it,
+                // and keeping it alive through the upsample is what pushed the peak
+                // over the heap limit. Drop both references so it can be collected.
+                monoSource = null
+                decoded.monoSamples = FloatArray(0)
                 ensureNotCancelled()
 
                 emitProgress(45, "Processing features")
@@ -239,9 +244,6 @@ class LocalAnalysisService(
                 logInfo("Stage Upsample 44100 start: sourceSamples=${mono22050.size}, heap=${heapSummary()}")
                 val mono44100From22050 = resampler.resample(mono22050, 22_050, 44_100)
                 logInfo("Stage Upsample 44100 complete: samples=${mono44100From22050.size}, heap=${heapSummary()}")
-                ensureNotCancelled()
-
-                decoded.monoSamples = FloatArray(0)
                 ensureNotCancelled()
 
                 val (essentiaSamples, essentiaSampleRate, madmomSamples, madmomSampleRate, essentiaProfile) =
@@ -314,6 +316,9 @@ class LocalAnalysisService(
         } catch (unsupported: UnsupportedAudioFormatException) {
             logError("Local analysis unsupported format: ${unsupported.message}", unsupported)
             close(unsupported)
+        } catch (tooLarge: AudioTooLargeException) {
+            logError("Local analysis track too large: ${tooLarge.message}", tooLarge)
+            close(tooLarge)
         } catch (error: NativeLocalAnalysisNotReadyException) {
             logError("Local analysis failed: ${error.message}", error)
             close(error)
@@ -329,6 +334,17 @@ class LocalAnalysisService(
         } catch (error: SecurityException) {
             logError("Local analysis failed: ${error.message}", error)
             close(error)
+        } catch (oom: OutOfMemoryError) {
+            // Backstop for any allocation that slips past the preemptive budget
+            // check (e.g. a native analysis buffer, or an under-estimated duration).
+            // Convert to a domain exception so it surfaces as a clean message
+            // instead of escaping to the uncaught-exception handler and crashing.
+            logError("Local analysis ran out of memory", oom)
+            close(
+                AudioTooLargeException(
+                    "This track is too large to analyze on this device."
+                )
+            )
         }
 
         awaitClose {}

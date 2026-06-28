@@ -150,6 +150,17 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
         Log.i(TAG, "Initial downmix config: channels=$channelCount, channelMask=$channelMask")
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
         var lastProgress = -1
+        // Reject tracks whose full-rate mono buffer (and the resampled/analysis
+        // buffers that must coexist with it) would not fit the app heap, before
+        // we allocate or decode anything. See assertWithinMemoryBudget.
+        try {
+            assertWithinMemoryBudget(durationUs, sampleRate)
+        } catch (tooLarge: AudioTooLargeException) {
+            runCatching { decoder.stop() }
+            decoder.release()
+            extractor.release()
+            throw tooLarge
+        }
         val monoSamples = FloatArrayAccumulator(estimateInitialSampleCapacity(durationUs, sampleRate))
         var queuedInputBuffers = 0
         var drainedOutputBuffers = 0
@@ -421,10 +432,51 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
     private fun estimateInitialSampleCapacity(durationUs: Long, sampleRate: Int): Int {
         if (durationUs <= 0L || sampleRate <= 0) return DEFAULT_INITIAL_CAPACITY
         val estimated = ((durationUs.toDouble() / 1_000_000.0) * sampleRate.toDouble()).toLong()
+        // Pre-size to the estimated sample count so the buffer is allocated once,
+        // avoiding the power-of-two doubling that briefly holds the old and new
+        // arrays simultaneously (the original OOM signature). Clamped to the heap
+        // budget; anything larger is rejected earlier by assertWithinMemoryBudget.
         return estimated.coerceIn(
             DEFAULT_INITIAL_CAPACITY.toLong(),
-            MAX_INITIAL_CAPACITY.toLong()
+            maxFullRateSamplesForHeap()
         ).toInt()
+    }
+
+    /**
+     * Throws [AudioTooLargeException] if the estimated full-rate mono buffer
+     * would exceed the share of the heap we can safely devote to it. Sized from
+     * the runtime heap limit so it adapts to the device and to largeHeap (no
+     * fixed minute cap). When duration/sample-rate are unknown we let decoding
+     * proceed and rely on the in-pipeline OutOfMemoryError safety net.
+     */
+    private fun assertWithinMemoryBudget(durationUs: Long, sampleRate: Int) {
+        if (durationUs <= 0L || sampleRate <= 0) return
+        val estimatedSamples = (durationUs.toDouble() / 1_000_000.0) * sampleRate.toDouble()
+        val maxSamples = maxFullRateSamplesForHeap()
+        if (estimatedSamples > maxSamples.toDouble()) {
+            val maxMinutes = (maxSamples.toDouble() / sampleRate.toDouble() / 60.0)
+            Log.w(
+                TAG,
+                "Rejecting track over memory budget: estSamples=${estimatedSamples.toLong()}, " +
+                    "maxSamples=$maxSamples, sampleRate=$sampleRate, heap=${heapSummary()}"
+            )
+            throw AudioTooLargeException(
+                "This track is too long to analyze on this device " +
+                    "(limit about ${maxMinutes.toInt()} minutes)."
+            )
+        }
+    }
+
+    /**
+     * Maximum full-rate mono sample count we allow. The downstream pipeline must
+     * hold the full-rate buffer alongside the 22.05 kHz resample (and its native
+     * scratch) at peak, so we cap the full-rate buffer at a fraction of the heap
+     * that leaves headroom for those coexisting allocations and the rest of the app.
+     */
+    private fun maxFullRateSamplesForHeap(): Long {
+        val maxHeapBytes = Runtime.getRuntime().maxMemory()
+        val budgetBytes = (maxHeapBytes.toDouble() * HEAP_FRACTION_FOR_FULLRATE).toLong()
+        return (budgetBytes / BYTES_PER_FLOAT).coerceAtLeast(DEFAULT_INITIAL_CAPACITY.toLong())
     }
 
     private fun heapSummary(): String {
@@ -437,8 +489,12 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
     companion object {
         private const val TAG = "LocalAudioDecoder"
         private const val DEFAULT_INITIAL_CAPACITY = 4_096
-        private const val MAX_INITIAL_CAPACITY = 6_000_000
         private const val DECODE_STALL_AFTER_EOS_MS = 15_000L
+        private const val BYTES_PER_FLOAT = 4
+        // Fraction of the max heap the full-rate mono buffer may occupy. Kept low
+        // because the resample stage briefly holds this buffer plus its 22.05 kHz
+        // output plus native scratch, and the rest of the app needs heap too.
+        private const val HEAP_FRACTION_FOR_FULLRATE = 0.30
         private const val MINUS_3DB = 0.70710677f
 
         private val CHANNEL_MASK_ORDER = intArrayOf(
