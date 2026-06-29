@@ -93,6 +93,23 @@ class WhatsNewPolicyTest {
     }
 
     @Test
+    fun blankBulletsFallBackToDefaultsAndAreTrimmed() {
+        val fallback = buildWhatsNewPrompt(
+            versionCode = 12,
+            versionName = "v2026.05.1",
+            bullets = listOf(" ", "")
+        )
+        assertEquals(currentWhatsNewBullets, fallback.bullets)
+
+        val trimmed = buildWhatsNewPrompt(
+            versionCode = 12,
+            versionName = "v2026.05.1",
+            bullets = listOf("  spaced  ", " ")
+        )
+        assertEquals(listOf("spaced"), trimmed.bullets)
+    }
+
+    @Test
     fun dismissingDialogRecordsCurrentVersionAndClearsPrompt() {
         val state = UiState(
             appMode = AppMode.Local,
