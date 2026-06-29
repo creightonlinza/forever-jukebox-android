@@ -67,4 +67,4 @@ does in the source code:
 
 ## Contact
 
-Creighton Linza — creightonlinza@gmail.com
+Creighton Linza — foreverjukebox@creighton.dev
