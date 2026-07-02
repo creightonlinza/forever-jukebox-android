@@ -597,6 +597,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            preferences.localAnalysisSortKey.collect { raw ->
+                val sortKey = favoriteSortKeyFromString(raw)
+                _state.update { it.copy(localAnalysisSortKey = sortKey) }
+            }
+        }
+        viewModelScope.launch {
+            preferences.localAnalysisSortDirection.collect { raw ->
+                val sortDirection = favoriteSortDirectionFromString(raw)
+                _state.update { it.copy(localAnalysisSortDirection = sortDirection) }
+            }
+        }
+        viewModelScope.launch {
             preferences.canonizerFinishOutSong.collect { enabled ->
                 controller.autocanonizer.setFinishOutSong(enabled)
                 _state.update {
@@ -2803,6 +2815,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             preferences.setFavoritesSort(sortKey.name, sortDirection.name)
+        }
+    }
+
+    fun setLocalAnalysisSort(sortKey: FavoriteSortKey, sortDirection: FavoriteSortDirection) {
+        if (
+            state.value.localAnalysisSortKey == sortKey &&
+            state.value.localAnalysisSortDirection == sortDirection
+        ) {
+            return
+        }
+        _state.update {
+            it.copy(localAnalysisSortKey = sortKey, localAnalysisSortDirection = sortDirection)
+        }
+        viewModelScope.launch {
+            preferences.setLocalAnalysisSort(sortKey.name, sortDirection.name)
         }
     }
 

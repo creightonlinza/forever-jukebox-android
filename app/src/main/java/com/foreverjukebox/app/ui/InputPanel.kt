@@ -55,7 +55,8 @@ fun InputPanel(
     onOpenFile: (Uri, String?) -> Unit,
     onOpenCachedTrack: (String) -> Unit,
     onAddCachedTrackToPlaylist: (String) -> Unit,
-    onDeleteCachedTrack: (String) -> Unit
+    onDeleteCachedTrack: (String) -> Unit,
+    onSortChange: (FavoriteSortKey, FavoriteSortDirection) -> Unit
 ) {
     val context = LocalContext.current
     val totalRamBytes = remember(context) { resolveTotalRamBytes(context) }
@@ -134,8 +135,8 @@ fun InputPanel(
                     )
                 } else {
                     var query by remember { mutableStateOf("") }
-                    var sortKey by remember { mutableStateOf(FavoriteSortKey.Title) }
-                    var sortDirection by remember { mutableStateOf(FavoriteSortDirection.Ascending) }
+                    val sortKey = state.localAnalysisSortKey
+                    val sortDirection = state.localAnalysisSortDirection
                     val trimmedQuery = query.trim()
                     val filtered = filterLocalCachedTracks(state.localCachedTracks, query)
                     val sorted = sortLocalCachedTracksForDisplay(filtered, sortKey, sortDirection)
@@ -143,10 +144,9 @@ fun InputPanel(
                     val keyboardController = LocalSoftwareKeyboardController.current
                     val onSortSelected: (FavoriteSortKey) -> Unit = { selectedKey ->
                         if (sortKey == selectedKey) {
-                            sortDirection = sortDirection.toggled()
+                            onSortChange(sortKey, sortDirection.toggled())
                         } else {
-                            sortKey = selectedKey
-                            sortDirection = FavoriteSortDirection.Ascending
+                            onSortChange(selectedKey, FavoriteSortDirection.Ascending)
                         }
                     }
 

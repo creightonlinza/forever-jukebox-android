@@ -68,6 +68,9 @@ class AppPreferences(private val context: Context) {
         private val KEY_FAVORITES_SORT_KEY = stringPreferencesKey("favorites_sort_key")
         private val KEY_FAVORITES_SORT_DIRECTION =
             stringPreferencesKey("favorites_sort_direction")
+        private val KEY_LOCAL_ANALYSIS_SORT_KEY = stringPreferencesKey("local_analysis_sort_key")
+        private val KEY_LOCAL_ANALYSIS_SORT_DIRECTION =
+            stringPreferencesKey("local_analysis_sort_direction")
         private val KEY_APP_CONFIG = stringPreferencesKey("app_config")
         private val KEY_CANONIZER_FINISH = booleanPreferencesKey("canonizer_finish_out_song")
         private val KEY_HIGHLIGHT_ANCHOR_BRANCH = booleanPreferencesKey("highlight_anchor_branch")
@@ -112,6 +115,14 @@ class AppPreferences(private val context: Context) {
 
     val favoritesSortDirection: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_FAVORITES_SORT_DIRECTION]
+    }
+
+    val localAnalysisSortKey: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_LOCAL_ANALYSIS_SORT_KEY]
+    }
+
+    val localAnalysisSortDirection: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_LOCAL_ANALYSIS_SORT_DIRECTION]
     }
 
     val appConfig: Flow<ServerAppConfig?> = context.dataStore.data.map { prefs ->
@@ -195,6 +206,13 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[KEY_FAVORITES_SORT_KEY] = sortKey
             prefs[KEY_FAVORITES_SORT_DIRECTION] = sortDirection
+        }
+    }
+
+    suspend fun setLocalAnalysisSort(sortKey: String, sortDirection: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_LOCAL_ANALYSIS_SORT_KEY] = sortKey
+            prefs[KEY_LOCAL_ANALYSIS_SORT_DIRECTION] = sortDirection
         }
     }
 

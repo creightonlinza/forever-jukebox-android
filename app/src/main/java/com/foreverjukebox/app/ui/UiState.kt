@@ -108,6 +108,8 @@ data class UiState(
     val localAnalysisJsonPath: String? = null,
     val localCachedTracks: List<LocalCachedTrack> = emptyList(),
     val localCachedTrackErrorMessage: String? = null,
+    val localAnalysisSortKey: FavoriteSortKey = FavoriteSortKey.Title,
+    val localAnalysisSortDirection: FavoriteSortDirection = FavoriteSortDirection.Ascending,
     val themeMode: ThemeMode = ThemeMode.System,
     val activeTab: TabId = TabId.Top,
     val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,

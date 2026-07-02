@@ -67,7 +67,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                             onOpenFile = viewModel::startLocalAnalysis,
                             onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
                             onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
-                            onDeleteCachedTrack = viewModel::deleteCachedLocalTrack
+                            onDeleteCachedTrack = viewModel::deleteCachedLocalTrack,
+                            onSortChange = viewModel::setLocalAnalysisSort
                         )
                         TabId.Top,
                         TabId.Search -> ServerTabContent(
