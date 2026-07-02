@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 internal val currentWhatsNewBullets = listOf(
+    "Redesigned interface, fresh new look!",
     "Added minimum branch length Tuning slider",
     "Can now display YouTube thumbnail previews (long press on a YT search result)",
     "New Audio Modes: 8-bit, Underwater, Cathedral & More Cowbell",

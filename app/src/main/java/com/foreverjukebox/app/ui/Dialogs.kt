@@ -533,20 +533,21 @@ fun DeleteTrackDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
+    val dangerColor = LocalThemeTokens.current.danger
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             Button(
                 onClick = onConfirm,
                 colors = pillButtonColors(),
-                border = BorderStroke(1.dp, DeleteActionColor),
+                border = BorderStroke(1.dp, dangerColor),
                 shape = PillShape,
                 contentPadding = SmallButtonPadding,
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
                 Text(
                     "Delete",
-                    color = DeleteActionColor,
+                    color = dangerColor,
                     style = MaterialTheme.typography.labelSmall
                 )
             }

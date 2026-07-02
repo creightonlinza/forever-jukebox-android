@@ -16,9 +16,7 @@ data class ThemeTokens(
     val panelSurface: Color,
     val heroSurface: Color,
     val controlSurface: Color,
-    val controlSurfaceHover: Color,
     val panelBorder: Color,
-    val heroBorder: Color,
     val controlBorder: Color,
     val accent: Color,
     val titleAccent: Color,
@@ -27,10 +25,19 @@ data class ThemeTokens(
     val edgeStroke: Color,
     val beatFill: Color,
     val beatHighlight: Color,
-    val vizBackground: Color
+    val vizBackground: Color,
+    // Destructive actions and the anchor-branch highlight share one red.
+    val danger: Color,
+    // Autocanonizer cursor/tile colors (match the web palette by default).
+    val canonMain: Color,
+    val canonOther: Color
 )
 
 data class ThemeConfig(val dark: ThemeTokens, val light: ThemeTokens)
+
+internal val DefaultDangerColor = Color(0xFFE35A5A)
+internal val DefaultCanonMainColor = Color(0xFF4F8FFF)
+internal val DefaultCanonOtherColor = Color(0xFF10DF00)
 
 private val DarkTokens = ThemeTokens(
     background = Color(0xFF000000),
@@ -38,9 +45,7 @@ private val DarkTokens = ThemeTokens(
     panelSurface = Color(0xFF141922),
     heroSurface = Color(0xFF1A1F27),
     controlSurface = Color(0xFF1F2633),
-    controlSurfaceHover = Color(0xFF202835),
     panelBorder = Color(0xFF283142),
-    heroBorder = Color(0xFF2B3442),
     controlBorder = Color(0xFF3B465B),
     accent = Color(0xFF4AC7FF),
     titleAccent = Color(0xFFF1C47A),
@@ -49,7 +54,10 @@ private val DarkTokens = ThemeTokens(
     edgeStroke = Color(0x804AC7FF),
     beatFill = Color(0xFFFFD46A),
     beatHighlight = Color(0xFFFFD46A),
-    vizBackground = Color(0xFF232B3D)
+    vizBackground = Color(0xFF232B3D),
+    danger = DefaultDangerColor,
+    canonMain = DefaultCanonMainColor,
+    canonOther = DefaultCanonOtherColor
 )
 
 private val LightTokens = ThemeTokens(
@@ -58,9 +66,7 @@ private val LightTokens = ThemeTokens(
     panelSurface = Color(0xFFF2ECFB),
     heroSurface = Color(0xFFEFE5FF),
     controlSurface = Color(0xFFE8DBFF),
-    controlSurfaceHover = Color(0xFFDDCCFF),
     panelBorder = Color(0x33492B71),
-    heroBorder = Color(0x425B3096),
     controlBorder = Color(0x57583898),
     accent = Color(0xFF2E8BFF),
     titleAccent = Color(0xFFB144FF),
@@ -69,7 +75,10 @@ private val LightTokens = ThemeTokens(
     edgeStroke = Color(0x704D3078),
     beatFill = Color(0xFFB144FF),
     beatHighlight = Color(0xFFB144FF),
-    vizBackground = Color(0xFFE9DBFF)
+    vizBackground = Color(0xFFE9DBFF),
+    danger = DefaultDangerColor,
+    canonMain = DefaultCanonMainColor,
+    canonOther = DefaultCanonOtherColor
 )
 
 val LocalThemeTokens = staticCompositionLocalOf { DarkTokens }
@@ -91,27 +100,35 @@ fun loadThemeConfig(context: Context): ThemeConfig? {
     }
 }
 
+// Unknown keys in theme.json (including the retired controlSurfaceHover and
+// heroBorder) are ignored so older theme files still load.
 internal fun parseThemeTokens(obj: JSONObject): ThemeTokens {
     val raw = mutableMapOf<String, String>()
-    raw["background"] = obj.getString("background")
-    raw["onBackground"] = obj.getString("onBackground")
-    raw["panelSurface"] = obj.getString("panelSurface")
-    raw["heroSurface"] = obj.getString("heroSurface")
-    raw["controlSurface"] = obj.getString("controlSurface")
-    raw["controlSurfaceHover"] = obj.getString("controlSurfaceHover")
-    raw["panelBorder"] = obj.getString("panelBorder")
-    raw["heroBorder"] = obj.getString("heroBorder")
-    raw["controlBorder"] = obj.getString("controlBorder")
-    raw["accent"] = obj.getString("accent")
-    raw["titleAccent"] = obj.getString("titleAccent")
-    if (obj.has("titleGlow")) {
-        raw["titleGlow"] = obj.getString("titleGlow")
+    val keys = listOf(
+        "background",
+        "onBackground",
+        "panelSurface",
+        "heroSurface",
+        "controlSurface",
+        "panelBorder",
+        "controlBorder",
+        "accent",
+        "titleAccent",
+        "muted",
+        "edgeStroke",
+        "beatFill",
+        "beatHighlight",
+        "vizBackground"
+    )
+    for (key in keys) {
+        raw[key] = obj.getString(key)
     }
-    raw["muted"] = obj.getString("muted")
-    raw["edgeStroke"] = obj.getString("edgeStroke")
-    raw["beatFill"] = obj.getString("beatFill")
-    raw["beatHighlight"] = obj.getString("beatHighlight")
-    raw["vizBackground"] = obj.getString("vizBackground")
+    val optionalKeys = listOf("titleGlow", "danger", "canonMain", "canonOther")
+    for (key in optionalKeys) {
+        if (obj.has(key)) {
+            raw[key] = obj.getString(key)
+        }
+    }
     return themeTokensFromRaw(raw)
 }
 
@@ -124,9 +141,7 @@ internal fun themeTokensFromRaw(raw: Map<String, String>): ThemeTokens {
         panelSurface = parseColor(raw.getValue("panelSurface")),
         heroSurface = parseColor(raw.getValue("heroSurface")),
         controlSurface = parseColor(raw.getValue("controlSurface")),
-        controlSurfaceHover = parseColor(raw.getValue("controlSurfaceHover")),
         panelBorder = parseColor(raw.getValue("panelBorder")),
-        heroBorder = parseColor(raw.getValue("heroBorder")),
         controlBorder = parseColor(raw.getValue("controlBorder")),
         accent = parseColor(raw.getValue("accent")),
         titleAccent = titleAccent,
@@ -135,7 +150,10 @@ internal fun themeTokensFromRaw(raw: Map<String, String>): ThemeTokens {
         edgeStroke = parseColor(raw.getValue("edgeStroke")),
         beatFill = parseColor(raw.getValue("beatFill")),
         beatHighlight = parseColor(raw.getValue("beatHighlight")),
-        vizBackground = parseColor(raw.getValue("vizBackground"))
+        vizBackground = parseColor(raw.getValue("vizBackground")),
+        danger = raw["danger"]?.let(::parseColor) ?: DefaultDangerColor,
+        canonMain = raw["canonMain"]?.let(::parseColor) ?: DefaultCanonMainColor,
+        canonOther = raw["canonOther"]?.let(::parseColor) ?: DefaultCanonOtherColor
     )
 }
 

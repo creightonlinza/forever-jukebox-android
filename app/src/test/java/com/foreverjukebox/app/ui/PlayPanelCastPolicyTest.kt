@@ -64,23 +64,6 @@ class PlayPanelCastPolicyTest {
     }
 
     @Test
-    fun resolvePlaybackHeaderTitleShowsCastLoadingLabel() {
-        val castingLoading = PlaybackState(
-            isCasting = true,
-            castPlaybackState = "loading",
-            playTitle = "Old Title — Old Artist"
-        )
-        val normal = PlaybackState(
-            isCasting = false,
-            analysisInFlight = false,
-            playTitle = "Real Title — Artist"
-        )
-
-        assertTrue(resolvePlaybackHeaderTitle(castingLoading)?.contains("Loading track on cast device") == true)
-        assertTrue(resolvePlaybackHeaderTitle(normal)?.contains("Real Title") == true)
-    }
-
-    @Test
     fun resolveListenContentModeSelectsCastBeforeAnythingElse() {
         val playback = PlaybackState(
             isCasting = true,

@@ -367,14 +367,14 @@ private fun BoxWithConstraintsScope.FullscreenBottomControls(
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 AutoMarqueeText(
-                    text = fullscreenNowPlaying(playback),
+                    text = nowPlayingLine(playback),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = fullscreenPlaybackSummary(playback),
+                    text = playbackSummaryLine(playback),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -445,29 +445,3 @@ private fun FullscreenTransportButtons(
     }
 }
 
-private fun fullscreenNowPlaying(playback: PlaybackState): String {
-    val title = playback.trackTitle.orEmpty()
-    val displayTitle = if (
-        playback.playMode == PlaybackMode.Jukebox &&
-        playback.jukeboxAudioMode != JukeboxAudioMode.Off &&
-        title.isNotBlank()
-    ) {
-        "$title (${playback.jukeboxAudioMode.wireValue})"
-    } else {
-        title
-    }
-    val artist = playback.trackArtist.orEmpty()
-    return when {
-        displayTitle.isNotBlank() && artist.isNotBlank() -> "$displayTitle - $artist"
-        displayTitle.isNotBlank() -> displayTitle
-        else -> "Forever Jukebox"
-    }
-}
-
-private fun fullscreenPlaybackSummary(playback: PlaybackState): String {
-    return if (playback.playMode == PlaybackMode.Autocanonizer) {
-        "Listen Time: ${playback.listenTime}"
-    } else {
-        "Listen Time: ${playback.listenTime} - Total Beats: ${playback.beatsPlayed}"
-    }
-}

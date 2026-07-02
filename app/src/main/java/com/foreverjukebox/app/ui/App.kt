@@ -54,31 +54,47 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         onAppModeChange = viewModel::setAppMode,
                         onRefreshCacheSize = viewModel::refreshCacheSize,
                         onClearCache = viewModel::clearCache,
-                        onTabSelected = viewModel::setActiveTab,
                         onCastSessionStarted = {},
                         onOpenSleepTimer = { showSleepTimer = true },
                         onOpenWhatsNew = viewModel::showWhatsNewFromSettings
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    when (state.activeTab) {
-                        TabId.Input -> InputPanel(
-                            state = state,
-                            onOpenFile = viewModel::startLocalAnalysis,
-                            onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
-                            onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
-                            onDeleteCachedTrack = viewModel::deleteCachedLocalTrack,
-                            onSortChange = viewModel::setLocalAnalysisSort
-                        )
-                        TabId.Top,
-                        TabId.Search -> ServerTabContent(
-                            tabId = state.activeTab,
-                            state = state,
-                            viewModel = viewModel
-                        )
-                        TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
-                        TabId.Faq -> FaqPanel()
+                    Box(modifier = Modifier.weight(1f, fill = true)) {
+                        when (state.activeTab) {
+                            TabId.Input -> InputPanel(
+                                state = state,
+                                onOpenFile = viewModel::startLocalAnalysis,
+                                onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
+                                onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
+                                onDeleteCachedTrack = viewModel::deleteCachedLocalTrack,
+                                onSortChange = viewModel::setLocalAnalysisSort
+                            )
+                            TabId.Top,
+                            TabId.Search -> ServerTabContent(
+                                tabId = state.activeTab,
+                                state = state,
+                                viewModel = viewModel
+                            )
+                            TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
+                            TabId.Faq -> FaqPanel()
+                        }
                     }
+                    if (shouldShowPlaybackBar(state.playback)) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        PlaybackBar(
+                            state = state,
+                            onTogglePlayback = viewModel::togglePlayback,
+                            onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
+                            onSkipNext = viewModel::skipToNextPlaylistTrack,
+                            onOpenPlayTab = { viewModel.setActiveTab(TabId.Play) }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    BottomNavBar(
+                        state = state,
+                        onTabSelected = viewModel::setActiveTab
+                    )
                 }
             }
 

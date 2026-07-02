@@ -1,7 +1,5 @@
 package com.foreverjukebox.app.ui
 
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import com.foreverjukebox.app.engine.JukeboxState
 import com.foreverjukebox.app.visualization.JumpLine
 
@@ -11,31 +9,6 @@ enum class FavoriteToggleResult {
     LimitReached,
     BlockedInFlight,
     NoTrack
-}
-
-internal fun shouldPulseListenTab(state: UiState): Boolean {
-    return state.playback.isRunning && state.activeTab != TabId.Play
-}
-
-internal fun pulsingListenContainerColor(
-    titleAccent: Color,
-    onBackground: Color,
-    pulseAmount: Float
-): Color {
-    val normalized = pulseAmount.coerceIn(0f, 1f)
-    val midBackground = onBackground.copy(alpha = 0.12f)
-    return lerp(titleAccent, midBackground, normalized)
-}
-
-internal fun pulsingListenContentColor(onBackground: Color, pulseAmount: Float): Color {
-    val normalized = pulseAmount.coerceIn(0f, 1f)
-    val inverse = Color(
-        red = 1f - onBackground.red,
-        green = 1f - onBackground.green,
-        blue = 1f - onBackground.blue,
-        alpha = onBackground.alpha
-    )
-    return lerp(inverse, onBackground, normalized)
 }
 
 internal fun hasRealFavoritesSyncPath(state: UiState): Boolean {
@@ -63,4 +36,41 @@ internal fun jumpLineForEngineState(engineState: JukeboxState, startedAt: Long):
     if (!engineState.lastJumped) return null
     val jumpTo = engineState.lastJumpToIndex ?: engineState.currentBeatIndex
     return JumpLine(jumpFrom, jumpTo, startedAt)
+}
+
+// Shared by the persistent playback bar and the fullscreen bottom controls so
+// both render identical now-playing data.
+internal fun nowPlayingLine(playback: PlaybackState): String {
+    val title = playback.trackTitle.orEmpty()
+    val displayTitle = if (
+        playback.playMode == PlaybackMode.Jukebox &&
+        playback.jukeboxAudioMode != JukeboxAudioMode.Off &&
+        title.isNotBlank()
+    ) {
+        "$title (${playback.jukeboxAudioMode.wireValue})"
+    } else {
+        title
+    }
+    val artist = playback.trackArtist.orEmpty()
+    return when {
+        displayTitle.isNotBlank() && artist.isNotBlank() -> "$displayTitle - $artist"
+        displayTitle.isNotBlank() -> displayTitle
+        else -> "Forever Jukebox"
+    }
+}
+
+internal fun playbackSummaryLine(playback: PlaybackState): String {
+    return if (playback.playMode == PlaybackMode.Autocanonizer) {
+        "Listen Time: ${playback.listenTime}"
+    } else {
+        "Listen Time: ${playback.listenTime} - Total Beats: ${playback.beatsPlayed}"
+    }
+}
+
+internal fun shouldShowPlaybackBar(playback: PlaybackState): Boolean {
+    return when (resolveListenContentMode(playback)) {
+        ListenContentMode.LocalReady -> true
+        ListenContentMode.Cast -> playback.hasCastTrack()
+        ListenContentMode.Empty, ListenContentMode.None -> false
+    }
 }
