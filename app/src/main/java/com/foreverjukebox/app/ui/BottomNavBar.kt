@@ -15,7 +15,6 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
@@ -26,13 +25,11 @@ fun BottomNavBar(state: UiState, onTabSelected: (TabId) -> Unit) {
     val tokens = LocalThemeTokens.current
     val tabs = tabsForMode(state.appMode)
     NavigationBar(
-        containerColor = tokens.panelSurface,
+        containerColor = tokens.background,
         contentColor = tokens.onBackground,
         // The app column already applies navigation-bar insets.
         windowInsets = WindowInsets(0.dp),
-        modifier = Modifier
-            .height(BottomNavBarHeight)
-            .clip(BottomBarSurfaceShape)
+        modifier = Modifier.height(BottomNavBarHeight)
     ) {
         tabs.forEach { tabId ->
             NavigationBarItem(

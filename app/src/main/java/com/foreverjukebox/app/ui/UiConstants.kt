@@ -15,19 +15,6 @@ val SurfaceCornerRadius = 8.dp
 val SurfaceShape = RoundedCornerShape(SurfaceCornerRadius)
 val PillShape = SurfaceShape
 
-// Header sits flush against the top of the screen so its color extends behind
-// the status bar; only the bottom corners are rounded.
-val HeaderSurfaceShape = RoundedCornerShape(
-    bottomStart = SurfaceCornerRadius,
-    bottomEnd = SurfaceCornerRadius
-)
-
-// Bottom nav mirrors the header: flush against the screen bottom, so only the
-// top corners are rounded.
-val BottomBarSurfaceShape = RoundedCornerShape(
-    topStart = SurfaceCornerRadius,
-    topEnd = SurfaceCornerRadius
-)
 val appFontFamily = FontFamily(
     Font(resId = R.font.barlow_regular, weight = FontWeight.Normal),
     Font(resId = R.font.barlow_semi_bold, weight = FontWeight.SemiBold)

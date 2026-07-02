@@ -95,8 +95,7 @@ fun HeaderBar(
 
     Column(
         modifier = Modifier
-            .clip(HeaderSurfaceShape)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
     ) {
@@ -164,8 +163,7 @@ fun HeaderBar(
 fun TitleOnlyHeaderBar() {
     Column(
         modifier = Modifier
-            .clip(HeaderSurfaceShape)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
     ) {
