@@ -23,11 +23,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.core.graphics.toColorInt
+import androidx.compose.ui.graphics.lerp
 import com.foreverjukebox.app.autocanonizer.AutocanonizerBeat
 import com.foreverjukebox.app.autocanonizer.AutocanonizerController
 import com.foreverjukebox.app.autocanonizer.AutocanonizerData
-import com.foreverjukebox.app.autocanonizer.AutocanonizerMainColor
-import com.foreverjukebox.app.autocanonizer.AutocanonizerOtherColor
+import com.foreverjukebox.app.ui.LocalThemeTokens
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
@@ -55,6 +55,15 @@ fun AutocanonizerVisualization(
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val layout = remember(data, canvasSize) {
         computeLayout(data, canvasSize.width.toFloat(), canvasSize.height.toFloat())
+    }
+    val tokens = LocalThemeTokens.current
+    val palette = remember(tokens) {
+        AutocanonizerPalette(
+            main = tokens.canonMain,
+            other = tokens.canonOther,
+            fallbackTile = lerp(tokens.vizBackground, tokens.onBackground, 0.15f),
+            baseline = tokens.onBackground.copy(alpha = 0.08f)
+        )
     }
     var otherAnim by remember(data) { mutableStateOf<OtherCursorAnimation?>(null) }
     var animatedOtherCursor by remember(data) { mutableStateOf<Offset?>(null) }
@@ -174,10 +183,10 @@ fun AutocanonizerVisualization(
                 else -> null
             }
 
-            drawConnections(currentLayout, beats)
-            drawBeatTiles(currentLayout, beats, tileColorOverrides)
+            drawConnections(currentLayout, beats, palette)
+            drawBeatTiles(currentLayout, beats, tileColorOverrides, palette)
             drawSections(currentLayout, sections)
-            drawConnectionBaseline(currentLayout)
+            drawConnectionBaseline(currentLayout, palette)
             drawOverlay(
                 layout = currentLayout,
                 beats = beats,
@@ -186,11 +195,21 @@ fun AutocanonizerVisualization(
                 secondaryOnly = forcedOtherIndex != null,
                 animatedOtherCursor = if (forcedOtherIndex == null) animatedOtherCursor else null,
                 lastOtherCursor = lastOtherCursor,
-                holdOtherCursor = forcedOtherIndex == null && otherAnimEndedAtNanos != null
+                holdOtherCursor = forcedOtherIndex == null && otherAnimEndedAtNanos != null,
+                palette = palette
             )
         }
     }
 }
+
+// Theme-derived colors for the autocanonizer canvas, resolved once in the
+// composable and threaded into the DrawScope helpers.
+internal data class AutocanonizerPalette(
+    val main: Color,
+    val other: Color,
+    val fallbackTile: Color,
+    val baseline: Color
+)
 
 private data class BeatRect(
     val x: Float,
@@ -407,7 +426,8 @@ internal fun pointAtLength(
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConnections(
     layout: VizLayout,
-    beats: List<AutocanonizerBeat>
+    beats: List<AutocanonizerBeat>,
+    palette: AutocanonizerPalette
 ) {
     val baseY = layout.topPad + layout.tileHeight - 4f
     for (i in 0 until beats.lastIndex) {
@@ -420,7 +440,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConnections(
         }
         drawPath(
             path = path,
-            color = parseColor(otherBeat.colorHex).copy(alpha = 0.6f),
+            color = parseColor(otherBeat.colorHex, palette.fallbackTile).copy(alpha = 0.6f),
             style = Stroke(width = 3f)
         )
     }
@@ -429,7 +449,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConnections(
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBeatTiles(
     layout: VizLayout,
     beats: List<AutocanonizerBeat>,
-    tileColorOverrides: Map<Int, String>
+    tileColorOverrides: Map<Int, String>,
+    palette: AutocanonizerPalette
 ) {
     for (i in beats.indices) {
         val rect = layout.beatLayouts.getOrNull(i) ?: continue
@@ -438,10 +459,10 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBeatTiles(
         val nextTop = if (nextRect != null) minOf(nextRect.y, rect.y + rect.height) else rect.y
 
         val color = when (val overrideColor = tileColorOverrides[i]) {
-            AutocanonizerController.PRIMARY_TILE_COLOR_HEX -> AutocanonizerMainColor
-            AutocanonizerController.OTHER_TILE_COLOR_HEX -> AutocanonizerOtherColor
-            null -> parseColor(beats[i].colorHex)
-            else -> parseColor(overrideColor)
+            AutocanonizerController.PRIMARY_TILE_COLOR_HEX -> palette.main
+            AutocanonizerController.OTHER_TILE_COLOR_HEX -> palette.other
+            null -> parseColor(beats[i].colorHex, palette.fallbackTile)
+            else -> parseColor(overrideColor, palette.fallbackTile)
         }
         val path = Path().apply {
             moveTo(rect.x, rect.y)
@@ -475,12 +496,15 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSections(
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConnectionBaseline(layout: VizLayout) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConnectionBaseline(
+    layout: VizLayout,
+    palette: AutocanonizerPalette
+) {
     if (layout.connectionHeight <= 0f) {
         return
     }
     drawLine(
-        color = Color.White.copy(alpha = 0.08f),
+        color = palette.baseline,
         start = Offset(layout.hPad, layout.topPad + layout.tileHeight + 4f),
         end = Offset(layout.width - layout.hPad, layout.topPad + layout.tileHeight + 4f),
         strokeWidth = 1f
@@ -495,7 +519,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawOverlay(
     secondaryOnly: Boolean,
     animatedOtherCursor: Offset?,
     lastOtherCursor: Offset?,
-    holdOtherCursor: Boolean
+    holdOtherCursor: Boolean,
+    palette: AutocanonizerPalette
 ) {
     if (currentIndex !in beats.indices) {
         return
@@ -506,20 +531,20 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawOverlay(
     val sectionY = layout.topPad + layout.tileHeight - 20f
 
     drawRect(
-        color = AutocanonizerMainColor.copy(alpha = 0.65f),
+        color = palette.main.copy(alpha = 0.65f),
         topLeft = Offset(currentRect.x, currentRect.y),
         size = Size(currentRect.width, currentRect.height)
     )
     if (otherRect != null) {
         drawRect(
-            color = AutocanonizerOtherColor.copy(alpha = 0.5f),
+            color = palette.other.copy(alpha = 0.5f),
             topLeft = Offset(otherRect.x, otherRect.y),
             size = Size(otherRect.width, otherRect.height)
         )
     }
 
     drawRect(
-        color = AutocanonizerMainColor,
+        color = palette.main,
         topLeft = Offset(currentRect.x - 4f, sectionY),
         size = Size(8f, 8f)
     )
@@ -534,7 +559,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawOverlay(
     }
     if (otherCursor != null) {
         drawRect(
-            color = AutocanonizerOtherColor,
+            color = palette.other,
             topLeft = Offset(otherCursor.x - 4f, otherCursor.y),
             size = Size(8f, 8f)
         )
@@ -546,10 +571,10 @@ private fun sectionColor(index: Int): Color {
     return Color.hsv(hue, 0.8f, 0.55f, alpha = 0.75f)
 }
 
-private fun parseColor(hex: String): Color {
+private fun parseColor(hex: String, fallback: Color): Color {
     return runCatching {
         Color(hex.toColorInt())
     }.getOrElse {
-        Color(0xFF333333)
+        fallback
     }
 }

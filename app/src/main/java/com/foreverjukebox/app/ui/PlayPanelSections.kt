@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,27 +13,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -58,8 +51,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.foreverjukebox.app.autocanonizer.AutocanonizerMainColor
-import com.foreverjukebox.app.autocanonizer.AutocanonizerOtherColor
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.visualization.AutocanonizerVisualization
 import com.foreverjukebox.app.visualization.EdgeRouting
@@ -69,10 +60,11 @@ import com.foreverjukebox.app.visualization.edgeRoutingForVisualization
 import com.foreverjukebox.app.visualization.positioners
 import com.foreverjukebox.app.visualization.prefersWideAspectForVisualization
 
+// Track title/artist and listen-time data live in the persistent playback
+// bar; this row is action icons only.
 @Composable
 private fun PlaybackHeaderRow(
     playback: PlaybackState,
-    headerTitle: String?,
     inAutocanonizer: Boolean,
     showServerActions: Boolean,
     showControls: Boolean,
@@ -92,18 +84,7 @@ private fun PlaybackHeaderRow(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (!headerTitle.isNullOrBlank()) {
-            AutoMarqueeText(
-                text = headerTitle,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier
-                    .weight(1f, fill = true)
-                    .padding(end = 8.dp)
-            )
-        } else {
-            Spacer(modifier = Modifier.weight(1f, fill = true))
-        }
+        Spacer(modifier = Modifier.weight(1f, fill = true))
         if (showControls) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (showDeleteTrackAction) {
@@ -119,14 +100,14 @@ private fun PlaybackHeaderRow(
                         if (playback.deleteInFlight) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
-                                color = DeleteActionColor,
+                                color = themeTokens.danger,
                                 strokeWidth = 2.dp
                             )
                         } else {
                             Icon(
                                 Icons.Outlined.Delete,
                                 contentDescription = "Delete within 30 minutes of creation",
-                                tint = DeleteActionColor,
+                                tint = themeTokens.danger,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -199,10 +180,8 @@ internal fun ColumnScope.CastListenScreen(
     playback: PlaybackState,
     appMode: AppMode?,
     adminKey: String,
-    headerTitle: String?,
     vizLabels: List<String>,
     isFavorite: Boolean,
-    onTogglePlayback: () -> Unit,
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
@@ -211,8 +190,6 @@ internal fun ColumnScope.CastListenScreen(
     favoriteToggleInFlight: Boolean,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onSkipNext: () -> Unit,
     onSelectVisualization: (Int) -> Unit
 ) {
     val hasCastTrack = playback.hasCastTrack()
@@ -221,7 +198,6 @@ internal fun ColumnScope.CastListenScreen(
     val canShowReceiverDetails = playback.castReceiverDetailsReady()
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
     val showPlaylistControls = !inAutocanonizer
-    val playActionLabel = playbackTransportContentDescription(playback)
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
     val themeTokens = LocalThemeTokens.current
@@ -240,7 +216,6 @@ internal fun ColumnScope.CastListenScreen(
         if (hasCastTrack) {
             PlaybackHeaderRow(
                 playback = playback,
-                headerTitle = headerTitle,
                 inAutocanonizer = inAutocanonizer,
                 showServerActions = showServerActions,
                 showControls = canShowTransport,
@@ -332,69 +307,19 @@ internal fun ColumnScope.CastListenScreen(
                             }
                         }
                     }
-                    if (canShowTransport) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    // Transport moved to the persistent playback bar; only the
+                    // playlist shortcut remains on the cast surface.
+                    if (canShowTransport && showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
+                        SquareIconButton(
+                            onClick = onOpenPlaylist,
+                            modifier = Modifier.size(SmallButtonHeight)
                         ) {
-                            if (showPlaylistControls && playlist.canSkipPrevious()) {
-                                SquareIconButton(
-                                    onClick = onSkipPrevious,
-                                    modifier = Modifier.size(SmallButtonHeight)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.SkipPrevious,
-                                        contentDescription = "Previous playlist track",
-                                        tint = MaterialTheme.colorScheme.onBackground,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            Button(
-                                onClick = onTogglePlayback,
-                                colors = pillButtonColors(),
-                                border = pillButtonBorder(),
-                                shape = SurfaceShape,
-                                contentPadding = PaddingValues(0.dp),
-                                modifier = Modifier.size(SmallButtonHeight)
-                            ) {
-                                Icon(
-                                    imageVector = if (playback.isRunning) {
-                                        Icons.Filled.Pause
-                                    } else {
-                                        Icons.Filled.PlayArrow
-                                    },
-                                    contentDescription = playActionLabel,
-                                    tint = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            if (showPlaylistControls && playlist.canSkipNext()) {
-                                SquareIconButton(
-                                    onClick = onSkipNext,
-                                    modifier = Modifier.size(SmallButtonHeight)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.SkipNext,
-                                        contentDescription = "Next playlist track",
-                                        tint = MaterialTheme.colorScheme.onBackground,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            if (showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
-                                SquareIconButton(
-                                    onClick = onOpenPlaylist,
-                                    modifier = Modifier.size(SmallButtonHeight)
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Outlined.QueueMusic,
-                                        contentDescription = "Playlist",
-                                        tint = MaterialTheme.colorScheme.onBackground,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
+                            Icon(
+                                Icons.AutoMirrored.Outlined.QueueMusic,
+                                contentDescription = "Playlist",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }
@@ -409,11 +334,9 @@ internal fun ColumnScope.LocalListenScreen(
     appMode: AppMode?,
     adminKey: String,
     tuning: TuningState,
-    headerTitle: String?,
     vizLabels: List<String>,
     jumpLine: JumpLine?,
     isFavorite: Boolean,
-    onTogglePlayback: () -> Unit,
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
@@ -426,8 +349,6 @@ internal fun ColumnScope.LocalListenScreen(
     onSelectBeat: (Int) -> Unit,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onSkipNext: () -> Unit,
     onOpenFullscreen: () -> Unit
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
@@ -447,7 +368,6 @@ internal fun ColumnScope.LocalListenScreen(
         if (showInlineTitleWithControls) {
             PlaybackHeaderRow(
                 playback = playback,
-                headerTitle = headerTitle,
                 inAutocanonizer = inAutocanonizer,
                 showServerActions = showServerActions,
                 showControls = true,
@@ -474,19 +394,11 @@ internal fun ColumnScope.LocalListenScreen(
             onSelectBeat = onSelectBeat,
             playlist = playlist,
             onOpenPlaylist = onOpenPlaylist,
-            onSkipPrevious = onSkipPrevious,
-            onSkipNext = onSkipNext,
-            onOpenFullscreen = onOpenFullscreen,
-            onTogglePlayback = onTogglePlayback
+            onOpenFullscreen = onOpenFullscreen
         )
         if (shouldShowAutocanonizerCursorTimes(playback)) {
             AutocanonizerCursorTimeRow(state = playback.autocanonizer)
         }
-        LocalListenFooter(
-            listenTime = playback.listenTime,
-            beatsPlayed = playback.beatsPlayed,
-            inAutocanonizer = inAutocanonizer
-        )
     }
 }
 
@@ -503,17 +415,13 @@ private fun ColumnScope.LocalVisualizationPanel(
     onSelectBeat: (Int) -> Unit,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onSkipNext: () -> Unit,
-    onOpenFullscreen: () -> Unit,
-    onTogglePlayback: () -> Unit
+    onOpenFullscreen: () -> Unit
 ) {
     val density = LocalDensity.current
     var vizContainerSize by remember { mutableStateOf(IntSize.Zero) }
     var showVizMenu by remember { mutableStateOf(false) }
     var showModeMenu by remember { mutableStateOf(false) }
     val themeTokens = LocalThemeTokens.current
-    val playActionLabel = playbackTransportContentDescription(playback)
     val edgeRouting = edgeRoutingForVisualization(playback.activeVizIndex)
     val isLandscapeVizContainer = vizContainerSize.width > vizContainerSize.height
     val useWideLayout =
@@ -570,14 +478,9 @@ private fun ColumnScope.LocalVisualizationPanel(
             onSetCanonizerFinishOutSong = onSetCanonizerFinishOutSong
         )
         LocalVisualizationBottomControls(
-            playback = playback,
             playlist = playlist,
-            playActionLabel = playActionLabel,
             onOpenPlaylist = onOpenPlaylist,
-            onSkipPrevious = onSkipPrevious,
-            onSkipNext = onSkipNext,
-            onOpenFullscreen = onOpenFullscreen,
-            onTogglePlayback = onTogglePlayback
+            onOpenFullscreen = onOpenFullscreen
         )
     }
 }
@@ -767,16 +670,13 @@ private fun BoxScope.LocalVisualizationTopEndControls(
     }
 }
 
+// Transport lives in the persistent playback bar; the viz overlay keeps only
+// the playlist and fullscreen shortcuts.
 @Composable
 private fun BoxScope.LocalVisualizationBottomControls(
-    playback: PlaybackState,
     playlist: JukeboxPlaylistState,
-    playActionLabel: String,
     onOpenPlaylist: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onSkipNext: () -> Unit,
-    onOpenFullscreen: () -> Unit,
-    onTogglePlayback: () -> Unit
+    onOpenFullscreen: () -> Unit
 ) {
     val showPlaylistControls = shouldShowPlaylistControls(playlist)
     Row(
@@ -808,63 +708,6 @@ private fun BoxScope.LocalVisualizationBottomControls(
             )
         }
     }
-    if (!shouldShowPlaybackTransport(playback)) {
-        return
-    }
-    Row(
-        modifier = Modifier
-            .align(Alignment.BottomStart)
-            .padding(6.dp)
-            .wrapContentWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (showPlaylistControls && playlist.canSkipPrevious()) {
-            SquareIconButton(
-                onClick = onSkipPrevious,
-                modifier = Modifier.size(SmallButtonHeight)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.SkipPrevious,
-                    contentDescription = "Previous playlist track",
-                    tint = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-        Button(
-            onClick = onTogglePlayback,
-            colors = pillButtonColors(),
-            border = pillButtonBorder(),
-            shape = SurfaceShape,
-            contentPadding = PaddingValues(0.dp),
-            modifier = Modifier.size(SmallButtonHeight)
-        ) {
-            Icon(
-                imageVector = if (playback.isRunning) {
-                    Icons.Filled.Pause
-                } else {
-                    Icons.Filled.PlayArrow
-                },
-                contentDescription = playActionLabel,
-                tint = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        if (showPlaylistControls && playlist.canSkipNext()) {
-            SquareIconButton(
-                onClick = onSkipNext,
-                modifier = Modifier.size(SmallButtonHeight)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.SkipNext,
-                    contentDescription = "Next playlist track",
-                    tint = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
 }
 
 internal fun shouldShowAutocanonizerCursorTimes(playback: PlaybackState): Boolean {
@@ -873,6 +716,7 @@ internal fun shouldShowAutocanonizerCursorTimes(playback: PlaybackState): Boolea
 
 @Composable
 private fun AutocanonizerCursorTimeRow(state: AutocanonizerUiState) {
+    val tokens = LocalThemeTokens.current
     val mainTime = formatCursorTime(state.mainSeconds)
     val otherTime = formatCursorTime(state.otherSeconds)
     val totalTime = formatCursorTime(state.trackDurationSeconds)
@@ -885,25 +729,11 @@ private fun AutocanonizerCursorTimeRow(state: AutocanonizerUiState) {
                 "Blue position $mainTime, green position $otherTime, total $totalTime"
         }
     ) {
-        Text(mainTime, color = AutocanonizerMainColor)
+        Text(mainTime, color = tokens.canonMain)
         Text("–", color = mutedColor)
-        Text(otherTime, color = AutocanonizerOtherColor)
+        Text(otherTime, color = tokens.canonOther)
         Text("/", color = mutedColor)
         Text(totalTime, color = mutedColor)
-    }
-}
-
-@Composable
-private fun LocalListenFooter(
-    listenTime: String,
-    beatsPlayed: Int,
-    inAutocanonizer: Boolean
-) {
-    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-        Text("Listen Time: $listenTime", color = MaterialTheme.colorScheme.onBackground)
-        if (!inAutocanonizer) {
-            Text("Total Beats: $beatsPlayed", color = MaterialTheme.colorScheme.onBackground)
-        }
     }
 }
 

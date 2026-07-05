@@ -503,13 +503,6 @@ fun PlaybackState.castReceiverDetailsReady(): Boolean {
     return !isCasting || castControlsReady()
 }
 
-fun resolvePlaybackHeaderTitle(playback: PlaybackState): String? {
-    if (playback.isCasting && playback.castPlaybackState == "loading") {
-        return "Loading track on cast device..."
-    }
-    return playback.playTitle.takeIf { it.isNotBlank() }
-}
-
 fun PlaybackState.shouldShowCastNotification(): Boolean {
     if (!isCasting) return false
     if (isRunning) return true

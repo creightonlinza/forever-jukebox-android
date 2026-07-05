@@ -31,7 +31,6 @@ import kotlin.math.min
 private const val EDGE_SAMPLE_LIMIT = 300
 private const val EDGE_AVOID_RADIUS = 6f
 private const val BEAT_SELECT_THRESHOLD = 16f
-private val ANCHOR_HIGHLIGHT_COLOR = Color(0xFFFF2D2D)
 private const val ARC_VERTICAL_GUTTER = 4f
 
 class JumpLine(val from: Int, val to: Int, val startedAt: Long)
@@ -71,6 +70,7 @@ fun JukeboxVisualization(
     val beatFill = themeTokens.beatFill
     val beatHighlight = themeTokens.beatHighlight
     val edgeStroke = themeTokens.edgeStroke
+    val anchorHighlight = themeTokens.danger
 
     Box(
         modifier = modifier
@@ -110,7 +110,7 @@ fun JukeboxVisualization(
                     if (edge.deleted || edge.id != data.anchorEdgeId) {
                         continue
                     }
-                    drawEdge(edge, positions, center, ANCHOR_HIGHLIGHT_COLOR, 1.8f, edgeRouting)
+                    drawEdge(edge, positions, center, anchorHighlight, 1.8f, edgeRouting)
                     break
                 }
             }

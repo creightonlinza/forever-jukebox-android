@@ -17,13 +17,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -48,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -883,74 +884,39 @@ private fun ListLoadingFailedStatus(
 @Composable
 private fun TopSongsTabs(activeTab: TopSongsTab, onTabSelected: (TopSongsTab) -> Unit) {
     val tokens = LocalThemeTokens.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 2.dp),
-        horizontalArrangement = Arrangement.Start
-    ) {
-        SubTabButton(
-            text = "All Time",
-            active = activeTab == TopSongsTab.TopSongs,
-            onClick = { onTabSelected(TopSongsTab.TopSongs) }
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        SubTabButton(
-            text = "Trending",
-            active = activeTab == TopSongsTab.Trending,
-            onClick = { onTabSelected(TopSongsTab.Trending) }
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        SubTabButton(
-            text = "Recents",
-            active = activeTab == TopSongsTab.Recent,
-            onClick = { onTabSelected(TopSongsTab.Recent) }
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        SubTabButton(
-            text = "Favorites",
-            active = activeTab == TopSongsTab.Favorites,
-            icon = Icons.Filled.Star,
-            iconTint = tokens.beatFill,
-            onClick = { onTabSelected(TopSongsTab.Favorites) }
-        )
-    }
-}
-
-@Composable
-private fun SubTabButton(
-    text: String,
-    active: Boolean,
-    icon: ImageVector? = null,
-    iconTint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onBackground,
-    onClick: () -> Unit
-) {
-    val tokens = LocalThemeTokens.current
-    val containerColor by animateColorAsState(
-        targetValue = if (active) tokens.controlSurface else tokens.panelSurface,
-        label = "subTabContainer"
-    )
-    OutlinedButton(
-        onClick = onClick,
-        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-            containerColor = containerColor,
-            contentColor = tokens.onBackground
-        ),
-        border = pillButtonBorder(),
-        contentPadding = SmallButtonPadding,
-        shape = PillShape,
-        modifier = Modifier.height(SmallButtonHeight)
-    ) {
-        if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(14.dp)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SubTabCard(
+                label = "All Time",
+                icon = Icons.Outlined.EmojiEvents,
+                active = activeTab == TopSongsTab.TopSongs,
+                onClick = { onTabSelected(TopSongsTab.TopSongs) },
+                modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            SubTabCard(
+                label = "Trending",
+                icon = Icons.AutoMirrored.Outlined.TrendingUp,
+                active = activeTab == TopSongsTab.Trending,
+                onClick = { onTabSelected(TopSongsTab.Trending) },
+                modifier = Modifier.weight(1f)
+            )
         }
-        Text(text, style = MaterialTheme.typography.labelSmall)
-        Spacer(modifier = Modifier.width(2.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SubTabCard(
+                label = "Recents",
+                icon = Icons.Outlined.History,
+                active = activeTab == TopSongsTab.Recent,
+                onClick = { onTabSelected(TopSongsTab.Recent) },
+                modifier = Modifier.weight(1f)
+            )
+            SubTabCard(
+                label = "Favorites",
+                icon = Icons.Filled.Star,
+                iconTint = tokens.beatFill,
+                active = activeTab == TopSongsTab.Favorites,
+                onClick = { onTabSelected(TopSongsTab.Favorites) },
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }

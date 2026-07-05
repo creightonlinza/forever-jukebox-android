@@ -33,7 +33,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.OutlinedTextField
@@ -87,7 +86,6 @@ fun HeaderBar(
     onAppModeChange: (AppMode) -> Unit,
     onRefreshCacheSize: () -> Unit,
     onClearCache: () -> Unit,
-    onTabSelected: (TabId) -> Unit,
     onCastSessionStarted: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onOpenWhatsNew: () -> Unit
@@ -97,8 +95,7 @@ fun HeaderBar(
 
     Column(
         modifier = Modifier
-            .clip(HeaderSurfaceShape)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
     ) {
@@ -132,17 +129,12 @@ fun HeaderBar(
                 modifier = Modifier.size(SmallButtonHeight)
             ) {
                 Icon(
-                    Icons.Default.MoreVert,
+                    Icons.Outlined.Settings,
                     contentDescription = "Settings",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        TabBar(
-            state = state,
-            onTabSelected = onTabSelected
-        )
     }
 
     if (showSettings) {
@@ -171,8 +163,7 @@ fun HeaderBar(
 fun TitleOnlyHeaderBar() {
     Column(
         modifier = Modifier
-            .clip(HeaderSurfaceShape)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
     ) {

@@ -5,9 +5,7 @@
     "panelSurface": "#141922",
     "heroSurface": "#1A1F27",
     "controlSurface": "#1F2633",
-    "controlSurfaceHover": "#202835",
     "panelBorder": "#283142",
-    "heroBorder": "#2B3442",
     "controlBorder": "#3B465B",
     "accent": "#4AC7FF",
     "titleAccent": "#F1C47A",
@@ -16,7 +14,10 @@
     "edgeStroke": "rgba(74, 199, 255, 0.5)",
     "beatFill": "#FFD46A",
     "beatHighlight": "#FFD46A",
-    "vizBackground": "#232B3D"
+    "vizBackground": "#232B3D",
+    "danger": "#E35A5A",
+    "canonMain": "#4F8FFF",
+    "canonOther": "#10DF00"
   },
   "light": {
     "background": "#FFFFFF",
@@ -24,9 +25,7 @@
     "panelSurface": "#F2ECFB",
     "heroSurface": "#EFE5FF",
     "controlSurface": "#E8DBFF",
-    "controlSurfaceHover": "#DDCCFF",
     "panelBorder": "rgba(73, 43, 113, 0.20)",
-    "heroBorder": "rgba(91, 48, 150, 0.26)",
     "controlBorder": "rgba(96, 56, 152, 0.34)",
     "accent": "#2E8BFF",
     "titleAccent": "#B144FF",
@@ -35,6 +34,9 @@
     "edgeStroke": "rgba(77, 48, 120, 0.44)",
     "beatFill": "#B144FF",
     "beatHighlight": "#B144FF",
-    "vizBackground": "#E9DBFF"
+    "vizBackground": "#E9DBFF",
+    "danger": "#E35A5A",
+    "canonMain": "#4F8FFF",
+    "canonOther": "#10DF00"
   }
 }

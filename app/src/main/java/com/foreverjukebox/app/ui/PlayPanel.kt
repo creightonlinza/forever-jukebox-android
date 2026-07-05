@@ -50,7 +50,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val context = LocalContext.current
     val playback = state.playback
     val tuning = state.tuning
-    val headerTitle = resolvePlaybackHeaderTitle(playback)
     val loadingTrackMetadata = resolveLoadingTrackMetadata(
         playback = playback,
         localSelectedFileName = state.localSelectedFileName.takeIf { state.appMode == AppMode.Local }
@@ -162,10 +161,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 playback = playback,
                 appMode = state.appMode,
                 adminKey = state.adminKey,
-                headerTitle = headerTitle,
                 vizLabels = vizLabels,
                 isFavorite = isFavorite,
-                onTogglePlayback = viewModel::togglePlayback,
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
@@ -174,8 +171,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 playlist = state.playlist,
                 onOpenPlaylist = { showPlaylist = true },
-                onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
-                onSkipNext = viewModel::skipToNextPlaylistTrack,
                 onSelectVisualization = viewModel::setActiveVisualization
             )
             }
@@ -185,11 +180,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 appMode = state.appMode,
                 adminKey = state.adminKey,
                 tuning = tuning,
-                headerTitle = headerTitle,
                 vizLabels = vizLabels,
                 jumpLine = jumpLine,
                 isFavorite = isFavorite,
-                onTogglePlayback = viewModel::togglePlayback,
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
@@ -202,8 +195,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onSelectBeat = viewModel::selectBeat,
                 playlist = state.playlist,
                 onOpenPlaylist = { showPlaylist = true },
-                onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
-                onSkipNext = viewModel::skipToNextPlaylistTrack,
                 onOpenFullscreen = viewModel::openFullscreenVisualization
             )
             }

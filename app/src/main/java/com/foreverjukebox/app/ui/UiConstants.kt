@@ -2,7 +2,6 @@ package com.foreverjukebox.app.ui
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -12,17 +11,10 @@ import com.foreverjukebox.app.R
 val SmallButtonPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
 val SmallButtonHeight = 32.dp
 val SmallFieldMinHeight = 40.dp
-val DeleteActionColor = Color(0xFFE35A5A)
 val SurfaceCornerRadius = 8.dp
 val SurfaceShape = RoundedCornerShape(SurfaceCornerRadius)
 val PillShape = SurfaceShape
 
-// Header sits flush against the top of the screen so its color extends behind
-// the status bar; only the bottom corners are rounded.
-val HeaderSurfaceShape = RoundedCornerShape(
-    bottomStart = SurfaceCornerRadius,
-    bottomEnd = SurfaceCornerRadius
-)
 val appFontFamily = FontFamily(
     Font(resId = R.font.barlow_regular, weight = FontWeight.Normal),
     Font(resId = R.font.barlow_semi_bold, weight = FontWeight.SemiBold)
