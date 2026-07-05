@@ -357,6 +357,9 @@ class LocalAnalysisService(
         }
     }
 
+    /** The cached bare-analysis JSON file for [cacheKey], for uploading to the Local-mode Cast relay. */
+    fun analysisCacheFile(cacheKey: String): File = analysisFile(cacheKey)
+
     private fun analysisFile(cacheKey: String): File =
         cacheDir.resolve("$cacheKey$ANALYSIS_FILE_SUFFIX")
 

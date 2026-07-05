@@ -144,6 +144,10 @@ extensions.configure<ApplicationExtension>("android") {
         targetSdk = 36
         versionCode = ciVersionCode
         versionName = ciVersionName
+
+        // Fixed base URL of the Local-mode Cast relay (fj-android-cast). Local/play casting always
+        // uploads to this deployed relay; there is no per-build override.
+        buildConfigField("String", "RELAY_CAST_BASE_URL", "\"https://fj-android-cast.fly.dev\"")
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }

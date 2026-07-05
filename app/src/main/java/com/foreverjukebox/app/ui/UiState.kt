@@ -222,6 +222,10 @@ data class PlaybackState(
     val jumpLine: JumpLine? = null,
     val lastJobId: String? = null,
     val lastYouTubeId: String? = null,
+    // Content URI of the currently loaded local track. Non-null marks the track as a Local-mode cast
+    // candidate; the relay reports the bare fingerprint (== cacheKey) in the status jobId field, so
+    // lastJobId cannot be relied on to identify a local cast. Set on local load, cleared otherwise.
+    val localSourceUri: String? = null,
     val lastTrackCreatedAtEpochMs: Long? = null,
     val castPlaybackState: String? = null,
     val isCastLoading: Boolean = false,

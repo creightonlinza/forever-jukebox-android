@@ -86,6 +86,42 @@ class CastController(private val application: Application) {
         }.isSuccess
     }
 
+    fun loadLocalTrack(
+        session: CastSession,
+        sessionId: String,
+        fingerprint: String,
+        title: String?,
+        artist: String?,
+        tuningParams: String?,
+        vizIndex: Int?
+    ) {
+        val customData = JSONObject().apply {
+            put("sessionId", sessionId)
+            put("fingerprint", fingerprint)
+            if (!tuningParams.isNullOrBlank()) {
+                put("tuningParams", tuningParams)
+            }
+            if (vizIndex != null) {
+                put("vizIndex", vizIndex)
+            }
+        }
+        val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
+            title?.let { putString(MediaMetadata.KEY_TITLE, it) }
+            artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
+        }
+        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/local/$fingerprint")
+            .setStreamType(MediaInfo.STREAM_TYPE_NONE)
+            .setContentType("application/json")
+            .setMetadata(metadata)
+            .build()
+        val request = MediaLoadRequestData.Builder()
+            .setMediaInfo(mediaInfo)
+            .setAutoplay(true)
+            .setCustomData(customData)
+            .build()
+        session.remoteMediaClient?.load(request)
+    }
+
     fun loadTrack(
         session: CastSession,
         baseUrl: String,

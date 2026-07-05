@@ -767,6 +767,7 @@ class PlaybackCoordinator(
                     jumpLine = null,
                     playTitle = "",
                     lastYouTubeId = null,
+                    localSourceUri = null,
                     lastTrackCreatedAtEpochMs = null,
                     lastJobId = null,
                     castPlaybackState = null,

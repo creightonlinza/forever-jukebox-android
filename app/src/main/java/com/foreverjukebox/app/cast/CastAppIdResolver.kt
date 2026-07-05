@@ -2,25 +2,44 @@ package com.foreverjukebox.app.cast
 
 import android.content.Context
 import androidx.core.net.toUri
+import com.foreverjukebox.app.data.AppMode
 import org.json.JSONObject
 
 object CastAppIdResolver {
+    /**
+     * Receiver app ID for the Local-mode Cast relay (fj-android-cast). Placeholder until the owner
+     * registers the receiver in the Cast Developer Console (PLAN §7 M6) — the real ID is a one-line
+     * swap here.
+     */
+    const val RELAY_APP_ID = "RELAY_CAST_APP_ID_TBD"
+
     @Volatile
     private var cachedMap: Map<String, String>? = null
+
+    /**
+     * Deterministic, mode-aware receiver app ID. Never depends on `cast_app_ids.json` key iteration
+     * order, so it is safe once more than one app ID exists. Local mode always casts to the relay;
+     * Server mode maps the base URL to its server receiver. (CastContext still reads the app ID once
+     * per process — switching modes needs an app restart.)
+     */
+    fun resolveForMode(context: Context, mode: AppMode?, baseUrl: String?): String? =
+        appIdForMode(mode, resolve(context, baseUrl))
+
+    /**
+     * Pure mode→app-ID decision. Local (and pre-preferences `null`, since the play flavor is always
+     * Local and full defaults into Local before a mode is chosen) → relay; Server → the resolved
+     * server app ID.
+     */
+    internal fun appIdForMode(mode: AppMode?, serverAppId: String?): String? =
+        when (mode) {
+            AppMode.Local, null -> RELAY_APP_ID
+            AppMode.Server -> serverAppId
+        }
 
     fun resolve(context: Context, baseUrl: String?): String? {
         val normalized = normalize(baseUrl) ?: return null
         val map = cachedMap ?: loadMap(context).also { cachedMap = it }
         return map[normalized]
-    }
-
-    // CastContext is initialized once per app process via OptionsProvider and is not re-created
-    // when the API base URL changes. We fall back to any configured receiver app ID here so
-    // early startup (before preferences load) still uses a custom receiver. If you need different
-    // receiver app IDs per base URL, the app must be restarted after changing base URL.
-    fun resolveAny(context: Context): String? {
-        val map = cachedMap ?: loadMap(context).also { cachedMap = it }
-        return map.values.firstOrNull()
     }
 
     fun normalize(baseUrl: String?): String? {

@@ -49,7 +49,7 @@ class CastSessionCoordinatorPolicyTest {
         )
 
         assertEquals(
-            PreservedCastTrack(
+            PreservedCastTrack.Server(
                 jobId = "job123",
                 youtubeId = "yt123",
                 title = "Track",
@@ -58,6 +58,47 @@ class CastSessionCoordinatorPolicyTest {
             ),
             preserved
         )
+    }
+
+    @Test
+    fun capturePreservedCastTrackReturnsLocalWhenSourceUriPresent() {
+        val preserved = capturePreservedCastTrack(
+            PlaybackState(
+                audioLoaded = true,
+                analysisLoaded = true,
+                lastJobId = "local-0123456789abcdef",
+                localSourceUri = "content://audio/1",
+                trackTitle = "Local Track",
+                trackArtist = "Local Artist",
+                jukeboxAudioMode = JukeboxAudioMode.EightD
+            )
+        )
+
+        assertEquals(
+            PreservedCastTrack.Local(
+                cacheKey = "0123456789abcdef",
+                sourceUri = "content://audio/1",
+                title = "Local Track",
+                artist = "Local Artist",
+                audioMode = JukeboxAudioMode.EightD
+            ),
+            preserved
+        )
+    }
+
+    @Test
+    fun capturePreservedCastTrackClearsLocalMarkerOnDisconnect() {
+        val disconnected = stateAfterCastDisconnect(
+            UiState(
+                playback = PlaybackState(
+                    isCasting = true,
+                    localSourceUri = "content://audio/1",
+                    lastJobId = "local-0123456789abcdef"
+                )
+            )
+        )
+
+        assertNull(disconnected.playback.localSourceUri)
     }
 
     @Test

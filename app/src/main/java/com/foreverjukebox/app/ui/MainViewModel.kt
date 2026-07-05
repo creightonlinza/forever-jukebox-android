@@ -6,8 +6,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.foreverjukebox.app.AppLog
@@ -34,8 +36,12 @@ import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
 import com.foreverjukebox.app.cast.CastAppIdResolver
+import com.foreverjukebox.app.cast.CastUploadClient
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.net.URI
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.asRequestBody
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,6 +69,13 @@ internal suspend fun tryQueueYoutubeAnalysisForCast(
         canonicalJobId(startAnalysis(normalizedBaseUrl, youtubeId, title, artist).id)
     }.getOrNull()
 }
+
+/**
+ * The Local-mode Cast relay is considered configured when both its receiver app ID and base URL are
+ * present. With the placeholder app ID this is effectively always true, so Local mode gains casting.
+ */
+private val relayConfigured: Boolean =
+    CastAppIdResolver.RELAY_APP_ID.isNotBlank() && BuildConfig.RELAY_CAST_BASE_URL.isNotBlank()
 
 internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchState {
     return search.copy(
@@ -303,13 +316,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastCowbellBeatsPlayed = -1
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
+    private val castUploadClient = CastUploadClient()
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
         castController = castController,
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         onCastUnavailable = ::notifyCastUnavailable,
         onSyncCastNotification = ::syncCastNotification,
-        castTrackLengthLimitErrorMessage = ::castTrackLengthLimitErrorMessage
+        castTrackLengthLimitErrorMessage = ::castTrackLengthLimitErrorMessage,
+        scope = viewModelScope,
+        castUploadClient = castUploadClient,
+        buildUploadSource = CastLocalUploadSourceFactory(::buildCastLocalUploadSource),
+        relayBaseUrl = BuildConfig.RELAY_CAST_BASE_URL
     )
     private val searchCoordinator = createRemoteSearchController(
         scope = viewModelScope,
@@ -352,6 +370,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         localAnalysisService = localAnalysisService,
         controller = controller,
         playbackCoordinator = playbackCoordinator,
+        castPlaybackCoordinator = castPlaybackCoordinator,
         getState = { state.value },
         updateState = { updater ->
             _state.update(updater)
@@ -456,7 +475,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         activeTab = nextActiveTab,
                         showAppModeGate = shouldShowAppModeGate(effectiveMode),
                         showBaseUrlPrompt = shouldShowBaseUrlPrompt(effectiveMode, current.baseUrl),
-                        castEnabled = effectiveMode == AppMode.Server && !resolvedAppId.isNullOrBlank()
+                        castEnabled = resolveCastEnabled(effectiveMode, resolvedAppId, relayConfigured)
                     )
                 }
                 hydrateSavedPlaylistIfInactive()
@@ -472,7 +491,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     current.copy(
                         baseUrl = url.orEmpty(),
                         showBaseUrlPrompt = shouldShowBaseUrlPrompt(mode, url.orEmpty()),
-                        castEnabled = mode == AppMode.Server && !resolvedAppId.isNullOrBlank()
+                        castEnabled = resolveCastEnabled(mode, resolvedAppId, relayConfigured)
                     )
                 }
                 maybeRefreshServerDataForCurrentState()
@@ -843,7 +862,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     baseUrl = trimmedUrl,
                     showBaseUrlPrompt = shouldShowBaseUrlPrompt(it.appMode, trimmedUrl),
-                    castEnabled = mode == AppMode.Server && !resolvedAppId.isNullOrBlank()
+                    castEnabled = resolveCastEnabled(mode, resolvedAppId, relayConfigured)
                 )
             }
         }
@@ -1035,7 +1054,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             stateAfterModeChangeReset(
                 current = current,
                 targetMode = targetMode,
-                castEnabled = targetMode == AppMode.Server && !resolvedAppId.isNullOrBlank()
+                castEnabled = resolveCastEnabled(targetMode, resolvedAppId, relayConfigured)
             )
         }
     }
@@ -1063,7 +1082,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.copy(
                 baseUrl = nextBaseUrl,
                 showBaseUrlPrompt = shouldShowBaseUrlPrompt(mode, nextBaseUrl),
-                castEnabled = mode == AppMode.Server && !resolvedAppId.isNullOrBlank(),
+                castEnabled = resolveCastEnabled(mode, resolvedAppId, relayConfigured),
                 activeTab = TabId.Top,
                 topSongsTab = TopSongsTab.TopSongs,
                 favorites = emptyList(),
@@ -2554,6 +2573,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             showToast("Casting is not available for this API base URL.")
         }
     }
+
+    /**
+     * Resolve the upload bodies for a Local-mode cast. Probes the content URI (a persisted permission
+     * can lapse on reinstall/move/grant-cap) and requires the cached analysis JSON to exist, throwing
+     * [CastSourceUnavailableException] otherwise so the coordinator surfaces the "re-pick the file"
+     * error. The audio streams from the content URI without buffering the whole file in memory.
+     */
+    private fun buildCastLocalUploadSource(sourceUri: String, cacheKey: String): CastLocalUploadSource {
+        val uri = sourceUri.toUri()
+        val resolver = getApplication<Application>().contentResolver
+        val sizeBytes = queryContentSize(uri)
+        try {
+            resolver.openInputStream(uri)?.close()
+                ?: throw CastSourceUnavailableException("Unable to open $uri")
+        } catch (error: SecurityException) {
+            throw CastSourceUnavailableException(error.message ?: "Permission lost for $uri", error)
+        } catch (error: FileNotFoundException) {
+            throw CastSourceUnavailableException(error.message ?: "File not found for $uri", error)
+        }
+        val analysisFile = localAnalysisService.analysisCacheFile(cacheKey)
+        if (!analysisFile.exists()) {
+            throw CastSourceUnavailableException("Cached analysis missing for $cacheKey")
+        }
+        val contentType = resolver.getType(uri)?.toMediaTypeOrNull()
+        val audioBody = CastUploadClient.streamingBody(contentType, sizeBytes ?: -1L) {
+            resolver.openInputStream(uri) ?: throw IOException("Unable to open $uri")
+        }
+        val analysisBody = analysisFile.asRequestBody("application/json".toMediaTypeOrNull())
+        return CastLocalUploadSource(sizeBytes, audioBody, analysisBody)
+    }
+
+    private fun queryContentSize(uri: Uri): Long? = runCatching {
+        getApplication<Application>().contentResolver
+            .query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) {
+                    cursor.getLong(index)
+                } else {
+                    null
+                }
+            }
+    }.getOrNull()
 
     fun retryFailedLoad() {
         if (blockPlaybackChangeWhileLoading()) return
