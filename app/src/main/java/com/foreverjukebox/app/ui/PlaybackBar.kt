@@ -65,11 +65,15 @@ fun PlaybackBar(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.fillMaxWidth()
             )
-            Text(
-                text = playbackSummaryLine(playback),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // The cast receiver does not report listen time or beats played;
+            // those counters only track local playback.
+            if (!playback.isCasting) {
+                Text(
+                    text = playbackSummaryLine(playback),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         if (showTransport) {
             Spacer(modifier = Modifier.width(8.dp))
