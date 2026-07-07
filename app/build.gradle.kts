@@ -167,10 +167,17 @@ extensions.configure<ApplicationExtension>("android") {
             // build (com.foreverjukebox.app) can coexist and never signature-conflict.
             applicationIdSuffix = ".play"
             buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "false")
+            // Relay Cast receiver registered against this flavor's sender package
+            // (com.foreverjukebox.app.play). Same receiver URL as the full flavor's id below.
+            buildConfigField("String", "RELAY_CAST_APP_ID", "\"7DB3725D\"")
         }
         create("full") {
             dimension = "distribution"
             buildConfigField("boolean", "SERVER_MODE_AVAILABLE", "true")
+            // Relay Cast receiver registered against this flavor's sender package
+            // (com.foreverjukebox.app) — a second console app id pointing at the same relay URL,
+            // because the Cast console allows only one sender package per receiver app id.
+            buildConfigField("String", "RELAY_CAST_APP_ID", "\"4CF1235E\"")
         }
     }
 

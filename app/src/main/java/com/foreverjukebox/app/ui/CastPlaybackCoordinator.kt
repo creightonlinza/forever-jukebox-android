@@ -1,8 +1,9 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.cast.CastUploadClient
+import com.foreverjukebox.app.cast.CastRelayClient
 import com.google.android.gms.cast.framework.CastSession
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class CastPlaybackCoordinator(
@@ -13,32 +14,29 @@ class CastPlaybackCoordinator(
     private val onSyncCastNotification: () -> Unit,
     private val castTrackLengthLimitErrorMessage: () -> String,
     private val scope: CoroutineScope,
-    private val castUploadClient: CastUploadClient,
+    private val castRelayClient: CastRelayClient,
     private val buildUploadSource: CastLocalUploadSourceFactory,
     private val relayBaseUrl: String
 ) {
-    /** Relay session reused for the life of the Cast connection; dropped on disconnect/endSession. */
-    @Volatile
-    var currentSessionId: String? = null
-        private set
-
-    private var lastLocalCastRequest: LocalCastRequest? = null
-    private var localCastRetryUsed = false
+    private var lastCastRequest: CastLoadRequest? = null
+    private var castRetryUsed = false
+    private var castLoadJob: Job? = null
 
     fun resetStatusListener() {
         castController.resetStatusListener()
     }
 
     fun endSession() {
-        currentSessionId = null
-        lastLocalCastRequest = null
+        clearPendingCastRequest()
         castController.endSession()
     }
 
-    /** Clears the held relay session so the next Local cast starts a fresh one (on disconnect). */
-    fun clearRelaySession() {
-        currentSessionId = null
-        lastLocalCastRequest = null
+    /** Drops the last cast request so a stale track can't be retried after a disconnect. */
+    fun clearPendingCastRequest() {
+        castLoadJob?.cancel()
+        castLoadJob = null
+        lastCastRequest = null
+        castRetryUsed = false
     }
 
     fun requestCastStatus() {
@@ -50,12 +48,28 @@ class CastPlaybackCoordinator(
         castController.requestStatus(session, CAST_COMMAND_NAMESPACE)
     }
 
+    /**
+     * Cast a server-analyzed track: register a relay pull for [jobId] (the relay fetches the
+     * analysis/audio from the jukebox server itself), then LOAD by the jobId immediately — the
+     * receiver shows live progress while the job runs.
+     */
     fun castTrackId(
         jobId: String,
         title: String? = null,
         artist: String? = null,
         youtubeId: String? = null,
         tuningParams: String? = null
+    ) {
+        castRetryUsed = false
+        castTrackIdInternal(jobId, title, artist, youtubeId, tuningParams)
+    }
+
+    private fun castTrackIdInternal(
+        jobId: String,
+        title: String?,
+        artist: String?,
+        youtubeId: String?,
+        tuningParams: String?
     ) {
         if (!getState().castEnabled) {
             onCastUnavailable()
@@ -82,6 +96,7 @@ class CastPlaybackCoordinator(
             return
         }
         val resolvedYoutubeId = youtubeId?.trim().orEmpty().ifBlank { null }
+        lastCastRequest = CastLoadRequest.Server(normalizedJobId, title, artist, resolvedYoutubeId, tuningParams)
         updateState {
             it.copy(
                 playback = it.playback.copy(
@@ -112,20 +127,28 @@ class CastPlaybackCoordinator(
             )
         }
         onSyncCastNotification()
-        castController.loadTrack(
-            session = session,
-            baseUrl = baseUrl,
-            jobId = normalizedJobId,
-            title = title,
-            artist = artist,
-            tuningParams = resolvedCastTuningParams,
-            vizIndex = currentState.playback.activeVizIndex
-        )
+        castLoadJob?.cancel()
+        castLoadJob = scope.launch {
+            when (castRelayClient.registerPull(relayBaseUrl, normalizedJobId, baseUrl)) {
+                CastRelayClient.PullResult.Ok -> castController.loadTrack(
+                    session = session,
+                    fingerprint = normalizedJobId,
+                    title = title,
+                    artist = artist,
+                    tuningParams = resolvedCastTuningParams,
+                    vizIndex = currentState.playback.activeVizIndex
+                )
+                CastRelayClient.PullResult.Forbidden -> postCastError(CAST_PULL_FORBIDDEN_MESSAGE)
+                CastRelayClient.PullResult.Guard -> postCastError(CAST_RELAY_GUARD_MESSAGE)
+                CastRelayClient.PullResult.BadRequest -> postCastError(CAST_PULL_FAILED_MESSAGE)
+                CastRelayClient.PullResult.Unreachable -> postCastError(CAST_RELAY_UNREACHABLE_MESSAGE)
+            }
+        }
     }
 
     /**
-     * Cast a locally analyzed track: upload its audio + analysis to the relay, then LOAD by
-     * `{sessionId, fingerprint}`. [cacheKey] is the fingerprint verbatim (see LocalAnalysisService).
+     * Cast a locally analyzed track: upload its audio + analysis to the relay under [cacheKey], then
+     * LOAD by `{fingerprint}`. [cacheKey] is the fingerprint verbatim (see LocalAnalysisService).
      */
     fun castLocalTrack(
         cacheKey: String,
@@ -134,7 +157,7 @@ class CastPlaybackCoordinator(
         artist: String? = null,
         tuningParams: String? = null
     ) {
-        localCastRetryUsed = false
+        castRetryUsed = false
         castLocalTrackInternal(cacheKey, sourceUri, title, artist, tuningParams)
     }
 
@@ -166,7 +189,7 @@ class CastPlaybackCoordinator(
             highlightAnchorBranch = currentState.tuning.highlightAnchorBranch
         )
         val vizIndex = currentState.playback.activeVizIndex
-        lastLocalCastRequest = LocalCastRequest(fingerprint, sourceUri, title, artist, tuningParams)
+        lastCastRequest = CastLoadRequest.Local(fingerprint, sourceUri, title, artist, tuningParams)
         updateState {
             it.copy(
                 playback = it.playback.copy(
@@ -199,7 +222,8 @@ class CastPlaybackCoordinator(
             )
         }
         onSyncCastNotification()
-        scope.launch {
+        castLoadJob?.cancel()
+        castLoadJob = scope.launch {
             performLocalUpload(session, fingerprint, sourceUri, title, artist, resolvedCastTuningParams, vizIndex)
         }
     }
@@ -223,29 +247,24 @@ class CastPlaybackCoordinator(
             postCastError(CAST_FILE_TOO_LARGE_MESSAGE)
             return
         }
-        val result = castUploadClient.uploadForCast(
-            baseUrl = relayBaseUrl,
-            existingSessionId = currentSessionId,
-            fingerprint = fingerprint,
+        val result = castRelayClient.uploadForCast(
+            relayBaseUrl = relayBaseUrl,
+            trackId = fingerprint,
             audioBody = source.audioBody,
             analysisBody = source.analysisBody
         )
         when (result) {
-            is CastUploadClient.UploadResult.Success -> {
-                currentSessionId = result.sessionId
-                castController.loadLocalTrack(
-                    session = session,
-                    sessionId = result.sessionId,
-                    fingerprint = fingerprint,
-                    title = title,
-                    artist = artist,
-                    tuningParams = castTuningParams,
-                    vizIndex = vizIndex
-                )
-            }
-            CastUploadClient.UploadResult.TooLarge -> postCastError(CAST_FILE_TOO_LARGE_MESSAGE)
-            CastUploadClient.UploadResult.Guard -> postCastError(CAST_RELAY_GUARD_MESSAGE)
-            CastUploadClient.UploadResult.Unreachable -> postCastError(CAST_RELAY_UNREACHABLE_MESSAGE)
+            CastRelayClient.UploadResult.Ok -> castController.loadTrack(
+                session = session,
+                fingerprint = fingerprint,
+                title = title,
+                artist = artist,
+                tuningParams = castTuningParams,
+                vizIndex = vizIndex
+            )
+            CastRelayClient.UploadResult.TooLarge -> postCastError(CAST_FILE_TOO_LARGE_MESSAGE)
+            CastRelayClient.UploadResult.Guard -> postCastError(CAST_RELAY_GUARD_MESSAGE)
+            CastRelayClient.UploadResult.Unreachable -> postCastError(CAST_RELAY_UNREACHABLE_MESSAGE)
         }
     }
 
@@ -264,22 +283,33 @@ class CastPlaybackCoordinator(
     }
 
     /**
-     * On a `cast_content_not_found` from the receiver (its GET 404'd after a mid-load relay wipe),
-     * recreate the session and re-upload + re-LOAD once. Returns true when a retry was launched.
+     * On a `cast_content_not_found` from the receiver, the relay machine restarted and wiped its
+     * ephemeral files and pull registrations. Recover once per request: Local re-uploads both files,
+     * Server re-POSTs the pull registration; both then re-LOAD. Returns true when a retry launched.
      */
-    private fun maybeRetryLocalContentNotFound(): Boolean {
-        val request = lastLocalCastRequest ?: return false
-        if (getState().playback.localSourceUri == null) return false
-        if (localCastRetryUsed) return false
-        localCastRetryUsed = true
-        currentSessionId = null
-        castLocalTrackInternal(
-            request.fingerprint,
-            request.sourceUri,
-            request.title,
-            request.artist,
-            request.tuningParams
-        )
+    private fun maybeRetryContentNotFound(): Boolean {
+        val request = lastCastRequest ?: return false
+        if (castRetryUsed) return false
+        castRetryUsed = true
+        when (request) {
+            is CastLoadRequest.Local -> {
+                if (getState().playback.localSourceUri == null) return false
+                castLocalTrackInternal(
+                    request.fingerprint,
+                    request.sourceUri,
+                    request.title,
+                    request.artist,
+                    request.tuningParams
+                )
+            }
+            is CastLoadRequest.Server -> castTrackIdInternal(
+                request.jobId,
+                request.title,
+                request.artist,
+                request.youtubeId,
+                request.tuningParams
+            )
+        }
         return true
     }
 
@@ -319,7 +349,7 @@ class CastPlaybackCoordinator(
 
     private fun handleCastStatusMessage(message: String) {
         val status = parseCastStatusMessage(message) ?: return
-        if (status.errorCode == CAST_CONTENT_NOT_FOUND_ERROR_CODE && maybeRetryLocalContentNotFound()) {
+        if (status.errorCode == CAST_CONTENT_NOT_FOUND_ERROR_CODE && maybeRetryContentNotFound()) {
             return
         }
         updateState { current ->
@@ -339,13 +369,24 @@ class CastPlaybackCoordinator(
         onSyncCastNotification()
     }
 
-    private data class LocalCastRequest(
-        val fingerprint: String,
-        val sourceUri: String,
-        val title: String?,
-        val artist: String?,
-        val tuningParams: String?
-    )
+    /** Snapshot of the last cast request, kept for the once-only content-not-found retry. */
+    private sealed interface CastLoadRequest {
+        data class Local(
+            val fingerprint: String,
+            val sourceUri: String,
+            val title: String?,
+            val artist: String?,
+            val tuningParams: String?
+        ) : CastLoadRequest
+
+        data class Server(
+            val jobId: String,
+            val title: String?,
+            val artist: String?,
+            val youtubeId: String?,
+            val tuningParams: String?
+        ) : CastLoadRequest
+    }
 
     private companion object {
         const val CAST_COMMAND_NAMESPACE = "urn:x-cast:com.foreverjukebox.app"
@@ -361,5 +402,9 @@ class CastPlaybackCoordinator(
             "The cast relay is temporarily full. Try again in a moment."
         const val CAST_SOURCE_UNAVAILABLE_MESSAGE =
             "This track's source file is no longer accessible. Use Add Audio to re-pick the file."
+        const val CAST_PULL_FORBIDDEN_MESSAGE =
+            "The cast relay doesn't allow this jukebox server. Check the app configuration."
+        const val CAST_PULL_FAILED_MESSAGE =
+            "Couldn't start casting this track. Try again."
     }
 }

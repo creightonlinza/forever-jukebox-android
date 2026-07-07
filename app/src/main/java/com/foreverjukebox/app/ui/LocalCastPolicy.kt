@@ -1,20 +1,15 @@
 package com.foreverjukebox.app.ui
 
-import com.foreverjukebox.app.cast.CastUploadClient
+import com.foreverjukebox.app.cast.CastRelayClient
 import com.foreverjukebox.app.data.AppMode
 
 /**
- * Whether the Cast button should be enabled for the current mode. Server mode requires a resolved
- * server receiver app ID; Local mode requires the relay to be configured (app ID + base URL). This
- * replaces the old `mode == AppMode.Server && !serverAppId.isNullOrBlank()` rule at the five
- * `castEnabled` sites in [MainViewModel].
+ * Whether the Cast button should be enabled. Both modes cast through the same relay receiver, so the
+ * only requirements are a chosen mode and a configured relay (app ID + base URL, both compiled-in
+ * BuildConfig values).
  */
-fun resolveCastEnabled(mode: AppMode?, serverAppId: String?, relayConfigured: Boolean): Boolean =
-    when (mode) {
-        AppMode.Server -> !serverAppId.isNullOrBlank()
-        AppMode.Local -> relayConfigured
-        null -> false
-    }
+fun resolveCastEnabled(mode: AppMode?, relayConfigured: Boolean): Boolean =
+    mode != null && relayConfigured
 
 /**
  * A local audio file that exceeds the relay's audio cap cannot be cast (it would be rejected with
@@ -22,4 +17,4 @@ fun resolveCastEnabled(mode: AppMode?, serverAppId: String?, relayConfigured: Bo
  * through — the relay enforces the cap as a backstop.
  */
 fun isLocalCastFileTooLarge(sizeBytes: Long?): Boolean =
-    sizeBytes != null && sizeBytes > CastUploadClient.MAX_AUDIO_BYTES
+    sizeBytes != null && sizeBytes > CastRelayClient.MAX_AUDIO_BYTES

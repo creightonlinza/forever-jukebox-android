@@ -35,8 +35,7 @@ import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
-import com.foreverjukebox.app.cast.CastAppIdResolver
-import com.foreverjukebox.app.cast.CastUploadClient
+import com.foreverjukebox.app.cast.CastRelayClient
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.net.URI
@@ -71,11 +70,11 @@ internal suspend fun tryQueueYoutubeAnalysisForCast(
 }
 
 /**
- * The Local-mode Cast relay is considered configured when both its receiver app ID and base URL are
- * present. With the placeholder app ID this is effectively always true, so Local mode gains casting.
+ * The Local-mode Cast relay is considered configured when both this flavor's receiver app ID and the
+ * relay base URL are present (both are compiled-in BuildConfig values), so Local mode gains casting.
  */
 private val relayConfigured: Boolean =
-    CastAppIdResolver.RELAY_APP_ID.isNotBlank() && BuildConfig.RELAY_CAST_BASE_URL.isNotBlank()
+    BuildConfig.RELAY_CAST_APP_ID.isNotBlank() && BuildConfig.RELAY_CAST_BASE_URL.isNotBlank()
 
 internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchState {
     return search.copy(
@@ -316,7 +315,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastCowbellBeatsPlayed = -1
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
-    private val castUploadClient = CastUploadClient()
+    private val castRelayClient = CastRelayClient()
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
         castController = castController,
         getState = { state.value },
@@ -325,7 +324,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onSyncCastNotification = ::syncCastNotification,
         castTrackLengthLimitErrorMessage = ::castTrackLengthLimitErrorMessage,
         scope = viewModelScope,
-        castUploadClient = castUploadClient,
+        castRelayClient = castRelayClient,
         buildUploadSource = CastLocalUploadSourceFactory(::buildCastLocalUploadSource),
         relayBaseUrl = BuildConfig.RELAY_CAST_BASE_URL
     )
@@ -468,14 +467,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     AppMode.Local
                 }
                 _state.update { current ->
-                    val resolvedAppId = CastAppIdResolver.resolve(getApplication(), current.baseUrl)
                     val nextActiveTab = coerceTabForMode(effectiveMode, current.activeTab)
                     current.copy(
                         appMode = effectiveMode,
                         activeTab = nextActiveTab,
                         showAppModeGate = shouldShowAppModeGate(effectiveMode),
                         showBaseUrlPrompt = shouldShowBaseUrlPrompt(effectiveMode, current.baseUrl),
-                        castEnabled = resolveCastEnabled(effectiveMode, resolvedAppId, relayConfigured)
+                        castEnabled = resolveCastEnabled(effectiveMode, relayConfigured)
                     )
                 }
                 hydrateSavedPlaylistIfInactive()
@@ -485,13 +483,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             preferences.baseUrl.collect { url ->
-                val resolvedAppId = CastAppIdResolver.resolve(getApplication(), url)
                 _state.update { current ->
                     val mode = current.appMode
                     current.copy(
                         baseUrl = url.orEmpty(),
                         showBaseUrlPrompt = shouldShowBaseUrlPrompt(mode, url.orEmpty()),
-                        castEnabled = resolveCastEnabled(mode, resolvedAppId, relayConfigured)
+                        castEnabled = resolveCastEnabled(mode, relayConfigured)
                     )
                 }
                 maybeRefreshServerDataForCurrentState()
@@ -857,12 +854,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (didServerChange) {
             resetRuntimeForServerSwitch(trimmedUrl)
         } else {
-            val resolvedAppId = CastAppIdResolver.resolve(getApplication(), trimmedUrl)
             _state.update {
                 it.copy(
                     baseUrl = trimmedUrl,
                     showBaseUrlPrompt = shouldShowBaseUrlPrompt(it.appMode, trimmedUrl),
-                    castEnabled = resolveCastEnabled(mode, resolvedAppId, relayConfigured)
+                    castEnabled = resolveCastEnabled(mode, relayConfigured)
                 )
             }
         }
@@ -1050,11 +1046,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         controller.setTrackMeta(null, null)
 
         _state.update { current ->
-            val resolvedAppId = CastAppIdResolver.resolve(getApplication(), current.baseUrl)
             stateAfterModeChangeReset(
                 current = current,
                 targetMode = targetMode,
-                castEnabled = resolveCastEnabled(targetMode, resolvedAppId, relayConfigured)
+                castEnabled = resolveCastEnabled(targetMode, relayConfigured)
             )
         }
     }
@@ -1078,11 +1073,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         _state.update { current ->
             val mode = current.appMode
-            val resolvedAppId = CastAppIdResolver.resolve(getApplication(), nextBaseUrl)
             current.copy(
                 baseUrl = nextBaseUrl,
                 showBaseUrlPrompt = shouldShowBaseUrlPrompt(mode, nextBaseUrl),
-                castEnabled = resolveCastEnabled(mode, resolvedAppId, relayConfigured),
+                castEnabled = resolveCastEnabled(mode, relayConfigured),
                 activeTab = TabId.Top,
                 topSongsTab = TopSongsTab.TopSongs,
                 favorites = emptyList(),
@@ -2570,7 +2564,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun notifyCastUnavailable() {
         viewModelScope.launch {
-            showToast("Casting is not available for this API base URL.")
+            showToast("Casting isn't available right now.")
         }
     }
 
@@ -2596,8 +2590,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!analysisFile.exists()) {
             throw CastSourceUnavailableException("Cached analysis missing for $cacheKey")
         }
-        val contentType = resolver.getType(uri)?.toMediaTypeOrNull()
-        val audioBody = CastUploadClient.streamingBody(contentType, sizeBytes ?: -1L) {
+        // The relay echoes the audio Content-Type to the receiver verbatim and requires audio/*, so
+        // never send a missing or non-audio type.
+        val contentType = (resolver.getType(uri)?.takeIf { it.startsWith("audio/") } ?: "audio/mpeg")
+            .toMediaTypeOrNull()
+        val audioBody = CastRelayClient.streamingBody(contentType, sizeBytes ?: -1L) {
             resolver.openInputStream(uri) ?: throw IOException("Unable to open $uri")
         }
         val analysisBody = analysisFile.asRequestBody("application/json".toMediaTypeOrNull())

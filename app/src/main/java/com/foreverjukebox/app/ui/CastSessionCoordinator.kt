@@ -175,7 +175,7 @@ class CastSessionCoordinator(
             return
         }
         updateState(::stateAfterCastDisconnect)
-        castPlaybackCoordinator.clearRelaySession()
+        castPlaybackCoordinator.clearPendingCastRequest()
         castPlaybackCoordinator.resetStatusListener()
         cancelServerTrackLoad()
         playbackCoordinator.resetForNewTrack()

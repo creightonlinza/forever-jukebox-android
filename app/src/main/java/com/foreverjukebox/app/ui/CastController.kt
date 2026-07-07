@@ -86,9 +86,12 @@ class CastController(private val application: Application) {
         }.isSuccess
     }
 
-    fun loadLocalTrack(
+    /**
+     * LOAD a relay track by its id (Local cacheKey or Server jobId — the relay receiver treats both
+     * identically). Sending the same [fingerprint] again is a tuning/viz update, not a reload.
+     */
+    fun loadTrack(
         session: CastSession,
-        sessionId: String,
         fingerprint: String,
         title: String?,
         artist: String?,
@@ -96,7 +99,6 @@ class CastController(private val application: Application) {
         vizIndex: Int?
     ) {
         val customData = JSONObject().apply {
-            put("sessionId", sessionId)
             put("fingerprint", fingerprint)
             if (!tuningParams.isNullOrBlank()) {
                 put("tuningParams", tuningParams)
@@ -109,44 +111,7 @@ class CastController(private val application: Application) {
             title?.let { putString(MediaMetadata.KEY_TITLE, it) }
             artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
         }
-        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/local/$fingerprint")
-            .setStreamType(MediaInfo.STREAM_TYPE_NONE)
-            .setContentType("application/json")
-            .setMetadata(metadata)
-            .build()
-        val request = MediaLoadRequestData.Builder()
-            .setMediaInfo(mediaInfo)
-            .setAutoplay(true)
-            .setCustomData(customData)
-            .build()
-        session.remoteMediaClient?.load(request)
-    }
-
-    fun loadTrack(
-        session: CastSession,
-        baseUrl: String,
-        jobId: String,
-        title: String?,
-        artist: String?,
-        tuningParams: String?,
-        vizIndex: Int?
-    ) {
-        val normalizedBaseUrl = baseUrl.trimEnd('/')
-        val customData = JSONObject().apply {
-            put("baseUrl", normalizedBaseUrl)
-            put("jobId", jobId)
-            if (!tuningParams.isNullOrBlank()) {
-                put("tuningParams", tuningParams)
-            }
-            if (vizIndex != null) {
-                put("vizIndex", vizIndex)
-            }
-        }
-        val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
-            title?.let { putString(MediaMetadata.KEY_TITLE, it) }
-            artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
-        }
-        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/$jobId")
+        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/$fingerprint")
             .setStreamType(MediaInfo.STREAM_TYPE_NONE)
             .setContentType("application/json")
             .setMetadata(metadata)
