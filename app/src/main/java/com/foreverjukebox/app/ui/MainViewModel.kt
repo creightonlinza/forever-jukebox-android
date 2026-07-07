@@ -930,6 +930,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         localAnalysisCoordinator.cancelLocalAnalysis()
     }
 
+    fun retryCastLoad() {
+        castPlaybackCoordinator.retryLastCastRequest()
+    }
+
     fun setAppMode(mode: AppMode) {
         if (state.value.appMode == mode) return
         resetRuntimeForModeChange(mode)
@@ -2574,7 +2578,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * [CastSourceUnavailableException] otherwise so the coordinator surfaces the "re-pick the file"
      * error. The audio streams from the content URI without buffering the whole file in memory.
      */
-    private fun buildCastLocalUploadSource(sourceUri: String, cacheKey: String): CastLocalUploadSource {
+    private fun buildCastLocalUploadSource(
+        sourceUri: String,
+        cacheKey: String,
+        onAudioProgress: (bytesSent: Long, totalBytes: Long?) -> Unit
+    ): CastLocalUploadSource {
         val uri = sourceUri.toUri()
         val resolver = getApplication<Application>().contentResolver
         val sizeBytes = queryContentSize(uri)
@@ -2594,7 +2602,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // never send a missing or non-audio type.
         val contentType = (resolver.getType(uri)?.takeIf { it.startsWith("audio/") } ?: "audio/mpeg")
             .toMediaTypeOrNull()
-        val audioBody = CastRelayClient.streamingBody(contentType, sizeBytes ?: -1L) {
+        val audioBody = CastRelayClient.streamingBody(
+            contentType = contentType,
+            sizeBytes = sizeBytes ?: -1L,
+            onBytesWritten = { bytes -> onAudioProgress(bytes, sizeBytes) }
+        ) {
             resolver.openInputStream(uri) ?: throw IOException("Unable to open $uri")
         }
         val analysisBody = analysisFile.asRequestBody("application/json".toMediaTypeOrNull())

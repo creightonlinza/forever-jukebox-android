@@ -190,9 +190,12 @@ internal fun ColumnScope.CastListenScreen(
     favoriteToggleInFlight: Boolean,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
-    onSelectVisualization: (Int) -> Unit
+    onSelectVisualization: (Int) -> Unit,
+    onCancelAnalysis: () -> Unit,
+    onRetryCastLoad: () -> Unit
 ) {
     val hasCastTrack = playback.hasCastTrack()
+    val castStatus = resolveCastScreenStatus(appMode, playback)
     val canShowTransport = shouldShowPlaybackTransport(playback)
     val canSelectVisualization = playback.castControlsReady()
     val canShowReceiverDetails = playback.castReceiverDetailsReady()
@@ -254,76 +257,142 @@ internal fun ColumnScope.CastListenScreen(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                if (!hasCastTrack) {
-                    Text(
-                        text = "Choose a track to start casting.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
+                when (castStatus) {
+                    is CastScreenStatus.Failed -> LoadingFailedStatus(
+                        message = castStatus.message,
+                        onRetry = if (castStatus.canRetry) onRetryCastLoad else null
                     )
-                } else {
-                    if (canSelectVisualization) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Visualization:",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Box {
-                                OutlinedButton(
-                                    onClick = { showVizMenu = true },
-                                    colors = pillOutlinedButtonColors(),
-                                    border = pillButtonBorder(),
-                                    shape = PillShape,
-                                    contentPadding = SmallButtonPadding,
-                                    modifier = Modifier.height(SmallButtonHeight)
-                                ) {
-                                    Text(
-                                        text = vizLabels.getOrNull(playback.activeVizIndex) ?: "Select",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                    Icon(
-                                        imageVector = Icons.Filled.ArrowDropDown,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showVizMenu,
-                                    onDismissRequest = { showVizMenu = false }
-                                ) {
-                                    vizLabels.forEachIndexed { index, label ->
-                                        DropdownMenuItem(
-                                            text = { Text(label) },
-                                            onClick = {
-                                                onSelectVisualization(index)
-                                                showVizMenu = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    is CastScreenStatus.Analyzing -> {
+                        LoadingProgressIndicator(
+                            progress = castStatus.progress,
+                            label = castStatus.message,
+                            showCancel = castStatus.showCancel,
+                            onCancel = onCancelAnalysis
+                        )
+                        CastStatusTrackLine(playback)
                     }
-                    // Transport moved to the persistent playback bar; only the
-                    // playlist shortcut remains on the cast surface.
-                    if (canShowTransport && showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
-                        SquareIconButton(
-                            onClick = onOpenPlaylist,
-                            modifier = Modifier.size(SmallButtonHeight)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.QueueMusic,
-                                contentDescription = "Playlist",
-                                tint = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                    is CastScreenStatus.Uploading -> LoadingProgressIndicator(
+                        progress = castStatus.percent,
+                        label = "Sending to ${playback.castDeviceName ?: "cast device"}…"
+                    )
+                    CastScreenStatus.WaitingForReceiver -> LoadingProgressIndicator(
+                        progress = null,
+                        label = "Loading on ${playback.castDeviceName ?: "cast device"}…"
+                    )
+                    null -> CastIdleContent(
+                        hasCastTrack = hasCastTrack,
+                        canSelectVisualization = canSelectVisualization,
+                        canShowTransport = canShowTransport,
+                        showPlaylistControls = showPlaylistControls,
+                        playback = playback,
+                        vizLabels = vizLabels,
+                        showVizMenu = showVizMenu,
+                        onShowVizMenu = { showVizMenu = it },
+                        playlist = playlist,
+                        onOpenPlaylist = onOpenPlaylist,
+                        onSelectVisualization = onSelectVisualization
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CastStatusTrackLine(playback: PlaybackState) {
+    val title = playback.trackTitle?.trim()?.takeIf { it.isNotBlank() } ?: return
+    val artist = playback.trackArtist?.trim()?.takeIf { it.isNotBlank() }
+    Text(
+        text = if (artist == null) title else "$title - $artist",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onBackground,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center
+    )
+}
+
+@Composable
+private fun CastIdleContent(
+    hasCastTrack: Boolean,
+    canSelectVisualization: Boolean,
+    canShowTransport: Boolean,
+    showPlaylistControls: Boolean,
+    playback: PlaybackState,
+    vizLabels: List<String>,
+    showVizMenu: Boolean,
+    onShowVizMenu: (Boolean) -> Unit,
+    playlist: JukeboxPlaylistState,
+    onOpenPlaylist: () -> Unit,
+    onSelectVisualization: (Int) -> Unit
+) {
+    if (!hasCastTrack) {
+        Text(
+            text = "Choose a track to start casting.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
+        )
+        return
+    }
+    if (canSelectVisualization) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Visualization:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Box {
+                OutlinedButton(
+                    onClick = { onShowVizMenu(true) },
+                    colors = pillOutlinedButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text(
+                        text = vizLabels.getOrNull(playback.activeVizIndex) ?: "Select",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = showVizMenu,
+                    onDismissRequest = { onShowVizMenu(false) }
+                ) {
+                    vizLabels.forEachIndexed { index, label ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                onSelectVisualization(index)
+                                onShowVizMenu(false)
+                            }
+                        )
                     }
                 }
             }
+        }
+    }
+    // Transport moved to the persistent playback bar; only the
+    // playlist shortcut remains on the cast surface.
+    if (canShowTransport && showPlaylistControls && shouldShowActivePlaylistControls(playlist)) {
+        SquareIconButton(
+            onClick = onOpenPlaylist,
+            modifier = Modifier.size(SmallButtonHeight)
+        ) {
+            Icon(
+                Icons.AutoMirrored.Outlined.QueueMusic,
+                contentDescription = "Playlist",
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -756,6 +825,59 @@ internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMod
     }
 }
 
+// The shared spinner + percentage + message block, used by both the full-screen LoadingStatus and
+// the cast screen's status area.
+@Composable
+internal fun LoadingProgressIndicator(
+    progress: Int?,
+    label: String?,
+    showCancel: Boolean = false,
+    onCancel: () -> Unit = {}
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier.size(72.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            val themeTokens = LocalThemeTokens.current
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = themeTokens.onBackground,
+                trackColor = themeTokens.onBackground.copy(alpha = 0.2f),
+                strokeWidth = 2.dp
+            )
+        }
+        if (progress != null) {
+            Text(
+                text = "${progress}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        if (!label.isNullOrBlank()) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (showCancel) {
+            OutlinedButton(
+                onClick = onCancel,
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .height(SmallButtonHeight)
+            ) {
+                Text("Cancel Analysis", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
 @Composable
 internal fun LoadingStatus(
     progress: Int?,
@@ -781,48 +903,12 @@ internal fun LoadingStatus(
             .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                modifier = Modifier.size(72.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                val themeTokens = LocalThemeTokens.current
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = themeTokens.onBackground,
-                    trackColor = themeTokens.onBackground.copy(alpha = 0.2f),
-                    strokeWidth = 2.dp
-                )
-            }
-            if (progress != null) {
-                Text(
-                    text = "${progress}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-            if (!label.isNullOrBlank()) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (showCancel) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    colors = pillOutlinedButtonColors(),
-                    border = pillButtonBorder(),
-                    shape = PillShape,
-                    contentPadding = SmallButtonPadding,
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .height(SmallButtonHeight)
-                ) {
-                    Text("Cancel Analysis", style = MaterialTheme.typography.labelSmall)
-                }
-            }
-        }
+        LoadingProgressIndicator(
+            progress = progress,
+            label = label,
+            showCancel = showCancel,
+            onCancel = onCancel
+        )
         Spacer(modifier = Modifier.weight(1f))
         Column(
             modifier = Modifier.fillMaxWidth(),

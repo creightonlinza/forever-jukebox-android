@@ -149,7 +149,8 @@ class AppModePolicyTest {
         assertTrue(shouldShowLocalLoadingCancel(AppMode.Local, loadingPlayback))
         assertFalse(shouldShowLocalLoadingCancel(AppMode.Server, loadingPlayback))
         assertFalse(shouldShowLocalLoadingCancel(AppMode.Local, idlePlayback))
-        assertFalse(
+        // Cancelling an analysis started while casting is allowed (shown on the cast screen).
+        assertTrue(
             shouldShowLocalLoadingCancel(
                 AppMode.Local,
                 loadingPlayback.copy(isCasting = true)

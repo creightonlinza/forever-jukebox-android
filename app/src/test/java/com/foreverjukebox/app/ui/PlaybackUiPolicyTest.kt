@@ -19,6 +19,21 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun playbackSummaryLineHiddenWhileCastingBecauseReceiverDoesNotReportCounters() {
+        val jukebox = PlaybackState(listenTime = "00:01:00", beatsPlayed = 42)
+
+        assertEquals(
+            "Listen Time: 00:01:00 - Total Beats: 42",
+            playbackSummaryLine(jukebox)
+        )
+        assertEquals(
+            "Listen Time: 00:01:00",
+            playbackSummaryLine(jukebox.copy(playMode = PlaybackMode.Autocanonizer))
+        )
+        assertNull(playbackSummaryLine(jukebox.copy(isCasting = true)))
+    }
+
+    @Test
     fun jumpLineUsesActualJumpDestinationWhenCursorCaughtUpPastIt() {
         val line = jumpLineForEngineState(
             JukeboxState(
@@ -112,7 +127,8 @@ class PlaybackUiPolicyTest {
         )
         assertFalse(shouldShowLocalLoadingCancel(AppMode.Server, analyzing))
         assertFalse(shouldShowLocalLoadingCancel(null, analyzing))
-        assertFalse(
+        // Cancelling an analysis started while casting is allowed (shown on the cast screen).
+        assertTrue(
             shouldShowLocalLoadingCancel(AppMode.Local, analyzing.copy(isCasting = true))
         )
         assertFalse(shouldShowLocalLoadingCancel(AppMode.Local, PlaybackState()))

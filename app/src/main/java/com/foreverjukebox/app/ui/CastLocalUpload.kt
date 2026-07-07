@@ -27,7 +27,12 @@ class CastSourceUnavailableException(
 /**
  * Builds a [CastLocalUploadSource] for (sourceUri, cacheKey), or throws
  * [CastSourceUnavailableException] if the source or its cached analysis can't be accessed.
+ * [onAudioProgress] receives (bytesSent, totalBytes-or-null) from the audio body as it uploads.
  */
 fun interface CastLocalUploadSourceFactory {
-    fun build(sourceUri: String, cacheKey: String): CastLocalUploadSource
+    fun build(
+        sourceUri: String,
+        cacheKey: String,
+        onAudioProgress: (bytesSent: Long, totalBytes: Long?) -> Unit
+    ): CastLocalUploadSource
 }

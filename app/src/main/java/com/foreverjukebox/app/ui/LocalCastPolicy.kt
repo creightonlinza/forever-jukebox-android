@@ -18,3 +18,9 @@ fun resolveCastEnabled(mode: AppMode?, relayConfigured: Boolean): Boolean =
  */
 fun isLocalCastFileTooLarge(sizeBytes: Long?): Boolean =
     sizeBytes != null && sizeBytes > CastRelayClient.MAX_AUDIO_BYTES
+
+/** Integer upload percent, or null when the total size is unknown (indeterminate spinner). */
+fun castUploadPercent(bytesSent: Long, totalBytes: Long?): Int? {
+    if (totalBytes == null || totalBytes <= 0L) return null
+    return ((bytesSent * 100) / totalBytes).toInt().coerceIn(0, 100)
+}

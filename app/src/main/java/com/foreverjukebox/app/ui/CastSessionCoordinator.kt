@@ -60,6 +60,7 @@ internal fun stateAfterCastDisconnect(state: UiState): UiState {
         playback = state.playback.copy(
             isCasting = false,
             castDeviceName = null,
+            castTransfer = null,
             localSourceUri = null,
             castAudioModeWireValue = JukeboxAudioMode.Off.wireValue,
             castSupportedAudioModes = emptyList()

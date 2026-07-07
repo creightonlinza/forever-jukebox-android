@@ -59,7 +59,12 @@ internal fun nowPlayingLine(playback: PlaybackState): String {
     }
 }
 
-internal fun playbackSummaryLine(playback: PlaybackState): String {
+internal fun playbackSummaryLine(playback: PlaybackState): String? {
+    // The cast receiver doesn't report listen time or beats played back to the sender, so these
+    // local counters are stale while casting — hide the line entirely.
+    if (playback.isCasting) {
+        return null
+    }
     return if (playback.playMode == PlaybackMode.Autocanonizer) {
         "Listen Time: ${playback.listenTime}"
     } else {

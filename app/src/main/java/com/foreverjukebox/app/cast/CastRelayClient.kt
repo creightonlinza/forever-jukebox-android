@@ -177,11 +177,14 @@ class CastRelayClient(
         /**
          * A [RequestBody] that streams from [streamProvider] without buffering the whole file in
          * memory. [streamProvider] must return a fresh stream each call (it may be re-invoked on a
-         * retry). [sizeBytes] is sent as the Content-Length.
+         * retry). [sizeBytes] is sent as the Content-Length. [onBytesWritten] receives the
+         * cumulative bytes written so far, on OkHttp's IO thread; the count restarts from zero if
+         * OkHttp re-invokes [writeTo] on a retry.
          */
         fun streamingBody(
             contentType: MediaType?,
             sizeBytes: Long,
+            onBytesWritten: ((Long) -> Unit)? = null,
             streamProvider: () -> InputStream
         ): RequestBody = object : RequestBody() {
             override fun contentType(): MediaType? = contentType
@@ -190,9 +193,19 @@ class CastRelayClient(
 
             override fun writeTo(sink: BufferedSink) {
                 streamProvider().use { input ->
-                    sink.writeAll(input.source())
+                    val source = input.source()
+                    var totalBytes = 0L
+                    while (true) {
+                        val read = source.read(sink.buffer, WRITE_SEGMENT_BYTES)
+                        if (read == -1L) break
+                        sink.emitCompleteSegments()
+                        totalBytes += read
+                        onBytesWritten?.invoke(totalBytes)
+                    }
                 }
             }
         }
+
+        private const val WRITE_SEGMENT_BYTES = 8L * 1024
     }
 }

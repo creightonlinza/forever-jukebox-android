@@ -5,8 +5,10 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -212,5 +214,67 @@ class CastRelayClientTest {
         val audioRequest = server.takeRequest()
         assertEquals("STREAMED-AUDIO", audioRequest.body.readUtf8())
         assertEquals(payload.size.toLong(), audioRequest.bodySize)
+    }
+
+    @Test
+    fun streamingBodyReportsCumulativeBytesWritten() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        // Multiple 8 KiB segments so the callback fires more than once.
+        val payload = ByteArray(20 * 1024) { (it % 251).toByte() }
+        val reported = mutableListOf<Long>()
+        val streaming = CastRelayClient.streamingBody(
+            contentType = "audio/mpeg".toMediaType(),
+            sizeBytes = payload.size.toLong(),
+            onBytesWritten = { reported.add(it) }
+        ) { payload.inputStream() }
+
+        val result = client.uploadForCast(baseUrl(), fingerprint, streaming, analysisBody)
+
+        assertEquals(CastRelayClient.UploadResult.Ok, result)
+        assertTrue("expected multiple progress callbacks, got ${reported.size}", reported.size > 1)
+        assertEquals(payload.size.toLong(), reported.last())
+        assertEquals(reported, reported.sorted())
+        val audioRequest = server.takeRequest()
+        assertEquals(payload.size.toLong(), audioRequest.bodySize)
+    }
+
+    @Test
+    fun streamingBodyProgressResetsPerWriteToInvocation() {
+        val payload = ByteArray(12 * 1024) { 7 }
+        val reported = mutableListOf<Long>()
+        val streaming = CastRelayClient.streamingBody(
+            contentType = "audio/mpeg".toMediaType(),
+            sizeBytes = payload.size.toLong(),
+            onBytesWritten = { reported.add(it) }
+        ) { payload.inputStream() }
+
+        // OkHttp may re-invoke writeTo on a retry; the cumulative count must restart each time.
+        streaming.writeTo(Buffer())
+        val firstInvocation = reported.toList()
+        reported.clear()
+        streaming.writeTo(Buffer())
+
+        assertEquals(payload.size.toLong(), firstInvocation.last())
+        assertEquals(firstInvocation, reported)
+        assertTrue(reported.first() <= 8L * 1024)
+    }
+
+    @Test
+    fun streamingBodyWithUnknownSizeStillStreamsEverything() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val payload = "NO-SIZE-AUDIO".toByteArray()
+        val streaming = CastRelayClient.streamingBody(
+            contentType = "audio/mpeg".toMediaType(),
+            sizeBytes = -1L
+        ) { payload.inputStream() }
+
+        val result = client.uploadForCast(baseUrl(), fingerprint, streaming, analysisBody)
+
+        assertEquals(CastRelayClient.UploadResult.Ok, result)
+        assertEquals("NO-SIZE-AUDIO", server.takeRequest().body.readUtf8())
     }
 }

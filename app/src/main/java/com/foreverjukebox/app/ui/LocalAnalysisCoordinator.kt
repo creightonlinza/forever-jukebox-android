@@ -175,6 +175,14 @@ class LocalAnalysisCoordinator(
 
     fun cancelLocalAnalysis() {
         cancelLocalAnalysisInternal(showCancelledMessage = false)
+        if (getState().playback.isCasting) {
+            // The previous track is still playing on the receiver: don't reset playback (that would
+            // stop the cast timers and wipe the cast track) or kick to the Input tab. Clearing the
+            // provisional metadata lets the next receiver status backfill the playing track.
+            updateState { current -> stateAfterCastAnalysisCancel(current) }
+            castPlaybackCoordinator.requestCastStatus()
+            return
+        }
         playbackCoordinator.resetForNewTrack()
         updateState { current -> stateAfterLocalAnalysisCancel(current) }
     }

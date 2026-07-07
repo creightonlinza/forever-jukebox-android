@@ -772,6 +772,7 @@ class PlaybackCoordinator(
                     lastJobId = null,
                     castPlaybackState = null,
                     isCastLoading = false,
+                    castTransfer = null,
                     deleteEligible = false,
                     analysisProgress = null,
                     analysisMessage = null,

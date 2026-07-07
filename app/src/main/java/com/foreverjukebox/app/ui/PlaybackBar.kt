@@ -65,11 +65,10 @@ fun PlaybackBar(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.fillMaxWidth()
             )
-            // The cast receiver does not report listen time or beats played;
-            // those counters only track local playback.
-            if (!playback.isCasting) {
+            val summaryLine = playbackSummaryLine(playback)
+            if (summaryLine != null) {
                 Text(
-                    text = playbackSummaryLine(playback),
+                    text = summaryLine,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

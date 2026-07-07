@@ -372,12 +372,15 @@ private fun BoxWithConstraintsScope.FullscreenBottomControls(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = playbackSummaryLine(playback),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                val summaryLine = playbackSummaryLine(playback)
+                if (summaryLine != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = summaryLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             SquareIconButton(
                 onClick = onClose,

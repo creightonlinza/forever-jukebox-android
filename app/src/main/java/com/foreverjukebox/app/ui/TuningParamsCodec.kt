@@ -60,7 +60,7 @@ object TuningParamsCodec {
             ?.takeIf { it >= 0 }
         val branchLength = params.firstValue("bl")
             ?.toIntOrNull()
-            ?.takeIf { it in ALLOWED_BRANCH_LENGTHS }
+            ?.takeIf { it == 0 || it in ALLOWED_BRANCH_LENGTHS }
         val legacyLongBranches = parseStandardBoolean(params.firstValue("lg"))
         val minJumpDistancePercent = when {
             branchLength != null -> branchLength
@@ -115,7 +115,6 @@ object TuningParamsCodec {
                 "bl", "lg" -> {
                     if (!branchLengthHandled) {
                         resolvedBranchLength
-                            ?.takeIf { it > 0 }
                             ?.let { sanitized["bl"] = it.toString() }
                         branchLengthHandled = true
                     }
@@ -161,9 +160,7 @@ object TuningParamsCodec {
             "bp=${tuning.minProb.coerceIn(0, 100)},${tuning.maxProb.coerceIn(0, 100)},${tuning.ramp.coerceIn(0, 100)}",
             "ah=${if (tuning.highlightAnchorBranch) 1 else 0}"
         )
-        if (tuning.minJumpDistancePercent > 0) {
-            params.add(1, "bl=${tuning.minJumpDistancePercent}")
-        }
+        params.add(1, "bl=${tuning.minJumpDistancePercent}")
         if (audioMode != JukeboxAudioMode.Off || includeOffAudioMode) {
             params.add("am=${audioMode.wireValue}")
         }

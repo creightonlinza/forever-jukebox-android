@@ -115,7 +115,11 @@ class CastPlaybackCoordinator(
                     castPlaybackState = "loading",
                     lastJobId = normalizedJobId,
                     isCastLoading = true,
-                    analysisInFlight = true,
+                    castTransfer = CastTransfer.WaitingForReceiver(normalizedJobId),
+                    analysisInFlight = false,
+                    analysisCalculating = false,
+                    analysisProgress = null,
+                    analysisMessage = null,
                     analysisErrorMessage = null,
                     deleteEligible = false,
                     playAfterLoaded = false,
@@ -210,7 +214,12 @@ class CastPlaybackCoordinator(
                     lastTrackCreatedAtEpochMs = null,
                     castPlaybackState = "loading",
                     isCastLoading = true,
-                    analysisInFlight = true,
+                    // Analysis → transfer handoff: the analysis pipeline is done with its fields.
+                    castTransfer = CastTransfer.Uploading(fingerprint, percent = 0),
+                    analysisInFlight = false,
+                    analysisCalculating = false,
+                    analysisProgress = null,
+                    analysisMessage = null,
                     analysisErrorMessage = null,
                     deleteEligible = false,
                     playAfterLoaded = false,
@@ -237,8 +246,28 @@ class CastPlaybackCoordinator(
         castTuningParams: String?,
         vizIndex: Int?
     ) {
+        var lastReportedPercent = -1
         val source = try {
-            buildUploadSource.build(sourceUri, fingerprint)
+            buildUploadSource.build(sourceUri, fingerprint) { bytesSent, totalBytes ->
+                val percent = castUploadPercent(bytesSent, totalBytes)
+                // Runs on OkHttp's IO thread; updateState is a thread-safe StateFlow update. The
+                // transfer guard drops stale callbacks after a cancel/replacement/phase change.
+                if (percent != null && percent != lastReportedPercent) {
+                    lastReportedPercent = percent
+                    updateState { current ->
+                        val transfer = current.playback.castTransfer
+                        if (transfer is CastTransfer.Uploading && transfer.trackId == fingerprint) {
+                            current.copy(
+                                playback = current.playback.copy(
+                                    castTransfer = transfer.copy(percent = percent)
+                                )
+                            )
+                        } else {
+                            current
+                        }
+                    }
+                }
+            }
         } catch (_: CastSourceUnavailableException) {
             postCastError(CAST_SOURCE_UNAVAILABLE_MESSAGE)
             return
@@ -254,14 +283,23 @@ class CastPlaybackCoordinator(
             analysisBody = source.analysisBody
         )
         when (result) {
-            CastRelayClient.UploadResult.Ok -> castController.loadTrack(
-                session = session,
-                fingerprint = fingerprint,
-                title = title,
-                artist = artist,
-                tuningParams = castTuningParams,
-                vizIndex = vizIndex
-            )
+            CastRelayClient.UploadResult.Ok -> {
+                updateState {
+                    it.copy(
+                        playback = it.playback.copy(
+                            castTransfer = CastTransfer.WaitingForReceiver(fingerprint)
+                        )
+                    )
+                }
+                castController.loadTrack(
+                    session = session,
+                    fingerprint = fingerprint,
+                    title = title,
+                    artist = artist,
+                    tuningParams = castTuningParams,
+                    vizIndex = vizIndex
+                )
+            }
             CastRelayClient.UploadResult.TooLarge -> postCastError(CAST_FILE_TOO_LARGE_MESSAGE)
             CastRelayClient.UploadResult.Guard -> postCastError(CAST_RELAY_GUARD_MESSAGE)
             CastRelayClient.UploadResult.Unreachable -> postCastError(CAST_RELAY_UNREACHABLE_MESSAGE)
@@ -273,6 +311,7 @@ class CastPlaybackCoordinator(
             it.copy(
                 playback = it.playback.copy(
                     isCastLoading = false,
+                    castTransfer = null,
                     analysisInFlight = false,
                     castPlaybackState = "error",
                     analysisErrorMessage = message
@@ -280,6 +319,27 @@ class CastPlaybackCoordinator(
             )
         }
         onSyncCastNotification()
+    }
+
+    /** Re-runs the last cast request (upload or pull) after a surfaced error. No-op when none. */
+    fun retryLastCastRequest() {
+        when (val request = lastCastRequest) {
+            is CastLoadRequest.Local -> castLocalTrackInternal(
+                request.fingerprint,
+                request.sourceUri,
+                request.title,
+                request.artist,
+                request.tuningParams
+            )
+            is CastLoadRequest.Server -> castTrackIdInternal(
+                request.jobId,
+                request.title,
+                request.artist,
+                request.youtubeId,
+                request.tuningParams
+            )
+            null -> Unit
+        }
     }
 
     /**
