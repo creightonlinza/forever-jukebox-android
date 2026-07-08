@@ -106,15 +106,16 @@ fun HeaderBar(
             ) {
                 HeroTitle()
             }
-            if (state.appMode == AppMode.Server) {
+            // Both modes cast through the same relay receiver, so castEnabled is the only gate.
+            if (state.castEnabled) {
                 CastRouteButton(
                     modifier = Modifier.size(SmallButtonHeight),
-                    enabled = state.castEnabled,
+                    enabled = true,
                     onSessionStarted = onCastSessionStarted,
                     onDisabledClick = {
                         Toast.makeText(
                             context,
-                            "Casting is not available for this API base URL.",
+                            "Casting isn't available right now.",
                             Toast.LENGTH_SHORT
                         ).show()
                     }

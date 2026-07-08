@@ -171,7 +171,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 playlist = state.playlist,
                 onOpenPlaylist = { showPlaylist = true },
-                onSelectVisualization = viewModel::setActiveVisualization
+                onSelectVisualization = viewModel::setActiveVisualization,
+                onCancelAnalysis = viewModel::cancelLocalAnalysis,
+                onRetryCastLoad = viewModel::retryCastLoad
             )
             }
             ListenContentMode.LocalReady -> {

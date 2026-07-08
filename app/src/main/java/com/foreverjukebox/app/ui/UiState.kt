@@ -188,6 +188,22 @@ data class AutocanonizerUiState(
     val trackDurationSeconds: Double = 0.0
 )
 
+/**
+ * Sender-owned phase of pushing a track to the cast receiver. Written only by the sender-side cast
+ * code; [reduceCastStatus] never sets it and only clears it once the receiver reports status for
+ * [trackId] (or a terminal error), so periodic statuses from the still-playing previous track can't
+ * stomp an in-flight transfer.
+ */
+sealed interface CastTransfer {
+    val trackId: String
+
+    /** Audio/analysis PUTs to the relay. [percent] is null when the audio size is unknown. */
+    data class Uploading(override val trackId: String, val percent: Int?) : CastTransfer
+
+    /** LOAD sent (or pull registered); waiting for the receiver's first status for this track. */
+    data class WaitingForReceiver(override val trackId: String) : CastTransfer
+}
+
 data class PlaybackState(
     val playMode: PlaybackMode = PlaybackMode.Jukebox,
     val jukeboxAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
@@ -222,9 +238,14 @@ data class PlaybackState(
     val jumpLine: JumpLine? = null,
     val lastJobId: String? = null,
     val lastYouTubeId: String? = null,
+    // Content URI of the currently loaded local track. Non-null marks the track as a Local-mode cast
+    // candidate; the relay reports the bare fingerprint (== cacheKey) in the status jobId field, so
+    // lastJobId cannot be relied on to identify a local cast. Set on local load, cleared otherwise.
+    val localSourceUri: String? = null,
     val lastTrackCreatedAtEpochMs: Long? = null,
     val castPlaybackState: String? = null,
     val isCastLoading: Boolean = false,
+    val castTransfer: CastTransfer? = null,
     val castAudioModeWireValue: String = JukeboxAudioMode.Off.wireValue,
     val castSupportedAudioModes: List<AudioModeOption> = emptyList(),
     val deleteEligible: Boolean = false,
@@ -365,7 +386,6 @@ fun shouldShowDeleteTrackAction(
 
 fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boolean {
     return mode == AppMode.Local &&
-        !playback.isCasting &&
         playback.analysisInFlight &&
         !playback.audioLoading &&
         playback.analysisMessage != "Loading audio"
@@ -395,7 +415,7 @@ fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
 fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading
 
 fun PlaybackState.isTrackLoading(): Boolean {
-    return isLoading() || isCastLoading || castPlaybackState == "loading"
+    return isLoading() || isCastLoading || castTransfer != null || castPlaybackState == "loading"
 }
 
 fun shouldPlayLoadingAudioFeedback(state: UiState): Boolean {
@@ -491,12 +511,52 @@ fun PlaybackState.reusableTrackIdsForMatching(): Set<String> {
 fun PlaybackState.castControlsReady(): Boolean {
     return isCasting &&
         hasCastTrack() &&
+        castTransfer == null &&
         castPlaybackState != "loading" &&
         analysisErrorMessage.isNullOrBlank()
 }
 
 fun shouldShowPlaybackTransport(playback: PlaybackState): Boolean {
     return !playback.isCasting || playback.castControlsReady()
+}
+
+/** What the cast screen's status area should show; null renders the idle cast content. */
+sealed interface CastScreenStatus {
+    data class Failed(val message: String, val canRetry: Boolean) : CastScreenStatus
+    data class Analyzing(val progress: Int?, val message: String?, val showCancel: Boolean) : CastScreenStatus
+    data class Uploading(val percent: Int?) : CastScreenStatus
+    data object WaitingForReceiver : CastScreenStatus
+}
+
+fun resolveCastScreenStatus(mode: AppMode?, playback: PlaybackState): CastScreenStatus? {
+    if (!playback.isCasting) return null
+    val error = playback.analysisErrorMessage
+    if (!error.isNullOrBlank()) {
+        // Retry only makes sense for errors from the cast pipeline (upload/pull/receiver), which
+        // set castPlaybackState = "error"; local analysis failures have nothing to re-send.
+        return CastScreenStatus.Failed(error, canRetry = playback.castPlaybackState == "error")
+    }
+    if (playback.analysisInFlight || playback.analysisCalculating) {
+        return CastScreenStatus.Analyzing(
+            progress = playback.analysisProgress,
+            message = if (playback.analysisCalculating) {
+                "Calculating pathways"
+            } else {
+                playback.analysisMessage ?: "Processing audio"
+            },
+            showCancel = shouldShowLocalLoadingCancel(mode, playback)
+        )
+    }
+    return when (val transfer = playback.castTransfer) {
+        is CastTransfer.Uploading -> CastScreenStatus.Uploading(transfer.percent)
+        is CastTransfer.WaitingForReceiver -> CastScreenStatus.WaitingForReceiver
+        // Server-mode / receiver-side loading arrives via receiver status alone.
+        null -> if (playback.hasCastTrack() && (playback.isCastLoading || playback.castPlaybackState == "loading")) {
+            CastScreenStatus.WaitingForReceiver
+        } else {
+            null
+        }
+    }
 }
 
 fun PlaybackState.castReceiverDetailsReady(): Boolean {
@@ -569,6 +629,28 @@ fun stateAfterLocalAnalysisCancel(current: UiState): UiState {
         activeTab = TabId.Input,
         localSelectedFileName = null,
         localAnalysisJsonPath = null
+    )
+}
+
+/**
+ * Cancel a local analysis started while casting: clear only the analysis fields and the provisional
+ * new-track metadata so the next receiver status backfills the still-playing track. The cast session
+ * itself is untouched.
+ */
+fun stateAfterCastAnalysisCancel(current: UiState): UiState {
+    return current.copy(
+        localSelectedFileName = null,
+        localAnalysisJsonPath = null,
+        playback = current.playback.copy(
+            analysisProgress = null,
+            analysisMessage = null,
+            analysisErrorMessage = null,
+            analysisInFlight = false,
+            analysisCalculating = false,
+            trackTitle = null,
+            trackArtist = null,
+            playTitle = ""
+        )
     )
 }
 

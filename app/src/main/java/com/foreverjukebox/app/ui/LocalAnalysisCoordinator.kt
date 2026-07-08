@@ -26,6 +26,7 @@ class LocalAnalysisCoordinator(
     private val localAnalysisService: LocalAnalysisService,
     private val controller: PlaybackController,
     private val playbackCoordinator: PlaybackCoordinator,
+    private val castPlaybackCoordinator: CastPlaybackCoordinator,
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
@@ -174,6 +175,14 @@ class LocalAnalysisCoordinator(
 
     fun cancelLocalAnalysis() {
         cancelLocalAnalysisInternal(showCancelledMessage = false)
+        if (getState().playback.isCasting) {
+            // The previous track is still playing on the receiver: don't reset playback (that would
+            // stop the cast timers and wipe the cast track) or kick to the Input tab. Clearing the
+            // provisional metadata lets the next receiver status backfill the playing track.
+            updateState { current -> stateAfterCastAnalysisCancel(current) }
+            castPlaybackCoordinator.requestCastStatus()
+            return
+        }
         playbackCoordinator.resetForNewTrack()
         updateState { current -> stateAfterLocalAnalysisCancel(current) }
     }
@@ -210,6 +219,23 @@ class LocalAnalysisCoordinator(
                 localAnalysisJsonPath = artifact.analysisJsonFile.absolutePath
             )
         }
+        // When a Cast device is already connected in Local mode, hand the track off to the relay
+        // instead of loading it into the local player.
+        val current = getState()
+        if (current.appMode == AppMode.Local && current.playback.isCasting) {
+            val cacheKey = artifact.localId.removePrefix(LOCAL_ID_PREFIX)
+            val savedTuning = localAnalysisService.readSavedTuning(artifact.localId)
+            castPlaybackCoordinator.castLocalTrack(
+                cacheKey = cacheKey,
+                sourceUri = artifact.sourceUri,
+                title = artifact.title,
+                artist = artifact.artist,
+                tuningParams = savedTuning
+            )
+            refreshLocalCachedTracks()
+            applyActiveTab(TabId.Play, true)
+            return
+        }
         playbackCoordinator.setAudioLoading(true)
         playbackCoordinator.setAnalysisProgress(0, "Loading audio")
         withContext(Dispatchers.Default) {
@@ -227,6 +253,8 @@ class LocalAnalysisCoordinator(
                     audioLoading = false,
                     lastJobId = artifact.localId,
                     lastYouTubeId = null,
+                    // Marks this as a Local-mode cast candidate for connect-time auto-cast.
+                    localSourceUri = artifact.sourceUri,
                     trackTitle = artifact.title,
                     trackArtist = artifact.artist
                 )
@@ -262,5 +290,9 @@ class LocalAnalysisCoordinator(
                 }.getOrDefault(false)
             }
         }
+    }
+
+    private companion object {
+        const val LOCAL_ID_PREFIX = "local-"
     }
 }

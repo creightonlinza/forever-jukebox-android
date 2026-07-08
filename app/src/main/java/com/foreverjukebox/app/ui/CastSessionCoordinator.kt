@@ -2,21 +2,51 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.playback.PlaybackController
 
-internal data class PreservedCastTrack(
-    val jobId: String,
-    val youtubeId: String?,
-    val title: String?,
-    val artist: String?,
+internal sealed interface PreservedCastTrack {
+    val title: String?
+    val artist: String?
     val audioMode: JukeboxAudioMode
-)
+
+    data class Server(
+        val jobId: String,
+        val youtubeId: String?,
+        override val title: String?,
+        override val artist: String?,
+        override val audioMode: JukeboxAudioMode
+    ) : PreservedCastTrack
+
+    data class Local(
+        val cacheKey: String,
+        val sourceUri: String,
+        override val title: String?,
+        override val artist: String?,
+        override val audioMode: JukeboxAudioMode
+    ) : PreservedCastTrack
+}
+
+private const val LOCAL_ID_PREFIX = "local-"
 
 internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTrack? {
-    val jobId = playback.lastJobId ?: return null
     val shouldAutoCast = playback.audioLoaded && playback.analysisLoaded
     if (!shouldAutoCast) {
         return null
     }
-    return PreservedCastTrack(
+    val localSourceUri = playback.localSourceUri
+    if (localSourceUri != null) {
+        val cacheKey = playback.lastJobId
+            ?.removePrefix(LOCAL_ID_PREFIX)
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        return PreservedCastTrack.Local(
+            cacheKey = cacheKey,
+            sourceUri = localSourceUri,
+            title = playback.trackTitle,
+            artist = playback.trackArtist,
+            audioMode = playback.jukeboxAudioMode
+        )
+    }
+    val jobId = playback.lastJobId ?: return null
+    return PreservedCastTrack.Server(
         jobId = jobId,
         youtubeId = playback.lastYouTubeId,
         title = playback.trackTitle,
@@ -30,6 +60,8 @@ internal fun stateAfterCastDisconnect(state: UiState): UiState {
         playback = state.playback.copy(
             isCasting = false,
             castDeviceName = null,
+            castTransfer = null,
+            localSourceUri = null,
             castAudioModeWireValue = JukeboxAudioMode.Off.wireValue,
             castSupportedAudioModes = emptyList()
         ),
@@ -100,27 +132,41 @@ class CastSessionCoordinator(
         playbackCoordinator.resetForNewTrack()
 
         if (preservedTrack != null) {
-            updateState {
-                it.copy(
-                    playback = it.playback.copy(
-                        lastYouTubeId = preservedTrack.youtubeId,
-                        lastJobId = preservedTrack.jobId,
-                        trackTitle = preservedTrack.title,
-                        trackArtist = preservedTrack.artist
-                    )
-                )
+            val tuningParams = if (preservedTrack.audioMode == JukeboxAudioMode.Off) {
+                null
+            } else {
+                TuningParamsCodec.buildAudioModeParam(preservedTrack.audioMode)
             }
-            castPlaybackCoordinator.castTrackId(
-                jobId = preservedTrack.jobId,
-                title = preservedTrack.title,
-                artist = preservedTrack.artist,
-                youtubeId = preservedTrack.youtubeId,
-                tuningParams = if (preservedTrack.audioMode == JukeboxAudioMode.Off) {
-                    null
-                } else {
-                    TuningParamsCodec.buildAudioModeParam(preservedTrack.audioMode)
+            when (preservedTrack) {
+                is PreservedCastTrack.Server -> {
+                    updateState {
+                        it.copy(
+                            playback = it.playback.copy(
+                                lastYouTubeId = preservedTrack.youtubeId,
+                                lastJobId = preservedTrack.jobId,
+                                trackTitle = preservedTrack.title,
+                                trackArtist = preservedTrack.artist
+                            )
+                        )
+                    }
+                    castPlaybackCoordinator.castTrackId(
+                        jobId = preservedTrack.jobId,
+                        title = preservedTrack.title,
+                        artist = preservedTrack.artist,
+                        youtubeId = preservedTrack.youtubeId,
+                        tuningParams = tuningParams
+                    )
                 }
-            )
+                is PreservedCastTrack.Local -> {
+                    castPlaybackCoordinator.castLocalTrack(
+                        cacheKey = preservedTrack.cacheKey,
+                        sourceUri = preservedTrack.sourceUri,
+                        title = preservedTrack.title,
+                        artist = preservedTrack.artist,
+                        tuningParams = tuningParams
+                    )
+                }
+            }
         }
         castPlaybackCoordinator.requestCastStatus()
     }
@@ -130,6 +176,7 @@ class CastSessionCoordinator(
             return
         }
         updateState(::stateAfterCastDisconnect)
+        castPlaybackCoordinator.clearPendingCastRequest()
         castPlaybackCoordinator.resetStatusListener()
         cancelServerTrackLoad()
         playbackCoordinator.resetForNewTrack()

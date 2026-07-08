@@ -13,7 +13,6 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.ui.ForeverJukeboxApp
 import com.foreverjukebox.app.ui.MainViewModel
@@ -35,7 +34,10 @@ class MainActivity : FragmentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.state.collect { state ->
-                    syncCastSessionListener(state.appMode == AppMode.Server)
+                    // Register the Cast session listener whenever the current mode can cast — Server
+                    // with a resolved receiver, or Local with the relay configured. (Previously this
+                    // was Server-only, which left Local/Play-flavor casting with no session driver.)
+                    syncCastSessionListener(state.castEnabled)
                 }
             }
         }

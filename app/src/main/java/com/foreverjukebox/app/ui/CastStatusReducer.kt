@@ -185,7 +185,19 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         canCarryCreatedAtFromState -> currentPlayback.lastTrackCreatedAtEpochMs
         else -> null
     }
-    val canApplyReceiverMetadata = resolvedCreatedAtEpochMs != null
+    // Receiver metadata is per-track; only accept it when the status identifies the track the
+    // sender believes is current. During a transfer the transferred track is the only acceptable
+    // identity, so statuses from the previous, still-playing track can't stomp the new one.
+    val currentTransfer = currentPlayback.castTransfer
+    val canApplyReceiverMetadata = when {
+        currentTransfer != null ->
+            !status.jobId.isNullOrBlank() && status.jobId == currentTransfer.trackId
+        currentPlayback.lastJobId.isNullOrBlank() -> true
+        else -> status.jobId == currentPlayback.lastJobId
+    }
+    val isNewTrackStatus = canApplyReceiverMetadata &&
+        !status.jobId.isNullOrBlank() &&
+        status.jobId != currentPlayback.lastJobId
     val hasTitle = canApplyReceiverMetadata && status.title.isNotBlank()
     val hasArtist = canApplyReceiverMetadata && status.artist.isNotBlank()
     val resolvedTrackTitle = when {
@@ -246,6 +258,15 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         jobId = resolvedLastJobId,
         createdAtEpochMs = resolvedCreatedAtEpochMs
     )
+    // The sender owns castTransfer; only clear it once the receiver acknowledges the transferred
+    // track (or reports a terminal error). Statuses for the previous, still-playing track must not
+    // stomp an in-flight transfer.
+    val resolvedCastTransfer = when {
+        currentTransfer == null -> null
+        !status.jobId.isNullOrBlank() && status.jobId == currentTransfer.trackId -> null
+        status.error.isNotBlank() -> null
+        else -> currentTransfer
+    }
     val nextPlayback = currentPlayback.copy(
         playMode = PlaybackMode.Jukebox,
         isRunning = resolvedIsRunning,
@@ -253,20 +274,23 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         playTitle = displayTitle,
         trackTitle = resolvedTrackTitle,
         trackArtist = resolvedTrackArtist,
-        trackDurationSeconds = if (canApplyReceiverMetadata) {
-            status.trackDurationSeconds ?: currentPlayback.trackDurationSeconds
-        } else {
-            currentPlayback.trackDurationSeconds
+        // Duration/beats/branches are per-track: carry the current value only while the status is
+        // for the same track; on a track change a missing field clears instead of showing the
+        // previous track's numbers.
+        trackDurationSeconds = when {
+            !canApplyReceiverMetadata -> currentPlayback.trackDurationSeconds
+            isNewTrackStatus -> status.trackDurationSeconds
+            else -> status.trackDurationSeconds ?: currentPlayback.trackDurationSeconds
         },
-        castTotalBeats = if (canApplyReceiverMetadata) {
-            status.totalBeats ?: currentPlayback.castTotalBeats
-        } else {
-            currentPlayback.castTotalBeats
+        castTotalBeats = when {
+            !canApplyReceiverMetadata -> currentPlayback.castTotalBeats
+            isNewTrackStatus -> status.totalBeats
+            else -> status.totalBeats ?: currentPlayback.castTotalBeats
         },
-        castTotalBranches = if (canApplyReceiverMetadata) {
-            status.totalBranches ?: currentPlayback.castTotalBranches
-        } else {
-            currentPlayback.castTotalBranches
+        castTotalBranches = when {
+            !canApplyReceiverMetadata -> currentPlayback.castTotalBranches
+            isNewTrackStatus -> status.totalBranches
+            else -> status.totalBranches ?: currentPlayback.castTotalBranches
         },
         jukeboxAudioMode = resolvedAudioMode,
         castAudioModeWireValue = resolvedCastAudioModeWireValue,
@@ -280,8 +304,10 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         } else {
             currentPlayback.analysisErrorMessage
         },
-        analysisInFlight = resolvedIsLoading,
+        // analysisInFlight is owned by the local analysis pipeline; receiver loading is tracked by
+        // isCastLoading/castPlaybackState so old-track statuses can't hide analysis progress.
         isCastLoading = resolvedIsLoading,
+        castTransfer = resolvedCastTransfer,
         deleteEligible = resolvedDeleteEligible,
         activeVizIndex = if ((status.activeVizIndex ?: -1) in 0 until visualizationCount) {
             status.activeVizIndex ?: currentPlayback.activeVizIndex

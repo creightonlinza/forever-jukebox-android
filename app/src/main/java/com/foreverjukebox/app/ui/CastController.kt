@@ -86,19 +86,20 @@ class CastController(private val application: Application) {
         }.isSuccess
     }
 
+    /**
+     * LOAD a relay track by its id (Local cacheKey or Server jobId — the relay receiver treats both
+     * identically). Sending the same [fingerprint] again is a tuning/viz update, not a reload.
+     */
     fun loadTrack(
         session: CastSession,
-        baseUrl: String,
-        jobId: String,
+        fingerprint: String,
         title: String?,
         artist: String?,
         tuningParams: String?,
         vizIndex: Int?
     ) {
-        val normalizedBaseUrl = baseUrl.trimEnd('/')
         val customData = JSONObject().apply {
-            put("baseUrl", normalizedBaseUrl)
-            put("jobId", jobId)
+            put("fingerprint", fingerprint)
             if (!tuningParams.isNullOrBlank()) {
                 put("tuningParams", tuningParams)
             }
@@ -110,7 +111,7 @@ class CastController(private val application: Application) {
             title?.let { putString(MediaMetadata.KEY_TITLE, it) }
             artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
         }
-        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/$jobId")
+        val mediaInfo = MediaInfo.Builder("foreverjukebox://cast/$fingerprint")
             .setStreamType(MediaInfo.STREAM_TYPE_NONE)
             .setContentType("application/json")
             .setMetadata(metadata)

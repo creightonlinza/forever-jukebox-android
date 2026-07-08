@@ -164,6 +164,12 @@ class TuningParamsCodecTest {
     }
 
     @Test
+    fun parseAcceptsExplicitZeroBranchLength() {
+        assertEquals(0, TuningParamsCodec.parse("bl=0")?.minJumpDistancePercent)
+        assertEquals(0, TuningParamsCodec.parse("bl=0&lg=1")?.minJumpDistancePercent)
+    }
+
+    @Test
     fun parseCanonicalBranchLengthOverridesLegacyValue() {
         assertEquals(
             5,
@@ -229,9 +235,17 @@ class TuningParamsCodecTest {
                 highlightAnchorBranch = false
             )
         )
-        assertNull(
+        assertEquals(
+            "bl=0",
             TuningParamsCodec.buildCastLoadPayload(
                 raw = "lg=0",
+                highlightAnchorBranch = false
+            )
+        )
+        assertEquals(
+            "bl=0",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "bl=0",
                 highlightAnchorBranch = false
             )
         )
@@ -321,7 +335,7 @@ class TuningParamsCodecTest {
 
         assertTrue(enabled.contains("bl=30"))
         assertFalse(enabled.contains("lg="))
-        assertFalse(disabled.contains("bl="))
+        assertTrue(disabled.contains("bl=0"))
         assertFalse(disabled.contains("lg="))
     }
 
@@ -446,5 +460,19 @@ class TuningParamsCodecTest {
         assertEquals(original.justBackwards, merged.justBackwards)
         assertEquals(original.minJumpDistancePercent, merged.minJumpDistancePercent)
         assertEquals(original.removeSequential, merged.removeSequential)
+    }
+
+    @Test
+    fun buildAndMergeRoundTripPreservesExplicitAnyBranchLength() {
+        val raw = TuningParamsCodec.buildFromTuningState(
+            TuningState(minJumpDistancePercent = 0)
+        )
+        val parsed = TuningParamsCodec.parse(raw, minThreshold = 2)
+        val merged = TuningParamsCodec.mergeIntoState(
+            TuningState(minJumpDistancePercent = 30),
+            parsed
+        )
+
+        assertEquals(0, merged.minJumpDistancePercent)
     }
 }

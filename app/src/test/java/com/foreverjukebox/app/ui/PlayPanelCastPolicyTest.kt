@@ -1,8 +1,10 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AppMode
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PlayPanelCastPolicyTest {
@@ -32,6 +34,9 @@ class PlayPanelCastPolicyTest {
         val errored = ready.copy(analysisErrorMessage = "load failed")
         val noTrack = ready.copy(lastJobId = null)
         val notCasting = ready.copy(isCasting = false)
+        // A replacement track's upload/LOAD hides controls even while the old track reports "playing".
+        val uploading = ready.copy(castTransfer = CastTransfer.Uploading("job_2", percent = 10))
+        val waiting = ready.copy(castTransfer = CastTransfer.WaitingForReceiver("job_2"))
 
         assertTrue(ready.castControlsReady())
         assertFalse(loading.castControlsReady())
@@ -39,6 +44,140 @@ class PlayPanelCastPolicyTest {
         assertFalse(errored.castControlsReady())
         assertFalse(noTrack.castControlsReady())
         assertFalse(notCasting.castControlsReady())
+        assertFalse(uploading.castControlsReady())
+        assertFalse(waiting.castControlsReady())
+    }
+
+    @Test
+    fun resolveCastScreenStatusPrecedenceErrorAnalysisTransferReceiver() {
+        val casting = PlaybackState(
+            isCasting = true,
+            lastJobId = "job_1",
+            castPlaybackState = "playing"
+        )
+
+        val errored = casting.copy(
+            analysisErrorMessage = "boom",
+            analysisInFlight = true,
+            castTransfer = CastTransfer.Uploading("job_2", percent = 5)
+        )
+        val analyzing = casting.copy(
+            analysisInFlight = true,
+            analysisProgress = 42,
+            analysisMessage = "Processing beats",
+            castTransfer = CastTransfer.Uploading("job_2", percent = 5)
+        )
+        val uploading = casting.copy(castTransfer = CastTransfer.Uploading("job_2", percent = 63))
+        val waiting = casting.copy(castTransfer = CastTransfer.WaitingForReceiver("job_2"))
+        val idle = casting
+
+        assertEquals(
+            CastScreenStatus.Failed("boom", canRetry = false),
+            resolveCastScreenStatus(AppMode.Local, errored)
+        )
+        assertEquals(
+            CastScreenStatus.Analyzing(progress = 42, message = "Processing beats", showCancel = true),
+            resolveCastScreenStatus(AppMode.Local, analyzing)
+        )
+        assertEquals(
+            CastScreenStatus.Uploading(percent = 63),
+            resolveCastScreenStatus(AppMode.Local, uploading)
+        )
+        assertEquals(
+            CastScreenStatus.WaitingForReceiver,
+            resolveCastScreenStatus(AppMode.Local, waiting)
+        )
+        assertNull(resolveCastScreenStatus(AppMode.Local, idle))
+    }
+
+    @Test
+    fun resolveCastScreenStatusRetryOnlyForCastPipelineErrors() {
+        val castError = PlaybackState(
+            isCasting = true,
+            lastJobId = "job_1",
+            castPlaybackState = "error",
+            analysisErrorMessage = "relay unreachable"
+        )
+        val analysisError = castError.copy(
+            castPlaybackState = "playing",
+            analysisErrorMessage = "Unsupported audio format"
+        )
+
+        assertEquals(
+            CastScreenStatus.Failed("relay unreachable", canRetry = true),
+            resolveCastScreenStatus(AppMode.Local, castError)
+        )
+        assertEquals(
+            CastScreenStatus.Failed("Unsupported audio format", canRetry = false),
+            resolveCastScreenStatus(AppMode.Local, analysisError)
+        )
+    }
+
+    @Test
+    fun resolveCastScreenStatusShowsWaitingForReceiverDrivenLoading() {
+        // Server-mode casts have no sender-side transfer; receiver status alone drives the spinner.
+        val receiverLoading = PlaybackState(
+            isCasting = true,
+            lastJobId = "job_1",
+            castPlaybackState = "loading",
+            isCastLoading = true
+        )
+        val noTrackYet = PlaybackState(isCasting = true)
+        val notCasting = PlaybackState(castPlaybackState = "loading")
+
+        assertEquals(
+            CastScreenStatus.WaitingForReceiver,
+            resolveCastScreenStatus(AppMode.Server, receiverLoading)
+        )
+        assertNull(resolveCastScreenStatus(AppMode.Server, noTrackYet))
+        assertNull(resolveCastScreenStatus(AppMode.Server, notCasting))
+    }
+
+    @Test
+    fun isTrackLoadingIncludesSenderTransfer() {
+        assertTrue(
+            PlaybackState(castTransfer = CastTransfer.Uploading("job_2", percent = null))
+                .isTrackLoading()
+        )
+        assertTrue(
+            PlaybackState(castTransfer = CastTransfer.WaitingForReceiver("job_2")).isTrackLoading()
+        )
+    }
+
+    @Test
+    fun stateAfterCastAnalysisCancelClearsAnalysisAndProvisionalMetadataOnly() {
+        val current = UiState(
+            activeTab = TabId.Play,
+            localSelectedFileName = "new-track.mp3",
+            localAnalysisJsonPath = "/cache/analysis.json",
+            playback = PlaybackState(
+                isCasting = true,
+                castDeviceName = "Living Room TV",
+                lastJobId = "job_1",
+                analysisInFlight = true,
+                analysisProgress = 55,
+                analysisMessage = "Processing beats",
+                trackTitle = "New Track",
+                trackArtist = "New Artist",
+                playTitle = "New Track — New Artist"
+            )
+        )
+
+        val next = stateAfterCastAnalysisCancel(current)
+
+        assertNull(next.localSelectedFileName)
+        assertNull(next.localAnalysisJsonPath)
+        assertFalse(next.playback.analysisInFlight)
+        assertNull(next.playback.analysisProgress)
+        assertNull(next.playback.analysisMessage)
+        assertNull(next.playback.trackTitle)
+        assertNull(next.playback.trackArtist)
+        assertEquals("", next.playback.playTitle)
+        // The cast session and its track survive the cancel.
+        assertTrue(next.playback.isCasting)
+        assertEquals("Living Room TV", next.playback.castDeviceName)
+        assertEquals("job_1", next.playback.lastJobId)
+        assertEquals(TabId.Play, next.activeTab)
     }
 
     @Test

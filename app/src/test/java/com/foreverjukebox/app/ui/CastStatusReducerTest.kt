@@ -269,7 +269,9 @@ class CastStatusReducerTest {
         val next = reduceCastStatus(current, status)
 
         assertTrue(next.playback.isRunning)
-        assertTrue(next.playback.analysisInFlight)
+        assertTrue(next.playback.isCastLoading)
+        // analysisInFlight is owned by the local analysis pipeline; receiver loading must not set it.
+        assertFalse(next.playback.analysisInFlight)
         assertEquals("old_song", next.playback.lastYouTubeId)
         assertNull(next.playback.lastJobId)
         assertEquals(4, next.playback.activeVizIndex)
@@ -535,9 +537,9 @@ class CastStatusReducerTest {
         val loading = reduceCastStatus(current, loadingStatus)
         val loadedPaused = reduceCastStatus(current, loadedPausedStatus)
 
-        assertTrue(loading.playback.analysisInFlight)
+        assertTrue(loading.playback.isCastLoading)
         assertTrue(loading.playback.isRunning)
-        assertFalse(loadedPaused.playback.analysisInFlight)
+        assertFalse(loadedPaused.playback.isCastLoading)
         assertFalse(loadedPaused.playback.isRunning)
     }
 
@@ -570,6 +572,7 @@ class CastStatusReducerTest {
         val next = reduceCastStatus(current, loading)
 
         assertTrue(next.playback.isCastLoading)
+        // A running local analysis is preserved across receiver statuses.
         assertTrue(next.playback.analysisInFlight)
     }
 
@@ -602,7 +605,8 @@ class CastStatusReducerTest {
         val next = reduceCastStatus(current, ready)
 
         assertFalse(next.playback.isCastLoading)
-        assertFalse(next.playback.analysisInFlight)
+        // Receiver readiness never clears a running local analysis; that's the analysis pipeline's job.
+        assertTrue(next.playback.analysisInFlight)
         assertTrue(next.playback.isRunning)
         assertFalse(next.playback.isPaused)
         assertEquals(201.0, next.playback.trackDurationSeconds ?: 0.0, 0.0001)
@@ -673,7 +677,9 @@ class CastStatusReducerTest {
     }
 
     @Test
-    fun reduceCastStatusIgnoresReceiverMetadataUntilCreatedAtResolvesForCurrentJob() {
+    fun reduceCastStatusAppliesReceiverMetadataForMatchingJobWithoutCreatedAt() {
+        // Relay upload mode: receiver statuses carry no server createdAt, but a matching jobId is
+        // enough to accept per-track metadata. Delete stays disabled without createdAt.
         val jobId = "0123456789abcdef0123456789abcdef"
         val previousCreatedAtEpochMs = OffsetDateTime.now(ZoneOffset.UTC)
             .minusDays(10)
@@ -714,15 +720,53 @@ class CastStatusReducerTest {
         assertEquals("Stealth", next.playback.trackTitle)
         assertEquals("Bad Religion", next.playback.trackArtist)
         assertEquals("Stealth — Bad Religion", next.playback.playTitle)
-        assertNull(next.playback.trackDurationSeconds)
-        assertNull(next.playback.castTotalBeats)
-        assertNull(next.playback.castTotalBranches)
+        assertEquals(219.50566893424036, next.playback.trackDurationSeconds ?: 0.0, 0.0001)
+        assertEquals(475, next.playback.castTotalBeats)
+        assertEquals(173, next.playback.castTotalBranches)
         assertNull(next.playback.lastTrackCreatedAtEpochMs)
         assertFalse(next.playback.deleteEligible)
     }
 
     @Test
-    fun reduceCastStatusAllowsReceiverMetadataAfterCreatedAtWasPreviouslyResolved() {
+    fun reduceCastStatusIgnoresReceiverMetadataForMismatchedJobId() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = "aaaa111122223333",
+                trackTitle = null,
+                trackArtist = null,
+                playTitle = "",
+                trackDurationSeconds = 180.0,
+                castTotalBeats = 400,
+                castTotalBranches = 40
+            )
+        )
+        val status = CastStatusMessage(
+            jobId = "cccc777788889999",
+            createdAt = serverTimestampMinutesAgo(minutesAgo = 1),
+            title = "Other Track",
+            artist = "Other Artist",
+            trackDurationSeconds = 201.0,
+            totalBeats = 480,
+            totalBranches = 56,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 1,
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertNull(next.playback.trackTitle)
+        assertNull(next.playback.trackArtist)
+        assertEquals(180.0, next.playback.trackDurationSeconds ?: 0.0, 0.0001)
+        assertEquals(400, next.playback.castTotalBeats)
+        assertEquals(40, next.playback.castTotalBranches)
+    }
+
+    @Test
+    fun reduceCastStatusBackfillsTitleForMatchingJobWithoutCreatedAt() {
         val jobId = "0123456789abcdef0123456789abcdef"
         val current = UiState(
             playback = PlaybackState(
@@ -921,6 +965,131 @@ class CastStatusReducerTest {
         val next = reduceCastStatus(current, status)
 
         assertEquals("0123456789abcdef0123456789abcdef", next.playback.lastJobId)
+    }
+
+    @Test
+    fun reduceCastStatusPreservesTransferWhileOldTrackStillReportsStatus() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = "aaaa111122223333",
+                castTransfer = CastTransfer.Uploading("bbbb444455556666", percent = 40)
+            )
+        )
+        val oldTrackStatus = CastStatusMessage(
+            jobId = "aaaa111122223333",
+            title = "Old Song",
+            artist = "Old Artist",
+            trackDurationSeconds = 180.0,
+            totalBeats = 400,
+            totalBranches = 40,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = 0,
+        )
+
+        val next = reduceCastStatus(current, oldTrackStatus)
+
+        assertEquals(
+            CastTransfer.Uploading("bbbb444455556666", percent = 40),
+            next.playback.castTransfer
+        )
+        assertNull(next.playback.trackTitle)
+        assertNull(next.playback.trackDurationSeconds)
+        assertNull(next.playback.castTotalBeats)
+        assertNull(next.playback.castTotalBranches)
+    }
+
+    @Test
+    fun reduceCastStatusClearsTransferWhenReceiverAcksTransferredTrack() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                castTransfer = CastTransfer.WaitingForReceiver("bbbb444455556666")
+            )
+        )
+        val ackStatus = CastStatusMessage(
+            jobId = "bbbb444455556666",
+            title = "New Song",
+            artist = "",
+            trackDurationSeconds = null,
+            totalBeats = null,
+            totalBranches = null,
+            isPlaying = false,
+            isLoading = true,
+            playbackState = "loading",
+            error = "",
+            activeVizIndex = null,
+        )
+
+        val next = reduceCastStatus(current, ackStatus)
+
+        assertNull(next.playback.castTransfer)
+    }
+
+    @Test
+    fun reduceCastStatusClearsPreviousTrackMetadataWhenTransferredTrackAcks() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = "aaaa111122223333",
+                trackDurationSeconds = 180.0,
+                castTotalBeats = 400,
+                castTotalBranches = 40,
+                castTransfer = CastTransfer.WaitingForReceiver("bbbb444455556666")
+            )
+        )
+        val ackStatus = CastStatusMessage(
+            jobId = "bbbb444455556666",
+            title = "New Song",
+            artist = "",
+            trackDurationSeconds = null,
+            totalBeats = null,
+            totalBranches = null,
+            isPlaying = false,
+            isLoading = true,
+            playbackState = "loading",
+            error = "",
+            activeVizIndex = null,
+        )
+
+        val next = reduceCastStatus(current, ackStatus)
+
+        assertNull(next.playback.castTransfer)
+        assertNull(next.playback.trackDurationSeconds)
+        assertNull(next.playback.castTotalBeats)
+        assertNull(next.playback.castTotalBranches)
+        assertEquals("bbbb444455556666", next.playback.lastJobId)
+    }
+
+    @Test
+    fun reduceCastStatusClearsTransferOnReceiverError() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                castTransfer = CastTransfer.WaitingForReceiver("bbbb444455556666")
+            )
+        )
+        val errorStatus = CastStatusMessage(
+            jobId = null,
+            title = "",
+            artist = "",
+            trackDurationSeconds = null,
+            totalBeats = null,
+            totalBranches = null,
+            isPlaying = false,
+            isLoading = false,
+            playbackState = "error",
+            error = "Receiver exploded",
+            activeVizIndex = null,
+        )
+
+        val next = reduceCastStatus(current, errorStatus)
+
+        assertNull(next.playback.castTransfer)
+        assertEquals("Receiver exploded", next.playback.analysisErrorMessage)
     }
 
     private fun serverTimestampMinutesAgo(minutesAgo: Long): String {
