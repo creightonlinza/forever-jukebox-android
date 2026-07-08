@@ -13,9 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.media.AudioDeviceCallback
@@ -198,6 +196,7 @@ private const val LOADING_NOTIFICATION_TITLE = "Loading"
 private const val LOAD_FAILED_NOTIFICATION_TITLE = "Loading Failed"
 private const val CAST_FALLBACK_DEVICE_LABEL = "Other device"
 private const val BLUETOOTH_DISCONNECT_WINDOW_MS = 3_000L
+private const val DEFAULT_ACTION_ICON_SIZE_PX = 96
 
 private enum class NotificationMode {
     Local,
@@ -741,13 +740,18 @@ class ForegroundPlaybackService : Service() {
     }
 
     private fun tintedIcon(resId: Int, color: Int): IconCompat {
-        val source = BitmapFactory.decodeResource(resources, resId)
-        val bitmap = createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        // BitmapFactory.decodeResource returns null for vector/XML drawables (framework
+        // ic_media_* icons are no longer raster bitmaps on newer Android), so render the
+        // drawable onto a canvas instead.
+        val drawable = AppCompatResources.getDrawable(this, resId)
+            ?: return IconCompat.createWithResource(this, resId)
+        val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: DEFAULT_ACTION_ICON_SIZE_PX
+        val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: DEFAULT_ACTION_ICON_SIZE_PX
+        val bitmap = createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
-        }
-        canvas.drawBitmap(source, 0f, 0f, paint)
+        drawable.mutate().colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
         return IconCompat.createWithBitmap(bitmap)
     }
 
