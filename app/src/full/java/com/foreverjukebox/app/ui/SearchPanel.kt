@@ -55,7 +55,7 @@ fun SearchPanel(
 ) {
     val searchState = state.search
     var query by remember(searchState.query) { mutableStateOf(searchState.query) }
-    var previewVideoId by remember { mutableStateOf<String?>(null) }
+    var previewItem by remember { mutableStateOf<RemoteVideoSearchItem?>(null) }
     var thumbnailFailed by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -135,9 +135,9 @@ fun SearchPanel(
                         YoutubeRow(
                             item = item,
                             onSelect = onYoutubeSelect,
-                            onPreview = { videoId ->
+                            onPreview = {
                                 thumbnailFailed = false
-                                previewVideoId = videoId
+                                previewItem = it
                             }
                         )
                     }
@@ -146,13 +146,18 @@ fun SearchPanel(
         }
     }
 
-    previewVideoId?.let { videoId ->
+    previewItem?.let { item ->
+        val videoId = item.id?.trim().orEmpty()
         YoutubePreviewDialog(
             videoId = videoId,
             thumbnailFailed = thumbnailFailed,
             onThumbnailFailed = { thumbnailFailed = true },
+            onUseResult = {
+                previewItem = null
+                onYoutubeSelect(item)
+            },
             onOpenYoutube = { onOpenYoutube(videoId) },
-            onClose = { previewVideoId = null }
+            onClose = { previewItem = null }
         )
     }
 }
@@ -187,7 +192,7 @@ private fun SpotifyRow(item: RemoteMusicSearchItem, onSelect: (RemoteMusicSearch
 private fun YoutubeRow(
     item: RemoteVideoSearchItem,
     onSelect: (RemoteVideoSearchItem) -> Unit,
-    onPreview: (String) -> Unit
+    onPreview: (RemoteVideoSearchItem) -> Unit
 ) {
     val title = item.title ?: "Untitled"
     val videoId = item.id?.trim().orEmpty()
@@ -197,7 +202,7 @@ private fun YoutubeRow(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = { onSelect(item) },
-                onLongClick = { onPreview(videoId) }
+                onLongClick = { onPreview(item) }
             ),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -221,21 +226,34 @@ private fun YoutubePreviewDialog(
     videoId: String,
     thumbnailFailed: Boolean,
     onThumbnailFailed: () -> Unit,
+    onUseResult: () -> Unit,
     onOpenYoutube: () -> Unit,
     onClose: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onClose,
         confirmButton = {
-            Button(
-                onClick = onOpenYoutube,
-                colors = pillButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
-            ) {
-                Text("Open in YouTube", style = MaterialTheme.typography.labelSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onUseResult,
+                    colors = pillButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Use this result", style = MaterialTheme.typography.labelSmall)
+                }
+                Button(
+                    onClick = onOpenYoutube,
+                    colors = pillButtonColors(),
+                    border = pillButtonBorder(),
+                    shape = PillShape,
+                    contentPadding = SmallButtonPadding,
+                    modifier = Modifier.height(SmallButtonHeight)
+                ) {
+                    Text("Open in YouTube", style = MaterialTheme.typography.labelSmall)
+                }
             }
         },
         dismissButton = {

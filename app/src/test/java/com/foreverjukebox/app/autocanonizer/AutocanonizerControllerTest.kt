@@ -63,6 +63,36 @@ class AutocanonizerControllerTest {
     }
 
     @Test
+    fun loopsBackToStartWhenFinishOutSongIsOff() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(dispatcher)
+        val player = FakeAutocanonizerPlayer(ready = true)
+        val controller = AutocanonizerController(player, scope)
+        controller.setData(sampleData())
+
+        val beats = mutableListOf<Int>()
+        var ended = 0
+        controller.setOnBeat { index, _, _, _ ->
+            beats.add(index)
+        }
+        controller.setOnEnded {
+            ended += 1
+        }
+
+        val started = controller.startAtIndex(3)
+        scope.testScheduler.advanceTimeBy(3)
+
+        assertTrue(started)
+        assertTrue(controller.isRunning())
+        assertEquals(listOf(3, 0, 1), beats)
+        assertEquals(0, ended)
+        assertEquals(0, player.stopMainCalls)
+        assertEquals(0, player.playOtherOnlyCalls)
+
+        controller.stop()
+    }
+
+    @Test
     fun normalBeatEmitsMainAndOtherBeatStarts() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val scope = TestScope(dispatcher)
@@ -77,13 +107,15 @@ class AutocanonizerControllerTest {
         }
 
         val started = controller.startAtIndex(3)
-        scope.advanceUntilIdle()
+        scope.testScheduler.advanceTimeBy(1)
 
         assertTrue(started)
         assertEquals(
             listOf(AutocanonizerCursorTimes(mainSeconds = 3.0, otherSeconds = 1.0)),
             cursorTimes
         )
+
+        controller.stop()
     }
 
     @Test
@@ -95,13 +127,15 @@ class AutocanonizerControllerTest {
         controller.setData(sampleData())
 
         val started = controller.startAtIndex(0)
-        scope.advanceUntilIdle()
+        scope.testScheduler.advanceTimeBy(4)
 
         assertTrue(started)
         val overrides = controller.getTileColorOverrides()
         assertTrue(overrides.isNotEmpty())
         assertEquals(AutocanonizerController.OTHER_TILE_COLOR_HEX, overrides[0])
         assertNotNull(overrides[3])
+
+        controller.stop()
     }
 
     @Test
@@ -128,6 +162,8 @@ class AutocanonizerControllerTest {
         assertTrue(controller.isRunning())
         assertFalse(controller.isPaused())
         assertEquals(1, player.resumeCalls)
+
+        controller.stop()
     }
 
     @Test
@@ -163,6 +199,8 @@ private class FakeAutocanonizerPlayer(
     var pauseCalls = 0
     var resumeCalls = 0
     var clearSyncedAudioCalls = 0
+    var stopMainCalls = 0
+    var playOtherOnlyCalls = 0
 
     override fun isReady(): Boolean = ready
 
@@ -188,11 +226,16 @@ private class FakeAutocanonizerPlayer(
 
     override fun stop() = Unit
 
-    override fun stopMain() = Unit
+    override fun stopMain() {
+        stopMainCalls += 1
+    }
 
     override fun playBeat(beat: AutocanonizerBeat, beats: List<AutocanonizerBeat>): Double = 0.001
 
-    override fun playOtherOnly(beat: AutocanonizerBeat, beats: List<AutocanonizerBeat>): Double = 0.001
+    override fun playOtherOnly(beat: AutocanonizerBeat, beats: List<AutocanonizerBeat>): Double {
+        playOtherOnlyCalls += 1
+        return 0.001
+    }
 
     override fun release() = Unit
 }

@@ -210,15 +210,18 @@ class AutocanonizerController(
                 )
             )
 
-            if (isFinal && finishOutSong) {
-                secondaryOnly = true
-                secondaryIndex = beat.otherIndex
-                player.stopMain()
-                runSecondaryLoop()
-                return
+            if (isFinal) {
+                if (finishOutSong) {
+                    secondaryOnly = true
+                    secondaryIndex = beat.otherIndex
+                    player.stopMain()
+                    runSecondaryLoop()
+                    return
+                }
+                currentIndex = 0
+            } else {
+                currentIndex += 1
             }
-
-            currentIndex += 1
             delay(delaySeconds.toDelayMillis())
         }
     }
