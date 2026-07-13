@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.net.toUri
+import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -88,7 +89,7 @@ class LocalAnalysisService(
                 }
                 val metadata = readMetadata(cacheKey)
                 CachedLocalAnalysis(
-                    localId = "local-$cacheKey",
+                    localId = "$LOCAL_TRACK_ID_PREFIX$cacheKey",
                     title = metadata?.title?.takeIf { it.isNotBlank() }
                         ?: extractTrackField(analysisJson, "title")
                         ?: "Local Track",
@@ -165,7 +166,7 @@ class LocalAnalysisService(
         }.getOrElse {
             shortSha256(uriString)
         }
-        val localId = "local-$cacheKey"
+        val localId = "$LOCAL_TRACK_ID_PREFIX$cacheKey"
         val analysisFile = cacheDir.resolve("$cacheKey.analysis.json")
         logInfo("Local analysis start: localId=$localId")
         fun emitProgress(percent: Int, status: String) {
@@ -386,8 +387,8 @@ class LocalAnalysisService(
     }
 
     private fun parseCacheKeyFromLocalId(localId: String): String? {
-        if (!localId.startsWith(LOCAL_ID_PREFIX)) return null
-        val value = localId.removePrefix(LOCAL_ID_PREFIX)
+        if (!localId.startsWith(LOCAL_TRACK_ID_PREFIX)) return null
+        val value = localId.removePrefix(LOCAL_TRACK_ID_PREFIX)
         return value.takeIf { it.isNotBlank() && it.none { ch -> ch == '/' || ch == '\\' } }
     }
 
@@ -404,7 +405,6 @@ class LocalAnalysisService(
     companion object {
         private const val TAG = "LocalAnalysisService"
         private const val ANALYSIS_CACHE_KEY_VERSION = "v2"
-        private const val LOCAL_ID_PREFIX = "local-"
         private const val ANALYSIS_FILE_SUFFIX = ".analysis.json"
         private const val METADATA_FILE_SUFFIX = ".meta.json"
         private const val TUNING_FILE_SUFFIX = ".tuning"
