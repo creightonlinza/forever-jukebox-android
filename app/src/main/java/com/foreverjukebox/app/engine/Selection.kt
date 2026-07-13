@@ -7,6 +7,13 @@ data class BranchState(
     var lastDestBySource: MutableMap<Int, Int>? = null
 )
 
+// A user-selected anchor branch (the `ab` tuning param): selection must take this edge
+// when the playhead reaches its source beat and must not branch past the source beat.
+data class UserAnchorSelection(
+    val edgeId: Int,
+    val sourceIndex: Int
+)
+
 private const val REFERENCE_BEAT_DURATION_SECONDS = 0.5
 
 private fun collectTimeline(seed: QuantumBase): List<QuantumBase> {
@@ -179,9 +186,10 @@ fun shouldRandomBranch(
     graph: JukeboxGraphState,
     config: JukeboxConfig,
     rng: () -> Double,
-    state: BranchState
+    state: BranchState,
+    suppressDefaultAnchor: Boolean = false
 ): Boolean {
-    if (q.which == graph.lastBranchPoint) {
+    if (!suppressDefaultAnchor && q.which == graph.lastBranchPoint) {
         return true
     }
     // Gradually increase branch chance by elapsed musical time (not raw beat
@@ -208,15 +216,36 @@ fun selectNextBeatIndex(
     config: JukeboxConfig,
     rng: () -> Double,
     state: BranchState,
-    forceBranch: Boolean
+    forceBranch: Boolean,
+    userAnchor: UserAnchorSelection? = null
 ): Pair<Int, Boolean> {
     if (seed.neighbors.isEmpty()) {
         return seed.which to false
     }
-    if (!forceBranch && !shouldRandomBranch(seed, graph, config, rng, state)) {
+    val userAnchorIndex = if (userAnchor == null) {
+        -1
+    } else {
+        seed.neighbors.indexOfFirst { it.id == userAnchor.edgeId }
+    }
+    val candidateIndexes = if (userAnchor != null && seed.which < userAnchor.sourceIndex) {
+        seed.neighbors.indices.filter { index ->
+            seed.neighbors[index].dest.which < userAnchor.sourceIndex
+        }
+    } else {
+        null
+    }
+    if (userAnchorIndex < 0 && candidateIndexes?.isEmpty() == true) {
         return seed.which to false
     }
-    val nextEdge = if (seed.which == graph.lastBranchPoint) {
+    if (userAnchorIndex < 0 &&
+        !forceBranch &&
+        !shouldRandomBranch(seed, graph, config, rng, state, userAnchor != null)
+    ) {
+        return seed.which to false
+    }
+    val nextEdge = if (userAnchorIndex >= 0) {
+        seed.neighbors.removeAt(userAnchorIndex)
+    } else if (userAnchor == null && seed.which == graph.lastBranchPoint) {
         val bestIndex = getBestLastBranchNeighborIndex(seed)
         if (bestIndex in seed.neighbors.indices) {
             seed.neighbors.removeAt(bestIndex)
@@ -224,11 +253,11 @@ fun selectNextBeatIndex(
             seed.neighbors.removeFirstOrNull()
         }
     } else {
-        val selectedIndex = selectWeightedNeighborIndex(seed, rng, state)
+        val selectedIndex = selectWeightedNeighborIndex(seed, rng, state, candidateIndexes)
         if (selectedIndex in seed.neighbors.indices) {
             seed.neighbors.removeAt(selectedIndex)
         } else {
-            seed.neighbors.removeFirstOrNull()
+            return seed.which to false
         }
     } ?: return seed.which to false
     seed.neighbors.add(nextEdge)
@@ -243,13 +272,16 @@ fun selectNextBeatIndex(
 private fun selectWeightedNeighborIndex(
     seed: QuantumBase,
     rng: () -> Double,
-    state: BranchState
+    state: BranchState,
+    candidateIndexes: List<Int>? = null
 ): Int {
-    if (seed.neighbors.size <= 1) {
-        return 0
+    val indexes = candidateIndexes ?: seed.neighbors.indices.toList()
+    if (indexes.size <= 1) {
+        return indexes.firstOrNull() ?: -1
     }
     val lastDest = state.lastDestBySource?.get(seed.which)
-    val weights = seed.neighbors.map { edge ->
+    val weights = indexes.map { index ->
+        val edge = seed.neighbors[index]
         val distanceWeight = 1.0 / (1.0 + max(0.0, edge.distance))
         val repeatPenalty = if (lastDest != null && edge.dest.which == lastDest) {
             0.35
@@ -267,8 +299,8 @@ private fun selectWeightedNeighborIndex(
     for (i in weights.indices) {
         target -= weights[i]
         if (target <= 0.0) {
-            return i
+            return indexes[i]
         }
     }
-    return weights.lastIndex
+    return indexes.lastOrNull() ?: -1
 }

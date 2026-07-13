@@ -165,8 +165,8 @@ class PlaybackCoordinator(
         if (deletedIds.isNotEmpty()) {
             params.add("d=${deletedIds.joinToString(",")}")
         }
-        config.preferredAnchorBeat?.let { anchorBeat ->
-            params.add("ab=$anchorBeat")
+        engine.getUserAnchorEdgeId()?.let { anchorBranchId ->
+            params.add("ab=$anchorBranchId")
         }
         if (playback.jukeboxAudioMode != JukeboxAudioMode.Off) {
             params.add("am=${playback.jukeboxAudioMode.wireValue}")
@@ -1191,6 +1191,7 @@ class PlaybackCoordinator(
     private data class ResolvedTuningParams(
         val config: JukeboxConfig,
         val deletedEdgeIds: List<Int>,
+        val anchorBranchId: Int?,
         val audioMode: JukeboxAudioMode?
     )
 
@@ -1232,10 +1233,12 @@ class PlaybackCoordinator(
                 randomBranchChanceDelta = mapPercentToRange(value, MAX_RANDOM_BRANCH_DELTA)
             )
         }
-        parsed.anchorBeat?.let { value ->
-            config = config.copy(preferredAnchorBeat = value)
-        }
-        return ResolvedTuningParams(config, parsed.deletedEdgeIds, parsed.audioMode)
+        return ResolvedTuningParams(
+            config = config,
+            deletedEdgeIds = parsed.deletedEdgeIds,
+            anchorBranchId = parsed.anchorBranchId,
+            audioMode = parsed.audioMode
+        )
     }
 
     private fun mapPercentToRange(percent: Int, max: Double): Double {
@@ -1251,6 +1254,17 @@ class PlaybackCoordinator(
     private fun getDeletedEdgeIds(): List<Int> {
         val graph = engine.getGraphState() ?: return emptyList()
         return graph.allEdges.filter { it.deleted }.map { it.id }
+    }
+
+    // Mirrors the web's applyAnchorBranchFromUrl: `ab` is an anchor edge id, valid only
+    // when the edge still exists, isn't deleted, and jumps backwards.
+    private fun applyAnchorBranchFromParams(anchorBranchId: Int) {
+        val graph = engine.getGraphState() ?: return
+        val edge = graph.allEdges.firstOrNull { it.id == anchorBranchId } ?: return
+        if (edge.deleted || edge.dest.which >= edge.src.which) {
+            return
+        }
+        engine.setUserAnchorEdge(edge)
     }
 
     private fun applyPendingTuningParams() {
@@ -1273,6 +1287,7 @@ class PlaybackCoordinator(
         if (shouldRebuild) {
             engine.rebuildGraph()
         }
+        parsed.anchorBranchId?.let(::applyAnchorBranchFromParams)
         if (parsed.audioMode != null) {
             controller.setJukeboxAudioMode(parsed.audioMode)
             updatePlaybackState {

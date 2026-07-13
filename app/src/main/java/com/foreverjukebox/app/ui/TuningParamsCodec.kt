@@ -17,7 +17,7 @@ data class ParsedTuningParams(
     val minJumpDistancePercent: Int?,
     val removeSequentialBranches: Boolean?,
     val deletedEdgeIds: List<Int>,
-    val anchorBeat: Int?,
+    val anchorBranchId: Int?,
     val audioMode: JukeboxAudioMode?
 )
 
@@ -55,7 +55,7 @@ object TuningParamsCodec {
             ?.split(",")
             ?.mapNotNull { it.toIntOrNull()?.takeIf { id -> id >= 0 } }
             ?: emptyList()
-        val anchorBeat = params.firstValue("ab")
+        val anchorBranchId = params.firstValue("ab")
             ?.toIntOrNull()
             ?.takeIf { it >= 0 }
         val branchLength = params.firstValue("bl")
@@ -79,7 +79,7 @@ object TuningParamsCodec {
             minJumpDistancePercent = minJumpDistancePercent,
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
             deletedEdgeIds = deletedEdgeIds,
-            anchorBeat = anchorBeat,
+            anchorBranchId = anchorBranchId,
             audioMode = audioMode
         )
     }

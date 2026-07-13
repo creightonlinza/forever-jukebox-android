@@ -23,7 +23,7 @@ class TuningParamsCodecTest {
         assertEquals(0, parsed?.minJumpDistancePercent)
         assertTrue(parsed?.removeSequentialBranches == true)
         assertEquals(listOf(3, 8), parsed?.deletedEdgeIds)
-        assertEquals(22, parsed?.anchorBeat)
+        assertEquals(22, parsed?.anchorBranchId)
     }
 
     @Test
@@ -394,7 +394,7 @@ class TuningParamsCodecTest {
         assertEquals(20, parsed?.rampPercent)
         assertEquals(20, parsed?.minJumpDistancePercent)
         assertEquals(listOf(4, 9), parsed?.deletedEdgeIds)
-        assertEquals(128, parsed?.anchorBeat)
+        assertEquals(128, parsed?.anchorBranchId)
         assertEquals(JukeboxAudioMode.Daycore, parsed?.audioMode)
     }
 
