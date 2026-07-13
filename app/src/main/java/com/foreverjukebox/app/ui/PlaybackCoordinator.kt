@@ -134,44 +134,15 @@ class PlaybackCoordinator(
     }
 
     fun buildTuningParamsString(): String? {
-        val config = engine.getConfig()
-        val playback = getState().playback
-        val params = mutableListOf<String>()
-        if (config.justBackwards) {
-            params.add("jb=1")
-        }
-        if (config.justLongBranches) {
-            params.add("bl=${config.minLongBranchPercent}")
-        }
-        if (config.removeSequentialBranches) {
-            params.add("sq=0")
-        }
-        if (config.currentThreshold != 0) {
-            params.add("thresh=${config.currentThreshold}")
-        }
-        val minChanged = config.minRandomBranchChance != defaultConfig.minRandomBranchChance
-        val maxChanged = config.maxRandomBranchChance != defaultConfig.maxRandomBranchChance
-        val deltaChanged = config.randomBranchChanceDelta != defaultConfig.randomBranchChanceDelta
-        if (minChanged || maxChanged || deltaChanged) {
-            val minPct = mapValueToPercent(config.minRandomBranchChance, 1.0)
-            val maxPct = mapValueToPercent(config.maxRandomBranchChance, 1.0)
-            val deltaPct = mapValueToPercent(
-                config.randomBranchChanceDelta,
-                MAX_RANDOM_BRANCH_DELTA
-            )
-            params.add("bp=$minPct,$maxPct,$deltaPct")
-        }
-        val deletedIds = getDeletedEdgeIds()
-        if (deletedIds.isNotEmpty()) {
-            params.add("d=${deletedIds.joinToString(",")}")
-        }
-        engine.getUserAnchorEdgeId()?.let { anchorBranchId ->
-            params.add("ab=$anchorBranchId")
-        }
-        if (playback.jukeboxAudioMode != JukeboxAudioMode.Off) {
-            params.add("am=${playback.jukeboxAudioMode.wireValue}")
-        }
-        return if (params.isEmpty()) null else params.joinToString("&")
+        return TuningParamsCodec.buildSavedTuningParams(
+            tuning = engineTuningState(
+                config = engine.getConfig(),
+                computedThreshold = engine.getGraphState()?.computedThreshold,
+                deletedEdgeIds = getDeletedEdgeIds(),
+                anchorBranchId = engine.getUserAnchorEdgeId()
+            ),
+            audioModeWireValue = getState().playback.jukeboxAudioMode.wireValue
+        )
     }
 
     fun setAnalysisQueued(progress: Int?, message: String? = null) {
@@ -1246,11 +1217,6 @@ class PlaybackCoordinator(
         return (max * safe) / 100.0
     }
 
-    private fun mapValueToPercent(value: Double, max: Double): Int {
-        val safeValue = value.coerceIn(0.0, max)
-        return ((100.0 * safeValue) / max).roundToInt()
-    }
-
     private fun getDeletedEdgeIds(): List<Int> {
         val graph = engine.getGraphState() ?: return emptyList()
         return graph.allEdges.filter { it.deleted }.map { it.id }
@@ -1330,3 +1296,39 @@ private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotB
 
 private const val MAX_RANDOM_BRANCH_DELTA = 0.2
 private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 100.0 / MAX_RANDOM_BRANCH_DELTA
+
+/**
+ * Snapshot of the engine's live tuning as a [TuningState], so on-device capture flows
+ * through the same serializer ([TuningParamsCodec.buildSavedTuningParams]) as cast-time
+ * capture. An auto threshold (currentThreshold == 0) maps to the graph's computed value
+ * so the serializer omits `thresh`; the percent fields rely on [TuningState]'s defaults
+ * matching [JukeboxConfig]'s defaults (18/50/10) — asserted by EngineTuningStateTest.
+ */
+internal fun engineTuningState(
+    config: JukeboxConfig,
+    computedThreshold: Int?,
+    deletedEdgeIds: List<Int> = emptyList(),
+    anchorBranchId: Int? = null
+): TuningState {
+    return TuningState(
+        threshold = if (config.currentThreshold != 0) {
+            config.currentThreshold
+        } else {
+            computedThreshold ?: 0
+        },
+        computedThreshold = computedThreshold,
+        minProb = valueToPercent(config.minRandomBranchChance, 1.0),
+        maxProb = valueToPercent(config.maxRandomBranchChance, 1.0),
+        ramp = valueToPercent(config.randomBranchChanceDelta, MAX_RANDOM_BRANCH_DELTA),
+        justBackwards = config.justBackwards,
+        minJumpDistancePercent = if (config.justLongBranches) config.minLongBranchPercent else 0,
+        removeSequential = config.removeSequentialBranches,
+        deletedEdgeIds = deletedEdgeIds,
+        anchorBranchId = anchorBranchId
+    )
+}
+
+private fun valueToPercent(value: Double, max: Double): Int {
+    val safeValue = value.coerceIn(0.0, max)
+    return ((100.0 * safeValue) / max).roundToInt()
+}
