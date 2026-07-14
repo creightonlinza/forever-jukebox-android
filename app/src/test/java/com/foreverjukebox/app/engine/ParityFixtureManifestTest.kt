@@ -13,7 +13,7 @@ import java.security.MessageDigest
  * manifest.json. If this test fails, the local fixtures drifted from the
  * manifest — re-sync with scripts/sync-parity-fixtures.sh. Intentional
  * contract changes are made in the web repo (npm run fixtures:manifest in
- * packages/jukebox-engine) and then synced here.
+ * packages/shared, the @forever-jukebox/shared package) and then synced here.
  */
 class ParityFixtureManifestTest {
 
