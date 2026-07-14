@@ -2,6 +2,10 @@ package com.foreverjukebox.app.data
 
 const val SOURCE_PROVIDER_YOUTUBE = "youtube"
 
+// Identity prefix for on-device analyzed tracks (cache fingerprint with this prefix).
+// The cast relay receiver reports the bare fingerprint, so cast paths strip/restore it.
+const val LOCAL_TRACK_ID_PREFIX = "local-"
+
 private val YOUTUBE_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}$")
 private val JOB_ID_REGEX = Regex("^[A-Fa-f0-9]{32}$")
 

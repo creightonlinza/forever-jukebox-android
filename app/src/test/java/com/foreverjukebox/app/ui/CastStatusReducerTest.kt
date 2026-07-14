@@ -59,6 +59,7 @@ class CastStatusReducerTest {
                   "deltaPercent":20
                 },
                 "deletedEdgeIds":[2,5],
+                "anchorBranchId":128,
                 "highlightAnchorBranch":true,
                 "audioMode":"daycore"
               }
@@ -94,6 +95,7 @@ class CastStatusReducerTest {
         assertEquals(45, parsed?.tuning?.branchProbability?.maxPercent)
         assertEquals(20, parsed?.tuning?.branchProbability?.deltaPercent)
         assertEquals(listOf(2, 5), parsed?.tuning?.deletedEdgeIds)
+        assertEquals(128, parsed?.tuning?.anchorBranchId)
         assertTrue(parsed?.tuning?.justBackwards == true)
         assertEquals(30, parsed?.tuning?.minLongBranchPercent)
         assertTrue(parsed?.tuning?.highlightAnchorBranch == true)
@@ -357,6 +359,8 @@ class CastStatusReducerTest {
                 minPercent = 12,
                 maxPercent = 45,
                 deltaPercent = 20,
+                deletedEdgeIds = listOf(4, 9),
+                anchorBranchId = 128,
                 highlightAnchorBranch = true,
                 audioMode = JukeboxAudioMode.Daycore
             )
@@ -377,6 +381,8 @@ class CastStatusReducerTest {
         assertEquals(30, next.tuning.minJumpDistancePercent)
         assertTrue(next.tuning.removeSequential)
         assertTrue(next.tuning.highlightAnchorBranch)
+        assertEquals(listOf(4, 9), next.tuning.deletedEdgeIds)
+        assertEquals(128, next.tuning.anchorBranchId)
     }
 
     @Test
@@ -1111,6 +1117,7 @@ class CastStatusReducerTest {
         maxPercent: Int = 50,
         deltaPercent: Int = 10,
         deletedEdgeIds: List<Int> = emptyList(),
+        anchorBranchId: Int? = null,
         highlightAnchorBranch: Boolean = false,
         audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
         audioModeWireValue: String = audioMode.wireValue
@@ -1128,6 +1135,7 @@ class CastStatusReducerTest {
                 deltaPercent = deltaPercent
             ),
             deletedEdgeIds = deletedEdgeIds,
+            anchorBranchId = anchorBranchId,
             highlightAnchorBranch = highlightAnchorBranch,
             audioModeWireValue = audioModeWireValue
         )

@@ -23,7 +23,7 @@ class TuningParamsCodecTest {
         assertEquals(0, parsed?.minJumpDistancePercent)
         assertTrue(parsed?.removeSequentialBranches == true)
         assertEquals(listOf(3, 8), parsed?.deletedEdgeIds)
-        assertEquals(22, parsed?.anchorBeat)
+        assertEquals(22, parsed?.anchorBranchId)
     }
 
     @Test
@@ -307,68 +307,95 @@ class TuningParamsCodecTest {
     }
 
     @Test
-    fun buildFromTuningStateClampsOutOfRangeValues() {
-        val raw = TuningParamsCodec.buildFromTuningState(
+    fun buildSavedTuningParamsReturnsNullForDefaultTuning() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(TuningState())
+
+        assertNull(raw)
+    }
+
+    @Test
+    fun buildSavedTuningParamsEmitsOnlyNonDefaultValues() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
             TuningState(
-                threshold = -9,
-                minProb = -20,
-                maxProb = 140,
-                ramp = 999
-            )
+                threshold = 31,
+                computedThreshold = 29,
+                minProb = 12,
+                maxProb = 45,
+                ramp = 20,
+                justBackwards = true,
+                minJumpDistancePercent = 30,
+                removeSequential = true,
+                deletedEdgeIds = listOf(4, 9),
+                anchorBranchId = 128
+            ),
+            audioModeWireValue = "daycore"
+        )
+
+        assertEquals("jb=1&bl=30&sq=0&thresh=31&bp=12,45,20&d=4,9&ab=128&am=daycore", raw)
+    }
+
+    @Test
+    fun buildSavedTuningParamsOmitsThresholdMatchingComputed() {
+        val autoThreshold = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(threshold = 29, computedThreshold = 29, justBackwards = true)
+        )
+        val unknownComputed = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(threshold = 29, computedThreshold = null, justBackwards = true)
+        )
+
+        assertEquals("jb=1", autoThreshold)
+        assertEquals("jb=1", unknownComputed)
+    }
+
+    @Test
+    fun buildSavedTuningParamsOmitsOffAndBlankAudioMode() {
+        val offMode = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true),
+            audioModeWireValue = JukeboxAudioMode.Off.wireValue
+        )
+        val blankMode = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true),
+            audioModeWireValue = "   "
+        )
+
+        assertEquals("jb=1", offMode)
+        assertEquals("jb=1", blankMode)
+    }
+
+    @Test
+    fun buildSavedTuningParamsNeverEmitsHighlightAnchor() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true, highlightAnchorBranch = true)
+        )
+
+        assertEquals("jb=1", raw)
+    }
+
+    @Test
+    fun buildSavedTuningParamsRoundTripsThroughParse() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(
+                threshold = 31,
+                computedThreshold = 29,
+                minProb = 12,
+                maxProb = 45,
+                ramp = 20,
+                minJumpDistancePercent = 20,
+                deletedEdgeIds = listOf(4, 9),
+                anchorBranchId = 128
+            ),
+            audioModeWireValue = "daycore"
         )
         val parsed = TuningParamsCodec.parse(raw, minThreshold = 2)
 
-        assertEquals(2, parsed?.threshold)
-        assertEquals(0, parsed?.minProbPercent)
-        assertEquals(100, parsed?.maxProbPercent)
-        assertEquals(100, parsed?.rampPercent)
-    }
-
-    @Test
-    fun buildFromTuningStateEmitsBlAndNeverLg() {
-        val enabled = TuningParamsCodec.buildFromTuningState(
-            TuningState(minJumpDistancePercent = 30)
-        )
-        val disabled = TuningParamsCodec.buildFromTuningState(
-            TuningState(minJumpDistancePercent = 0)
-        )
-
-        assertTrue(enabled.contains("bl=30"))
-        assertFalse(enabled.contains("lg="))
-        assertTrue(disabled.contains("bl=0"))
-        assertFalse(disabled.contains("lg="))
-    }
-
-    @Test
-    fun buildFromTuningStateIncludesNonDefaultAudioMode() {
-        val raw = TuningParamsCodec.buildFromTuningState(
-            TuningState(),
-            audioMode = JukeboxAudioMode.EightD
-        )
-
-        assertTrue(raw.contains("am=eight_d"))
-        assertEquals(JukeboxAudioMode.EightD, TuningParamsCodec.parse(raw)?.audioMode)
-    }
-
-    @Test
-    fun buildFromTuningStateOmitsOffAudioMode() {
-        val raw = TuningParamsCodec.buildFromTuningState(
-            TuningState(),
-            audioMode = JukeboxAudioMode.Off
-        )
-
-        assertFalse(raw.contains("am="))
-    }
-
-    @Test
-    fun buildFromTuningStateCanIncludeExplicitOffAudioMode() {
-        val raw = TuningParamsCodec.buildFromTuningState(
-            TuningState(),
-            audioMode = JukeboxAudioMode.Off,
-            includeOffAudioMode = true
-        )
-
-        assertTrue(raw.contains("am=off"))
+        assertEquals(31, parsed?.threshold)
+        assertEquals(12, parsed?.minProbPercent)
+        assertEquals(45, parsed?.maxProbPercent)
+        assertEquals(20, parsed?.rampPercent)
+        assertEquals(20, parsed?.minJumpDistancePercent)
+        assertEquals(listOf(4, 9), parsed?.deletedEdgeIds)
+        assertEquals(128, parsed?.anchorBranchId)
+        assertEquals(JukeboxAudioMode.Daycore, parsed?.audioMode)
     }
 
     @Test
@@ -437,37 +464,10 @@ class TuningParamsCodecTest {
     }
 
     @Test
-    fun buildAndMergeRoundTripTuningState() {
-        val original = TuningState(
-            threshold = 31,
-            minProb = 20,
-            maxProb = 41,
-            ramp = 17,
-            highlightAnchorBranch = true,
-            justBackwards = true,
-            minJumpDistancePercent = 30,
-            removeSequential = true
-        )
-        val raw = TuningParamsCodec.buildFromTuningState(original)
-        val parsed = TuningParamsCodec.parse(raw, minThreshold = 2)
-        val merged = TuningParamsCodec.mergeIntoState(TuningState(), parsed)
-
-        assertEquals(original.threshold, merged.threshold)
-        assertEquals(original.minProb, merged.minProb)
-        assertEquals(original.maxProb, merged.maxProb)
-        assertEquals(original.ramp, merged.ramp)
-        assertEquals(original.highlightAnchorBranch, merged.highlightAnchorBranch)
-        assertEquals(original.justBackwards, merged.justBackwards)
-        assertEquals(original.minJumpDistancePercent, merged.minJumpDistancePercent)
-        assertEquals(original.removeSequential, merged.removeSequential)
-    }
-
-    @Test
-    fun buildAndMergeRoundTripPreservesExplicitAnyBranchLength() {
-        val raw = TuningParamsCodec.buildFromTuningState(
-            TuningState(minJumpDistancePercent = 0)
-        )
-        val parsed = TuningParamsCodec.parse(raw, minThreshold = 2)
+    fun parseAndMergePreserveExplicitAnyBranchLength() {
+        // An explicit bl=0 on the wire (e.g. cast reset params) must override a
+        // non-zero base rather than being treated as absent.
+        val parsed = TuningParamsCodec.parse("jb=0&bl=0&sq=1&thresh=31&bp=18,50,10", minThreshold = 2)
         val merged = TuningParamsCodec.mergeIntoState(
             TuningState(minJumpDistancePercent = 30),
             parsed

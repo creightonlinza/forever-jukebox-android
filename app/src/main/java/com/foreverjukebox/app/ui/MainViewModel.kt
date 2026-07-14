@@ -1288,8 +1288,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             type = type,
             title = playback.trackTitle,
             artist = playback.trackArtist,
-            tuningParams = if (type == PlaylistTrackType.Server && playback.playMode == PlaybackMode.Jukebox) {
-                playbackCoordinator.buildTuningParamsString()
+            tuningParams = if (type == PlaylistTrackType.Server) {
+                favoriteTuningParamsForCurrentTrack(
+                    currentState,
+                    playbackCoordinator::buildTuningParamsString
+                )
             } else {
                 null
             },
@@ -1401,11 +1404,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     artist = artist,
                     duration = playback.trackDurationSeconds,
                     sourceType = if (playback.lastYouTubeId.isNullOrBlank()) null else FavoriteSourceType.Youtube,
-                    tuningParams = if (playback.playMode == PlaybackMode.Jukebox) {
-                        playbackCoordinator.buildTuningParamsString()
-                    } else {
-                        null
-                    },
+                    tuningParams = favoriteTuningParamsForCurrentTrack(
+                        currentState,
+                        playbackCoordinator::buildTuningParamsString
+                    ),
                     playMode = playback.playMode.toFavoritePlayModeOrNull()
                 )
                 favoritesController.updateFavorites(

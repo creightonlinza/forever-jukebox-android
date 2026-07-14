@@ -23,6 +23,27 @@ internal fun shouldBlockListenFavoriteToggle(state: UiState): Boolean {
     return shouldShowListenFavoriteSpinner(state)
 }
 
+// Tuning has two sources of truth: the local engine when playing on-device, and the
+// receiver-reported tuning state while casting (cast connect resets the local engine and
+// cast tuning edits never reach it). Favorites and playlist entries must capture from
+// whichever source is live, or tuned tracks favorited during a cast session save no tuning.
+internal fun favoriteTuningParamsForCurrentTrack(
+    state: UiState,
+    engineTuningParams: () -> String?
+): String? {
+    val playback = state.playback
+    if (playback.playMode != PlaybackMode.Jukebox) {
+        return null
+    }
+    if (!playback.isCasting) {
+        return engineTuningParams()
+    }
+    return TuningParamsCodec.buildSavedTuningParams(
+        tuning = state.tuning,
+        audioModeWireValue = playback.castAudioModeWireValue
+    )
+}
+
 internal fun playbackTransportContentDescription(playback: PlaybackState): String {
     return when {
         playback.isRunning -> "Pause"

@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
+import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
@@ -91,6 +92,24 @@ internal fun buildCastTuningUpdate(
     return CastTuningUpdate(nextTuning = nextTuning, castParams = castParams)
 }
 
+/**
+ * Saved-tuning key for the current Local-mode track. On-device the playback state carries the
+ * `local-`-prefixed id directly; while casting a local track the receiver reports the bare
+ * cache fingerprint as the job id (see castLocalTrackInternal), so the prefix is restored.
+ */
+internal fun localTrackTuningId(state: UiState): String? {
+    if (state.appMode != AppMode.Local) return null
+    val playback = state.playback
+    val lastJobId = playback.lastJobId?.takeIf { it.isNotBlank() } ?: return null
+    if (lastJobId.startsWith(LOCAL_TRACK_ID_PREFIX)) {
+        return lastJobId
+    }
+    if (playback.isCasting && !playback.localSourceUri.isNullOrBlank()) {
+        return LOCAL_TRACK_ID_PREFIX + lastJobId
+    }
+    return null
+}
+
 private data class CastBranchProbabilityFields(
     val minProb: Int,
     val maxProb: Int,
@@ -117,11 +136,7 @@ class TuningCoordinator(
     private val persistLocalTrackTuning: suspend (localId: String, params: String?) -> Unit,
     private val clearLocalTrackTuning: suspend (localId: String) -> Unit
 ) {
-    private fun currentLocalTrackId(): String? {
-        val state = getState()
-        if (state.appMode != AppMode.Local) return null
-        return state.playback.lastJobId?.takeIf { it.startsWith("local-") }
-    }
+    private fun currentLocalTrackId(): String? = localTrackTuningId(getState())
 
     suspend fun applyTuning(
         threshold: Int,
@@ -203,6 +218,17 @@ class TuningCoordinator(
         if (castUpdate.castParams != null) {
             castPlaybackCoordinator.sendCastTuningParams(castUpdate.castParams)
         }
+        // Mirror applyLocalTuning's auto-save for local tracks: cast tuning edits never reach
+        // the local engine, so without this they would vanish on disconnect.
+        currentLocalTrackId()?.let { localId ->
+            persistLocalTrackTuning(
+                localId,
+                TuningParamsCodec.buildSavedTuningParams(
+                    tuning = castUpdate.nextTuning,
+                    audioModeWireValue = audioModeWireValue
+                )
+            )
+        }
         castPlaybackCoordinator.requestCastStatus()
     }
 
@@ -246,7 +272,7 @@ class TuningCoordinator(
         }
     }
 
-    private fun resetCastTuningDefaults() {
+    private suspend fun resetCastTuningDefaults() {
         val currentState = getState()
         castPlaybackCoordinator.sendCastTuningParams(
             buildCastTuningResetParams(
@@ -255,6 +281,9 @@ class TuningCoordinator(
                 resetThreshold = currentState.tuning.computedThreshold
             )
         )
+        // Mirror resetLocalTuningDefaults: a reset while casting also discards the local
+        // track's auto-saved tuning.
+        currentLocalTrackId()?.let { localId -> clearLocalTrackTuning(localId) }
         castPlaybackCoordinator.requestCastStatus()
     }
 

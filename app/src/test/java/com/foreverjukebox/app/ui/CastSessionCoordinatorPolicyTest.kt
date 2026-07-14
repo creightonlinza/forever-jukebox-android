@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -58,6 +59,37 @@ class CastSessionCoordinatorPolicyTest {
             ),
             preserved
         )
+    }
+
+    @Test
+    fun capturePreservedCastTrackCarriesEngineTuningForJukeboxTracks() {
+        val preserved = capturePreservedCastTrack(
+            playback = PlaybackState(
+                audioLoaded = true,
+                analysisLoaded = true,
+                lastJobId = "job123",
+                playMode = PlaybackMode.Jukebox
+            ),
+            engineTuningParams = "jb=1&thresh=45"
+        )
+
+        assertEquals("jb=1&thresh=45", preserved?.tuningParams)
+    }
+
+    @Test
+    fun capturePreservedCastTrackDropsEngineTuningForAutocanonizerTracks() {
+        val preserved = capturePreservedCastTrack(
+            playback = PlaybackState(
+                audioLoaded = true,
+                analysisLoaded = true,
+                lastJobId = "job123",
+                playMode = PlaybackMode.Autocanonizer
+            ),
+            engineTuningParams = "jb=1&thresh=45"
+        )
+
+        assertNotNull(preserved)
+        assertNull(preserved?.tuningParams)
     }
 
     @Test

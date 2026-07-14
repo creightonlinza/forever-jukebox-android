@@ -50,6 +50,7 @@ class JukeboxEngine(
     private var forceBranch = false
     private var pendingAdvance: PendingAdvance? = null
     private val deletedEdgeKeys = mutableSetOf<String>()
+    private var userAnchorEdgeId: Int? = null
     private val rng = createRng(options.randomMode, options.seed)
     private val listeners = CopyOnWriteArraySet<(JukeboxState) -> Unit>()
     private val branchState = BranchState(0.0)
@@ -69,6 +70,7 @@ class JukeboxEngine(
 
     fun loadAnalysis(data: JsonElement) {
         deletedEdgeKeys.clear()
+        userAnchorEdgeId = null
         analysis = normalizeAnalysis(data)
         val beatsCount = analysis?.beats?.size ?: 0
         config = config.copy(
@@ -86,6 +88,7 @@ class JukeboxEngine(
 
     fun clearAnalysis() {
         deletedEdgeKeys.clear()
+        userAnchorEdgeId = null
         analysis = null
         graph = null
         beats = mutableListOf()
@@ -100,6 +103,14 @@ class JukeboxEngine(
     fun refreshAnchorJump() {
         syncAnchorJump()
     }
+
+    fun setUserAnchorEdge(edge: Edge?) {
+        userAnchorEdgeId = edge?.id
+        clearPendingAdvance(cancelScheduledJump = true)
+        syncAnchorJump()
+    }
+
+    fun getUserAnchorEdgeId(): Int? = getUserAnchorEdge()?.id
 
     fun updateConfig(partial: JukeboxConfigUpdate) {
         config = config.applyUpdate(partial)
@@ -137,20 +148,16 @@ class JukeboxEngine(
                 edgeMap.putIfAbsent(key, edge)
             }
         }
-        var anchorEdgeId: Int? = null
-        val anchorSource = beats.getOrNull(currentGraph.lastBranchPoint)
-        if (anchorSource != null && anchorSource.neighbors.isNotEmpty()) {
-            val bestIndex = getBestLastBranchNeighborIndex(anchorSource)
-            val bestEdge = anchorSource.neighbors.getOrNull(bestIndex)
-            if (bestEdge != null && !bestEdge.deleted) {
-                anchorEdgeId = bestEdge.id
-            }
-        }
+        val userAnchorEdge = getUserAnchorEdge()
+        val defaultAnchorEdge = getDefaultAnchorEdge()
+        val anchorEdgeId = userAnchorEdge?.id ?: defaultAnchorEdge?.id
+        val userAnchorEdgeId = userAnchorEdge?.id?.takeIf { it != defaultAnchorEdge?.id }
         return VisualizationData(
             beats = current.beats,
             edges = edgeMap.values.toMutableList(),
             lastBranchPoint = currentGraph.lastBranchPoint,
-            anchorEdgeId = anchorEdgeId
+            anchorEdgeId = anchorEdgeId,
+            userAnchorEdgeId = userAnchorEdgeId
         )
     }
 
@@ -401,7 +408,8 @@ class JukeboxEngine(
                 config,
                 rng,
                 branchState,
-                forceBranch
+                forceBranch,
+                getActiveUserAnchorSelection()
             )
             curRandomBranchChance = branchState.curRandomBranchChance
             shouldJump = selection.second
@@ -638,27 +646,46 @@ class JukeboxEngine(
         graph = current.copy(lastBranchPoint = refreshedAnchorSource ?: -1)
     }
 
-    private fun syncAnchorJump() {
-        val currentGraph = graph ?: run {
-            player.clearAnchorJump()
-            return
+    private fun getUserAnchorEdge(): Edge? {
+        val currentGraph = graph ?: return null
+        val anchorId = userAnchorEdgeId ?: return null
+        val edge = currentGraph.allEdges.firstOrNull { it.id == anchorId } ?: return null
+        if (edge.deleted) {
+            return null
         }
-        val anchorSource = beats.getOrNull(currentGraph.lastBranchPoint) ?: run {
-            player.clearAnchorJump()
-            return
+        // The anchor must have survived branch filtering to be playable.
+        return edge.takeIf { candidate ->
+            candidate.src.neighbors.any { it.id == candidate.id }
         }
+    }
+
+    private fun getDefaultAnchorEdge(): Edge? {
+        val currentGraph = graph ?: return null
+        val anchorSource = beats.getOrNull(currentGraph.lastBranchPoint) ?: return null
         if (anchorSource.neighbors.isEmpty()) {
-            player.clearAnchorJump()
-            return
+            return null
         }
         val bestIndex = getBestLastBranchNeighborIndex(anchorSource)
         val bestEdge = anchorSource.neighbors.getOrNull(bestIndex)
-        if (bestEdge == null || bestEdge.deleted) {
+        return bestEdge?.takeIf { !it.deleted }
+    }
+
+    private fun getActiveAnchorEdge(): Edge? {
+        return getUserAnchorEdge() ?: getDefaultAnchorEdge()
+    }
+
+    private fun getActiveUserAnchorSelection(): UserAnchorSelection? {
+        val edge = getUserAnchorEdge() ?: return null
+        return UserAnchorSelection(edgeId = edge.id, sourceIndex = edge.src.which)
+    }
+
+    private fun syncAnchorJump() {
+        val edge = getActiveAnchorEdge() ?: run {
             player.clearAnchorJump()
             return
         }
-        val targetTime = bestEdge.dest.start
-        val sourceStartTime = anchorSource.start
+        val targetTime = edge.dest.start
+        val sourceStartTime = edge.src.start
         if (!targetTime.isFinite() || !sourceStartTime.isFinite()) {
             player.clearAnchorJump()
             return
@@ -714,7 +741,8 @@ data class VisualizationData(
     val beats: List<QuantumBase>,
     val edges: MutableList<Edge>,
     val lastBranchPoint: Int = -1,
-    val anchorEdgeId: Int? = null
+    val anchorEdgeId: Int? = null,
+    val userAnchorEdgeId: Int? = null
 )
 
 private data class PendingAdvance(

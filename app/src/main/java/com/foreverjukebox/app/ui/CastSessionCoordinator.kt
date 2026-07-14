@@ -1,18 +1,21 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
 import com.foreverjukebox.app.playback.PlaybackController
 
 internal sealed interface PreservedCastTrack {
     val title: String?
     val artist: String?
     val audioMode: JukeboxAudioMode
+    val tuningParams: String?
 
     data class Server(
         val jobId: String,
         val youtubeId: String?,
         override val title: String?,
         override val artist: String?,
-        override val audioMode: JukeboxAudioMode
+        override val audioMode: JukeboxAudioMode,
+        override val tuningParams: String? = null
     ) : PreservedCastTrack
 
     data class Local(
@@ -20,21 +23,26 @@ internal sealed interface PreservedCastTrack {
         val sourceUri: String,
         override val title: String?,
         override val artist: String?,
-        override val audioMode: JukeboxAudioMode
+        override val audioMode: JukeboxAudioMode,
+        override val tuningParams: String? = null
     ) : PreservedCastTrack
 }
 
-private const val LOCAL_ID_PREFIX = "local-"
-
-internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTrack? {
+internal fun capturePreservedCastTrack(
+    playback: PlaybackState,
+    engineTuningParams: String? = null
+): PreservedCastTrack? {
     val shouldAutoCast = playback.audioLoaded && playback.analysisLoaded
     if (!shouldAutoCast) {
         return null
     }
+    // Engine tuning only applies to jukebox tracks; an autocanonizer track is handed off
+    // to the receiver as a jukebox track with default tuning.
+    val tuningParams = engineTuningParams?.takeIf { playback.playMode == PlaybackMode.Jukebox }
     val localSourceUri = playback.localSourceUri
     if (localSourceUri != null) {
         val cacheKey = playback.lastJobId
-            ?.removePrefix(LOCAL_ID_PREFIX)
+            ?.removePrefix(LOCAL_TRACK_ID_PREFIX)
             ?.takeIf { it.isNotBlank() }
             ?: return null
         return PreservedCastTrack.Local(
@@ -42,7 +50,8 @@ internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTr
             sourceUri = localSourceUri,
             title = playback.trackTitle,
             artist = playback.trackArtist,
-            audioMode = playback.jukeboxAudioMode
+            audioMode = playback.jukeboxAudioMode,
+            tuningParams = tuningParams
         )
     }
     val jobId = playback.lastJobId ?: return null
@@ -51,7 +60,8 @@ internal fun capturePreservedCastTrack(playback: PlaybackState): PreservedCastTr
         youtubeId = playback.lastYouTubeId,
         title = playback.trackTitle,
         artist = playback.trackArtist,
-        audioMode = playback.jukeboxAudioMode
+        audioMode = playback.jukeboxAudioMode,
+        tuningParams = tuningParams
     )
 }
 
@@ -118,7 +128,12 @@ class CastSessionCoordinator(
             return
         }
 
-        val preservedTrack = capturePreservedCastTrack(playback)
+        // Snapshot engine tuning here: resetForNewTrack below restores the default config,
+        // and the preserved track should keep playing on the receiver with its tuning.
+        val preservedTrack = capturePreservedCastTrack(
+            playback = playback,
+            engineTuningParams = playbackCoordinator.buildTuningParamsString()
+        )
         updateState {
             it.copy(
                 playback = it.playback.copy(
@@ -132,11 +147,14 @@ class CastSessionCoordinator(
         playbackCoordinator.resetForNewTrack()
 
         if (preservedTrack != null) {
-            val tuningParams = if (preservedTrack.audioMode == JukeboxAudioMode.Off) {
-                null
-            } else {
-                TuningParamsCodec.buildAudioModeParam(preservedTrack.audioMode)
-            }
+            // Engine tuning already carries the audio mode (`am`) when one is active; the
+            // fallback keeps the audio-mode-only handoff for tracks with no other tuning.
+            val tuningParams = preservedTrack.tuningParams
+                ?: if (preservedTrack.audioMode == JukeboxAudioMode.Off) {
+                    null
+                } else {
+                    TuningParamsCodec.buildAudioModeParam(preservedTrack.audioMode)
+                }
             when (preservedTrack) {
                 is PreservedCastTrack.Server -> {
                     updateState {

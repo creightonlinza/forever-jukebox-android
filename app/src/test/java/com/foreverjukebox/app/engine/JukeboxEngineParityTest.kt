@@ -252,37 +252,216 @@ class JukeboxEngineParityTest {
     }
 
     @Test
-    fun rebuildGraphWithPreferredAnchorBeatRefreshesNativeAnchorJump() {
+    fun userAnchorEdgeOverridesDefaultAnchorForVisualizationAndAnchorJump() {
         val player = FakePlayer()
-        val engine = JukeboxEngine(
-            player,
-            graphBuilder = { analysis, config ->
-                val sourceIndex = config.preferredAnchorBeat ?: 1
-                analysis.beats.forEach { beat ->
-                    beat.neighbors = mutableListOf()
-                    beat.allNeighbors = mutableListOf()
-                }
-                val edge = makeEdge(sourceIndex, analysis.beats[sourceIndex], analysis.beats[0], 1.0)
-                analysis.beats[sourceIndex].neighbors = mutableListOf(edge)
-                analysis.beats[sourceIndex].allNeighbors = mutableListOf(edge)
-                JukeboxGraphState(
-                    computedThreshold = 0,
-                    currentThreshold = 0,
-                    lastBranchPoint = sourceIndex,
-                    totalBeats = analysis.beats.size,
-                    longestReach = 0.0,
-                    allEdges = mutableListOf(edge)
-                )
-            }
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2), makeBeat(3))
+        linkBeats(beats)
+        val defaultEdge = makeEdge(1, beats[1], beats[0], 10.0)
+        val userEdge = makeEdge(3, beats[3], beats[0], 5.0)
+        beats[1].neighbors = mutableListOf(defaultEdge)
+        beats[1].allNeighbors = mutableListOf(defaultEdge)
+        beats[3].neighbors = mutableListOf(userEdge)
+        beats[3].allNeighbors = mutableListOf(userEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(defaultEdge, userEdge)
         )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+
+        assertEquals(defaultEdge.id, engine.getVisualizationData()?.anchorEdgeId)
+        assertNull(engine.getVisualizationData()?.userAnchorEdgeId)
+
+        engine.setUserAnchorEdge(userEdge)
+
+        assertEquals(userEdge.id, engine.getUserAnchorEdgeId())
+        assertEquals(userEdge.id, engine.getVisualizationData()?.anchorEdgeId)
+        assertEquals(userEdge.id, engine.getVisualizationData()?.userAnchorEdgeId)
+        assertEquals(0.0 to 3.0, player.anchorJumpCalls.last())
+
+        engine.setUserAnchorEdge(null)
+
+        assertNull(engine.getUserAnchorEdgeId())
+        assertEquals(defaultEdge.id, engine.getVisualizationData()?.anchorEdgeId)
+        assertNull(engine.getVisualizationData()?.userAnchorEdgeId)
+        assertEquals(0.0 to 1.0, player.anchorJumpCalls.last())
+    }
+
+    @Test
+    fun userAnchorFallsBackToDefaultAnchorWhenDeleted() {
+        val player = FakePlayer()
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2), makeBeat(3))
+        linkBeats(beats)
+        // The default anchor source stays late in the track so it remains an eligible
+        // anchor source after the user edge is deleted and sources are re-selected.
+        val userEdge = makeEdge(2, beats[2], beats[0], 5.0)
+        val defaultEdge = makeEdge(3, beats[3], beats[0], 10.0)
+        beats[2].neighbors = mutableListOf(userEdge)
+        beats[2].allNeighbors = mutableListOf(userEdge)
+        beats[3].neighbors = mutableListOf(defaultEdge)
+        beats[3].allNeighbors = mutableListOf(defaultEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 3,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(userEdge, defaultEdge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        engine.setUserAnchorEdge(userEdge)
+
+        engine.deleteEdge(userEdge)
+
+        assertNull(engine.getUserAnchorEdgeId())
+        assertEquals(defaultEdge.id, engine.getVisualizationData()?.anchorEdgeId)
+    }
+
+    @Test
+    fun loadAnalysisClearsUserAnchorEdge() {
+        val player = FakePlayer()
+        val engine = JukeboxEngine(player)
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2))
+        linkBeats(beats)
+        val userEdge = makeEdge(2, beats[2], beats[0], 5.0)
+        beats[2].neighbors = mutableListOf(userEdge)
+        beats[2].allNeighbors = mutableListOf(userEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 2,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(userEdge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+        engine.setUserAnchorEdge(userEdge)
+        assertEquals(userEdge.id, engine.getUserAnchorEdgeId())
+
         engine.loadAnalysis(makeAnalysisPayload(3))
 
-        engine.updateConfig(engine.getConfig().copy(preferredAnchorBeat = 2))
-        engine.rebuildGraph()
+        assertNull(engine.getUserAnchorEdgeId())
+    }
 
-        assertEquals(2, player.anchorJumpCalls.size)
-        assertEquals(1.0, player.anchorJumpCalls[0].second, 0.000001)
-        assertEquals(2.0, player.anchorJumpCalls[1].second, 0.000001)
+    @Test
+    fun selectNextBeatIndexForcesUserAnchorEdgeAtItsSourceBeat() {
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2), makeBeat(3))
+        linkBeats(beats)
+        val userEdge = makeEdge(3, beats[3], beats[0], 5.0)
+        beats[3].neighbors = mutableListOf(userEdge)
+        beats[3].allNeighbors = mutableListOf(userEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(userEdge)
+        )
+
+        // rng would never randomly branch, so only the user anchor can force the jump.
+        val selection = selectNextBeatIndex(
+            seed = beats[3],
+            graph = graph,
+            config = JukeboxConfig(),
+            rng = { 0.99 },
+            state = BranchState(0.0),
+            forceBranch = false,
+            userAnchor = UserAnchorSelection(edgeId = userEdge.id, sourceIndex = 3)
+        )
+
+        assertEquals(0, selection.first)
+        assertTrue(selection.second)
+    }
+
+    @Test
+    fun selectNextBeatIndexDoesNotBranchPastUserAnchorSource() {
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2), makeBeat(3))
+        linkBeats(beats)
+        val forwardEdge = makeEdge(1, beats[1], beats[3], 5.0)
+        beats[1].neighbors = mutableListOf(forwardEdge)
+        beats[1].allNeighbors = mutableListOf(forwardEdge)
+        val userEdge = makeEdge(2, beats[2], beats[0], 5.0)
+        beats[2].neighbors = mutableListOf(userEdge)
+        beats[2].allNeighbors = mutableListOf(userEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(forwardEdge, userEdge)
+        )
+
+        // beat 1's only branch lands past the anchor source (beat 2), so it must not be
+        // taken even when a branch is forced.
+        val selection = selectNextBeatIndex(
+            seed = beats[1],
+            graph = graph,
+            config = JukeboxConfig(),
+            rng = { 0.0 },
+            state = BranchState(0.0),
+            forceBranch = true,
+            userAnchor = UserAnchorSelection(edgeId = userEdge.id, sourceIndex = 2)
+        )
+
+        assertEquals(1, selection.first)
+        assertFalse(selection.second)
+    }
+
+    @Test
+    fun userAnchorSuppressesDefaultAnchorForcedBranch() {
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2), makeBeat(3))
+        linkBeats(beats)
+        val defaultEdge = makeEdge(1, beats[1], beats[0], 10.0)
+        beats[1].neighbors = mutableListOf(defaultEdge)
+        beats[1].allNeighbors = mutableListOf(defaultEdge)
+        val userEdge = makeEdge(3, beats[3], beats[0], 5.0)
+        beats[3].neighbors = mutableListOf(userEdge)
+        beats[3].allNeighbors = mutableListOf(userEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(defaultEdge, userEdge)
+        )
+
+        // The default anchor at lastBranchPoint always branches — unless a user anchor
+        // is active, in which case beat 1 falls through to the (never-branching) rng.
+        val withUserAnchor = selectNextBeatIndex(
+            seed = beats[1],
+            graph = graph,
+            config = JukeboxConfig(),
+            rng = { 0.99 },
+            state = BranchState(0.0),
+            forceBranch = false,
+            userAnchor = UserAnchorSelection(edgeId = userEdge.id, sourceIndex = 3)
+        )
+        val withoutUserAnchor = selectNextBeatIndex(
+            seed = beats[1],
+            graph = graph,
+            config = JukeboxConfig(),
+            rng = { 0.99 },
+            state = BranchState(0.0),
+            forceBranch = false,
+            userAnchor = null
+        )
+
+        assertFalse(withUserAnchor.second)
+        assertTrue(withoutUserAnchor.second)
     }
 
     @Test

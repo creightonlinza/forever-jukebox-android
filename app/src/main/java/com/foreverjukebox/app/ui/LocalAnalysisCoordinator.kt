@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.core.net.toUri
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
 import com.foreverjukebox.app.local.AudioTooLargeException
 import com.foreverjukebox.app.local.LocalAnalysisArtifact
 import com.foreverjukebox.app.local.LocalAnalysisService
@@ -223,7 +224,7 @@ class LocalAnalysisCoordinator(
         // instead of loading it into the local player.
         val current = getState()
         if (current.appMode == AppMode.Local && current.playback.isCasting) {
-            val cacheKey = artifact.localId.removePrefix(LOCAL_ID_PREFIX)
+            val cacheKey = artifact.localId.removePrefix(LOCAL_TRACK_ID_PREFIX)
             val savedTuning = localAnalysisService.readSavedTuning(artifact.localId)
             castPlaybackCoordinator.castLocalTrack(
                 cacheKey = cacheKey,
@@ -292,7 +293,4 @@ class LocalAnalysisCoordinator(
         }
     }
 
-    private companion object {
-        const val LOCAL_ID_PREFIX = "local-"
-    }
 }

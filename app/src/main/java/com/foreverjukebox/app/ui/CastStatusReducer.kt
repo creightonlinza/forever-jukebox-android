@@ -28,6 +28,7 @@ data class CastTuningStatus(
     val computedThreshold: Int?,
     val branchProbability: CastBranchProbabilityStatus,
     val deletedEdgeIds: List<Int>,
+    val anchorBranchId: Int?,
     val highlightAnchorBranch: Boolean,
     val audioModeWireValue: String
 )
@@ -154,6 +155,7 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
             ?.jsonArray
             ?.mapNotNull { it.jsonPrimitive.intOrNull?.takeIf { id -> id >= 0 } }
             ?: emptyList(),
+        anchorBranchId = json.intValue("anchorBranchId")?.takeIf { it >= 0 },
         highlightAnchorBranch = json.booleanValue("highlightAnchorBranch"),
         audioModeWireValue = audioModeWireValue
     )
@@ -335,7 +337,9 @@ private fun resolveCastTuningState(
         highlightAnchorBranch = tuning.highlightAnchorBranch,
         justBackwards = tuning.justBackwards,
         minJumpDistancePercent = tuning.minLongBranchPercent,
-        removeSequential = tuning.removeSequentialBranches
+        removeSequential = tuning.removeSequentialBranches,
+        deletedEdgeIds = tuning.deletedEdgeIds,
+        anchorBranchId = tuning.anchorBranchId
     )
 }
 

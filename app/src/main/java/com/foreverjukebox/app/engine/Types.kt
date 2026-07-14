@@ -21,8 +21,7 @@ data class JukeboxConfig(
     val maxRandomBranchChance: Double = 0.5,
     val randomBranchChanceDelta: Double = 0.02,
     val minLongBranch: Int = 0,
-    val minLongBranchPercent: Int = DEFAULT_MIN_LONG_BRANCH_PERCENT,
-    val preferredAnchorBeat: Int? = null
+    val minLongBranchPercent: Int = DEFAULT_MIN_LONG_BRANCH_PERCENT
 )
 
 data class JukeboxConfigUpdate(
@@ -36,8 +35,7 @@ data class JukeboxConfigUpdate(
     val maxRandomBranchChance: Double? = null,
     val randomBranchChanceDelta: Double? = null,
     val minLongBranch: Int? = null,
-    val minLongBranchPercent: Int? = null,
-    val preferredAnchorBeat: Int? = null
+    val minLongBranchPercent: Int? = null
 )
 
 fun JukeboxConfig.applyUpdate(update: JukeboxConfigUpdate): JukeboxConfig {
@@ -52,8 +50,7 @@ fun JukeboxConfig.applyUpdate(update: JukeboxConfigUpdate): JukeboxConfig {
         maxRandomBranchChance = update.maxRandomBranchChance ?: maxRandomBranchChance,
         randomBranchChanceDelta = update.randomBranchChanceDelta ?: randomBranchChanceDelta,
         minLongBranch = update.minLongBranch ?: minLongBranch,
-        minLongBranchPercent = update.minLongBranchPercent ?: minLongBranchPercent,
-        preferredAnchorBeat = update.preferredAnchorBeat ?: preferredAnchorBeat
+        minLongBranchPercent = update.minLongBranchPercent ?: minLongBranchPercent
     )
 }
 
@@ -69,8 +66,7 @@ fun JukeboxConfig.toUpdate(): JukeboxConfigUpdate {
         maxRandomBranchChance = maxRandomBranchChance,
         randomBranchChanceDelta = randomBranchChanceDelta,
         minLongBranch = minLongBranch,
-        minLongBranchPercent = minLongBranchPercent,
-        preferredAnchorBeat = preferredAnchorBeat
+        minLongBranchPercent = minLongBranchPercent
     )
 }
 

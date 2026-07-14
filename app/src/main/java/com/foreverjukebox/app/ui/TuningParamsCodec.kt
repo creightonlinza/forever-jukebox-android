@@ -17,7 +17,7 @@ data class ParsedTuningParams(
     val minJumpDistancePercent: Int?,
     val removeSequentialBranches: Boolean?,
     val deletedEdgeIds: List<Int>,
-    val anchorBeat: Int?,
+    val anchorBranchId: Int?,
     val audioMode: JukeboxAudioMode?
 )
 
@@ -55,7 +55,7 @@ object TuningParamsCodec {
             ?.split(",")
             ?.mapNotNull { it.toIntOrNull()?.takeIf { id -> id >= 0 } }
             ?: emptyList()
-        val anchorBeat = params.firstValue("ab")
+        val anchorBranchId = params.firstValue("ab")
             ?.toIntOrNull()
             ?.takeIf { it >= 0 }
         val branchLength = params.firstValue("bl")
@@ -79,7 +79,7 @@ object TuningParamsCodec {
             minJumpDistancePercent = minJumpDistancePercent,
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
             deletedEdgeIds = deletedEdgeIds,
-            anchorBeat = anchorBeat,
+            anchorBranchId = anchorBranchId,
             audioMode = audioMode
         )
     }
@@ -148,23 +148,54 @@ object TuningParamsCodec {
         return sanitized.entries.joinToString("&") { (key, value) -> "$key=$value" }.ifBlank { null }
     }
 
-    fun buildFromTuningState(
+    /**
+     * Track-specific tuning to persist (with a favorite, a playlist entry, or a cached local
+     * track's auto-saved tuning), built from live [TuningState] instead of the local engine —
+     * the source of truth while casting, where the engine is reset on connect and never sees
+     * cast tuning edits. Mirrors the engine capture format: only non-default values are
+     * emitted and a fully default state yields null. `ah` is never emitted (persisted tuning
+     * strips it).
+     */
+    fun buildSavedTuningParams(
         tuning: TuningState,
-        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
-        includeOffAudioMode: Boolean = false
-    ): String {
-        val params = mutableListOf(
-            "jb=${if (tuning.justBackwards) 1 else 0}",
-            "sq=${if (tuning.removeSequential) 0 else 1}",
-            "thresh=${tuning.threshold.coerceAtLeast(2)}",
-            "bp=${tuning.minProb.coerceIn(0, 100)},${tuning.maxProb.coerceIn(0, 100)},${tuning.ramp.coerceIn(0, 100)}",
-            "ah=${if (tuning.highlightAnchorBranch) 1 else 0}"
-        )
-        params.add(1, "bl=${tuning.minJumpDistancePercent}")
-        if (audioMode != JukeboxAudioMode.Off || includeOffAudioMode) {
-            params.add("am=${audioMode.wireValue}")
+        audioModeWireValue: String? = null
+    ): String? {
+        val defaults = TuningState()
+        val params = mutableListOf<String>()
+        if (tuning.justBackwards) {
+            params.add("jb=1")
         }
-        return params.joinToString("&")
+        if (tuning.minJumpDistancePercent > 0) {
+            params.add("bl=${tuning.minJumpDistancePercent}")
+        }
+        if (tuning.removeSequential) {
+            params.add("sq=0")
+        }
+        val computedThreshold = tuning.computedThreshold
+        if (computedThreshold != null && tuning.threshold != computedThreshold) {
+            params.add("thresh=${tuning.threshold.coerceAtLeast(2)}")
+        }
+        val branchProbabilityChanged = tuning.minProb != defaults.minProb ||
+            tuning.maxProb != defaults.maxProb ||
+            tuning.ramp != defaults.ramp
+        if (branchProbabilityChanged) {
+            params.add(
+                "bp=${tuning.minProb.coerceIn(0, 100)}," +
+                    "${tuning.maxProb.coerceIn(0, 100)}," +
+                    "${tuning.ramp.coerceIn(0, 100)}"
+            )
+        }
+        if (tuning.deletedEdgeIds.isNotEmpty()) {
+            params.add("d=${tuning.deletedEdgeIds.joinToString(",")}")
+        }
+        tuning.anchorBranchId?.takeIf { it >= 0 }?.let { anchorBranchId ->
+            params.add("ab=$anchorBranchId")
+        }
+        val normalizedAudioMode = audioModeWireValue?.trim().orEmpty()
+        if (normalizedAudioMode.isNotBlank() && normalizedAudioMode != JukeboxAudioMode.Off.wireValue) {
+            params.add("am=$normalizedAudioMode")
+        }
+        return if (params.isEmpty()) null else params.joinToString("&")
     }
 
     fun buildHighlightParam(enabled: Boolean): String {

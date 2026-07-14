@@ -1,7 +1,9 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.engine.JukeboxConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TuningCoordinatorCastPolicyTest {
@@ -262,6 +264,54 @@ class TuningCoordinatorCastPolicyTest {
         assertEquals(0, update.nextTuning.minProb)
         assertEquals(100, update.nextTuning.maxProb)
         assertEquals(100, update.nextTuning.ramp)
+    }
+
+    @Test
+    fun localTrackTuningIdReturnsPrefixedIdForOnDeviceLocalTrack() {
+        val state = UiState(
+            appMode = AppMode.Local,
+            playback = PlaybackState(lastJobId = "local-0123456789abcdef")
+        )
+
+        assertEquals("local-0123456789abcdef", localTrackTuningId(state))
+    }
+
+    @Test
+    fun localTrackTuningIdRestoresPrefixWhileCastingLocalTrack() {
+        // While casting, the receiver reports the bare cache fingerprint as the job id.
+        val state = UiState(
+            appMode = AppMode.Local,
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = "0123456789abcdef",
+                localSourceUri = "content://audio/1"
+            )
+        )
+
+        assertEquals("local-0123456789abcdef", localTrackTuningId(state))
+    }
+
+    @Test
+    fun localTrackTuningIdReturnsNullForNonLocalPlayback() {
+        val castingServerTrack = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(
+                isCasting = true,
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+            )
+        )
+        val localModeWithoutLocalSource = UiState(
+            appMode = AppMode.Local,
+            playback = PlaybackState(isCasting = true, lastJobId = "0123456789abcdef")
+        )
+        val bareIdWithoutCasting = UiState(
+            appMode = AppMode.Local,
+            playback = PlaybackState(lastJobId = "0123456789abcdef")
+        )
+
+        assertNull(localTrackTuningId(castingServerTrack))
+        assertNull(localTrackTuningId(localModeWithoutLocalSource))
+        assertNull(localTrackTuningId(bareIdWithoutCasting))
     }
 
     private fun buildAudioOnlyCastUpdate(
