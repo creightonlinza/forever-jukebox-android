@@ -58,6 +58,7 @@ fun InputPanel(
     onSortChange: (FavoriteSortKey, FavoriteSortDirection) -> Unit
 ) {
     val context = LocalContext.current
+    var pendingDeleteLocalId by remember { mutableStateOf<String?>(null) }
     val totalRamBytes = remember(context) { resolveTotalRamBytes(context) }
     val showLowRamWarning = totalRamBytes != null && totalRamBytes < LOW_RAM_WARNING_THRESHOLD_BYTES
     val filePicker = rememberLauncherForActivityResult(
@@ -246,7 +247,7 @@ fun InputPanel(
                                         modifier = Modifier.weight(0.8f, fill = true)
                                     )
                                     SquareIconButton(
-                                        onClick = { onDeleteCachedTrack(track.localId) },
+                                        onClick = { pendingDeleteLocalId = track.localId },
                                         modifier = Modifier.size(24.dp)
                                     ) {
                                         Icon(
@@ -263,6 +264,15 @@ fun InputPanel(
                 }
             }
         }
+    }
+    pendingDeleteLocalId?.let { localId ->
+        DeleteTrackDialog(
+            onDismiss = { pendingDeleteLocalId = null },
+            onConfirm = {
+                pendingDeleteLocalId = null
+                onDeleteCachedTrack(localId)
+            }
+        )
     }
 }
 
