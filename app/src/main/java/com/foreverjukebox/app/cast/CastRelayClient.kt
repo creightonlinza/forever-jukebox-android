@@ -33,8 +33,11 @@ import okio.source
  *
  * - `POST /api/tracks/{jobId}/pull` `{"baseUrl": …}` → `204 | 403 (not allowlisted) | 507 | 400`
  *
+ * The relay holds uploads in memory only and drops them once the receiver has loaded the track;
+ * nothing is written to disk or retained (PRIVACY.md depends on this — keep them in sync).
+ *
  * Re-sending either call for the same id is allowed (uploads overwrite, pulls re-register) — that is
- * the recovery path after a relay restart wipes its ephemeral storage. The HTTP surface takes plain
+ * the recovery path after a relay restart drops its in-memory state. The HTTP surface takes plain
  * [RequestBody] instances so it can be unit-tested against MockWebServer with in-memory bodies; the
  * Android caller wires content-URI streaming via [streamingBody].
  */
@@ -49,7 +52,7 @@ class CastRelayClient(
         /** Relay rejected a file as too large (413). Don't retry. */
         data object TooLarge : UploadResult
 
-        /** Relay disk / track-count guard tripped (507). Retry later. */
+        /** Relay memory / track-count capacity guard tripped (507). Retry later. */
         data object Guard : UploadResult
 
         /** Network failure, malformed id, or unexpected status. */
@@ -64,7 +67,7 @@ class CastRelayClient(
         /** Server mode disabled or host not allowlisted (403). Config problem, not retryable. */
         data object Forbidden : PullResult
 
-        /** Relay disk / track-count guard tripped (507). Retry later. */
+        /** Relay memory / track-count capacity guard tripped (507). Retry later. */
         data object Guard : PullResult
 
         /** Malformed id or pull body (400, or rejected locally). Sender bug. */

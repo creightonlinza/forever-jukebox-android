@@ -1,6 +1,6 @@
 # Privacy Policy — Forever Jukebox
 
-**Last updated: 2026-06-26**
+**Last updated: 2026-07-15**
 
 Forever Jukebox ("the app") is a free, open-source music visualization and
 playback app developed by Creighton Linza ("we", "us"). This policy explains
@@ -9,20 +9,44 @@ what the app does and does not collect.
 ## Summary
 
 - The app has **no accounts, no ads, and no in-app purchases**.
-- Your audio files and listening activity stay **on your device** and are not
-  uploaded to us.
-- The only data that leaves your device is **anonymous crash and error
-  diagnostics**, used solely to find and fix bugs.
+- Your audio files and listening activity stay **on your device**, except when
+  you choose to cast to a Chromecast — see [Casting](#casting-to-a-chromecast)
+  below.
+- Nothing you cast is ever stored — it passes through our relay in memory and is
+  discarded once your Chromecast has loaded it.
+- The only data that leaves your device automatically is **anonymous crash and
+  error diagnostics**, used solely to find and fix bugs.
 
 ## What the app does on your device
 
 The Play Store version of Forever Jukebox runs in **local mode**: you choose an
 audio file from your device, and all analysis and visualization happen on-device.
 
-- Audio files you select are read locally for analysis and playback. They are
-  **not** copied off your device or sent to us.
+- Audio files you select are read locally for analysis and playback. Nothing is
+  sent to us unless you start a cast.
 - Analysis results are cached in the app's private storage to speed up reloads.
   You can clear this cache anytime from Settings.
+
+## Casting to a Chromecast
+
+Casting is **optional** and happens only when you tap the Cast button and pick a
+device. A Chromecast can't read files out of your phone's private storage, so the
+app sends them through a relay we operate:
+
+- **What is sent.** The audio file you selected, and the analysis the app
+  generated from it. No listening history, no account or device identifiers.
+- **How long it's kept.** Only as long as it takes your Chromecast to load the
+  track. The relay holds your audio **in memory only — it is never written to
+  disk** — and discards it once the load completes. We keep no library of past
+  casts.
+- **How it's protected.** The transfer is encrypted, and nothing we relay is
+  published, listed, or browsable.
+- **What we don't do.** We don't inspect, share, or sell the audio you cast, and
+  we don't use it to train anything.
+
+If you don't cast, none of this applies and your audio never leaves your device.
+
+You are responsible for having the rights to any audio you cast through the app.
 
 ## Diagnostics we collect (Sentry)
 
@@ -43,7 +67,8 @@ connection.
 
 ## Permissions
 
-- **Internet** — used only to send anonymous crash diagnostics.
+- **Internet** — used to send anonymous crash diagnostics, and, when you start a
+  cast, to relay the selected audio and its analysis to your Chromecast.
 - **Foreground service / media playback / notifications / wake lock** — used to
   play audio reliably and show playback controls.
 
@@ -55,9 +80,10 @@ children.
 ## Data deletion
 
 Crash diagnostics are anonymous and not tied to an account, so there is no
-personal profile to delete. To remove locally cached analysis data, clear the
-cache from the app's Settings or uninstall the app. For any privacy question or
-request, contact us using the details below.
+personal profile to delete. Audio you cast is discarded automatically once your
+Chromecast loads it, so there is nothing on our side to delete. To remove locally
+cached analysis data, clear the cache from the app's Settings or uninstall the
+app. For any privacy question or request, contact us using the details below.
 
 ## Open source
 
