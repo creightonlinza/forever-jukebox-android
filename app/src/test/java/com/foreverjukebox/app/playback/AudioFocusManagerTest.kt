@@ -2,7 +2,6 @@ package com.foreverjukebox.app.playback
 
 import android.media.AudioManager
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioFocusManagerTest {
@@ -42,7 +41,35 @@ class AudioFocusManagerTest {
 
     @Test
     fun noOpFocusControllerAllowsPlaybackAndAbandonIsSafe() {
-        assertTrue(NoOpPlaybackAudioFocusController.requestAudioFocus())
+        assertEquals(
+            AudioFocusRequestResult.Granted,
+            NoOpPlaybackAudioFocusController.requestAudioFocus()
+        )
         NoOpPlaybackAudioFocusController.abandonAudioFocus()
+    }
+
+    @Test
+    fun grantedRequestMapsToGranted() {
+        assertEquals(
+            AudioFocusRequestResult.Granted,
+            audioFocusRequestResultFor(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        )
+    }
+
+    @Test
+    fun delayedRequestMapsToDelayed() {
+        assertEquals(
+            AudioFocusRequestResult.Delayed,
+            audioFocusRequestResultFor(AudioManager.AUDIOFOCUS_REQUEST_DELAYED)
+        )
+    }
+
+    @Test
+    fun failedRequestMapsToDenied() {
+        assertEquals(
+            AudioFocusRequestResult.Denied,
+            audioFocusRequestResultFor(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
+        )
+        assertEquals(AudioFocusRequestResult.Denied, audioFocusRequestResultFor(Int.MIN_VALUE))
     }
 }

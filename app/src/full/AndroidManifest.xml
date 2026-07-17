@@ -5,7 +5,9 @@
       local-only (SERVER_MODE_AVAILABLE=false) and ships without App Links.
     -->
     <application>
-        <activity android:name=".MainActivity">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

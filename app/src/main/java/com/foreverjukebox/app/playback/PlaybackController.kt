@@ -2,6 +2,7 @@ package com.foreverjukebox.app.playback
 
 import android.content.Context
 import android.os.SystemClock
+import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.audio.BufferedAudioPlayer
 import com.foreverjukebox.app.audio.BufferedAudioCowbellHitScheduler
 import com.foreverjukebox.app.audio.CowbellOverlayController
@@ -20,6 +21,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
+sealed interface PlaybackStartResult {
+    data object Started : PlaybackStartResult
+
+    /** Delayed audio focus was accepted; playback auto-starts when the system grants focus. */
+    data object WaitingForFocus : PlaybackStartResult
+
+    sealed interface Failure : PlaybackStartResult
+
+    data object NoAudio : Failure
+
+    data object FocusDenied : Failure
+
+    /** [cause] is null when the engine started but the player never reported playing. */
+    data class StartFailed(val cause: Throwable?) : Failure
+}
+
 class PlaybackController {
     val player = BufferedAudioPlayer()
     val engine = JukeboxEngine(player, JukeboxEngineOptions(randomMode = RandomMode.Random))
@@ -34,6 +51,9 @@ class PlaybackController {
     private var playTimerMs = 0L
     private var lastPlayStamp: Long? = null
     private var transportState = TransportState.Stopped
+    // Non-null while a play request is parked on a delayed audio focus grant; the
+    // value is the resetFromStart flag to replay once the system grants focus.
+    private var pendingFocusPlayResetFromStart: Boolean? = null
     private var trackTitle: String? = null
     private var trackArtist: String? = null
     private var duckingActive = false
@@ -55,12 +75,25 @@ class PlaybackController {
         audioFocusController = AndroidPlaybackAudioFocusController(
             context = appContext,
             onDuckingChanged = ::setDucking,
-            onPlaybackFocusLost = ::pauseForAudioFocusLoss
+            onPlaybackFocusLost = ::pauseForAudioFocusLoss,
+            onPlaybackFocusGained = ::startPendingFocusPlayback
         )
     }
 
     fun requestAudioFocusForLocalPlayback(): Boolean {
-        return audioFocusController.requestAudioFocus()
+        return when (audioFocusController.requestAudioFocus()) {
+            AudioFocusRequestResult.Granted -> true
+            AudioFocusRequestResult.Delayed -> {
+                // These callers (autocanonizer/cast/service) have no pending-play
+                // machinery to replay on a later grant, so a delayed request would
+                // leave the app holding focus with nothing queued to start.
+                // Withdraw it rather than leak media focus.
+                audioFocusController.abandonAudioFocus()
+                AppLog.warn(TAG, "Local playback focus delayed with no pending play; abandoning request")
+                false
+            }
+            AudioFocusRequestResult.Denied -> false
+        }
     }
 
     fun setDucking(active: Boolean) {
@@ -102,14 +135,32 @@ class PlaybackController {
 
     fun getTrackArtist(): String? = trackArtist
 
-    private fun beginPlayback(resetFromStart: Boolean): Boolean {
+    private fun beginPlayback(resetFromStart: Boolean, requestFocus: Boolean = true): PlaybackStartResult {
         if (!player.hasAudio()) {
             transportState = TransportState.Stopped
-            return false
+            AppLog.warn(TAG, "Jukebox playback start failed: no audio in player")
+            return PlaybackStartResult.NoAudio
         }
-        if (!requestAudioFocusForLocalPlayback()) {
-            transportState = TransportState.Stopped
-            return false
+        if (requestFocus) {
+            when (audioFocusController.requestAudioFocus()) {
+                AudioFocusRequestResult.Granted -> Unit
+                AudioFocusRequestResult.Delayed -> {
+                    pendingFocusPlayResetFromStart = resetFromStart
+                    // Leave transportState as-is (Paused or Stopped). The engine
+                    // hasn't started, so forcing Paused would strand a Stopped
+                    // track in Paused if the park is later cancelled, making the
+                    // next play take the resume path instead of restarting. Both
+                    // prior states already render a play button, so the UI is
+                    // unchanged either way.
+                    AppLog.warn(TAG, "Jukebox playback start waiting for delayed audio focus grant")
+                    return PlaybackStartResult.WaitingForFocus
+                }
+                AudioFocusRequestResult.Denied -> {
+                    transportState = TransportState.Stopped
+                    AppLog.warn(TAG, "Jukebox playback start failed: audio focus denied")
+                    return PlaybackStartResult.FocusDenied
+                }
+            }
         }
         // Guard against any leftover gain shaping from autocanonizer paths.
         player.setGain(1.0)
@@ -121,33 +172,64 @@ class PlaybackController {
             playTimerMs = 0L
             lastPlayStamp = null
         }
+        var startError: Throwable? = null
         val started = runCatching {
             engine.play()
             engine.startJukebox(resetState = resetFromStart)
             player.isPlaying()
-        }.getOrElse {
+        }.getOrElse { error ->
+            startError = error
             false
         }
         if (started) {
             lastPlayStamp = SystemClock.elapsedRealtime()
             transportState = TransportState.Playing
-            return true
+            return PlaybackStartResult.Started
+        }
+        if (startError != null) {
+            AppLog.error(TAG, "Jukebox playback start failed: engine start threw", startError)
+        } else {
+            AppLog.error(TAG, "Jukebox playback start failed: player not playing after engine start")
         }
         runCatching { engine.stopJukebox() }
         audioFocusController.abandonAudioFocus()
         transportState = TransportState.Stopped
-        return false
+        return PlaybackStartResult.StartFailed(startError)
     }
 
-    fun playOrResumePlayback(): Boolean {
+    fun playOrResumePlaybackResult(): PlaybackStartResult {
+        if (pendingFocusPlayResetFromStart != null) {
+            return PlaybackStartResult.WaitingForFocus
+        }
         return when (transportState) {
-            TransportState.Playing -> true
+            TransportState.Playing -> PlaybackStartResult.Started
             TransportState.Paused -> beginPlayback(resetFromStart = false)
             TransportState.Stopped -> beginPlayback(resetFromStart = true)
         }
     }
 
+    fun playOrResumePlayback(): Boolean {
+        return playOrResumePlaybackResult() == PlaybackStartResult.Started
+    }
+
+    private fun startPendingFocusPlayback() {
+        val resetFromStart = pendingFocusPlayResetFromStart ?: return
+        pendingFocusPlayResetFromStart = null
+        AppLog.warn(TAG, "Delayed audio focus granted; starting pending playback")
+        beginPlayback(resetFromStart = resetFromStart, requestFocus = false)
+        playbackStateChangedBroadcaster?.invoke()
+    }
+
+    private fun cancelPendingFocusPlay() {
+        if (pendingFocusPlayResetFromStart == null) return
+        pendingFocusPlayResetFromStart = null
+        // Withdraw the delayed focus request so a later grant doesn't leave the
+        // app holding focus with nothing queued to play.
+        audioFocusController.abandonAudioFocus()
+    }
+
     fun pausePlayback() {
+        cancelPendingFocusPlay()
         cowbellOverlay.cancelScheduledHits()
         if (transportState != TransportState.Playing) {
             return
@@ -169,6 +251,7 @@ class PlaybackController {
     }
 
     fun stopPlayback() {
+        cancelPendingFocusPlay()
         cowbellOverlay.cancelScheduledHits()
         if (transportState == TransportState.Stopped) {
             return
@@ -184,6 +267,7 @@ class PlaybackController {
     }
 
     fun startExternalPlayback(resetTimers: Boolean = true) {
+        cancelPendingFocusPlay()
         if (resetTimers) {
             playTimerMs = 0L
         }
@@ -192,12 +276,14 @@ class PlaybackController {
     }
 
     fun stopExternalPlayback() {
+        cancelPendingFocusPlay()
         cowbellOverlay.cancelScheduledHits()
         markTransportStopped()
         audioFocusController.abandonAudioFocus()
     }
 
     fun pauseExternalPlayback() {
+        cancelPendingFocusPlay()
         cowbellOverlay.cancelScheduledHits()
         markTransportPaused()
         audioFocusController.abandonAudioFocus()
@@ -220,6 +306,7 @@ class PlaybackController {
     }
 
     private fun pauseForAudioFocusLoss() {
+        cancelPendingFocusPlay()
         if (transportState != TransportState.Playing) {
             setDucking(false)
             return
@@ -267,6 +354,7 @@ class PlaybackController {
     }
 
     fun release() {
+        cancelPendingFocusPlay()
         audioFocusController.abandonAudioFocus()
         cowbellOverlay.release()
         autocanonizer.release()
@@ -275,6 +363,7 @@ class PlaybackController {
     }
 
     private companion object {
+        private const val TAG = "PlaybackController"
         private const val NORMAL_VOLUME = 1.0
         private const val DUCKED_VOLUME = 0.2
     }

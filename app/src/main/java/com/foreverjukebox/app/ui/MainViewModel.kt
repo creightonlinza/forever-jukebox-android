@@ -7,7 +7,6 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.OpenableColumns
-import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
@@ -33,6 +32,7 @@ import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
+import com.foreverjukebox.app.playback.PlaybackStartResult
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
 import com.foreverjukebox.app.cast.CastRelayClient
@@ -438,7 +438,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     closeFullscreenVisualization()
                 }
                 ForegroundPlaybackService.ACTION_RETRY_FAILED_LOAD -> {
-                    retryFailedLoad()
+                    if (canPlayLoadedTrackFromMemory(state.value.playback)) {
+                        togglePlayback()
+                    } else {
+                        retryFailedLoad()
+                    }
                 }
             }
         }
@@ -805,6 +809,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val isRunning = controller.isPlaying()
         val isPaused = controller.isPaused()
         if (isRunning) {
+            playbackCoordinator.clearAnalysisErrorForPlaybackStart()
             playbackCoordinator.startListenTimer()
         } else {
             playbackCoordinator.stopListenTimer()
@@ -1568,16 +1573,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         showServerTrackLengthLimitError()
                         return@launch
                     }
-                    Log.e(TAG, "Job lookup by track failed", error)
+                    AppLog.warn(TAG, "Job lookup by track failed", error)
                     // Fall back to YouTube matches.
                 } catch (error: IOException) {
-                    Log.e(TAG, "Job lookup by track failed", error)
+                    AppLog.warn(TAG, "Job lookup by track failed", error)
                     // Fall back to YouTube matches.
                 } catch (error: IllegalArgumentException) {
-                    Log.e(TAG, "Job lookup by track failed", error)
+                    AppLog.warn(TAG, "Job lookup by track failed", error)
                     // Fall back to YouTube matches.
                 } catch (error: IllegalStateException) {
-                    Log.e(TAG, "Job lookup by track failed", error)
+                    AppLog.warn(TAG, "Job lookup by track failed", error)
                     // Fall back to YouTube matches.
                 }
             }
@@ -1958,16 +1963,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         showServerTrackLengthLimitError()
                         return@launchCastSelection
                     }
-                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 } catch (error: IOException) {
-                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 } catch (error: IllegalArgumentException) {
-                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 } catch (error: IllegalStateException) {
-                    Log.e(TAG, "Failed to resolve source for cast", error)
+                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 }
             }
@@ -2257,7 +2262,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun togglePlayback() {
         val current = state.value.playback
         if (blockPlaybackChangeWhileLoading(showToast = false)) return
-        if (shouldRetryFailedLoadFromTransport(state.value)) {
+        if (
+            shouldRetryFailedLoadFromTransport(state.value) &&
+            !canPlayLoadedTrackFromMemory(current)
+        ) {
             retryFailedLoad()
             return
         }
@@ -2316,7 +2324,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!wasPaused) {
                     lastCowbellBeatsPlayed = -1
                 }
-                val running = controller.playOrResumePlayback()
+                val result = controller.playOrResumePlaybackResult()
+                val running = result == PlaybackStartResult.Started
                 val paused = controller.isPaused()
                 playbackCoordinator.updateListenTimeDisplay()
                 _state.update {
@@ -2332,6 +2341,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 when {
                     running -> {
+                        playbackCoordinator.clearAnalysisErrorForPlaybackStart()
                         playbackCoordinator.startListenTimer()
                         syncPlaybackServiceSession()
                     }
@@ -2339,16 +2349,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playbackCoordinator.stopListenTimer()
                         syncPlaybackServiceSession()
                     }
-                    else -> handleJukeboxPlaybackFailure()
+                    else -> handleJukeboxPlaybackFailure(reason = result.toString())
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IllegalArgumentException) {
-                Log.e(TAG, "Playback toggle failed", error)
-                handleJukeboxPlaybackFailure()
+                AppLog.error(TAG, "Playback toggle failed", error)
+                handleJukeboxPlaybackFailure(reason = "togglePlayback threw ${error::class.simpleName}")
             } catch (error: IllegalStateException) {
-                Log.e(TAG, "Playback toggle failed", error)
-                handleJukeboxPlaybackFailure()
+                AppLog.error(TAG, "Playback toggle failed", error)
+                handleJukeboxPlaybackFailure(reason = "togglePlayback threw ${error::class.simpleName}")
             }
         }
     }
@@ -2369,7 +2379,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         syncPlaybackServiceSession()
     }
 
-    private fun handleJukeboxPlaybackFailure() {
+    private fun handleJukeboxPlaybackFailure(reason: String) {
+        AppLog.error(TAG, "Jukebox playback failure surfaced to UI: $reason")
         playbackCoordinator.stopListenTimer()
         hardStopPlaybackServiceSession()
         playbackCoordinator.setAnalysisError("Playback failed.")
@@ -2714,7 +2725,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         jobId: String,
         adminKey: String
     ) {
-        Log.e(TAG, "Failed to delete current job", error)
+        AppLog.warn(TAG, "Failed to delete current job", error)
         if (adminKey.isBlank()) {
             playbackCoordinator.markDeleteEligibilityFailed(jobId)
         }

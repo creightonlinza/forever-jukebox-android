@@ -4,7 +4,6 @@ import android.app.Application
 import android.media.MediaCodec
 import android.os.PowerManager
 import android.os.SystemClock
-import android.util.Log
 import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.data.HttpStatusException
@@ -177,9 +176,15 @@ class PlaybackCoordinator(
         // throwable to log at the call site (e.g. server-reported failures). The
         // benign user-cancel sentinel is excluded as noise.
         if (message != LoadingAudioFeedbackController.LOCAL_ANALYSIS_CANCELLED_MESSAGE) {
-            Log.e(TAG, "Load/analysis error surfaced: $message")
+            AppLog.error(TAG, "Load/analysis error surfaced: $message")
         }
         applyLoadingEvent(LoadingEvent.AnalysisError(message))
+    }
+
+    fun clearAnalysisErrorForPlaybackStart() {
+        if (getState().playback.analysisErrorMessage.isNullOrBlank()) return
+        updatePlaybackState { it.copy(analysisErrorMessage = null) }
+        syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
     }
 
     fun setAudioLoading(loading: Boolean) {
@@ -587,7 +592,7 @@ class PlaybackCoordinator(
         val current = getState()
         val session = resolvePlaybackServiceSession(
             playback = current.playback,
-            keepFailedLoadVisible = shouldRetryFailedLoadFromTransport(current)
+            keepFailedLoadVisible = shouldKeepFailedLoadNotificationVisible(current)
         )
         val skip = resolvePlaybackServiceSkipAvailability(current)
         when (session) {
@@ -679,7 +684,7 @@ class PlaybackCoordinator(
         val current = getState()
         lastPlaybackServiceSessionKind = resolvePlaybackServiceSession(
             playback = current.playback,
-            keepFailedLoadVisible = shouldRetryFailedLoadFromTransport(current)
+            keepFailedLoadVisible = shouldKeepFailedLoadNotificationVisible(current)
         ).kind
     }
 
