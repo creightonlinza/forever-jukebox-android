@@ -359,6 +359,66 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun loadedTrackWithErrorCanPlayFromMemory() {
+        val playback = PlaybackState(
+            analysisErrorMessage = "Playback failed.",
+            audioLoaded = true,
+            analysisLoaded = true
+        )
+
+        assertTrue(canPlayLoadedTrackFromMemory(playback))
+    }
+
+    @Test
+    fun playFromMemoryRequiresLoadedAudioAndAnalysis() {
+        val playable = PlaybackState(
+            analysisErrorMessage = "Playback failed.",
+            audioLoaded = true,
+            analysisLoaded = true
+        )
+
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(audioLoaded = false)))
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisLoaded = false)))
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisErrorMessage = null)))
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisErrorMessage = "")))
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(isCasting = true)))
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisInFlight = true)))
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(audioLoading = true)))
+        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(isCastLoading = true)))
+    }
+
+    @Test
+    fun failedLoadNotificationStaysVisibleForGenuineLoadFailure() {
+        val state = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(
+                analysisErrorMessage = "Loading failed.",
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+            )
+        )
+
+        assertEquals(
+            BuildConfig.SERVER_MODE_AVAILABLE,
+            shouldKeepFailedLoadNotificationVisible(state)
+        )
+    }
+
+    @Test
+    fun failedLoadNotificationHiddenWhenTrackPlayableFromMemory() {
+        val state = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(
+                analysisErrorMessage = "Playback failed.",
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2",
+                audioLoaded = true,
+                analysisLoaded = true
+            )
+        )
+
+        assertFalse(shouldKeepFailedLoadNotificationVisible(state))
+    }
+
+    @Test
     fun playbackChangeLoadingLockBlocksEveryLoadingPhase() {
         assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisInFlight = true)))
         assertTrue(shouldBlockPlaybackChangeWhileLoading(PlaybackState(analysisCalculating = true)))

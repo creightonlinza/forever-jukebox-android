@@ -450,6 +450,19 @@ fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
         !state.playback.shareTrackIdOrNull().isNullOrBlank()
 }
 
+fun canPlayLoadedTrackFromMemory(playback: PlaybackState): Boolean {
+    return !playback.analysisErrorMessage.isNullOrBlank() &&
+        !playback.isCasting &&
+        playback.audioLoaded &&
+        playback.analysisLoaded &&
+        !playback.isTrackLoading()
+}
+
+fun shouldKeepFailedLoadNotificationVisible(state: UiState): Boolean {
+    return shouldRetryFailedLoadFromTransport(state) &&
+        !canPlayLoadedTrackFromMemory(state.playback)
+}
+
 fun failedLoadRetryRequest(playback: PlaybackState): FailedLoadRetryRequest? {
     val trackId = playback.shareTrackIdOrNull() ?: return null
     return FailedLoadRetryRequest(

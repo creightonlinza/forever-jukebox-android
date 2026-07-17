@@ -846,7 +846,9 @@ class ForegroundPlaybackService : Service() {
                 if (autocanonizerRunning) {
                     autocanonizer.pause()
                     controller.pauseExternalPlayback()
-                } else if (controller.isPlaying()) {
+                } else {
+                    // Idempotent when already paused/stopped; also cancels a play
+                    // request parked on a delayed audio focus grant.
                     controller.pausePlayback()
                 }
                 updateNotification(buildLocalNotificationState(false))
