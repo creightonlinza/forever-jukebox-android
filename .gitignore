@@ -26,3 +26,4 @@ third_party/essentia/.work/
 
 # Sentry Config File
 sentry.properties
+STORE_ASSETS.md
