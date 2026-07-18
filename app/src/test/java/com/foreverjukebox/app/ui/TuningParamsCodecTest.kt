@@ -112,6 +112,39 @@ class TuningParamsCodecTest {
     }
 
     @Test
+    fun parseExtractsAudioModeIntensity() {
+        val parsed = TuningParamsCodec.parse("am=nightcore&ai=150")
+
+        assertEquals(JukeboxAudioMode.Nightcore, parsed?.audioMode)
+        assertEquals(150, parsed?.audioModeIntensity)
+    }
+
+    @Test
+    fun parseDefaultsAudioModeIntensityWhenAbsent() {
+        assertEquals(100, TuningParamsCodec.parse("am=nightcore")?.audioModeIntensity)
+    }
+
+    @Test
+    fun parseIgnoresIntensityWithoutAudioMode() {
+        assertNull(TuningParamsCodec.parse("ai=150"))
+        assertEquals(100, TuningParamsCodec.parse("jb=1&ai=150")?.audioModeIntensity)
+    }
+
+    @Test
+    fun parseIgnoresIntensityForNonIntensityMode() {
+        assertEquals(100, TuningParamsCodec.parse("am=lofi&ai=150")?.audioModeIntensity)
+        assertEquals(100, TuningParamsCodec.parse("am=off&ai=150&jb=1")?.audioModeIntensity)
+    }
+
+    @Test
+    fun parseClampsAndSanitizesAudioModeIntensity() {
+        assertEquals(50, TuningParamsCodec.parse("am=daycore&ai=49")?.audioModeIntensity)
+        assertEquals(150, TuningParamsCodec.parse("am=daycore&ai=151")?.audioModeIntensity)
+        assertEquals(100, TuningParamsCodec.parse("am=daycore&ai=abc")?.audioModeIntensity)
+        assertEquals(100, TuningParamsCodec.parse("am=daycore&ai=")?.audioModeIntensity)
+    }
+
+    @Test
     fun parseClampsBpPercentFields() {
         val parsed = TuningParamsCodec.parse("bp=-5,120,400")
 
@@ -307,6 +340,53 @@ class TuningParamsCodecTest {
     }
 
     @Test
+    fun buildCastLoadPayloadKeepsIntensityForIntensityMode() {
+        assertEquals(
+            "am=vaporwave&ai=150",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "am=vaporwave&ai=150",
+                highlightAnchorBranch = false
+            )
+        )
+    }
+
+    @Test
+    fun buildCastLoadPayloadDropsIntensityWhenDefaultOrUnsupported() {
+        assertEquals(
+            "am=lofi",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "am=lofi&ai=150",
+                highlightAnchorBranch = false
+            )
+        )
+        assertEquals(
+            "am=nightcore",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "am=nightcore&ai=100",
+                highlightAnchorBranch = false
+            )
+        )
+        assertEquals(
+            "jb=1",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "jb=1&ai=150",
+                highlightAnchorBranch = false
+            )
+        )
+    }
+
+    @Test
+    fun buildCastLoadPayloadClampsIntensity() {
+        assertEquals(
+            "am=nightcore&ai=150",
+            TuningParamsCodec.buildCastLoadPayload(
+                raw = "am=nightcore&ai=200",
+                highlightAnchorBranch = false
+            )
+        )
+    }
+
+    @Test
     fun buildSavedTuningParamsReturnsNullForDefaultTuning() {
         val raw = TuningParamsCodec.buildSavedTuningParams(TuningState())
 
@@ -360,6 +440,58 @@ class TuningParamsCodecTest {
 
         assertEquals("jb=1", offMode)
         assertEquals("jb=1", blankMode)
+    }
+
+    @Test
+    fun buildSavedTuningParamsEmitsNonDefaultIntensityForIntensityMode() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true),
+            audioModeWireValue = "daycore",
+            audioModeIntensity = 150
+        )
+
+        assertEquals("jb=1&am=daycore&ai=150", raw)
+    }
+
+    @Test
+    fun buildSavedTuningParamsOmitsDefaultIntensity() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true),
+            audioModeWireValue = "daycore",
+            audioModeIntensity = 100
+        )
+
+        assertEquals("jb=1&am=daycore", raw)
+    }
+
+    @Test
+    fun buildSavedTuningParamsOmitsIntensityForNonIntensityOrOffMode() {
+        val lofi = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true),
+            audioModeWireValue = "lofi",
+            audioModeIntensity = 150
+        )
+        val off = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true),
+            audioModeWireValue = JukeboxAudioMode.Off.wireValue,
+            audioModeIntensity = 150
+        )
+
+        assertEquals("jb=1&am=lofi", lofi)
+        assertEquals("jb=1", off)
+    }
+
+    @Test
+    fun buildSavedTuningParamsIntensityRoundTripsThroughParse() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(justBackwards = true),
+            audioModeWireValue = "vaporwave",
+            audioModeIntensity = 65
+        )
+        val parsed = TuningParamsCodec.parse(raw, minThreshold = 2)
+
+        assertEquals(JukeboxAudioMode.Vaporwave, parsed?.audioMode)
+        assertEquals(65, parsed?.audioModeIntensity)
     }
 
     @Test

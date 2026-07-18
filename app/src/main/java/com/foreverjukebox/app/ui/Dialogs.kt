@@ -90,6 +90,7 @@ fun TuningDialog(
     initialMinJumpDistancePercent: Int,
     initialRemoveSequential: Boolean,
     initialAudioModeWireValue: String,
+    initialAudioModeIntensity: Int,
     audioModeOptions: List<AudioModeOption>,
     isAudioModePickerEnabled: Boolean,
     onDismiss: () -> Unit,
@@ -103,7 +104,8 @@ fun TuningDialog(
         justBackwards: Boolean,
         minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
-        audioModeWireValue: String
+        audioModeWireValue: String,
+        audioModeIntensity: Int
     ) -> Unit
 ) {
     var threshold by remember(initialThreshold) { mutableFloatStateOf(initialThreshold.toFloat()) }
@@ -123,7 +125,12 @@ fun TuningDialog(
     var audioModeWireValue by remember(initialAudioModeWireValue) {
         mutableStateOf(initialAudioModeWireValue)
     }
+    var audioModeIntensity by remember(initialAudioModeIntensity) {
+        mutableFloatStateOf(AudioModeIntensity.clamp(initialAudioModeIntensity).toFloat())
+    }
     var showAudioModeOptions by remember { mutableStateOf(false) }
+    val selectedAudioModeSupportsIntensity =
+        JukeboxAudioMode.fromWireValue(audioModeWireValue)?.supportsIntensity == true
     val selectedAudioModeLabel = audioModeOptions
         .firstOrNull { it.wireValue == audioModeWireValue }
         ?.label
@@ -188,7 +195,8 @@ fun TuningDialog(
                                 justBackwards,
                                 selectedMinJumpDistancePercent,
                                 removeSequential,
-                                audioModeWireValue
+                                audioModeWireValue,
+                                audioModeIntensity.toInt()
                             )
                             onDismiss()
                         },
@@ -282,6 +290,15 @@ fun TuningDialog(
                             )
                         }
                     }
+                }
+                if (selectedAudioModeSupportsIntensity) {
+                    Text("Audio Mode Intensity: ${audioModeIntensity.toInt()}%")
+                    Slider(
+                        value = audioModeIntensity,
+                        onValueChange = { audioModeIntensity = it },
+                        valueRange = AudioModeIntensity.MIN.toFloat()..AudioModeIntensity.MAX.toFloat(),
+                        steps = AudioModeIntensity.MAX - AudioModeIntensity.MIN - 1
+                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = justBackwards, onCheckedChange = { justBackwards = it })

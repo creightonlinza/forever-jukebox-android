@@ -40,7 +40,8 @@ internal fun favoriteTuningParamsForCurrentTrack(
     }
     return TuningParamsCodec.buildSavedTuningParams(
         tuning = state.tuning,
-        audioModeWireValue = playback.castAudioModeWireValue
+        audioModeWireValue = playback.castAudioModeWireValue,
+        audioModeIntensity = playback.castAudioModeIntensity
     )
 }
 

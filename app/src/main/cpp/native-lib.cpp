@@ -25,6 +25,9 @@ constexpr float kNormalDuckingVolume = 1.0f;
 constexpr float kDuckedVolume = 0.2f;
 constexpr float kDuckingRampSpeed = 0.0002f;
 constexpr int32_t kMaxAudioModeCode = 9;
+constexpr int32_t kMinIntensity = 50;
+constexpr int32_t kMaxIntensity = 150;
+constexpr int32_t kDefaultIntensity = 100;
 constexpr int32_t kEightBitDepth = 8;
 constexpr int32_t kEightBitCrushSampleRate = 8000;
 constexpr int32_t kBitcrusherLevels = 1 << kEightBitDepth;
@@ -111,6 +114,62 @@ int32_t sanitizeAudioModeCode(int32_t mode) {
         return static_cast<int32_t>(AudioMode::Off);
     }
     return mode;
+}
+
+bool modeSupportsIntensity(int32_t mode) {
+    switch (static_cast<AudioMode>(mode)) {
+        case AudioMode::Nightcore:
+        case AudioMode::Daycore:
+        case AudioMode::Vaporwave:
+            return true;
+        default:
+            return false;
+    }
+}
+
+int32_t sanitizeIntensity(int32_t mode, int32_t intensity) {
+    if (!modeSupportsIntensity(mode)) {
+        return kDefaultIntensity;
+    }
+    return std::clamp(intensity, kMinIntensity, kMaxIntensity);
+}
+
+// Mode and intensity are packed into one atomic so the render thread can
+// never observe a new mode paired with a stale intensity (or vice versa).
+int32_t packModeAndIntensity(int32_t mode, int32_t intensity) {
+    return (mode << 16) | (intensity & 0xFFFF);
+}
+
+int32_t modeOfPacked(int32_t packed) {
+    return packed >> 16;
+}
+
+int32_t intensityOfPacked(int32_t packed) {
+    return packed & 0xFFFF;
+}
+
+AudioModeSettings settingsForMode(int32_t mode, int32_t intensity) {
+    AudioModeSettings settings = settingsForMode(mode);
+    // At the default intensity the preset must pass through untouched so
+    // pre-intensity favorites and shares sound bit-identical.
+    if (intensity == kDefaultIntensity || !modeSupportsIntensity(mode)) {
+        return settings;
+    }
+    const double i = intensity / 100.0;
+    settings.rate = 1.0 + (settings.rate - 1.0) * i;
+    if (settings.reverbMix > 0.0f) {
+        settings.reverbMix =
+            std::min(1.0f, settings.reverbMix * static_cast<float>(i));
+    }
+    // Filter cutoffs scale in octaves: pitch perception is logarithmic, so the
+    // high-pass opens upward and the low-pass closes downward with intensity.
+    if (settings.highPassFrequency > 0.0f) {
+        settings.highPassFrequency *= std::exp2(static_cast<float>(i - 1.0));
+    }
+    if (settings.lowPassFrequency > 0.0f) {
+        settings.lowPassFrequency *= std::exp2(static_cast<float>(1.0 - i));
+    }
+    return settings;
 }
 
 int16_t floatToInt16Sample(float sample) {
@@ -522,8 +581,10 @@ public:
         mDuckingTargetVolume.store(active ? kDuckedVolume : kNormalDuckingVolume);
     }
 
-    void setJukeboxAudioMode(int32_t mode) {
-        mAudioMode.store(sanitizeAudioModeCode(mode));
+    void setJukeboxAudioMode(int32_t mode, int32_t intensity) {
+        const int32_t sanitizedMode = sanitizeAudioModeCode(mode);
+        mAudioModeAndIntensity.store(
+            packModeAndIntensity(sanitizedMode, sanitizeIntensity(sanitizedMode, intensity)));
         std::lock_guard<std::mutex> lock(mDataMutex);
         syncEightBitBufferLocked();
     }
@@ -533,7 +594,7 @@ public:
     // only built while the EightBit mode is active and released otherwise.
     // Must be called with mDataMutex held.
     void syncEightBitBufferLocked() {
-        if (settingsForMode(mAudioMode.load()).useEightBitBuffer) {
+        if (settingsForMode(modeOfPacked(mAudioModeAndIntensity.load())).useEightBitBuffer) {
             if (mEightBitAudioData.empty() && !mAudioData.empty()) {
                 mEightBitAudioData =
                     renderEightBitPcm(mAudioData, mSampleRate, mChannelCount);
@@ -545,7 +606,8 @@ public:
     }
 
     double getPlaybackRate() const {
-        return settingsForMode(mAudioMode.load()).rate;
+        const int32_t packed = mAudioModeAndIntensity.load();
+        return settingsForMode(modeOfPacked(packed), intensityOfPacked(packed)).rate;
     }
 
     void cloneAudioFrom(OboePlayer& source) {
@@ -556,7 +618,7 @@ public:
             mEightBitAudioData.clear();
             mEightBitAudioData.shrink_to_fit();
             // Only carry the 8-bit copy if this player's mode actually needs it.
-            if (settingsForMode(mAudioMode.load()).useEightBitBuffer) {
+            if (settingsForMode(modeOfPacked(mAudioModeAndIntensity.load())).useEightBitBuffer) {
                 mEightBitAudioData = source.mEightBitAudioData.empty()
                     ? renderEightBitPcm(mAudioData, mSampleRate, mChannelCount)
                     : source.mEightBitAudioData;
@@ -1012,13 +1074,21 @@ private:
     }
 
     AudioModeSettings updateDspModeIfNeeded() {
-        const int32_t mode = sanitizeAudioModeCode(mAudioMode.load());
-        if (mode == mConfiguredAudioMode) {
+        const int32_t packed = mAudioModeAndIntensity.load();
+        const int32_t mode = sanitizeAudioModeCode(modeOfPacked(packed));
+        const int32_t intensity = sanitizeIntensity(mode, intensityOfPacked(packed));
+        if (mode == modeOfPacked(mConfiguredModeAndIntensity) &&
+            intensity == intensityOfPacked(mConfiguredModeAndIntensity)) {
             return mConfiguredSettings;
         }
-        mConfiguredAudioMode = mode;
-        mConfiguredSettings = settingsForMode(mode);
-        resetDspStateLocked();
+        const bool modeChanged = mode != modeOfPacked(mConfiguredModeAndIntensity);
+        mConfiguredModeAndIntensity = packModeAndIntensity(mode, intensity);
+        mConfiguredSettings = settingsForMode(mode, intensity);
+        // An intensity-only change retunes the running graph in place; a full
+        // reset here would audibly cut reverb tails mid-playback.
+        if (modeChanged) {
+            resetDspStateLocked();
+        }
         if (mConfiguredSettings.highPassFrequency > 0.0f) {
             mHighPass.configure(
                 BiquadFilter::Type::HighPass,
@@ -1126,8 +1196,9 @@ private:
     std::atomic<float> mGain{1.0f};
     std::atomic<float> mDuckingTargetVolume{kNormalDuckingVolume};
     float mCurrentDuckingVolume = kNormalDuckingVolume;
-    std::atomic<int32_t> mAudioMode{0};
-    int32_t mConfiguredAudioMode = -1;
+    std::atomic<int32_t> mAudioModeAndIntensity{
+        packModeAndIntensity(static_cast<int32_t>(AudioMode::Off), kDefaultIntensity)};
+    int32_t mConfiguredModeAndIntensity = -1;
     AudioModeSettings mConfiguredSettings;
     std::mutex mDspMutex;
     BiquadFilter mHighPass;
@@ -1291,9 +1362,9 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSetDucking(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSetJukeboxAudioMode(
-    JNIEnv*, jobject, jlong handle, jint mode) {
+    JNIEnv*, jobject, jlong handle, jint mode, jint intensity) {
     auto* player = toPlayer(handle);
-    if (player) player->setJukeboxAudioMode(mode);
+    if (player) player->setJukeboxAudioMode(mode, intensity);
 }
 
 extern "C" JNIEXPORT jdouble JNICALL

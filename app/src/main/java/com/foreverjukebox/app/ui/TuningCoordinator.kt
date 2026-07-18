@@ -42,6 +42,7 @@ internal fun buildCastTuningUpdate(
     currentTuning: TuningState,
     currentAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
     currentAudioModeWireValue: String = currentAudioMode.wireValue,
+    currentAudioModeIntensity: Int = AudioModeIntensity.DEFAULT,
     threshold: Int,
     minProb: Double,
     maxProb: Double,
@@ -52,7 +53,8 @@ internal fun buildCastTuningUpdate(
     removeSequentialBranches: Boolean,
     randomBranchDeltaPercentScale: Double,
     audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
-    audioModeWireValue: String = audioMode.wireValue
+    audioModeWireValue: String = audioMode.wireValue,
+    audioModeIntensity: Int = AudioModeIntensity.DEFAULT
 ): CastTuningUpdate {
     val nextTuning = currentTuning.copy(
         threshold = threshold.coerceAtLeast(2),
@@ -85,8 +87,18 @@ internal fun buildCastTuningUpdate(
     }
     val currentCastAudioMode = currentAudioModeWireValue.trim()
     val nextCastAudioMode = audioModeWireValue.trim()
-    if (currentCastAudioMode != nextCastAudioMode) {
+    val nextMode = JukeboxAudioMode.fromWireValue(nextCastAudioMode)
+    val nextIntensity = if (nextMode?.supportsIntensity == true) {
+        AudioModeIntensity.clamp(audioModeIntensity)
+    } else {
+        AudioModeIntensity.DEFAULT
+    }
+    // The receiver applies intensity only alongside an `am` param, so an
+    // intensity-only change must re-send the unchanged mode. With `am` present,
+    // a missing `ai` means the default, so `ai=100` is never sent.
+    if (currentCastAudioMode != nextCastAudioMode || currentAudioModeIntensity != nextIntensity) {
         TuningParamsCodec.buildAudioModeParam(nextCastAudioMode)?.let { params.add(it) }
+        AudioModeIntensity.wireParamOrNull(nextMode, nextIntensity)?.let { params.add(it) }
     }
     val castParams = params.joinToString("&").ifBlank { null }
     return CastTuningUpdate(nextTuning = nextTuning, castParams = castParams)
@@ -148,7 +160,8 @@ class TuningCoordinator(
         minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioMode: JukeboxAudioMode,
-        audioModeWireValue: String = audioMode.wireValue
+        audioModeWireValue: String = audioMode.wireValue,
+        audioModeIntensity: Int = AudioModeIntensity.DEFAULT
     ) {
         if (getState().playback.isCasting) {
             applyCastTuning(
@@ -161,7 +174,8 @@ class TuningCoordinator(
                 minJumpDistancePercent = minJumpDistancePercent,
                 removeSequentialBranches = removeSequentialBranches,
                 audioMode = audioMode,
-                audioModeWireValue = audioModeWireValue
+                audioModeWireValue = audioModeWireValue,
+                audioModeIntensity = audioModeIntensity
             )
             return
         }
@@ -195,13 +209,15 @@ class TuningCoordinator(
         minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioMode: JukeboxAudioMode,
-        audioModeWireValue: String
+        audioModeWireValue: String,
+        audioModeIntensity: Int
     ) {
         val currentState = getState()
         val castUpdate = buildCastTuningUpdate(
             currentTuning = currentState.tuning,
             currentAudioMode = currentState.playback.jukeboxAudioMode,
             currentAudioModeWireValue = currentState.playback.castAudioModeWireValue,
+            currentAudioModeIntensity = currentState.playback.castAudioModeIntensity,
             threshold = threshold,
             minProb = minProb,
             maxProb = maxProb,
@@ -212,7 +228,8 @@ class TuningCoordinator(
             removeSequentialBranches = removeSequentialBranches,
             randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
             audioMode = audioMode,
-            audioModeWireValue = audioModeWireValue
+            audioModeWireValue = audioModeWireValue,
+            audioModeIntensity = audioModeIntensity
         )
         preferences.setHighlightAnchorBranch(highlightAnchorBranch)
         if (castUpdate.castParams != null) {
@@ -225,7 +242,8 @@ class TuningCoordinator(
                 localId,
                 TuningParamsCodec.buildSavedTuningParams(
                     tuning = castUpdate.nextTuning,
-                    audioModeWireValue = audioModeWireValue
+                    audioModeWireValue = audioModeWireValue,
+                    audioModeIntensity = audioModeIntensity
                 )
             )
         }

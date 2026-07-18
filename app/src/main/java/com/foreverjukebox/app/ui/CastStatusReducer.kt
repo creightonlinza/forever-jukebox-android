@@ -30,7 +30,8 @@ data class CastTuningStatus(
     val deletedEdgeIds: List<Int>,
     val anchorBranchId: Int?,
     val highlightAnchorBranch: Boolean,
-    val audioModeWireValue: String
+    val audioModeWireValue: String,
+    val audioModeIntensity: Int = AudioModeIntensity.DEFAULT
 )
 
 data class CastStatusMessage(
@@ -135,6 +136,10 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?: JukeboxAudioMode.Off.wireValue
+    val audioModeIntensity = AudioModeIntensity.parse(
+        json.stringValue("audioModeIntensity"),
+        JukeboxAudioMode.fromWireValue(audioModeWireValue)
+    )
     val justLongBranches = json.booleanValue("justLongBranches")
     val minLongBranchPercent = json.intValue("minLongBranchPercent")
         ?.takeIf { it == 0 || it in ALLOWED_BRANCH_LENGTHS }
@@ -157,7 +162,8 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
             ?: emptyList(),
         anchorBranchId = json.intValue("anchorBranchId")?.takeIf { it >= 0 },
         highlightAnchorBranch = json.booleanValue("highlightAnchorBranch"),
-        audioModeWireValue = audioModeWireValue
+        audioModeWireValue = audioModeWireValue,
+        audioModeIntensity = audioModeIntensity
     )
 }
 
@@ -218,6 +224,8 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
     } else {
         currentPlayback.jukeboxAudioMode
     }
+    val resolvedCastAudioModeIntensity = status.tuning?.audioModeIntensity
+        ?: currentPlayback.castAudioModeIntensity
     val resolvedSupportedAudioModes = status.supportedAudioModes
     val metadataBackfilled = (hasTitle && currentPlayback.trackTitle.isNullOrBlank()) ||
         (hasArtist && currentPlayback.trackArtist.isNullOrBlank())
@@ -295,7 +303,9 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
             else -> status.totalBranches ?: currentPlayback.castTotalBranches
         },
         jukeboxAudioMode = resolvedAudioMode,
+        jukeboxAudioModeIntensity = resolvedCastAudioModeIntensity,
         castAudioModeWireValue = resolvedCastAudioModeWireValue,
+        castAudioModeIntensity = resolvedCastAudioModeIntensity,
         castSupportedAudioModes = resolvedSupportedAudioModes,
         lastYouTubeId = resolvedYouTubeId,
         lastTrackCreatedAtEpochMs = resolvedCreatedAtEpochMs,

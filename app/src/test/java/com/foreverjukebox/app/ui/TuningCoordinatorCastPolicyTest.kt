@@ -153,6 +153,107 @@ class TuningCoordinatorCastPolicyTest {
     }
 
     @Test
+    fun buildCastTuningUpdateResendsAudioModeOnIntensityOnlyChange() {
+        // The receiver applies intensity only alongside an `am` param, so an
+        // intensity-only change must include the unchanged mode.
+        val current = TuningState(justBackwards = true)
+
+        val update = buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Nightcore,
+            currentAudioModeIntensity = 100,
+            threshold = current.threshold,
+            minProb = current.minProb / 100.0,
+            maxProb = current.maxProb / 100.0,
+            ramp = current.ramp / 500.0,
+            highlightAnchorBranch = current.highlightAnchorBranch,
+            justBackwards = current.justBackwards,
+            minJumpDistancePercent = current.minJumpDistancePercent,
+            removeSequentialBranches = current.removeSequential,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Nightcore,
+            audioModeIntensity = 150
+        )
+
+        assertEquals("am=nightcore&ai=150", update.castParams)
+    }
+
+    @Test
+    fun buildCastTuningUpdateOmitsIntensityParamOnReturnToDefault() {
+        // With `am` present, a missing `ai` means the default on the receiver.
+        val current = TuningState(justBackwards = true)
+
+        val update = buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Nightcore,
+            currentAudioModeIntensity = 150,
+            threshold = current.threshold,
+            minProb = current.minProb / 100.0,
+            maxProb = current.maxProb / 100.0,
+            ramp = current.ramp / 500.0,
+            highlightAnchorBranch = current.highlightAnchorBranch,
+            justBackwards = current.justBackwards,
+            minJumpDistancePercent = current.minJumpDistancePercent,
+            removeSequentialBranches = current.removeSequential,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Nightcore,
+            audioModeIntensity = 100
+        )
+
+        assertEquals("am=nightcore", update.castParams)
+    }
+
+    @Test
+    fun buildCastTuningUpdateEmitsNothingWhenModeAndIntensityUnchanged() {
+        val current = TuningState(justBackwards = true)
+
+        val update = buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Nightcore,
+            currentAudioModeIntensity = 150,
+            threshold = current.threshold,
+            minProb = current.minProb / 100.0,
+            maxProb = current.maxProb / 100.0,
+            ramp = current.ramp / 500.0,
+            highlightAnchorBranch = current.highlightAnchorBranch,
+            justBackwards = current.justBackwards,
+            minJumpDistancePercent = current.minJumpDistancePercent,
+            removeSequentialBranches = current.removeSequential,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Nightcore,
+            audioModeIntensity = 150
+        )
+
+        assertNull(update.castParams)
+    }
+
+    @Test
+    fun buildCastTuningUpdateNormalizesIntensityForNonIntensityMode() {
+        // Stale non-default intensity on a capable->non-capable switch is
+        // normalized away: the mode param is sent, `ai` never is.
+        val current = TuningState(justBackwards = true)
+
+        val update = buildCastTuningUpdate(
+            currentTuning = current,
+            currentAudioMode = JukeboxAudioMode.Nightcore,
+            currentAudioModeIntensity = 150,
+            threshold = current.threshold,
+            minProb = current.minProb / 100.0,
+            maxProb = current.maxProb / 100.0,
+            ramp = current.ramp / 500.0,
+            highlightAnchorBranch = current.highlightAnchorBranch,
+            justBackwards = current.justBackwards,
+            minJumpDistancePercent = current.minJumpDistancePercent,
+            removeSequentialBranches = current.removeSequential,
+            randomBranchDeltaPercentScale = 500.0,
+            audioMode = JukeboxAudioMode.Lofi,
+            audioModeIntensity = 150
+        )
+
+        assertEquals("am=lofi", update.castParams)
+    }
+
+    @Test
     fun buildCastTuningUpdateUsesChangedThresholdOnly() {
         val current = TuningState(
             threshold = 22,
