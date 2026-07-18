@@ -32,6 +32,8 @@ constexpr float kCathedralReverbSeconds = 4.75f;
 constexpr float kCathedralReverbDecay = 2.5f;
 constexpr int32_t kCathedralTapCount = 64;
 constexpr int32_t kCowbellSampleCount = 19;
+constexpr float kLimiterAttackSeconds = 0.001f;
+constexpr float kLimiterReleaseSeconds = 0.250f;
 
 enum class AudioMode {
     Off = 0,
@@ -428,7 +430,12 @@ public:
           mHighPass(channelCount),
           mToneFilter(channelCount),
           mReverb(sampleRate, channelCount),
-          mCathedralReverb(sampleRate, channelCount) {}
+          mCathedralReverb(sampleRate, channelCount),
+          mMixScratch(static_cast<size_t>(std::max(1, channelCount)), 0.0f) {
+        const float rate = static_cast<float>(std::max(1, sampleRate));
+        mLimiterAttackCoeff = std::exp(-1.0f / (kLimiterAttackSeconds * rate));
+        mLimiterReleaseCoeff = std::exp(-1.0f / (kLimiterReleaseSeconds * rate));
+    }
 
     bool open() {
         std::lock_guard<std::mutex> lock(mStreamMutex);
@@ -840,6 +847,7 @@ private:
             const float outputGain = mGain.load() * nextDuckingVolume();
             if (sourceFrame >= static_cast<double>(totalFrames) || audioData.empty()) {
                 std::fill(output, output + channels, 0);
+                mLimiterEnvelope *= mLimiterReleaseCoeff;
                 output += channels;
                 sourceFrame += settings.rate;
                 advanceDspFrame(settings);
@@ -850,6 +858,8 @@ private:
             const int64_t frame1 = std::min<int64_t>(frame0 + 1, totalFrames - 1);
             const float frac = static_cast<float>(sourceFrame - static_cast<double>(frame0));
             prepareCowbellHitsForFrame(sourceFrame);
+            float* mixed = mMixScratch.data();
+            float framePeak = 0.0f;
             for (int32_t channel = 0; channel < channels; channel += 1) {
                 const size_t offset0 = static_cast<size_t>(frame0 * channels + channel);
                 const size_t offset1 = static_cast<size_t>(frame1 * channels + channel);
@@ -858,7 +868,18 @@ private:
                 float sample = s0 + (s1 - s0) * frac;
                 sample = processDspSample(sample, channel, settings);
                 const float cowbell = cowbellSampleForChannel(channel, channels);
-                output[channel] = floatToInt16(sample * outputGain + cowbell);
+                mixed[channel] = sample * outputGain + cowbell;
+                framePeak = std::max(framePeak, std::fabs(mixed[channel]));
+            }
+            // Linked peak limiter: unity gain whenever the mix stays within
+            // full scale, so unaffected modes pass through bit-identically.
+            const float coeff = framePeak > mLimiterEnvelope ? mLimiterAttackCoeff
+                                                             : mLimiterReleaseCoeff;
+            mLimiterEnvelope = coeff * mLimiterEnvelope + (1.0f - coeff) * framePeak;
+            const float limiterGain =
+                mLimiterEnvelope > 1.0f ? 1.0f / mLimiterEnvelope : 1.0f;
+            for (int32_t channel = 0; channel < channels; channel += 1) {
+                output[channel] = floatToInt16(mixed[channel] * limiterGain);
             }
             advanceCowbellHits();
             applyPan(output, channels, settings);
@@ -1076,6 +1097,7 @@ private:
         mReverb.reset();
         mCathedralReverb.reset();
         mPanAngle = 0.0;
+        mLimiterEnvelope = 0.0f;
     }
 
     int32_t mSampleRate = 44100;
@@ -1113,6 +1135,10 @@ private:
     SimpleReverb mReverb;
     CathedralReverb mCathedralReverb;
     double mPanAngle = 0.0;
+    float mLimiterEnvelope = 0.0f;
+    float mLimiterAttackCoeff = 0.0f;
+    float mLimiterReleaseCoeff = 0.0f;
+    std::vector<float> mMixScratch;
 };
 
 OboePlayer* toPlayer(jlong handle) {
