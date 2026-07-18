@@ -25,11 +25,11 @@ class MinimumJumpDistanceUiTest {
     @Test
     fun labelsUseStrictGreaterThanDisplay() {
         assertEquals(
-            "Minimum Jump Distance: Any distance",
+            "Any distance",
             minimumJumpDistanceLabel(0)
         )
         val label = minimumJumpDistanceLabel(30)
-        assertEquals("Minimum Jump Distance: >30% of track", label)
+        assertEquals(">30% of track", label)
         assertTrue(label.contains(">"))
         assertFalse(label.contains("≥"))
     }

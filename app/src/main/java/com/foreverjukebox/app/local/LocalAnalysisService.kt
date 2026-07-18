@@ -142,16 +142,6 @@ class LocalAnalysisService(
         }
     }
 
-    suspend fun clearSavedTuning(localId: String) {
-        withContext(Dispatchers.IO) {
-            val cacheKey = parseCacheKeyFromLocalId(localId) ?: return@withContext
-            runCatching {
-                val file = tuningFile(cacheKey)
-                if (file.exists()) file.delete()
-            }
-        }
-    }
-
     fun analyze(
         uriString: String,
         fallbackTitle: String?

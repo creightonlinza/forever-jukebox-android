@@ -285,7 +285,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             audioModeOptions = audioModeOptions,
             isAudioModePickerEnabled = !playback.isCasting || audioModeOptions.isNotEmpty(),
             onDismiss = { showTuning = false },
-            onReset = viewModel::resetTuningDefaults,
+            onResetBranchTuning = viewModel::resetBranchTuningDefaults,
+            onResetAudioMode = viewModel::resetAudioModeDefaults,
             onApply = viewModel::applyTuning
         )
     }

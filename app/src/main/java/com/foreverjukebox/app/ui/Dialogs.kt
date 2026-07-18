@@ -5,12 +5,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -23,12 +20,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,24 +33,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
-
-internal val MIN_JUMP_DISTANCE_OPTIONS = listOf(0, 5, 10, 20, 30)
-
-internal fun minJumpDistancePercentForIndex(index: Int): Int {
-    return MIN_JUMP_DISTANCE_OPTIONS[index.coerceIn(MIN_JUMP_DISTANCE_OPTIONS.indices)]
-}
-
-internal fun minJumpDistanceIndexForPercent(percent: Int): Int {
-    return MIN_JUMP_DISTANCE_OPTIONS.indexOf(percent).coerceAtLeast(0)
-}
-
-internal fun minimumJumpDistanceLabel(percent: Int): String {
-    return if (percent == 0) {
-        "Minimum Jump Distance: Any distance"
-    } else {
-        "Minimum Jump Distance: >$percent% of track"
-    }
-}
 
 internal data class SleepTimerDialogSelectionState(
     val appliedOption: SleepTimerOption,
@@ -76,251 +52,6 @@ internal fun reduceSleepTimerDialogSelection(
         is SleepTimerDialogAction.SelectOption -> state.copy(pendingOption = action.option)
         SleepTimerDialogAction.Set -> state.copy(appliedOption = state.pendingOption)
     }
-}
-
-@Composable
-@Suppress("AssignedValueIsNeverRead")
-fun TuningDialog(
-    initialThreshold: Int,
-    initialMinProb: Int,
-    initialMaxProb: Int,
-    initialRamp: Int,
-    initialHighlightAnchorBranch: Boolean,
-    initialJustBackwards: Boolean,
-    initialMinJumpDistancePercent: Int,
-    initialRemoveSequential: Boolean,
-    initialAudioModeWireValue: String,
-    initialAudioModeIntensity: Int,
-    audioModeOptions: List<AudioModeOption>,
-    isAudioModePickerEnabled: Boolean,
-    onDismiss: () -> Unit,
-    onReset: () -> Unit,
-    onApply: (
-        threshold: Int,
-        minProb: Double,
-        maxProb: Double,
-        ramp: Double,
-        highlightAnchorBranch: Boolean,
-        justBackwards: Boolean,
-        minJumpDistancePercent: Int,
-        removeSequentialBranches: Boolean,
-        audioModeWireValue: String,
-        audioModeIntensity: Int
-    ) -> Unit
-) {
-    var threshold by remember(initialThreshold) { mutableFloatStateOf(initialThreshold.toFloat()) }
-    var minProb by remember(initialMinProb) { mutableFloatStateOf(initialMinProb.toFloat()) }
-    var maxProb by remember(initialMaxProb) { mutableFloatStateOf(initialMaxProb.toFloat()) }
-    var ramp by remember(initialRamp) { mutableFloatStateOf(initialRamp.toFloat()) }
-    var highlightAnchorBranch by remember(initialHighlightAnchorBranch) {
-        mutableStateOf(initialHighlightAnchorBranch)
-    }
-    var justBackwards by remember(initialJustBackwards) { mutableStateOf(initialJustBackwards) }
-    var minJumpIndex by remember(initialMinJumpDistancePercent) {
-        mutableFloatStateOf(
-            minJumpDistanceIndexForPercent(initialMinJumpDistancePercent).toFloat()
-        )
-    }
-    var removeSequential by remember(initialRemoveSequential) { mutableStateOf(initialRemoveSequential) }
-    var audioModeWireValue by remember(initialAudioModeWireValue) {
-        mutableStateOf(initialAudioModeWireValue)
-    }
-    var audioModeIntensity by remember(initialAudioModeIntensity) {
-        mutableFloatStateOf(AudioModeIntensity.clamp(initialAudioModeIntensity).toFloat())
-    }
-    var showAudioModeOptions by remember { mutableStateOf(false) }
-    val selectedAudioModeSupportsIntensity =
-        JukeboxAudioMode.fromWireValue(audioModeWireValue)?.supportsIntensity == true
-    val selectedAudioModeLabel = audioModeOptions
-        .firstOrNull { it.wireValue == audioModeWireValue }
-        ?.label
-        ?: "Unavailable"
-    val selectedMinJumpDistancePercent =
-        minJumpDistancePercentForIndex(minJumpIndex.toInt())
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            onReset()
-                            onDismiss()
-                        },
-                        colors = pillOutlinedButtonColors(),
-                        border = pillButtonBorder(),
-                        shape = PillShape,
-                        contentPadding = SmallButtonPadding,
-                        modifier = Modifier.height(SmallButtonHeight)
-                    ) {
-                        Text("Reset", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.weight(2f),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        colors = pillOutlinedButtonColors(),
-                        border = pillButtonBorder(),
-                        shape = PillShape,
-                        contentPadding = SmallButtonPadding,
-                        modifier = Modifier.height(SmallButtonHeight)
-                    ) {
-                        Text("Close", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Button(
-                        onClick = {
-                            val minVal = minProb.coerceAtMost(maxProb) / 100.0
-                            val maxVal = maxProb.coerceAtLeast(minProb) / 100.0
-                            val rampVal = ramp / 500.0
-                            onApply(
-                                threshold.toInt(),
-                                minVal,
-                                maxVal,
-                                rampVal,
-                                highlightAnchorBranch,
-                                justBackwards,
-                                selectedMinJumpDistancePercent,
-                                removeSequential,
-                                audioModeWireValue,
-                                audioModeIntensity.toInt()
-                            )
-                            onDismiss()
-                        },
-                        colors = pillButtonColors(),
-                        border = pillButtonBorder(),
-                        shape = PillShape,
-                        contentPadding = SmallButtonPadding,
-                        modifier = Modifier.height(SmallButtonHeight)
-                    ) {
-                        Text("Apply", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-        },
-        dismissButton = {},
-        title = { Text("Tuning") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("Branch Similarity Threshold: ${threshold.toInt()}")
-                Slider(
-                    value = threshold,
-                    onValueChange = { threshold = it },
-                    valueRange = 2f..80f,
-                    steps = 77
-                )
-                Text(minimumJumpDistanceLabel(selectedMinJumpDistancePercent))
-                Slider(
-                    value = minJumpIndex,
-                    onValueChange = { minJumpIndex = it },
-                    valueRange = 0f..4f,
-                    steps = 3
-                )
-                Text("Branch Probability Min: ${minProb.toInt()}%")
-                Slider(
-                    value = minProb,
-                    onValueChange = { minProb = it },
-                    valueRange = 0f..100f,
-                    steps = 49
-                )
-                Text("Branch Probability Max: ${maxProb.toInt()}%")
-                Slider(
-                    value = maxProb,
-                    onValueChange = { maxProb = it },
-                    valueRange = 0f..100f,
-                    steps = 49
-                )
-                Text("Branch Ramp Speed: ${ramp.toInt()}%")
-                Slider(
-                    value = ramp,
-                    onValueChange = { ramp = it },
-                    valueRange = 0f..100f,
-                    steps = 49
-                )
-                Text("Audio Mode")
-                Box {
-                    OutlinedButton(
-                        onClick = { showAudioModeOptions = true },
-                        enabled = isAudioModePickerEnabled,
-                        colors = pillOutlinedButtonColors(),
-                        border = pillButtonBorder(),
-                        shape = PillShape,
-                        contentPadding = SmallButtonPadding,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(SmallButtonHeight)
-                    ) {
-                        Text(selectedAudioModeLabel, style = MaterialTheme.typography.labelSmall)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            imageVector = Icons.Filled.ArrowDropDown,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showAudioModeOptions,
-                        onDismissRequest = { showAudioModeOptions = false }
-                    ) {
-                        audioModeOptions.forEach { mode ->
-                            DropdownMenuItem(
-                                text = { Text(mode.label) },
-                                onClick = {
-                                    audioModeWireValue = mode.wireValue
-                                    showAudioModeOptions = false
-                                }
-                            )
-                        }
-                    }
-                }
-                if (selectedAudioModeSupportsIntensity) {
-                    Text("Audio Mode Intensity: ${audioModeIntensity.toInt()}%")
-                    Slider(
-                        value = audioModeIntensity,
-                        onValueChange = { audioModeIntensity = it },
-                        valueRange = AudioModeIntensity.MIN.toFloat()..AudioModeIntensity.MAX.toFloat(),
-                        steps = AudioModeIntensity.MAX - AudioModeIntensity.MIN - 1
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(checked = justBackwards, onCheckedChange = { justBackwards = it })
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Allow only reverse branches")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(checked = removeSequential, onCheckedChange = { removeSequential = it })
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Remove sequential branches")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(
-                        checked = highlightAnchorBranch,
-                        onCheckedChange = { highlightAnchorBranch = it }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Highlight forced anchor jump")
-                }
-            }
-        }
-    )
 }
 
 @Composable

@@ -20,6 +20,70 @@ class TuningCoordinatorCastPolicyTest {
     }
 
     @Test
+    fun buildCastTuningResetParamsPreservesAudioModeAndIntensity() {
+        val params = buildCastTuningResetParams(
+            defaultConfig = JukeboxConfig(),
+            randomBranchDeltaPercentScale = 500.0,
+            resetThreshold = 34,
+            preservedAudioModeWireValue = "nightcore",
+            preservedAudioModeIntensity = 150
+        )
+
+        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=nightcore&ai=150", params)
+    }
+
+    @Test
+    fun buildCastTuningResetParamsOmitsIntensityAtDefault() {
+        val params = buildCastTuningResetParams(
+            defaultConfig = JukeboxConfig(),
+            randomBranchDeltaPercentScale = 500.0,
+            resetThreshold = 34,
+            preservedAudioModeWireValue = "lofi",
+            preservedAudioModeIntensity = 100
+        )
+
+        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=lofi", params)
+    }
+
+    @Test
+    fun buildCastTuningResetParamsPassesThroughReceiverOnlyMode() {
+        val params = buildCastTuningResetParams(
+            defaultConfig = JukeboxConfig(),
+            randomBranchDeltaPercentScale = 500.0,
+            resetThreshold = 34,
+            preservedAudioModeWireValue = "future_mode",
+            preservedAudioModeIntensity = 100
+        )
+
+        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=future_mode", params)
+    }
+
+    @Test
+    fun buildCastTuningResetParamsFallsBackToOffForBlankMode() {
+        val params = buildCastTuningResetParams(
+            defaultConfig = JukeboxConfig(),
+            randomBranchDeltaPercentScale = 500.0,
+            resetThreshold = 34,
+            preservedAudioModeWireValue = " ",
+            preservedAudioModeIntensity = 150
+        )
+
+        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=off", params)
+    }
+
+    @Test
+    fun buildCastAudioModeResetParamsSendsOffForActiveMode() {
+        assertEquals("am=off", buildCastAudioModeResetParams("nightcore"))
+        assertEquals("am=off", buildCastAudioModeResetParams("future_mode"))
+    }
+
+    @Test
+    fun buildCastAudioModeResetParamsSkipsSendWhenAlreadyOff() {
+        assertNull(buildCastAudioModeResetParams("off"))
+        assertNull(buildCastAudioModeResetParams(""))
+    }
+
+    @Test
     fun buildCastTuningUpdateUsesHighlightOnlyPayloadWhenOnlyHighlightChanges() {
         val current = TuningState(
             threshold = 22,
