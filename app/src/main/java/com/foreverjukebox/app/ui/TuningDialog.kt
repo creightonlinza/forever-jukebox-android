@@ -170,7 +170,16 @@ fun TuningDialog(
                             audioModeOptions = audioModeOptions,
                             isPickerEnabled = isAudioModePickerEnabled,
                             selectedWireValue = audioModeWireValue,
-                            onSelectWireValue = { audioModeWireValue = it },
+                            onSelectWireValue = { wireValue ->
+                                if (wireValue != audioModeWireValue) {
+                                    audioModeWireValue = wireValue
+                                    audioModeIntensity = if (wireValue == initialAudioModeWireValue) {
+                                        AudioModeIntensity.clamp(initialAudioModeIntensity).toFloat()
+                                    } else {
+                                        AudioModeIntensity.DEFAULT.toFloat()
+                                    }
+                                }
+                            },
                             intensity = audioModeIntensity,
                             onIntensityChange = { audioModeIntensity = it }
                         )

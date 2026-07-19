@@ -6,7 +6,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 class ListenLinkCoordinator(
-    private val buildTuningParamsString: () -> String?,
+    private val engineTuningParams: () -> String?,
     private val getState: () -> UiState,
     private val setPlaybackMode: (PlaybackMode) -> Unit,
     private val loadTrackById: (
@@ -24,7 +24,7 @@ class ListenLinkCoordinator(
         val encodedId = encodeUriComponent(trackId)
         val query = when (playback.playMode) {
             PlaybackMode.Autocanonizer -> "mode=autocanonizer"
-            PlaybackMode.Jukebox -> buildTuningParamsString()
+            PlaybackMode.Jukebox -> tuningParamsForCurrentTrack(getState(), engineTuningParams)
         }
         return if (query.isNullOrBlank()) {
             "$baseUrl/listen/$encodedId"

@@ -81,6 +81,7 @@ fun TopSongsPanel(
     recentErrorMessage: String?,
     favoritesLoading: Boolean,
     topSongsLimit: Int,
+    maxFavorites: Int,
     activeTab: TopSongsTab,
     onTabSelected: (TopSongsTab) -> Unit,
     onRefreshTopSongs: () -> Unit,
@@ -97,7 +98,6 @@ fun TopSongsPanel(
     onFavoritesSortChange: (FavoriteSortKey, FavoriteSortDirection) -> Unit,
     favoritesSyncCode: String?,
     allowFavoritesSync: Boolean,
-    onRefreshSync: () -> Unit,
     onCreateSync: () -> Unit,
     onFetchSync: suspend (String) -> List<FavoriteTrack>?,
     onApplySync: (String, List<FavoriteTrack>) -> Unit
@@ -375,6 +375,11 @@ fun TopSongsPanel(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text("Favorites", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        text = "${favorites.size} / $maxFavorites",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     if (allowFavoritesSync) {
                         SquareIconButton(onClick = { showSyncMenu = true }, modifier = Modifier.size(24.dp)) {
                             Icon(
@@ -388,15 +393,6 @@ fun TopSongsPanel(
                             expanded = showSyncMenu,
                             onDismissRequest = { showSyncMenu = false }
                         ) {
-                            if (hasSyncCode) {
-                                DropdownMenuItem(
-                                    text = { Text("Refresh favorites") },
-                                    onClick = {
-                                        showSyncMenu = false
-                                        onRefreshSync()
-                                    }
-                                )
-                            }
                             DropdownMenuItem(
                                 text = { Text(if (hasSyncCode) "View sync code" else "Create sync code") },
                                 onClick = {

@@ -27,6 +27,7 @@ fun ServerTabContent(
             recentErrorMessage = state.search.recentSongsErrorMessage,
             favoritesLoading = state.favoritesSyncLoading,
             topSongsLimit = TOP_SONGS_LIMIT,
+            maxFavorites = state.maxFavorites,
             activeTab = state.topSongsTab,
             onTabSelected = viewModel::setTopSongsTab,
             onRefreshTopSongs = viewModel::refreshTopSongs,
@@ -51,7 +52,6 @@ fun ServerTabContent(
             onFavoritesSortChange = viewModel::setFavoritesSort,
             favoritesSyncCode = state.favoritesSyncCode,
             allowFavoritesSync = state.allowFavoritesSync,
-            onRefreshSync = viewModel::refreshFavoritesFromSync,
             onCreateSync = viewModel::createFavoritesSyncCode,
             onFetchSync = viewModel::fetchFavoritesPreview,
             onApplySync = viewModel::applyFavoritesSync

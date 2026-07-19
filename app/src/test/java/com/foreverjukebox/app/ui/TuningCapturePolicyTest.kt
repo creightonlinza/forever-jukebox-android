@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class FavoriteTuningCapturePolicyTest {
+class TuningCapturePolicyTest {
 
     @Test
     fun capturesEngineTuningWhenPlayingJukeboxOnDevice() {
@@ -13,7 +13,7 @@ class FavoriteTuningCapturePolicyTest {
         )
         var engineCalls = 0
 
-        val params = favoriteTuningParamsForCurrentTrack(state) {
+        val params = tuningParamsForCurrentTrack(state) {
             engineCalls++
             "jb=1&thresh=45"
         }
@@ -29,7 +29,7 @@ class FavoriteTuningCapturePolicyTest {
         )
         var engineCalls = 0
 
-        val params = favoriteTuningParamsForCurrentTrack(state) {
+        val params = tuningParamsForCurrentTrack(state) {
             engineCalls++
             "jb=1"
         }
@@ -58,7 +58,7 @@ class FavoriteTuningCapturePolicyTest {
         )
         var engineCalls = 0
 
-        val params = favoriteTuningParamsForCurrentTrack(state) {
+        val params = tuningParamsForCurrentTrack(state) {
             engineCalls++
             "stale-engine-params"
         }
@@ -79,7 +79,7 @@ class FavoriteTuningCapturePolicyTest {
             tuning = TuningState(justBackwards = true)
         )
 
-        val params = favoriteTuningParamsForCurrentTrack(state) { "stale-engine-params" }
+        val params = tuningParamsForCurrentTrack(state) { "stale-engine-params" }
 
         assertEquals("jb=1&am=daycore&ai=150", params)
     }
@@ -107,11 +107,11 @@ class FavoriteTuningCapturePolicyTest {
 
         assertEquals(
             "jb=1&am=daycore",
-            favoriteTuningParamsForCurrentTrack(defaultIntensity) { "stale-engine-params" }
+            tuningParamsForCurrentTrack(defaultIntensity) { "stale-engine-params" }
         )
         assertEquals(
             "jb=1&am=lofi",
-            favoriteTuningParamsForCurrentTrack(nonIntensityMode) { "stale-engine-params" }
+            tuningParamsForCurrentTrack(nonIntensityMode) { "stale-engine-params" }
         )
     }
 
@@ -126,7 +126,7 @@ class FavoriteTuningCapturePolicyTest {
             tuning = TuningState()
         )
 
-        val params = favoriteTuningParamsForCurrentTrack(state) { "stale-engine-params" }
+        val params = tuningParamsForCurrentTrack(state) { "stale-engine-params" }
 
         assertNull(params)
     }
@@ -138,7 +138,7 @@ class FavoriteTuningCapturePolicyTest {
             tuning = TuningState(justBackwards = true)
         )
 
-        val params = favoriteTuningParamsForCurrentTrack(state) { "stale-engine-params" }
+        val params = tuningParamsForCurrentTrack(state) { "stale-engine-params" }
 
         assertNull(params)
     }

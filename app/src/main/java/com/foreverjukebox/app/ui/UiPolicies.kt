@@ -25,9 +25,9 @@ internal fun shouldBlockListenFavoriteToggle(state: UiState): Boolean {
 
 // Tuning has two sources of truth: the local engine when playing on-device, and the
 // receiver-reported tuning state while casting (cast connect resets the local engine and
-// cast tuning edits never reach it). Favorites and playlist entries must capture from
-// whichever source is live, or tuned tracks favorited during a cast session save no tuning.
-internal fun favoriteTuningParamsForCurrentTrack(
+// cast tuning edits never reach it). Favorites, playlist entries, and share URLs must
+// capture from whichever source is live, or tuning captured during a cast session is stale.
+internal fun tuningParamsForCurrentTrack(
     state: UiState,
     engineTuningParams: () -> String?
 ): String? {
