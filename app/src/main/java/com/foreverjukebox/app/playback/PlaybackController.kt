@@ -15,6 +15,7 @@ import com.foreverjukebox.app.engine.JukeboxEngineOptions
 import com.foreverjukebox.app.engine.QuantumBase
 import com.foreverjukebox.app.engine.RandomMode
 import com.foreverjukebox.app.engine.VisualizationData
+import com.foreverjukebox.app.ui.AudioModeIntensity
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -103,8 +104,11 @@ class PlaybackController {
         cowbellOverlay.setVolume(if (active) DUCKED_VOLUME else NORMAL_VOLUME)
     }
 
-    fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
-        player.setJukeboxAudioMode(mode)
+    fun setJukeboxAudioMode(
+        mode: JukeboxAudioMode,
+        intensity: Int = AudioModeIntensity.DEFAULT
+    ) {
+        player.setJukeboxAudioMode(mode, intensity)
         cowbellOverlay.setEnabled(mode == JukeboxAudioMode.Cowbell)
     }
 

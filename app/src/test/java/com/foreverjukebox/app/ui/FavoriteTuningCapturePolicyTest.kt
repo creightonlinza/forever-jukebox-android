@@ -68,6 +68,54 @@ class FavoriteTuningCapturePolicyTest {
     }
 
     @Test
+    fun capturesCastIntensityWhileCasting() {
+        val state = UiState(
+            playback = PlaybackState(
+                playMode = PlaybackMode.Jukebox,
+                isCasting = true,
+                castAudioModeWireValue = "daycore",
+                castAudioModeIntensity = 150
+            ),
+            tuning = TuningState(justBackwards = true)
+        )
+
+        val params = favoriteTuningParamsForCurrentTrack(state) { "stale-engine-params" }
+
+        assertEquals("jb=1&am=daycore&ai=150", params)
+    }
+
+    @Test
+    fun omitsDefaultOrUnsupportedCastIntensityWhileCasting() {
+        val defaultIntensity = UiState(
+            playback = PlaybackState(
+                playMode = PlaybackMode.Jukebox,
+                isCasting = true,
+                castAudioModeWireValue = "daycore",
+                castAudioModeIntensity = 100
+            ),
+            tuning = TuningState(justBackwards = true)
+        )
+        val nonIntensityMode = UiState(
+            playback = PlaybackState(
+                playMode = PlaybackMode.Jukebox,
+                isCasting = true,
+                castAudioModeWireValue = "lofi",
+                castAudioModeIntensity = 150
+            ),
+            tuning = TuningState(justBackwards = true)
+        )
+
+        assertEquals(
+            "jb=1&am=daycore",
+            favoriteTuningParamsForCurrentTrack(defaultIntensity) { "stale-engine-params" }
+        )
+        assertEquals(
+            "jb=1&am=lofi",
+            favoriteTuningParamsForCurrentTrack(nonIntensityMode) { "stale-engine-params" }
+        )
+    }
+
+    @Test
     fun capturesNullWhileCastingWithDefaultTuning() {
         val state = UiState(
             playback = PlaybackState(

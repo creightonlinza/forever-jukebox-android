@@ -25,6 +25,9 @@ constexpr float kNormalDuckingVolume = 1.0f;
 constexpr float kDuckedVolume = 0.2f;
 constexpr float kDuckingRampSpeed = 0.0002f;
 constexpr int32_t kMaxAudioModeCode = 9;
+constexpr int32_t kMinIntensity = 50;
+constexpr int32_t kMaxIntensity = 150;
+constexpr int32_t kDefaultIntensity = 100;
 constexpr int32_t kEightBitDepth = 8;
 constexpr int32_t kEightBitCrushSampleRate = 8000;
 constexpr int32_t kBitcrusherLevels = 1 << kEightBitDepth;
@@ -32,6 +35,8 @@ constexpr float kCathedralReverbSeconds = 4.75f;
 constexpr float kCathedralReverbDecay = 2.5f;
 constexpr int32_t kCathedralTapCount = 64;
 constexpr int32_t kCowbellSampleCount = 19;
+constexpr float kLimiterAttackSeconds = 0.001f;
+constexpr float kLimiterReleaseSeconds = 0.250f;
 
 enum class AudioMode {
     Off = 0,
@@ -109,6 +114,62 @@ int32_t sanitizeAudioModeCode(int32_t mode) {
         return static_cast<int32_t>(AudioMode::Off);
     }
     return mode;
+}
+
+bool modeSupportsIntensity(int32_t mode) {
+    switch (static_cast<AudioMode>(mode)) {
+        case AudioMode::Nightcore:
+        case AudioMode::Daycore:
+        case AudioMode::Vaporwave:
+            return true;
+        default:
+            return false;
+    }
+}
+
+int32_t sanitizeIntensity(int32_t mode, int32_t intensity) {
+    if (!modeSupportsIntensity(mode)) {
+        return kDefaultIntensity;
+    }
+    return std::clamp(intensity, kMinIntensity, kMaxIntensity);
+}
+
+// Mode and intensity are packed into one atomic so the render thread can
+// never observe a new mode paired with a stale intensity (or vice versa).
+int32_t packModeAndIntensity(int32_t mode, int32_t intensity) {
+    return (mode << 16) | (intensity & 0xFFFF);
+}
+
+int32_t modeOfPacked(int32_t packed) {
+    return packed >> 16;
+}
+
+int32_t intensityOfPacked(int32_t packed) {
+    return packed & 0xFFFF;
+}
+
+AudioModeSettings settingsForMode(int32_t mode, int32_t intensity) {
+    AudioModeSettings settings = settingsForMode(mode);
+    // At the default intensity the preset must pass through untouched so
+    // pre-intensity favorites and shares sound bit-identical.
+    if (intensity == kDefaultIntensity || !modeSupportsIntensity(mode)) {
+        return settings;
+    }
+    const double i = intensity / 100.0;
+    settings.rate = 1.0 + (settings.rate - 1.0) * i;
+    if (settings.reverbMix > 0.0f) {
+        settings.reverbMix =
+            std::min(1.0f, settings.reverbMix * static_cast<float>(i));
+    }
+    // Filter cutoffs scale in octaves: pitch perception is logarithmic, so the
+    // high-pass opens upward and the low-pass closes downward with intensity.
+    if (settings.highPassFrequency > 0.0f) {
+        settings.highPassFrequency *= std::exp2(static_cast<float>(i - 1.0));
+    }
+    if (settings.lowPassFrequency > 0.0f) {
+        settings.lowPassFrequency *= std::exp2(static_cast<float>(1.0 - i));
+    }
+    return settings;
 }
 
 int16_t floatToInt16Sample(float sample) {
@@ -428,7 +489,12 @@ public:
           mHighPass(channelCount),
           mToneFilter(channelCount),
           mReverb(sampleRate, channelCount),
-          mCathedralReverb(sampleRate, channelCount) {}
+          mCathedralReverb(sampleRate, channelCount),
+          mMixScratch(static_cast<size_t>(std::max(1, channelCount)), 0.0f) {
+        const float rate = static_cast<float>(std::max(1, sampleRate));
+        mLimiterAttackCoeff = std::exp(-1.0f / (kLimiterAttackSeconds * rate));
+        mLimiterReleaseCoeff = std::exp(-1.0f / (kLimiterReleaseSeconds * rate));
+    }
 
     bool open() {
         std::lock_guard<std::mutex> lock(mStreamMutex);
@@ -515,8 +581,10 @@ public:
         mDuckingTargetVolume.store(active ? kDuckedVolume : kNormalDuckingVolume);
     }
 
-    void setJukeboxAudioMode(int32_t mode) {
-        mAudioMode.store(sanitizeAudioModeCode(mode));
+    void setJukeboxAudioMode(int32_t mode, int32_t intensity) {
+        const int32_t sanitizedMode = sanitizeAudioModeCode(mode);
+        mAudioModeAndIntensity.store(
+            packModeAndIntensity(sanitizedMode, sanitizeIntensity(sanitizedMode, intensity)));
         std::lock_guard<std::mutex> lock(mDataMutex);
         syncEightBitBufferLocked();
     }
@@ -526,7 +594,7 @@ public:
     // only built while the EightBit mode is active and released otherwise.
     // Must be called with mDataMutex held.
     void syncEightBitBufferLocked() {
-        if (settingsForMode(mAudioMode.load()).useEightBitBuffer) {
+        if (settingsForMode(modeOfPacked(mAudioModeAndIntensity.load())).useEightBitBuffer) {
             if (mEightBitAudioData.empty() && !mAudioData.empty()) {
                 mEightBitAudioData =
                     renderEightBitPcm(mAudioData, mSampleRate, mChannelCount);
@@ -538,7 +606,8 @@ public:
     }
 
     double getPlaybackRate() const {
-        return settingsForMode(mAudioMode.load()).rate;
+        const int32_t packed = mAudioModeAndIntensity.load();
+        return settingsForMode(modeOfPacked(packed), intensityOfPacked(packed)).rate;
     }
 
     void cloneAudioFrom(OboePlayer& source) {
@@ -549,7 +618,7 @@ public:
             mEightBitAudioData.clear();
             mEightBitAudioData.shrink_to_fit();
             // Only carry the 8-bit copy if this player's mode actually needs it.
-            if (settingsForMode(mAudioMode.load()).useEightBitBuffer) {
+            if (settingsForMode(modeOfPacked(mAudioModeAndIntensity.load())).useEightBitBuffer) {
                 mEightBitAudioData = source.mEightBitAudioData.empty()
                     ? renderEightBitPcm(mAudioData, mSampleRate, mChannelCount)
                     : source.mEightBitAudioData;
@@ -840,6 +909,7 @@ private:
             const float outputGain = mGain.load() * nextDuckingVolume();
             if (sourceFrame >= static_cast<double>(totalFrames) || audioData.empty()) {
                 std::fill(output, output + channels, 0);
+                mLimiterEnvelope *= mLimiterReleaseCoeff;
                 output += channels;
                 sourceFrame += settings.rate;
                 advanceDspFrame(settings);
@@ -850,6 +920,8 @@ private:
             const int64_t frame1 = std::min<int64_t>(frame0 + 1, totalFrames - 1);
             const float frac = static_cast<float>(sourceFrame - static_cast<double>(frame0));
             prepareCowbellHitsForFrame(sourceFrame);
+            float* mixed = mMixScratch.data();
+            float framePeak = 0.0f;
             for (int32_t channel = 0; channel < channels; channel += 1) {
                 const size_t offset0 = static_cast<size_t>(frame0 * channels + channel);
                 const size_t offset1 = static_cast<size_t>(frame1 * channels + channel);
@@ -858,7 +930,18 @@ private:
                 float sample = s0 + (s1 - s0) * frac;
                 sample = processDspSample(sample, channel, settings);
                 const float cowbell = cowbellSampleForChannel(channel, channels);
-                output[channel] = floatToInt16(sample * outputGain + cowbell);
+                mixed[channel] = sample * outputGain + cowbell;
+                framePeak = std::max(framePeak, std::fabs(mixed[channel]));
+            }
+            // Linked peak limiter: unity gain whenever the mix stays within
+            // full scale, so unaffected modes pass through bit-identically.
+            const float coeff = framePeak > mLimiterEnvelope ? mLimiterAttackCoeff
+                                                             : mLimiterReleaseCoeff;
+            mLimiterEnvelope = coeff * mLimiterEnvelope + (1.0f - coeff) * framePeak;
+            const float limiterGain =
+                mLimiterEnvelope > 1.0f ? 1.0f / mLimiterEnvelope : 1.0f;
+            for (int32_t channel = 0; channel < channels; channel += 1) {
+                output[channel] = floatToInt16(mixed[channel] * limiterGain);
             }
             advanceCowbellHits();
             applyPan(output, channels, settings);
@@ -991,13 +1074,21 @@ private:
     }
 
     AudioModeSettings updateDspModeIfNeeded() {
-        const int32_t mode = sanitizeAudioModeCode(mAudioMode.load());
-        if (mode == mConfiguredAudioMode) {
+        const int32_t packed = mAudioModeAndIntensity.load();
+        const int32_t mode = sanitizeAudioModeCode(modeOfPacked(packed));
+        const int32_t intensity = sanitizeIntensity(mode, intensityOfPacked(packed));
+        if (mode == modeOfPacked(mConfiguredModeAndIntensity) &&
+            intensity == intensityOfPacked(mConfiguredModeAndIntensity)) {
             return mConfiguredSettings;
         }
-        mConfiguredAudioMode = mode;
-        mConfiguredSettings = settingsForMode(mode);
-        resetDspStateLocked();
+        const bool modeChanged = mode != modeOfPacked(mConfiguredModeAndIntensity);
+        mConfiguredModeAndIntensity = packModeAndIntensity(mode, intensity);
+        mConfiguredSettings = settingsForMode(mode, intensity);
+        // An intensity-only change retunes the running graph in place; a full
+        // reset here would audibly cut reverb tails mid-playback.
+        if (modeChanged) {
+            resetDspStateLocked();
+        }
         if (mConfiguredSettings.highPassFrequency > 0.0f) {
             mHighPass.configure(
                 BiquadFilter::Type::HighPass,
@@ -1076,6 +1167,7 @@ private:
         mReverb.reset();
         mCathedralReverb.reset();
         mPanAngle = 0.0;
+        mLimiterEnvelope = 0.0f;
     }
 
     int32_t mSampleRate = 44100;
@@ -1104,8 +1196,9 @@ private:
     std::atomic<float> mGain{1.0f};
     std::atomic<float> mDuckingTargetVolume{kNormalDuckingVolume};
     float mCurrentDuckingVolume = kNormalDuckingVolume;
-    std::atomic<int32_t> mAudioMode{0};
-    int32_t mConfiguredAudioMode = -1;
+    std::atomic<int32_t> mAudioModeAndIntensity{
+        packModeAndIntensity(static_cast<int32_t>(AudioMode::Off), kDefaultIntensity)};
+    int32_t mConfiguredModeAndIntensity = -1;
     AudioModeSettings mConfiguredSettings;
     std::mutex mDspMutex;
     BiquadFilter mHighPass;
@@ -1113,6 +1206,10 @@ private:
     SimpleReverb mReverb;
     CathedralReverb mCathedralReverb;
     double mPanAngle = 0.0;
+    float mLimiterEnvelope = 0.0f;
+    float mLimiterAttackCoeff = 0.0f;
+    float mLimiterReleaseCoeff = 0.0f;
+    std::vector<float> mMixScratch;
 };
 
 OboePlayer* toPlayer(jlong handle) {
@@ -1265,9 +1362,9 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSetDucking(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSetJukeboxAudioMode(
-    JNIEnv*, jobject, jlong handle, jint mode) {
+    JNIEnv*, jobject, jlong handle, jint mode, jint intensity) {
     auto* player = toPlayer(handle);
-    if (player) player->setJukeboxAudioMode(mode);
+    if (player) player->setJukeboxAudioMode(mode, intensity);
 }
 
 extern "C" JNIEXPORT jdouble JNICALL

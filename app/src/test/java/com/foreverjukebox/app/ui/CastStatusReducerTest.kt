@@ -102,6 +102,33 @@ class CastStatusReducerTest {
     }
 
     @Test
+    fun parseCastStatusMessageParsesAudioModeIntensity() {
+        fun statusWithTuning(tuningFields: String): CastStatusMessage? {
+            return parseCastStatusMessage(
+                """
+                {
+                  "type":"status",
+                  "tuning":{
+                    "branchProbability":{},
+                    $tuningFields
+                  }
+                }
+                """.trimIndent()
+            )
+        }
+
+        val present = statusWithTuning(""""audioMode":"nightcore","audioModeIntensity":150""")
+        val absent = statusWithTuning(""""audioMode":"nightcore"""")
+        val nonIntensityMode = statusWithTuning(""""audioMode":"lofi","audioModeIntensity":150""")
+        val clamped = statusWithTuning(""""audioMode":"nightcore","audioModeIntensity":400""")
+
+        assertEquals(150, present?.tuning?.audioModeIntensity)
+        assertEquals(100, absent?.tuning?.audioModeIntensity)
+        assertEquals(100, nonIntensityMode?.tuning?.audioModeIntensity)
+        assertEquals(150, clamped?.tuning?.audioModeIntensity)
+    }
+
+    @Test
     fun parseCastStatusMessageFallsBackForOlderReceiverBranchStatus() {
         val enabled = parseCastStatusMessage(
             """
@@ -419,6 +446,67 @@ class CastStatusReducerTest {
         assertEquals(JukeboxAudioMode.Off, next.playback.jukeboxAudioMode)
         assertEquals("future_mode", next.playback.castAudioModeWireValue)
         assertEquals("Old Song (Future Mode) — New Artist", next.playback.playTitle)
+    }
+
+    @Test
+    fun reduceCastStatusTracksAudioModeIntensity() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                isRunning = true,
+                castAudioModeWireValue = "nightcore",
+                castAudioModeIntensity = 100
+            )
+        )
+        val status = CastStatusMessage(
+            title = "",
+            artist = "",
+            trackDurationSeconds = null,
+            totalBeats = null,
+            totalBranches = null,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = null,
+            tuning = castTuning(
+                audioMode = JukeboxAudioMode.Nightcore,
+                audioModeIntensity = 150
+            )
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals(150, next.playback.castAudioModeIntensity)
+        assertEquals(150, next.playback.jukeboxAudioModeIntensity)
+    }
+
+    @Test
+    fun reduceCastStatusCarriesIntensityForwardWhenTuningMissing() {
+        val current = UiState(
+            playback = PlaybackState(
+                isCasting = true,
+                castAudioModeWireValue = "nightcore",
+                castAudioModeIntensity = 150
+            )
+        )
+        val status = CastStatusMessage(
+            title = "",
+            artist = "",
+            trackDurationSeconds = null,
+            totalBeats = null,
+            totalBranches = null,
+            isPlaying = true,
+            isLoading = false,
+            playbackState = "playing",
+            error = "",
+            activeVizIndex = null,
+            tuning = null
+        )
+
+        val next = reduceCastStatus(current, status)
+
+        assertEquals(150, next.playback.castAudioModeIntensity)
     }
 
     @Test
@@ -1120,7 +1208,8 @@ class CastStatusReducerTest {
         anchorBranchId: Int? = null,
         highlightAnchorBranch: Boolean = false,
         audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
-        audioModeWireValue: String = audioMode.wireValue
+        audioModeWireValue: String = audioMode.wireValue,
+        audioModeIntensity: Int = AudioModeIntensity.DEFAULT
     ): CastTuningStatus {
         return CastTuningStatus(
             justBackwards = justBackwards,
@@ -1137,7 +1226,8 @@ class CastStatusReducerTest {
             deletedEdgeIds = deletedEdgeIds,
             anchorBranchId = anchorBranchId,
             highlightAnchorBranch = highlightAnchorBranch,
-            audioModeWireValue = audioModeWireValue
+            audioModeWireValue = audioModeWireValue,
+            audioModeIntensity = audioModeIntensity
         )
     }
 

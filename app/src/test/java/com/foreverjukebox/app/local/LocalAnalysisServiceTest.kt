@@ -256,19 +256,6 @@ class LocalAnalysisServiceTest {
     }
 
     @Test
-    fun clearSavedTuningRemovesTuningFile() = runTest {
-        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
-        val service = newTuningService(cacheDir)
-        val localId = "local-abc123"
-        service.saveTuning(localId, "thresh=12")
-
-        service.clearSavedTuning(localId)
-
-        assertNull(service.readSavedTuning(localId))
-        assertFalse(File(cacheDir, "abc123.tuning").exists())
-    }
-
-    @Test
     fun readSavedTuningReturnsNullForUnknownOrInvalidLocalId() = runTest {
         val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
         val service = newTuningService(cacheDir)

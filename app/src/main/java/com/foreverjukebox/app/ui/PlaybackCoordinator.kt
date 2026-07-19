@@ -140,7 +140,8 @@ class PlaybackCoordinator(
                 deletedEdgeIds = getDeletedEdgeIds(),
                 anchorBranchId = engine.getUserAnchorEdgeId()
             ),
-            audioModeWireValue = getState().playback.jukeboxAudioMode.wireValue
+            audioModeWireValue = getState().playback.jukeboxAudioMode.wireValue,
+            audioModeIntensity = getState().playback.jukeboxAudioModeIntensity
         )
     }
 
@@ -721,6 +722,7 @@ class PlaybackCoordinator(
                 playback = it.playback.copy(
                     playMode = it.playback.playMode,
                     jukeboxAudioMode = JukeboxAudioMode.Off,
+                    jukeboxAudioModeIntensity = AudioModeIntensity.DEFAULT,
                     canonizerFinishOutSong = it.playback.canonizerFinishOutSong,
                     audioLoaded = false,
                     analysisLoaded = false,
@@ -1168,7 +1170,8 @@ class PlaybackCoordinator(
         val config: JukeboxConfig,
         val deletedEdgeIds: List<Int>,
         val anchorBranchId: Int?,
-        val audioMode: JukeboxAudioMode?
+        val audioMode: JukeboxAudioMode?,
+        val audioModeIntensity: Int
     )
 
     private companion object {
@@ -1213,7 +1216,8 @@ class PlaybackCoordinator(
             config = config,
             deletedEdgeIds = parsed.deletedEdgeIds,
             anchorBranchId = parsed.anchorBranchId,
-            audioMode = parsed.audioMode
+            audioMode = parsed.audioMode,
+            audioModeIntensity = parsed.audioModeIntensity
         )
     }
 
@@ -1260,10 +1264,11 @@ class PlaybackCoordinator(
         }
         parsed.anchorBranchId?.let(::applyAnchorBranchFromParams)
         if (parsed.audioMode != null) {
-            controller.setJukeboxAudioMode(parsed.audioMode)
+            controller.setJukeboxAudioMode(parsed.audioMode, parsed.audioModeIntensity)
             updatePlaybackState {
                 it.copy(
                     jukeboxAudioMode = parsed.audioMode,
+                    jukeboxAudioModeIntensity = parsed.audioModeIntensity,
                     playTitle = buildPlayTitle(
                         it.trackTitle,
                         it.trackArtist,

@@ -52,12 +52,13 @@ enum class JukeboxAudioMode(
     val wireValue: String,
     val label: String,
     val playbackRate: Double,
-    val nativeModeCode: Int
+    val nativeModeCode: Int,
+    val supportsIntensity: Boolean = false
 ) {
     Off("off", "Off", 1.0, 0),
-    Nightcore("nightcore", "Nightcore", 1.2, 1),
-    Daycore("daycore", "Daycore", 0.8, 2),
-    Vaporwave("vaporwave", "Vaporwave", 0.65, 3),
+    Nightcore("nightcore", "Nightcore", 1.2, 1, supportsIntensity = true),
+    Daycore("daycore", "Daycore", 0.8, 2, supportsIntensity = true),
+    Vaporwave("vaporwave", "Vaporwave", 0.65, 3, supportsIntensity = true),
     EightD("eight_d", "8D Audio", 1.0, 4),
     Lofi("lofi", "Lofi", 1.0, 5),
     EightBit("eight_bit", "8-Bit", 1.0, 6),
@@ -70,6 +71,35 @@ enum class JukeboxAudioMode(
             val normalized = value?.trim()?.lowercase() ?: return null
             return entries.firstOrNull { it.wireValue == normalized }
         }
+    }
+}
+
+object AudioModeIntensity {
+    const val MIN = 50
+    const val MAX = 150
+    const val DEFAULT = 100
+
+    fun clamp(value: Int): Int = value.coerceIn(MIN, MAX)
+
+    // Absence/blank/invalid resolves to DEFAULT; a mode that doesn't support
+    // intensity ignores the raw value entirely so stale values never carry over.
+    fun parse(raw: String?, mode: JukeboxAudioMode?): Int {
+        if (raw == null || mode == null || !mode.supportsIntensity) return DEFAULT
+        return clamp(raw.trim().toIntOrNull() ?: return DEFAULT)
+    }
+
+    // Emitted only when meaningful and non-default, so DEFAULT is always
+    // represented by absence in persisted/shared strings.
+    fun wireParamOrNull(mode: JukeboxAudioMode?, intensity: Int): String? {
+        if (mode == null || !mode.supportsIntensity) return null
+        val clamped = clamp(intensity)
+        if (clamped == DEFAULT) return null
+        return "ai=$clamped"
+    }
+
+    fun scaleRate(rate: Double, intensity: Int): Double {
+        if (intensity == DEFAULT) return rate
+        return 1.0 + (rate - 1.0) * (clamp(intensity) / 100.0)
     }
 }
 
@@ -207,6 +237,7 @@ sealed interface CastTransfer {
 data class PlaybackState(
     val playMode: PlaybackMode = PlaybackMode.Jukebox,
     val jukeboxAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
+    val jukeboxAudioModeIntensity: Int = AudioModeIntensity.DEFAULT,
     val canonizerFinishOutSong: Boolean = false,
     val analysisProgress: Int? = null,
     val analysisMessage: String? = null,
@@ -247,6 +278,7 @@ data class PlaybackState(
     val isCastLoading: Boolean = false,
     val castTransfer: CastTransfer? = null,
     val castAudioModeWireValue: String = JukeboxAudioMode.Off.wireValue,
+    val castAudioModeIntensity: Int = AudioModeIntensity.DEFAULT,
     val castSupportedAudioModes: List<AudioModeOption> = emptyList(),
     val deleteEligible: Boolean = false,
     val deleteInFlight: Boolean = false,

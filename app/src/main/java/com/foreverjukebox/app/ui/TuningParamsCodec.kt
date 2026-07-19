@@ -18,11 +18,12 @@ data class ParsedTuningParams(
     val removeSequentialBranches: Boolean?,
     val deletedEdgeIds: List<Int>,
     val anchorBranchId: Int?,
-    val audioMode: JukeboxAudioMode?
+    val audioMode: JukeboxAudioMode?,
+    val audioModeIntensity: Int = AudioModeIntensity.DEFAULT
 )
 
 object TuningParamsCodec {
-    private val knownKeys = setOf("jb", "bl", "lg", "sq", "thresh", "bp", "d", "ab", "ah", "am")
+    private val knownKeys = setOf("jb", "bl", "lg", "sq", "thresh", "bp", "d", "ab", "ah", "am", "ai")
 
     fun parse(raw: String?, minThreshold: Int = 0): ParsedTuningParams? {
         if (raw.isNullOrBlank()) {
@@ -33,9 +34,10 @@ object TuningParamsCodec {
             return null
         }
         val audioMode = JukeboxAudioMode.fromWireValue(params.firstValue("am"))
-        if (params.keys.all { it == "am" } && audioMode == null) {
+        if (params.keys.all { it == "am" || it == "ai" } && audioMode == null) {
             return null
         }
+        val audioModeIntensity = AudioModeIntensity.parse(params.firstValue("ai"), audioMode)
         val threshold = params.firstValue("thresh")
             ?.toIntOrNull()
             ?.takeIf { it >= minThreshold }
@@ -80,7 +82,8 @@ object TuningParamsCodec {
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
             deletedEdgeIds = deletedEdgeIds,
             anchorBranchId = anchorBranchId,
-            audioMode = audioMode
+            audioMode = audioMode,
+            audioModeIntensity = audioModeIntensity
         )
     }
 
@@ -140,6 +143,13 @@ object TuningParamsCodec {
                 "am" -> JukeboxAudioMode.fromWireValue(value)?.let {
                     sanitized[name] = it.wireValue
                 }
+                "ai" -> {
+                    val payloadAudioMode = JukeboxAudioMode.fromWireValue(params.firstValue("am"))
+                    val intensity = AudioModeIntensity.parse(value, payloadAudioMode)
+                    if (intensity != AudioModeIntensity.DEFAULT) {
+                        sanitized[name] = intensity.toString()
+                    }
+                }
             }
         }
         if (highlightAnchorBranch || hasHighlightParam) {
@@ -158,7 +168,8 @@ object TuningParamsCodec {
      */
     fun buildSavedTuningParams(
         tuning: TuningState,
-        audioModeWireValue: String? = null
+        audioModeWireValue: String? = null,
+        audioModeIntensity: Int = AudioModeIntensity.DEFAULT
     ): String? {
         val defaults = TuningState()
         val params = mutableListOf<String>()
@@ -194,6 +205,10 @@ object TuningParamsCodec {
         val normalizedAudioMode = audioModeWireValue?.trim().orEmpty()
         if (normalizedAudioMode.isNotBlank() && normalizedAudioMode != JukeboxAudioMode.Off.wireValue) {
             params.add("am=$normalizedAudioMode")
+            AudioModeIntensity.wireParamOrNull(
+                JukeboxAudioMode.fromWireValue(normalizedAudioMode),
+                audioModeIntensity
+            )?.let { params.add(it) }
         }
         return if (params.isEmpty()) null else params.joinToString("&")
     }

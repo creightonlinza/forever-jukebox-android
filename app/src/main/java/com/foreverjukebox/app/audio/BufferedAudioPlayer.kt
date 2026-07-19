@@ -7,6 +7,7 @@ import android.media.MediaFormat
 import android.net.Uri
 import com.foreverjukebox.app.engine.JumpEvent
 import com.foreverjukebox.app.engine.JukeboxPlayer
+import com.foreverjukebox.app.ui.AudioModeIntensity
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +21,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private var nativeHandle: Long = 0
     private var durationSeconds: Double? = null
     private var jukeboxAudioMode = JukeboxAudioMode.Off
+    private var jukeboxAudioModeIntensity = AudioModeIntensity.DEFAULT
     private var duckingActive = false
     private var cowbellSamplesLoaded = false
     private val cowbellSampleIndexByName = NativeCowbellOverlayController.requiredSampleNames()
@@ -87,16 +89,27 @@ class BufferedAudioPlayer : JukeboxPlayer {
         nativeSetDucking(nativeHandle, active)
     }
 
-    fun setJukeboxAudioMode(mode: JukeboxAudioMode) {
+    fun setJukeboxAudioMode(
+        mode: JukeboxAudioMode,
+        intensity: Int = AudioModeIntensity.DEFAULT
+    ) {
         jukeboxAudioMode = mode
+        jukeboxAudioModeIntensity =
+            if (mode.supportsIntensity) AudioModeIntensity.clamp(intensity)
+            else AudioModeIntensity.DEFAULT
         if (nativeHandle == 0L) return
-        nativeSetJukeboxAudioMode(nativeHandle, mode.nativeModeCode)
+        nativeSetJukeboxAudioMode(nativeHandle, mode.nativeModeCode, jukeboxAudioModeIntensity)
     }
 
     fun getJukeboxAudioMode(): JukeboxAudioMode = jukeboxAudioMode
 
     override fun getPlaybackRate(): Double {
-        if (nativeHandle == 0L) return jukeboxAudioMode.playbackRate
+        if (nativeHandle == 0L) {
+            return AudioModeIntensity.scaleRate(
+                jukeboxAudioMode.playbackRate,
+                jukeboxAudioModeIntensity
+            )
+        }
         return nativeGetPlaybackRate(nativeHandle)
     }
 
@@ -106,6 +119,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
         channelCount = other.channelCount
         durationSeconds = other.durationSeconds
         jukeboxAudioMode = other.jukeboxAudioMode
+        jukeboxAudioModeIntensity = other.jukeboxAudioModeIntensity
         duckingActive = other.duckingActive
         releaseNativePlayer()
         ensureNativePlayer()
@@ -248,7 +262,11 @@ class BufferedAudioPlayer : JukeboxPlayer {
         if (nativeHandle != 0L) return
         nativeHandle = nativeCreatePlayer(sampleRate, channelCount)
         if (nativeHandle != 0L) {
-            nativeSetJukeboxAudioMode(nativeHandle, jukeboxAudioMode.nativeModeCode)
+            nativeSetJukeboxAudioMode(
+                nativeHandle,
+                jukeboxAudioMode.nativeModeCode,
+                jukeboxAudioModeIntensity
+            )
             nativeSetDucking(nativeHandle, duckingActive)
         }
     }
@@ -517,7 +535,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeHasAudio(handle: Long): Boolean
     private external fun nativeSetGain(handle: Long, gain: Float)
     private external fun nativeSetDucking(handle: Long, active: Boolean)
-    private external fun nativeSetJukeboxAudioMode(handle: Long, mode: Int)
+    private external fun nativeSetJukeboxAudioMode(handle: Long, mode: Int, intensity: Int)
     private external fun nativeGetPlaybackRate(handle: Long): Double
     private external fun nativeCloneAudioFrom(handle: Long, sourceHandle: Long): Boolean
     private external fun nativeLoadCowbellSample(

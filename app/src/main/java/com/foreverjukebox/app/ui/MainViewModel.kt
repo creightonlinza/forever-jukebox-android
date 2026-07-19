@@ -387,8 +387,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE,
-        persistLocalTrackTuning = { localId, params -> localAnalysisService.saveTuning(localId, params) },
-        clearLocalTrackTuning = { localId -> localAnalysisService.clearSavedTuning(localId) }
+        persistLocalTrackTuning = { localId, params -> localAnalysisService.saveTuning(localId, params) }
     )
     private val castSessionCoordinator = CastSessionCoordinator(
         controller = controller,
@@ -3005,7 +3004,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         justBackwards: Boolean,
         minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
-        audioModeWireValue: String? = null
+        audioModeWireValue: String? = null,
+        audioModeIntensity: Int? = null
     ) {
         viewModelScope.launch {
             val currentPlayback = state.value.playback
@@ -3022,11 +3022,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ?: currentPlayback.jukeboxAudioMode
                 PlaybackMode.Autocanonizer -> JukeboxAudioMode.Off
             }
+            val requestedIntensity = if (requestedAudioMode.supportsIntensity) {
+                AudioModeIntensity.clamp(
+                    audioModeIntensity
+                        ?: if (currentPlayback.isCasting) {
+                            currentPlayback.castAudioModeIntensity
+                        } else {
+                            currentPlayback.jukeboxAudioModeIntensity
+                        }
+                )
+            } else {
+                AudioModeIntensity.DEFAULT
+            }
             val audioModeChanged = currentPlayback.playMode == PlaybackMode.Jukebox &&
                 currentPlayback.jukeboxAudioMode != requestedAudioMode
-            if (audioModeChanged && !currentPlayback.isCasting) {
+            val audioSettingsChanged = audioModeChanged ||
+                (
+                    currentPlayback.playMode == PlaybackMode.Jukebox &&
+                        requestedAudioMode.supportsIntensity &&
+                        currentPlayback.jukeboxAudioModeIntensity != requestedIntensity
+                    )
+            if (audioSettingsChanged && !currentPlayback.isCasting) {
                 lastCowbellBeatsPlayed = -1
-                controller.setJukeboxAudioMode(requestedAudioMode)
+                controller.setJukeboxAudioMode(requestedAudioMode, requestedIntensity)
             }
             tuningCoordinator.applyTuning(
                 threshold = threshold,
@@ -3038,18 +3056,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 minJumpDistancePercent = minJumpDistancePercent,
                 removeSequentialBranches = removeSequentialBranches,
                 audioMode = requestedAudioMode,
-                audioModeWireValue = requestedAudioModeWireValue
+                audioModeWireValue = requestedAudioModeWireValue,
+                audioModeIntensity = requestedIntensity
             )
-            if (audioModeChanged && !currentPlayback.isCasting &&
+            if (audioSettingsChanged && !currentPlayback.isCasting &&
                 (currentPlayback.isRunning || currentPlayback.isPaused)
             ) {
                 engine.syncToPlaybackPosition()
             }
-            if (audioModeChanged && !currentPlayback.isCasting) {
+            if (audioSettingsChanged && !currentPlayback.isCasting) {
                 _state.update {
                     it.copy(
                         playback = it.playback.copy(
                             jukeboxAudioMode = requestedAudioMode,
+                            jukeboxAudioModeIntensity = requestedIntensity,
                             playTitle = buildPlaybackTitle(
                                 title = it.playback.trackTitle,
                                 artist = it.playback.trackArtist,
@@ -3064,37 +3084,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun resetTuningDefaults() {
+    fun resetBranchTuningDefaults() {
+        viewModelScope.launch {
+            tuningCoordinator.resetBranchTuningDefaults()
+        }
+    }
+
+    fun resetAudioModeDefaults() {
         viewModelScope.launch {
             val currentPlayback = state.value.playback
-            val resetAudioMode = currentPlayback.playMode == PlaybackMode.Jukebox &&
-                currentPlayback.jukeboxAudioMode != JukeboxAudioMode.Off
-            if (resetAudioMode && !currentPlayback.isCasting) {
-                lastCowbellBeatsPlayed = -1
-                controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
+            if (currentPlayback.isCasting) {
+                tuningCoordinator.resetCastAudioModeDefaults()
+                return@launch
             }
-            tuningCoordinator.resetTuningDefaults()
-            if (resetAudioMode && !currentPlayback.isCasting &&
-                (currentPlayback.isRunning || currentPlayback.isPaused)
-            ) {
+            val resetAudioMode = currentPlayback.playMode == PlaybackMode.Jukebox &&
+                (
+                    currentPlayback.jukeboxAudioMode != JukeboxAudioMode.Off ||
+                        currentPlayback.jukeboxAudioModeIntensity != AudioModeIntensity.DEFAULT
+                    )
+            if (!resetAudioMode) {
+                return@launch
+            }
+            lastCowbellBeatsPlayed = -1
+            controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
+            if (currentPlayback.isRunning || currentPlayback.isPaused) {
                 engine.syncToPlaybackPosition()
             }
-            if (resetAudioMode && !currentPlayback.isCasting) {
-                _state.update {
-                    it.copy(
-                        playback = it.playback.copy(
-                            jukeboxAudioMode = JukeboxAudioMode.Off,
-                            playTitle = buildPlaybackTitle(
-                                title = it.playback.trackTitle,
-                                artist = it.playback.trackArtist,
-                                playMode = it.playback.playMode,
-                                audioMode = JukeboxAudioMode.Off
-                            )
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        jukeboxAudioMode = JukeboxAudioMode.Off,
+                        jukeboxAudioModeIntensity = AudioModeIntensity.DEFAULT,
+                        playTitle = buildPlaybackTitle(
+                            title = it.playback.trackTitle,
+                            artist = it.playback.trackArtist,
+                            playMode = it.playback.playMode,
+                            audioMode = JukeboxAudioMode.Off
                         )
                     )
-                }
-                syncPlaybackServiceSession()
+                )
             }
+            syncPlaybackServiceSession()
+            // The auto-saved tuning bundles am/ai; re-persist after the state update so a
+            // reload doesn't restore the just-reset audio mode.
+            tuningCoordinator.persistCurrentLocalTuning()
         }
     }
 

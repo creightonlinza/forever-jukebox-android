@@ -19,7 +19,8 @@ internal fun buildCastTuningResetParams(
     defaultConfig: JukeboxConfig,
     randomBranchDeltaPercentScale: Double,
     resetThreshold: Int? = null,
-    audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
+    preservedAudioModeWireValue: String = JukeboxAudioMode.Off.wireValue,
+    preservedAudioModeIntensity: Int = AudioModeIntensity.DEFAULT
 ): String {
     val minProb = (defaultConfig.minRandomBranchChance * 100.0).roundToInt().coerceIn(0, 100)
     val maxProb = (defaultConfig.maxRandomBranchChance * 100.0).roundToInt().coerceIn(0, 100)
@@ -27,21 +28,38 @@ internal fun buildCastTuningResetParams(
         .roundToInt()
         .coerceIn(0, 100)
     val threshold = resetThreshold ?: defaultConfig.currentThreshold
-    return listOf(
+    val params = mutableListOf(
         "jb=${if (defaultConfig.justBackwards) 1 else 0}",
         "bl=${if (defaultConfig.justLongBranches) defaultConfig.minLongBranchPercent else 0}",
         "sq=${if (defaultConfig.removeSequentialBranches) 0 else 1}",
         "thresh=$threshold",
         "bp=$minProb,$maxProb,$ramp",
-        "d=",
-        TuningParamsCodec.buildAudioModeParam(audioMode)
-    ).joinToString("&")
+        "d="
+    )
+    // A branch-only reset must not disturb the receiver's audio mode, so the current
+    // mode is re-sent. `ai` must accompany it: `am` without `ai` resets intensity.
+    params.add(
+        TuningParamsCodec.buildAudioModeParam(preservedAudioModeWireValue)
+            ?: TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Off)
+    )
+    AudioModeIntensity.wireParamOrNull(
+        JukeboxAudioMode.fromWireValue(preservedAudioModeWireValue),
+        preservedAudioModeIntensity
+    )?.let { params.add(it) }
+    return params.joinToString("&")
+}
+
+internal fun buildCastAudioModeResetParams(currentAudioModeWireValue: String): String? {
+    val current = currentAudioModeWireValue.trim()
+    val alreadyOff = current.isBlank() || current == JukeboxAudioMode.Off.wireValue
+    return if (alreadyOff) null else TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Off)
 }
 
 internal fun buildCastTuningUpdate(
     currentTuning: TuningState,
     currentAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
     currentAudioModeWireValue: String = currentAudioMode.wireValue,
+    currentAudioModeIntensity: Int = AudioModeIntensity.DEFAULT,
     threshold: Int,
     minProb: Double,
     maxProb: Double,
@@ -52,7 +70,8 @@ internal fun buildCastTuningUpdate(
     removeSequentialBranches: Boolean,
     randomBranchDeltaPercentScale: Double,
     audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
-    audioModeWireValue: String = audioMode.wireValue
+    audioModeWireValue: String = audioMode.wireValue,
+    audioModeIntensity: Int = AudioModeIntensity.DEFAULT
 ): CastTuningUpdate {
     val nextTuning = currentTuning.copy(
         threshold = threshold.coerceAtLeast(2),
@@ -85,8 +104,18 @@ internal fun buildCastTuningUpdate(
     }
     val currentCastAudioMode = currentAudioModeWireValue.trim()
     val nextCastAudioMode = audioModeWireValue.trim()
-    if (currentCastAudioMode != nextCastAudioMode) {
+    val nextMode = JukeboxAudioMode.fromWireValue(nextCastAudioMode)
+    val nextIntensity = if (nextMode?.supportsIntensity == true) {
+        AudioModeIntensity.clamp(audioModeIntensity)
+    } else {
+        AudioModeIntensity.DEFAULT
+    }
+    // The receiver applies intensity only alongside an `am` param, so an
+    // intensity-only change must re-send the unchanged mode. With `am` present,
+    // a missing `ai` means the default, so `ai=100` is never sent.
+    if (currentCastAudioMode != nextCastAudioMode || currentAudioModeIntensity != nextIntensity) {
         TuningParamsCodec.buildAudioModeParam(nextCastAudioMode)?.let { params.add(it) }
+        AudioModeIntensity.wireParamOrNull(nextMode, nextIntensity)?.let { params.add(it) }
     }
     val castParams = params.joinToString("&").ifBlank { null }
     return CastTuningUpdate(nextTuning = nextTuning, castParams = castParams)
@@ -133,8 +162,7 @@ class TuningCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val randomBranchDeltaPercentScale: Double,
-    private val persistLocalTrackTuning: suspend (localId: String, params: String?) -> Unit,
-    private val clearLocalTrackTuning: suspend (localId: String) -> Unit
+    private val persistLocalTrackTuning: suspend (localId: String, params: String?) -> Unit
 ) {
     private fun currentLocalTrackId(): String? = localTrackTuningId(getState())
 
@@ -148,7 +176,8 @@ class TuningCoordinator(
         minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioMode: JukeboxAudioMode,
-        audioModeWireValue: String = audioMode.wireValue
+        audioModeWireValue: String = audioMode.wireValue,
+        audioModeIntensity: Int = AudioModeIntensity.DEFAULT
     ) {
         if (getState().playback.isCasting) {
             applyCastTuning(
@@ -161,7 +190,8 @@ class TuningCoordinator(
                 minJumpDistancePercent = minJumpDistancePercent,
                 removeSequentialBranches = removeSequentialBranches,
                 audioMode = audioMode,
-                audioModeWireValue = audioModeWireValue
+                audioModeWireValue = audioModeWireValue,
+                audioModeIntensity = audioModeIntensity
             )
             return
         }
@@ -177,12 +207,32 @@ class TuningCoordinator(
         )
     }
 
-    suspend fun resetTuningDefaults() {
+    suspend fun resetBranchTuningDefaults() {
         if (getState().playback.isCasting) {
-            resetCastTuningDefaults()
+            resetCastBranchTuningDefaults()
             return
         }
         resetLocalTuningDefaults()
+    }
+
+    suspend fun resetCastAudioModeDefaults() {
+        val currentState = getState()
+        buildCastAudioModeResetParams(currentState.playback.castAudioModeWireValue)
+            ?.let { castPlaybackCoordinator.sendCastTuningParams(it) }
+        // Branch tuning survives an audio-only reset, so re-persist it without am/ai.
+        currentLocalTrackId()?.let { localId ->
+            persistLocalTrackTuning(
+                localId,
+                TuningParamsCodec.buildSavedTuningParams(tuning = currentState.tuning)
+            )
+        }
+        castPlaybackCoordinator.requestCastStatus()
+    }
+
+    suspend fun persistCurrentLocalTuning() {
+        currentLocalTrackId()?.let { localId ->
+            persistLocalTrackTuning(localId, playbackCoordinator.buildTuningParamsString())
+        }
     }
 
     private suspend fun applyCastTuning(
@@ -195,13 +245,15 @@ class TuningCoordinator(
         minJumpDistancePercent: Int,
         removeSequentialBranches: Boolean,
         audioMode: JukeboxAudioMode,
-        audioModeWireValue: String
+        audioModeWireValue: String,
+        audioModeIntensity: Int
     ) {
         val currentState = getState()
         val castUpdate = buildCastTuningUpdate(
             currentTuning = currentState.tuning,
             currentAudioMode = currentState.playback.jukeboxAudioMode,
             currentAudioModeWireValue = currentState.playback.castAudioModeWireValue,
+            currentAudioModeIntensity = currentState.playback.castAudioModeIntensity,
             threshold = threshold,
             minProb = minProb,
             maxProb = maxProb,
@@ -212,7 +264,8 @@ class TuningCoordinator(
             removeSequentialBranches = removeSequentialBranches,
             randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
             audioMode = audioMode,
-            audioModeWireValue = audioModeWireValue
+            audioModeWireValue = audioModeWireValue,
+            audioModeIntensity = audioModeIntensity
         )
         preferences.setHighlightAnchorBranch(highlightAnchorBranch)
         if (castUpdate.castParams != null) {
@@ -225,7 +278,8 @@ class TuningCoordinator(
                 localId,
                 TuningParamsCodec.buildSavedTuningParams(
                     tuning = castUpdate.nextTuning,
-                    audioModeWireValue = audioModeWireValue
+                    audioModeWireValue = audioModeWireValue,
+                    audioModeIntensity = audioModeIntensity
                 )
             )
         }
@@ -272,18 +326,29 @@ class TuningCoordinator(
         }
     }
 
-    private suspend fun resetCastTuningDefaults() {
+    private suspend fun resetCastBranchTuningDefaults() {
         val currentState = getState()
         castPlaybackCoordinator.sendCastTuningParams(
             buildCastTuningResetParams(
                 defaultConfig = defaultConfig,
                 randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
-                resetThreshold = currentState.tuning.computedThreshold
+                resetThreshold = currentState.tuning.computedThreshold,
+                preservedAudioModeWireValue = currentState.playback.castAudioModeWireValue,
+                preservedAudioModeIntensity = currentState.playback.castAudioModeIntensity
             )
         )
-        // Mirror resetLocalTuningDefaults: a reset while casting also discards the local
-        // track's auto-saved tuning.
-        currentLocalTrackId()?.let { localId -> clearLocalTrackTuning(localId) }
+        // Mirror resetLocalTuningDefaults: the branch portion of the auto-saved tuning is
+        // discarded, but the audio mode survives a branch-only reset.
+        currentLocalTrackId()?.let { localId ->
+            persistLocalTrackTuning(
+                localId,
+                TuningParamsCodec.buildSavedTuningParams(
+                    tuning = TuningState(),
+                    audioModeWireValue = currentState.playback.castAudioModeWireValue,
+                    audioModeIntensity = currentState.playback.castAudioModeIntensity
+                )
+            )
+        }
         castPlaybackCoordinator.requestCastStatus()
     }
 
@@ -302,6 +367,8 @@ class TuningCoordinator(
             )
         }
         playbackCoordinator.syncTuningState()
-        currentLocalTrackId()?.let { localId -> clearLocalTrackTuning(localId) }
+        // Engine is back at defaults, so this saves only the still-active local audio
+        // mode (or deletes the file when the mode is off).
+        persistCurrentLocalTuning()
     }
 }

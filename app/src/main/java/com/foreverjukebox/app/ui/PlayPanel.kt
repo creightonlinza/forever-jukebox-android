@@ -277,10 +277,16 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             } else {
                 playback.jukeboxAudioMode.wireValue
             },
+            initialAudioModeIntensity = if (playback.isCasting) {
+                playback.castAudioModeIntensity
+            } else {
+                playback.jukeboxAudioModeIntensity
+            },
             audioModeOptions = audioModeOptions,
             isAudioModePickerEnabled = !playback.isCasting || audioModeOptions.isNotEmpty(),
             onDismiss = { showTuning = false },
-            onReset = viewModel::resetTuningDefaults,
+            onResetBranchTuning = viewModel::resetBranchTuningDefaults,
+            onResetAudioMode = viewModel::resetAudioModeDefaults,
             onApply = viewModel::applyTuning
         )
     }
