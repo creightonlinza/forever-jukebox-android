@@ -400,7 +400,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         syncCastNotification = ::syncCastNotification
     )
     private val listenLinkCoordinator = ListenLinkCoordinator(
-        buildTuningParamsString = playbackCoordinator::buildTuningParamsString,
+        engineTuningParams = playbackCoordinator::buildTuningParamsString,
         getState = { state.value },
         setPlaybackMode = ::setPlaybackMode,
         loadTrackById = ::loadTrackById
@@ -1293,7 +1293,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             title = playback.trackTitle,
             artist = playback.trackArtist,
             tuningParams = if (type == PlaylistTrackType.Server) {
-                favoriteTuningParamsForCurrentTrack(
+                tuningParamsForCurrentTrack(
                     currentState,
                     playbackCoordinator::buildTuningParamsString
                 )
@@ -1408,7 +1408,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     artist = artist,
                     duration = playback.trackDurationSeconds,
                     sourceType = if (playback.lastYouTubeId.isNullOrBlank()) null else FavoriteSourceType.Youtube,
-                    tuningParams = favoriteTuningParamsForCurrentTrack(
+                    tuningParams = tuningParamsForCurrentTrack(
                         currentState,
                         playbackCoordinator::buildTuningParamsString
                     ),

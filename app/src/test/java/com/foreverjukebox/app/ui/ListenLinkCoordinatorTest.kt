@@ -113,6 +113,66 @@ class ListenLinkCoordinatorTest {
     }
 
     @Test
+    fun buildShareUrlUsesReceiverTuningInsteadOfEngineWhileCasting() {
+        // While casting the local engine is reset and never sees cast tuning edits; the
+        // share URL must be built from the receiver-reported tuning state.
+        val coordinator = createCoordinator(
+            state = UiState(
+                baseUrl = "https://example.com/",
+                playback = PlaybackState(
+                    playMode = PlaybackMode.Jukebox,
+                    isCasting = true,
+                    castAudioModeWireValue = "nightcore",
+                    castAudioModeIntensity = 150,
+                    lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+                ),
+                tuning = TuningState(
+                    threshold = 31,
+                    computedThreshold = 29,
+                    minProb = 25,
+                    maxProb = 60,
+                    ramp = 12,
+                    justBackwards = true,
+                    deletedEdgeIds = listOf(4, 9),
+                    anchorBranchId = 12
+                )
+            ),
+            tuningParams = "thresh=99"
+        )
+
+        val shareUrl = coordinator.buildShareUrl()
+
+        assertEquals(
+            "https://example.com/listen/a3f3c0dc73c6476c9db95c227f9206f2" +
+                "?jb=1&thresh=31&bp=25,60,12&d=4,9&ab=12&am=nightcore&ai=150",
+            shareUrl
+        )
+    }
+
+    @Test
+    fun buildShareUrlOmitsQueryWhileCastingWithDefaultTuning() {
+        val coordinator = createCoordinator(
+            state = UiState(
+                baseUrl = "https://example.com/",
+                playback = PlaybackState(
+                    playMode = PlaybackMode.Jukebox,
+                    isCasting = true,
+                    castAudioModeWireValue = JukeboxAudioMode.Off.wireValue,
+                    lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+                )
+            ),
+            tuningParams = "thresh=99"
+        )
+
+        val shareUrl = coordinator.buildShareUrl()
+
+        assertEquals(
+            "https://example.com/listen/a3f3c0dc73c6476c9db95c227f9206f2",
+            shareUrl
+        )
+    }
+
+    @Test
     fun buildShareUrlUsesAutocanonizerModeParam() {
         val coordinator = createCoordinator(
             state = UiState(
@@ -269,7 +329,7 @@ class ListenLinkCoordinatorTest {
         loadTrackById: (String, String?, String?, String?) -> Unit = { _, _, _, _ -> }
     ): ListenLinkCoordinator {
         return ListenLinkCoordinator(
-            buildTuningParamsString = { tuningParams },
+            engineTuningParams = { tuningParams },
             getState = { state },
             setPlaybackMode = setPlaybackMode,
             loadTrackById = loadTrackById
