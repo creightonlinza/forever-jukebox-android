@@ -111,7 +111,16 @@ data class DeleteJobResponse(
 )
 
 @Serializable
+data class GitHubReleaseAsset(
+    @SerialName("name") val name: String? = null
+)
+
+@Serializable
 data class GitHubReleaseResponse(
     @SerialName("tag_name") val tagName: String? = null,
-    @SerialName("html_url") val htmlUrl: String? = null
+    @SerialName("html_url") val htmlUrl: String? = null,
+    @SerialName("assets") val assets: List<GitHubReleaseAsset> = emptyList()
 )
+
+fun GitHubReleaseResponse.hasApkAsset(): Boolean =
+    assets.any { it.name?.trim()?.endsWith(".apk", ignoreCase = true) == true }
