@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.ApplicationExtension
+import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import com.android.build.api.variant.ApplicationAndroidComponentsExtension
 import org.gradle.api.file.Directory
 import org.gradle.api.file.RegularFile
@@ -21,6 +22,13 @@ plugins {
     id("io.gitlab.arturbosch.detekt")
 
     id("io.sentry.android.gradle") version "6.12.0"
+    id("com.google.gms.google-services")
+}
+
+googleServices {
+    // google-services.json lives in src/full/ only; the play flavor has no
+    // Firebase and must build without a config file.
+    missingGoogleServicesStrategy = MissingGoogleServicesStrategy.IGNORE
 }
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -308,6 +316,10 @@ dependencies {
     // only. The play flavor is local-only and never fetches remote images.
     "fullImplementation"("io.coil-kt.coil3:coil-compose:3.4.0")
     "fullImplementation"("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
+    // Firebase (Analytics) is full-flavor only; the play flavor ships with no
+    // Firebase code and no google-services.json.
+    "fullImplementation"(platform("com.google.firebase:firebase-bom:34.15.0"))
+    "fullImplementation"("com.google.firebase:firebase-analytics")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.10.0")
     implementation("com.google.oboe:oboe:1.10.0")
