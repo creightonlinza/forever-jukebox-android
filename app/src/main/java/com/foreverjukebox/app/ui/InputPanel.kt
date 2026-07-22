@@ -1,7 +1,5 @@
 package com.foreverjukebox.app.ui
 
-import android.app.ActivityManager
-import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,8 +57,6 @@ fun InputPanel(
 ) {
     val context = LocalContext.current
     var pendingDeleteLocalId by remember { mutableStateOf<String?>(null) }
-    val totalRamBytes = remember(context) { resolveTotalRamBytes(context) }
-    val showLowRamWarning = totalRamBytes != null && totalRamBytes < LOW_RAM_WARNING_THRESHOLD_BYTES
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -99,20 +95,6 @@ fun InputPanel(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (showLowRamWarning) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    ) {
-                        Text(
-                            text = "Warning: Local analysis may fail on long tracks; 4GB+ RAM is recommended.",
-                            modifier = Modifier.padding(10.dp),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
                 SubTabCard(
                     label = "Add Audio",
                     icon = Icons.Outlined.AudioFile,
@@ -325,14 +307,4 @@ private fun CompletedAnalysisSortHeaderCell(
             )
         }
     }
-}
-
-private const val LOW_RAM_WARNING_THRESHOLD_BYTES = 4L * 1024L * 1024L * 1024L
-
-private fun resolveTotalRamBytes(context: Context): Long? {
-    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        ?: return null
-    val memoryInfo = ActivityManager.MemoryInfo()
-    activityManager.getMemoryInfo(memoryInfo)
-    return memoryInfo.totalMem.takeIf { it > 0L }
 }

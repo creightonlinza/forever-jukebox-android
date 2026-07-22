@@ -4,11 +4,21 @@ Native Android port (Jetpack Compose) for 1:1 feature parity against the Forever
 
 ## Download
 
-- [GitHub Releases](https://github.com/creightonlinza/forever-jukebox-android/releases/latest)
+- **[FJ Local on Google Play](https://play.google.com/store/apps/details?id=com.foreverjukebox.app.play)** —
+  the official Play Store app. Local mode only: fully on-device analysis and
+  playback, no backend needed.
+- **[Full release on GitHub](https://github.com/creightonlinza/forever-jukebox-android/releases/latest)** —
+  APK with everything in FJ Local plus Server mode (Top Songs, Search, favorites
+  sync) for use with a self-hosted [backend](https://github.com/creightonlinza/forever-jukebox).
 
-## Signature (SHA-256)
+The two builds use different application IDs, so both can be installed side by side.
 
-```bash
+### Full release APK signature (SHA-256)
+
+Verify downloaded APKs against this signing certificate fingerprint
+(applies to GitHub releases; the Play Store app is signed via Play App Signing):
+
+```text
 B5:30:EB:FD:C1:7E:C2:D0:1A:2E:9A:9D:D9:DD:02:CA:5D:2F:E0:7A:E2:C6:E5:F8:45:E7:FF:41:FD:78:B4:4D
 ```
 
@@ -18,8 +28,10 @@ B5:30:EB:FD:C1:7E:C2:D0:1A:2E:9A:9D:D9:DD:02:CA:5D:2F:E0:7A:E2:C6:E5:F8:45:E7:FF
 - Local mode: on-device analysis from audio files, with local caching for faster reloads.
 - Server mode: Music discovery plus Top/Trending/Recent/Favorites flows from API.
 - Visualization layouts, fullscreen, and tuning controls.
+- Autocanonizer playback mode.
+- Chromecast support (both modes) via the relay receiver.
 - Theme toggle (system/light/dark).
-- PCM AudioTrack playback for beat-accurate jumping.
+- Low-latency native PCM playback (Oboe) for beat-accurate jumping.
 
 ## Modes
 
@@ -29,26 +41,29 @@ B5:30:EB:FD:C1:7E:C2:D0:1A:2E:9A:9D:D9:DD:02:CA:5D:2F:E0:7A:E2:C6:E5:F8:45:E7:FF
 - Use the **Input** tab to pick an audio file from the device.
 - Analysis runs fully on-device, then playback uses the native engine/visualization.
 - Results are cached in app cache storage and can be cleared from Settings.
-- Devices with less than 4 GB RAM may fail on longer tracks.
+- Very long tracks that exceed the app's memory budget are rejected with a
+  clear error before analysis starts (the limit scales with the device's
+  per-app heap).
 
 ### Server mode
 
 - Requires a running [backend API + worker](https://github.com/creightonlinza/forever-jukebox).
 - Requires a valid base URL (`http://` or `https://` with a host).
-- Server mode unlocks the **Top Songs** and **Search** tabs, plus server-backed favorites sync and cast workflows.
+- Server mode unlocks the **Top Songs** and **Search** tabs, plus server-backed favorites sync.
 - You can switch modes later from Settings.
 
 ## Running Locally
 
 1. Open this repository root in Android Studio.
-2. Build and install a debug APK:
+2. Build and install a debug APK of the `full` flavor (the `play` flavor is the
+   local-only Play Store build):
 
-```bash
-./gradlew assembleDebug
-```
+   ```bash
+   ./gradlew installFullDebug
+   ```
 
-1. On first launch, choose Local or Server mode.
-2. If you choose Server mode, ensure your API/worker are running and set the API base URL (for example `http://10.0.2.2:8000` on the emulator).
+3. On first launch, choose Local or Server mode.
+4. If you choose Server mode, ensure your API/worker are running and set the API base URL (for example `http://10.0.2.2:8000` on the emulator).
 
 ## Local Mode Native Dependencies
 
