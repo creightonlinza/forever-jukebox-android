@@ -56,6 +56,18 @@ class FormatAndUrlPolicyTest {
     }
 
     @Test
+    fun cleartextWarningFiresOnlyForHttpUrlsWithUnrecognizedHosts() {
+        assertTrue(isCleartextUrlToUnrecognizedHost("http://example.com"))
+        assertTrue(isCleartextUrlToUnrecognizedHost("http://jukebox.mydomain.com:8080"))
+        assertFalse(isCleartextUrlToUnrecognizedHost("https://example.com"))
+        assertFalse(isCleartextUrlToUnrecognizedHost("http://192.168.1.23"))
+        assertFalse(isCleartextUrlToUnrecognizedHost("http://100.101.102.103"))
+        assertFalse(isCleartextUrlToUnrecognizedHost("http://localhost:8080"))
+        assertFalse(isCleartextUrlToUnrecognizedHost("http://jukebox.local"))
+        assertFalse(isCleartextUrlToUnrecognizedHost("not a url"))
+    }
+
+    @Test
     fun baseUrlChangeDetectionUsesNormalizedServerIdentity() {
         assertFalse(
             hasBaseUrlServerChanged(

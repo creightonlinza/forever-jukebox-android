@@ -9,6 +9,7 @@ import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.engine.VisualizationData
+import com.foreverjukebox.app.net.CleartextPolicy
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import java.net.URI
@@ -713,4 +714,19 @@ fun isValidBaseUrl(value: String): Boolean {
     val scheme = parsed.scheme?.lowercase()
     if (scheme != "http" && scheme != "https") return false
     return !parsed.host.isNullOrBlank()
+}
+
+/**
+ * True when [value] is a valid http:// base URL whose host is not recognizably local. Such URLs
+ * are saveable — a public-looking name can still resolve to a private address (split DNS), which
+ * CleartextGuardInterceptor permits — but requests to genuinely public addresses will be blocked,
+ * so the server URL dialogs surface a warning at entry time.
+ */
+fun isCleartextUrlToUnrecognizedHost(value: String): Boolean {
+    val trimmed = value.trim()
+    if (!isValidBaseUrl(trimmed)) return false
+    val parsed = runCatching { URI(trimmed) }.getOrNull() ?: return false
+    if (!parsed.scheme.equals("http", ignoreCase = true)) return false
+    val host = parsed.host ?: return false
+    return !CleartextPolicy.isKnownLocalHost(host)
 }
