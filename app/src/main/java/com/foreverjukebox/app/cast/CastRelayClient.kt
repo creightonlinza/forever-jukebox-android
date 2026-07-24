@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.cast
 
+import com.foreverjukebox.app.net.CleartextGuardInterceptor
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
@@ -175,6 +176,7 @@ class CastRelayClient(
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .addNetworkInterceptor(CleartextGuardInterceptor)
             .build()
 
         /**

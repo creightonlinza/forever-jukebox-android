@@ -1,4 +1,5 @@
 package com.foreverjukebox.app.data
+import com.foreverjukebox.app.net.CleartextGuardInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -343,6 +344,7 @@ class ApiClient(
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
+            .addNetworkInterceptor(CleartextGuardInterceptor)
             .build()
     }
 }

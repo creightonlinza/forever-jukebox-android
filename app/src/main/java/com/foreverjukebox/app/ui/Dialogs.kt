@@ -376,6 +376,13 @@ fun AppModeDialog(
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
+                    if (isCleartextUrlToUnrecognizedHost(trimmedUrl)) {
+                        Text(
+                            "HTTP only works for private/local addresses. Use HTTPS for public servers.",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         }

@@ -212,6 +212,7 @@ extensions.configure<ApplicationExtension>("android") {
             if (hasReleaseSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            // Full-flavor releases override this to "true" in androidComponents below.
             manifestPlaceholders["usesCleartextTraffic"] = "false"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -268,6 +269,12 @@ extensions.configure<ApplicationAndroidComponentsExtension>("androidComponents")
         variant.outputs.forEach { output ->
             output.versionName.set("$ciVersionName-dev")
         }
+    }
+    // Full-flavor releases permit cleartext at the platform layer so self-hosted http:// servers
+    // work in Server mode; CleartextGuardInterceptor restricts http to private/local addresses.
+    // The play flavor has no Server mode and stays https-only.
+    onVariants(selector().withFlavor("distribution", "full").withBuildType("release")) { variant ->
+        variant.manifestPlaceholders.put("usesCleartextTraffic", "true")
     }
 }
 
