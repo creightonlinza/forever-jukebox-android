@@ -7,6 +7,7 @@ import com.foreverjukebox.app.data.AppConfigResponse
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.FavoritesSyncResponse
 import com.foreverjukebox.app.data.GitHubReleaseResponse
+import com.foreverjukebox.app.data.hasApkAsset
 import com.foreverjukebox.app.data.ServerAppConfig
 import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.TopSongItem
@@ -181,7 +182,8 @@ private fun FavoritesSyncResponse.toFavoritesSyncResult(): FavoritesSyncResult {
     )
 }
 
-private fun GitHubReleaseResponse.toReleaseInfo(): ReleaseInfo {
+private fun GitHubReleaseResponse.toReleaseInfo(): ReleaseInfo? {
+    if (!hasApkAsset()) return null
     return ReleaseInfo(
         latestVersion = tagName,
         downloadUrl = htmlUrl

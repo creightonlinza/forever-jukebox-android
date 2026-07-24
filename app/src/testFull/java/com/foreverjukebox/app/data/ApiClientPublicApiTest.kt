@@ -657,7 +657,11 @@ class ApiClientPublicApiTest {
                     """
                     {
                       "tag_name": "v1.2.3",
-                      "html_url": "https://github.com/forever-jukebox/forever-jukebox-android/releases/tag/v1.2.3"
+                      "html_url": "https://github.com/forever-jukebox/forever-jukebox-android/releases/tag/v1.2.3",
+                      "assets": [
+                        {"name": "mapping.txt"},
+                        {"name": "forever-jukebox-v1.2.3.apk"}
+                      ]
                     }
                     """.trimIndent()
                 )
@@ -675,6 +679,7 @@ class ApiClientPublicApiTest {
         assertEquals("2022-11-28", request.getHeader("X-GitHub-Api-Version"))
         assertEquals("ForeverJukebox-Android", request.getHeader("User-Agent"))
         assertEquals("v1.2.3", response.tagName)
+        assertEquals(listOf("mapping.txt", "forever-jukebox-v1.2.3.apk"), response.assets.map { it.name })
     }
 
     @Test
