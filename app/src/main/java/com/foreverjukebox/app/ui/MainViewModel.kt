@@ -1465,10 +1465,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun selectServerTrackInternal(
         trackId: String,
-        title: String? = null,
-        artist: String? = null,
-        tuningParams: String? = null,
-        playMode: FavoritePlayMode? = null
+        title: String?,
+        artist: String?,
+        tuningParams: String?,
+        playMode: FavoritePlayMode?
     ) {
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams, playMode)
@@ -2287,7 +2287,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun logPlayStarted() {
         val playback = state.value.playback
-        val trackId = playback.analyticsPlayTrackId() ?: return
+        val trackId = playback.analyticsPlayTrackId()
+        if (trackId == null) {
+            // A track with no analytics id (e.g. a local upload) is now playing. Clear the dedup
+            // key so a later replay of a previously-logged track is not mistaken for a resume.
+            lastLoggedPlayKey = null
+            return
+        }
         val mode = analyticsPlayMode(playback.playMode)
         val key = "$mode:$trackId"
         if (lastLoggedPlayKey == key) return
