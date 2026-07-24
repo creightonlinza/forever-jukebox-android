@@ -293,7 +293,13 @@ detekt {
     ignoreFailures = false
 }
 
-tasks.named("preBuild").configure {
+// Attach the native-lib download to the tasks that actually consume the staged
+// jniLibs (merge<Variant>JniLibFolders / merge<Variant>NativeLibs) rather than the
+// broad preBuild anchor, so lint/detekt-only runs don't trigger the download.
+tasks.matching { task ->
+    task.name.startsWith("merge") &&
+        (task.name.endsWith("JniLibFolders") || task.name.endsWith("NativeLibs"))
+}.configureEach {
     dependsOn(prepareMadmomBeatsPortFfiJniLibs)
 }
 
