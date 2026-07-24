@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "172259445820",
+    "project_id": "forever-jukebox",
+    "storage_bucket": "forever-jukebox.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:172259445820:android:ded23db08b7ee7d32f4739",
+        "android_client_info": {
+          "package_name": "com.foreverjukebox.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDULV1n_IzTHwJ4Lq_svE8kLBdamknVueg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

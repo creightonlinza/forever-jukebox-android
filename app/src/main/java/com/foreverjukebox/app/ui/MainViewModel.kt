@@ -295,6 +295,7 @@ private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotB
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val serverGateway = createServerGateway()
+    private val analytics = createAnalyticsGateway(application)
     private val controller = PlaybackControllerHolder.get(application)
     private val engine = controller.engine
     private val defaultConfig = engine.getConfig()
@@ -903,6 +904,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startLocalAnalysis(uri: Uri, displayName: String?) {
         if (blockPlaybackChangeWhileLoading()) return
+        analytics.logUpload("file")
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         localAnalysisCoordinator.startLocalAnalysis(uri, displayName)
     }
@@ -1418,6 +1420,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     favorites + newFavorite,
                     fromListenToggle = syncFromListenToggle
                 )
+                analytics.logFavorite(currentCanonicalId, title)
                 FavoriteToggleResult.Added
             }
         }
@@ -1444,6 +1447,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun runSpotifySearch(query: String) {
+        query.trim().takeIf { it.isNotEmpty() }?.let(analytics::logSearch)
         searchCoordinator.runSpotifySearch(query)
     }
 
@@ -1455,6 +1459,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playMode: FavoritePlayMode? = null
     ) {
         if (blockPlaybackChangeWhileLoading()) return
+        analytics.logSelectTrack(analyticsSelectSource(state.value.topSongsTab), trackId, title)
+        selectServerTrackInternal(trackId, title, artist, tuningParams, playMode)
+    }
+
+    private fun selectServerTrackInternal(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        tuningParams: String? = null,
+        playMode: FavoritePlayMode? = null
+    ) {
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams, playMode)
         if (track != null && state.value.playlist.isActive()) {
@@ -1476,11 +1491,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playMode: FavoritePlayMode? = null
     ) {
         if (blockPlaybackChangeWhileLoading()) return
+        analytics.logSelectTrack("favorites", trackId, title)
         // Restore the play mode the track was favorited in before loading so the
         // track opens in jukebox or autocanonizer accordingly. Legacy favorites
         // (null playMode) fall back to jukebox.
         setPlaybackMode(playMode.toPlaybackMode())
-        selectServerPlaylistTrack(trackId, title, artist, tuningParams, playMode)
+        selectServerTrackInternal(trackId, title, artist, tuningParams, playMode)
     }
 
     fun addServerTrackToPlaylist(
@@ -1532,6 +1548,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
         }
+        // Spotify picks have no YouTube id yet, so track_id is omitted (matches web).
+        analytics.logSelectTrack("search", null, analyticsSearchResultTitle(name, artist))
         remoteTrackLoadCoordinator.launch {
             if (artist.isNotBlank()) {
                 try {
@@ -1597,6 +1615,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (showTrackLengthLimitIfExceeded(duration)) {
             return
         }
+        analytics.logSelectTrack(
+            "search",
+            selection.youtubeId,
+            analyticsSearchResultTitle(selection.title, selection.artist)
+        )
         startYoutubeAnalysis(selection.youtubeId, selection.title, selection.artist)
     }
 
@@ -2258,6 +2281,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return false
     }
 
+    // Refires only when the mode or track changes, never on pause/resume,
+    // matching the web app's play-event dedup.
+    private var lastLoggedPlayKey: String? = null
+
+    private fun logPlayStarted() {
+        val playback = state.value.playback
+        val trackId = playback.analyticsPlayTrackId() ?: return
+        val mode = analyticsPlayMode(playback.playMode)
+        val key = "$mode:$trackId"
+        if (lastLoggedPlayKey == key) return
+        lastLoggedPlayKey = key
+        analytics.logPlay(mode, trackId, playback.trackTitle?.takeIf { it.isNotBlank() })
+    }
+
     fun togglePlayback() {
         val current = state.value.playback
         if (blockPlaybackChangeWhileLoading(showToast = false)) return
@@ -2298,6 +2335,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!sent) {
             viewModelScope.launch { showToast("Connect to a Cast device first.") }
             return
+        }
+        if (command == "play") {
+            logPlayStarted()
         }
         _state.update {
             it.copy(
@@ -2340,6 +2380,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 when {
                     running -> {
+                        logPlayStarted()
                         playbackCoordinator.clearAnalysisErrorForPlaybackStart()
                         playbackCoordinator.startListenTimer()
                         syncPlaybackServiceSession()
@@ -2472,6 +2513,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
+            logPlayStarted()
             playbackCoordinator.startListenTimer()
             syncPlaybackServiceSession()
         }
@@ -2870,6 +2912,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val selection = seekOrStartJukeboxAtBeat(controller, index, data)
         if (!selection.success) return
         if (selection.startedPlayback) {
+            logPlayStarted()
             playbackCoordinator.startListenTimer()
             playbackCoordinator.updateListenTimeDisplay()
             syncPlaybackServiceSession()
@@ -2992,7 +3035,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun buildShareUrl(): String? {
-        return listenLinkCoordinator.buildShareUrl()
+        val url = listenLinkCoordinator.buildShareUrl() ?: return null
+        // Web logs share on clipboard copy; the Android equivalent is handing
+        // the link to the share sheet, which the sole caller does with this url.
+        state.value.playback.shareTrackIdOrNull()?.let(analytics::logShare)
+        return url
     }
 
     fun applyTuning(
