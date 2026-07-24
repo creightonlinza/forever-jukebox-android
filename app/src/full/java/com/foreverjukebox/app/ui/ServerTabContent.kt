@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
+import coil3.compose.setSingletonImageLoaderFactory
 import com.foreverjukebox.app.data.TOP_SONGS_LIMIT
 
 @Composable
@@ -12,6 +13,10 @@ fun ServerTabContent(
     state: UiState,
     viewModel: MainViewModel
 ) {
+    // Route Coil's remote image loads (album art, YouTube thumbnails) through the cleartext guard.
+    // setSafe under the hood, so this is idempotent across recompositions and runs before the
+    // AsyncImage children in the Search tab compose. AsyncImage is only used within this subtree.
+    setSingletonImageLoaderFactory(::guardedImageLoader)
     val context = LocalContext.current
     when (tabId) {
         TabId.Top -> TopSongsPanel(

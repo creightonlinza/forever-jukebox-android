@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.HttpStatusException
 import java.io.IOException
+import java.net.UnknownServiceException
 import kotlinx.coroutines.delay
 
 internal const val REMOTE_LOAD_RETRY_MAX_ATTEMPTS = 4
@@ -15,6 +16,10 @@ internal fun shouldRetryRemoteLoadFailure(error: IOException): Boolean {
                 error.statusCode == 429 ||
                 error.statusCode >= 500
         }
+        // CleartextGuardInterceptor throws this for http requests to disallowed (public)
+        // addresses. It is a deterministic policy rejection, not a transient failure, so
+        // retrying only wastes backoff time before surfacing the same error.
+        is UnknownServiceException -> false
         else -> true
     }
 }
@@ -40,7 +45,7 @@ internal suspend fun <T> retryTransientRemoteLoad(
                 throw error
             }
         } catch (error: IOException) {
-            if (attempt >= maxAttempts) {
+            if (attempt >= maxAttempts || !shouldRetryRemoteLoadFailure(error)) {
                 throw error
             }
         }
