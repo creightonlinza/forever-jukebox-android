@@ -2,7 +2,7 @@ package com.foreverjukebox.app.ui
 
 /**
  * Usage analytics events shared with the web app's GA4 event dictionary: play,
- * search, select_track, favorite, share, upload, audio_mode, tune. Event names,
+ * search, select_track, favorite, share, upload, audio_mode, tune, select_viz. Event names,
  * parameter names, and string values must stay identical to the web app so both
  * platforms aggregate under the same GA4 property. Parameter values are strings
  * with one exception — audio_intensity is numeric so GA4 aggregates it as a
@@ -20,6 +20,10 @@ interface AnalyticsGateway {
     fun logUpload(method: String)
     fun logAudioMode(audioMode: String, intensity: Int?)
     fun logTune(control: String)
+
+    // `viz` carries the layout's hardcoded English label, never its list index: either
+    // platform reordering its visualizations would silently remap index-based history.
+    fun logSelectViz(viz: String)
     fun logCastStart(mode: String)
 }
 

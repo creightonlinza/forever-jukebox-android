@@ -1,10 +1,24 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.visualization.visualizationLabels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnalyticsEventMappingTest {
+
+    // These labels are the `viz` param values, shared verbatim with the web app. Adding a
+    // seventh visualization is fine; renaming one of these six splits the GA4 dimension into
+    // rows that never merge, and no backfill can repair it.
+    @Test
+    fun visualizationLabelsKeepTheSharedWebSpellings() {
+        assertTrue(
+            visualizationLabels.containsAll(
+                listOf("Arc", "Classic", "Galaxy", "Grid", "Infinite", "Wave")
+            )
+        )
+    }
 
     @Test
     fun playModeMapsToWebEventValues() {

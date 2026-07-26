@@ -35,6 +35,7 @@ import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.playback.PlaybackStartResult
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
+import com.foreverjukebox.app.visualization.visualizationLabels
 import com.foreverjukebox.app.cast.CastRelayClient
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -2975,6 +2976,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setActiveVisualization(index: Int) {
         if (index !in 0 until visualizationCount) {
             return
+        }
+        // Only the picker's onClick handlers call this. The saved-preference collector and
+        // cast status sync write activeVizIndex straight to state, so restores, initial
+        // render, and rotation never log. Re-picking the active entry isn't a change.
+        if (index != state.value.playback.activeVizIndex) {
+            visualizationLabels.getOrNull(index)?.let(analytics::logSelectViz)
         }
         _state.update { it.copy(playback = it.playback.copy(activeVizIndex = index)) }
         viewModelScope.launch {

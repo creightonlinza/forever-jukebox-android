@@ -46,6 +46,10 @@ private class FullAnalyticsGateway(context: Context) : AnalyticsGateway {
         log("tune", "control" to control)
     }
 
+    override fun logSelectViz(viz: String) {
+        log("select_viz", "viz" to viz)
+    }
+
     override fun logCastStart(mode: String) {
         log("cast_start", "mode" to mode)
     }
