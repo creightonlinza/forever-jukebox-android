@@ -55,6 +55,32 @@ internal fun buildCastAudioModeResetParams(currentAudioModeWireValue: String): S
     return if (alreadyOff) null else TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Off)
 }
 
+/**
+ * Normalizes the tuning dialog's fraction-scaled values into the percent-scaled fields
+ * TuningState stores. Shared by the cast update builder and the `tune` analytics diff so
+ * the two can never disagree about whether a control actually changed.
+ */
+internal fun TuningState.withAppliedTuning(
+    threshold: Int,
+    minProb: Double,
+    maxProb: Double,
+    ramp: Double,
+    highlightAnchorBranch: Boolean,
+    justBackwards: Boolean,
+    minJumpDistancePercent: Int,
+    removeSequentialBranches: Boolean,
+    randomBranchDeltaPercentScale: Double
+): TuningState = copy(
+    threshold = threshold.coerceAtLeast(2),
+    minProb = (minProb * 100.0).roundToInt().coerceIn(0, 100),
+    maxProb = (maxProb * 100.0).roundToInt().coerceIn(0, 100),
+    ramp = (ramp * randomBranchDeltaPercentScale).roundToInt().coerceIn(0, 100),
+    highlightAnchorBranch = highlightAnchorBranch,
+    justBackwards = justBackwards,
+    minJumpDistancePercent = minJumpDistancePercent,
+    removeSequential = removeSequentialBranches
+)
+
 internal fun buildCastTuningUpdate(
     currentTuning: TuningState,
     currentAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
@@ -73,15 +99,16 @@ internal fun buildCastTuningUpdate(
     audioModeWireValue: String = audioMode.wireValue,
     audioModeIntensity: Int = AudioModeIntensity.DEFAULT
 ): CastTuningUpdate {
-    val nextTuning = currentTuning.copy(
-        threshold = threshold.coerceAtLeast(2),
-        minProb = (minProb * 100.0).roundToInt().coerceIn(0, 100),
-        maxProb = (maxProb * 100.0).roundToInt().coerceIn(0, 100),
-        ramp = (ramp * randomBranchDeltaPercentScale).roundToInt().coerceIn(0, 100),
+    val nextTuning = currentTuning.withAppliedTuning(
+        threshold = threshold,
+        minProb = minProb,
+        maxProb = maxProb,
+        ramp = ramp,
         highlightAnchorBranch = highlightAnchorBranch,
         justBackwards = justBackwards,
         minJumpDistancePercent = minJumpDistancePercent,
-        removeSequential = removeSequentialBranches
+        removeSequentialBranches = removeSequentialBranches,
+        randomBranchDeltaPercentScale = randomBranchDeltaPercentScale
     )
     val params = mutableListOf<String>()
     if (currentTuning.justBackwards != nextTuning.justBackwards) {

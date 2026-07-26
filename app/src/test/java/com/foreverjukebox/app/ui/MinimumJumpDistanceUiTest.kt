@@ -22,6 +22,14 @@ class MinimumJumpDistanceUiTest {
         assertEquals(0, minJumpDistanceIndexForPercent(15))
     }
 
+    // The `tune` analytics diff compares minJumpDistancePercent with a plain !=, which is only
+    // safe while every stored percent is a slider option: a stored non-snap value would survive
+    // an untouched Apply as a phantom min_branch_length change.
+    @Test
+    fun sliderOptionsCoverEveryStorableBranchLength() {
+        assertEquals(ALLOWED_BRANCH_LENGTHS + 0, MIN_JUMP_DISTANCE_OPTIONS.toSet())
+    }
+
     @Test
     fun labelsUseStrictGreaterThanDisplay() {
         assertEquals(
