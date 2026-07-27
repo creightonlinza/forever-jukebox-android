@@ -1,6 +1,6 @@
 import com.android.build.api.dsl.ApplicationExtension
-import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
 import org.gradle.api.file.Directory
 import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Provider
@@ -21,14 +21,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
     id("io.gitlab.arturbosch.detekt")
 
-    id("io.sentry.android.gradle") version "6.12.0"
     id("com.google.gms.google-services")
-}
-
-googleServices {
-    // google-services.json lives in src/full/ only; the play flavor has no
-    // Firebase and must build without a config file.
-    missingGoogleServicesStrategy = MissingGoogleServicesStrategy.IGNORE
+    id("com.google.firebase.crashlytics")
 }
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -218,6 +212,12 @@ extensions.configure<ApplicationExtension>("android") {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Crashlytics mapping upload is automatic for minified builds; native
+            // symbol upload only runs via the explicit
+            // uploadCrashlyticsSymbolFile<Variant> task (wired in CI release jobs).
+            configure<CrashlyticsExtension> {
+                nativeSymbolUploadEnabled = true
+            }
         }
     }
 
@@ -329,48 +329,21 @@ dependencies {
     // only. The play flavor is local-only and never fetches remote images.
     "fullImplementation"("io.coil-kt.coil3:coil-compose:3.4.0")
     "fullImplementation"("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
-    // Firebase (Analytics) is full-flavor only; the play flavor ships with no
-    // Firebase code and no google-services.json.
-    "fullImplementation"(platform("com.google.firebase:firebase-bom:34.15.0"))
-    "fullImplementation"("com.google.firebase:firebase-analytics")
+    // Firebase in both flavors: Crashlytics for crash/non-fatal reporting (-ndk
+    // covers native crashes in the Essentia/madmom/Oboe JNI code) and Analytics
+    // for the GA4 web-parity events (AnalyticsGateway) plus lifecycle
+    // diagnostics events (DiagnosticsGateway).
+    implementation(platform("com.google.firebase:firebase-bom:34.15.0"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-crashlytics")
+    implementation("com.google.firebase:firebase-crashlytics-ndk")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.10.0")
     implementation("com.google.oboe:oboe:1.10.0")
     implementation("com.google.android.gms:play-services-cast-framework:22.2.0")
 
-    // Sentry: crash (JVM + native) and error reporting only. Auto-installation of
-    // classpath-detected integrations is disabled in the sentry {} block below.
-    implementation("io.sentry:sentry-android-core:8.44.0")
-    implementation("io.sentry:sentry-android-ndk:8.44.0")
-
     debugImplementation("androidx.compose.ui:ui-tooling:1.10.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
-}
-
-
-sentry {
-    org.set("forever-jukebox")
-    projectName.set("android")
-
-    // this will upload your source code to Sentry to show it as part of the stack traces
-    // disable if you don't want to expose your sources
-    includeSourceContext.set(true)
-
-    // Don't auto-add SDK integrations based on classpath detection (okhttp, fragment,
-    // compose, navigation, session replay). We declare exactly what we need below:
-    // sentry-android-core (JVM crashes + errors + structured logs) and sentry-android-ndk
-    // (native crashes). Keeps the footprint to crash/error reporting only.
-    autoInstallation {
-        enabled.set(false)
-    }
-
-    // Disable build-time bytecode instrumentation (OkHttp/Room/file-IO performance spans).
-    // Without this, the plugin rewrites OkHttpClient to call io.sentry.okhttp classes that
-    // are no longer on the classpath (autoInstallation off) -> ClassNotFoundException at
-    // runtime. We don't use performance tracing, so this is off entirely.
-    tracingInstrumentation {
-        enabled.set(false)
-    }
 }

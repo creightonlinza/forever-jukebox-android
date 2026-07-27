@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.net.toUri
+import com.foreverjukebox.app.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -292,7 +293,7 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
                         maxConsecutiveTryAgain = max(maxConsecutiveTryAgain, consecutiveTryAgain)
                         if (tryAgainLaterCount % 500 == 0) {
                             val stalledMs = SystemClock.elapsedRealtime() - lastOutputAtMs
-                            Log.w(
+                            AppLog.warn(
                                 TAG,
                                 "Decoder waiting for output: tries=$tryAgainLaterCount, stalledMs=$stalledMs, inputDone=$inputDone, queued=$queuedInputBuffers, drained=$drainedOutputBuffers, heap=${heapSummary()}"
                             )
@@ -455,7 +456,7 @@ class LocalAudioDecoder(private val context: Context) : LocalAudioDecoderPort {
         val maxSamples = maxFullRateSamplesForHeap()
         if (estimatedSamples > maxSamples.toDouble()) {
             val maxMinutes = (maxSamples.toDouble() / sampleRate.toDouble() / 60.0)
-            Log.w(
+            AppLog.warn(
                 TAG,
                 "Rejecting track over memory budget: estSamples=${estimatedSamples.toLong()}, " +
                     "maxSamples=$maxSamples, sampleRate=$sampleRate, heap=${heapSummary()}"

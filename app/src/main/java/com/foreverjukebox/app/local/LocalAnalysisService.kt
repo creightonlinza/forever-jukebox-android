@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.net.toUri
+import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -411,7 +412,7 @@ class LocalAnalysisService(
         }
 
         private fun logError(message: String, error: Throwable? = null) {
-            runCatching { Log.e(TAG, message, error) }
+            runCatching { AppLog.error(TAG, message, error) }
         }
 
         private fun extractTrackField(analysisJson: JsonElement, field: String): String? {
