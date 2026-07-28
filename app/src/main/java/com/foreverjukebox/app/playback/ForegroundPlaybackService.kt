@@ -36,6 +36,7 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import com.foreverjukebox.app.ui.JukeboxAudioMode
+import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.MainActivity
 import com.foreverjukebox.app.R
 import com.foreverjukebox.app.ui.CastController
@@ -719,7 +720,7 @@ class ForegroundPlaybackService : Service() {
                 if (isForegroundStartDenied(error)) {
                     // Android can reject entering foreground if the app is background-restricted.
                     // Avoid crashing the process; drop this notification update.
-                    Log.w(
+                    AppLog.warn(
                         TAG,
                         "Foreground start denied for playback notification update.",
                         error

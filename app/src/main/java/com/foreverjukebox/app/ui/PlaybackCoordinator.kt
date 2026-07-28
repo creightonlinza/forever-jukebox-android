@@ -489,7 +489,8 @@ class PlaybackCoordinator(
     // a non-transient error). Transient codec/OOM failures are handled by the caller without
     // deleting the file — see tryLoadCachedTrack and isTransientDecodeError.
     private suspend fun discardUnusableCachedAudio(jobId: String, error: Throwable) {
-        AppLog.warn(TAG, "Discarding unusable cached audio for $jobId", error)
+        // error (not warn): deletes the user's cached audio, so record the cause.
+        AppLog.error(TAG, "Discarding unusable cached audio for $jobId", error)
         controller.player.clear()
         withContext(Dispatchers.IO) {
             ignoreFailures { audioFile(jobId).delete() }
@@ -931,7 +932,7 @@ class PlaybackCoordinator(
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (error: IOException) {
-            AppLog.warn(TAG, "Failed to load audio for $jobId", error)
+            AppLog.error(TAG, "Failed to load audio for $jobId", error)
             updatePlaybackState { it.copy(audioLoading = false, audioLoaded = false) }
             syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
             false

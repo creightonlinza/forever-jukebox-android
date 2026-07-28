@@ -88,14 +88,13 @@ This non-commercial nature is relevant to the madmom terms noted below.
   (`com.google.android.gms:play-services-cast-framework`), distributed under the
   Google Play Services SDK terms; bundled third-party notices ship within the
   AAR. Copyright © Google LLC.
-
-### MIT License
-
-- **Sentry Android SDK** (`io.sentry:sentry-android-core`,
-  `sentry-android-ndk`) — crash and error reporting. Copyright © Sentry
-  (Functional Software, Inc.) and contributors. Note: this SDK collects crash
-  and device diagnostic data; see the app's Play Data Safety disclosure /
-  privacy policy.
+- **Firebase Android SDK** (`com.google.firebase:firebase-crashlytics`,
+  `firebase-crashlytics-ndk`, `firebase-analytics`) — crash reporting and
+  diagnostics analytics. Open-source components are Apache-2.0; Google-hosted
+  service components are distributed under the Google APIs / Firebase terms,
+  with bundled notices inside the AARs. Copyright © Google LLC. Note: these
+  SDKs collect crash and device diagnostic data; see the app's Play Data
+  Safety disclosure / privacy policy.
 
 ---
 

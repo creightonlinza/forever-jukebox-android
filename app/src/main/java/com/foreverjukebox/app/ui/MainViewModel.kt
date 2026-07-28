@@ -49,6 +49,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -293,10 +295,18 @@ private fun buildPlaybackTitle(
 
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
+private data class CrashContextKeys(
+    val appMode: String,
+    val playMode: String,
+    val casting: String,
+    val viz: String
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = AppPreferences(application)
     private val serverGateway = createServerGateway()
     private val analytics = createAnalyticsGateway(application)
+    private val diagnostics = createDiagnosticsGateway(application)
     private val controller = PlaybackControllerHolder.get(application)
     private val engine = controller.engine
     private val defaultConfig = engine.getConfig()
@@ -378,7 +388,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             hydrateSavedPlaylistIfInactive()
         },
         applyActiveTab = ::applyActiveTab,
-        logError = { message, error -> AppLog.warn(TAG, message, error) }
+        // error (not warn): local analysis failure is the core on-device path and this
+        // lambda holds the real exception; the surfaced-message non-fatal from
+        // PlaybackCoordinator.setAnalysisError has no stack trace.
+        logError = { message, error -> AppLog.error(TAG, message, error) },
+        diagnostics = diagnostics
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
@@ -464,6 +478,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             playbackServiceEvents,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        // Crash-context keys are derived from state in one place rather than at
+        // each mutation site, so every writer of these fields is covered.
+        viewModelScope.launch {
+            state.map { current ->
+                CrashContextKeys(
+                    appMode = when (current.appMode) {
+                        AppMode.Local -> "local"
+                        AppMode.Server -> "server"
+                        null -> "unset"
+                    },
+                    playMode = analyticsPlayMode(current.playback.playMode),
+                    casting = current.playback.isCasting.toString(),
+                    viz = visualizationLabels.getOrNull(current.playback.activeVizIndex).orEmpty()
+                )
+            }.distinctUntilChanged().collect { keys ->
+                diagnostics.setCrashKey("app_mode", keys.appMode)
+                diagnostics.setCrashKey("play_mode", keys.playMode)
+                diagnostics.setCrashKey("casting", keys.casting)
+                diagnostics.setCrashKey("viz", keys.viz)
+            }
+        }
         viewModelScope.launch {
             preferences.appMode.collect { mode ->
                 val effectiveMode = if (BuildConfig.SERVER_MODE_AVAILABLE) {
@@ -1986,16 +2021,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         showServerTrackLengthLimitError()
                         return@launchCastSelection
                     }
-                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
+                    AppLog.error(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 } catch (error: IOException) {
-                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
+                    AppLog.error(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 } catch (error: IllegalArgumentException) {
-                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
+                    AppLog.error(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 } catch (error: IllegalStateException) {
-                    AppLog.warn(TAG, "Failed to resolve source for cast", error)
+                    AppLog.error(TAG, "Failed to resolve source for cast", error)
                     showToast("Unable to queue this track for casting.")
                 }
             }
@@ -2227,28 +2262,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (cachedJobId != null && playbackCoordinator.tryLoadCachedTrack(cachedJobId)) {
                 return@launch
             }
+            diagnostics.logAnalysisStarted("server")
             playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
             try {
                 val handled = request()
-                if (!handled) {
+                if (handled) {
+                    diagnostics.logAnalysisCompleted("server")
+                } else {
+                    diagnostics.logAnalysisFailed("server", "unhandled")
                     playbackCoordinator.setAnalysisError("Loading failed.")
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: HttpStatusException) {
                 if (error.statusCode == 422) {
+                    diagnostics.logAnalysisFailed("server", "track_length_limit")
                     showServerTrackLengthLimitError()
                 } else {
+                    diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                     AppLog.warn(TAG, failureLogMessage, error)
                     playbackCoordinator.setAnalysisError("Loading failed.")
                 }
             } catch (error: IOException) {
+                diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                 AppLog.warn(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalArgumentException) {
+                diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                 AppLog.warn(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             } catch (error: IllegalStateException) {
+                diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                 AppLog.warn(TAG, failureLogMessage, error)
                 playbackCoordinator.setAnalysisError("Loading failed.")
             }
@@ -2551,6 +2595,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val playback = state.value.playback
         if (isConnected && !playback.isCasting) {
             analytics.logCastStart(analyticsPlayMode(playback.playMode))
+            diagnostics.logCastConnected(analyticsPlayMode(playback.playMode))
+        }
+        if (!isConnected && playback.isCasting) {
+            diagnostics.logCastDisconnected()
         }
         castSessionCoordinator.setCastingConnected(isConnected, deviceName)
     }

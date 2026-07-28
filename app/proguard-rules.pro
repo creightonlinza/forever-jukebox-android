@@ -20,9 +20,8 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-# Sentry initializes SDK pieces reflectively from manifest metadata.
--keep class io.sentry.** { *; }
--dontwarn io.sentry.**
+# Crashlytics: keep file/line info so deobfuscated stack traces stay readable.
+-keepattributes SourceFile,LineNumberTable
 
 # Full release artifact verification needs these server-only names to remain
 # inspectable. Play release cannot keep them because the classes are not compiled.

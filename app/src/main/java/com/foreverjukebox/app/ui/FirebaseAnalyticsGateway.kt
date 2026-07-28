@@ -4,10 +4,13 @@ import android.content.Context
 import android.os.Bundle
 import com.google.firebase.analytics.FirebaseAnalytics
 
-fun createAnalyticsGateway(context: Context): AnalyticsGateway = FullAnalyticsGateway(context)
+fun createAnalyticsGateway(context: Context): AnalyticsGateway = FirebaseAnalyticsGateway(context)
 
-private class FullAnalyticsGateway(context: Context) : AnalyticsGateway {
-    private val firebase = FirebaseAnalytics.getInstance(context.applicationContext)
+private class FirebaseAnalyticsGateway(context: Context) : AnalyticsGateway {
+    // getInstance() throws if FirebaseApp isn't initialized (true on the JVM
+    // unit-test classpath), so analytics degrade to no-ops there.
+    private val firebase: FirebaseAnalytics? =
+        runCatching { FirebaseAnalytics.getInstance(context.applicationContext) }.getOrNull()
 
     override fun logPlay(mode: String, trackId: String, trackTitle: String?) {
         log("play", "mode" to mode, "track_id" to trackId, "track_title" to trackTitle)
@@ -36,10 +39,11 @@ private class FullAnalyticsGateway(context: Context) : AnalyticsGateway {
     // Built inline rather than through log(): audio_intensity must be a Long so GA4
     // registers it as a metric, and the shared helper is string-only by design.
     override fun logAudioMode(audioMode: String, intensity: Int?) {
+        val analytics = firebase ?: return
         val bundle = Bundle()
         bundle.putString("audio_mode", audioMode)
         intensity?.let { bundle.putLong("audio_intensity", it.toLong()) }
-        firebase.logEvent("audio_mode", bundle)
+        analytics.logEvent("audio_mode", bundle)
     }
 
     override fun logTune(control: String) {
@@ -55,12 +59,13 @@ private class FullAnalyticsGateway(context: Context) : AnalyticsGateway {
     }
 
     private fun log(event: String, vararg params: Pair<String, String?>) {
+        val analytics = firebase ?: return
         val bundle = Bundle()
         for ((key, value) in params) {
             if (!value.isNullOrBlank()) {
                 bundle.putString(key, value)
             }
         }
-        firebase.logEvent(event, bundle)
+        analytics.logEvent(event, bundle)
     }
 }

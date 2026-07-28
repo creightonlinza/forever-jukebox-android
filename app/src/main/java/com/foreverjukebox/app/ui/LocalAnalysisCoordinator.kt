@@ -31,7 +31,8 @@ class LocalAnalysisCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
-    private val logError: (String, Throwable) -> Unit
+    private val logError: (String, Throwable) -> Unit,
+    private val diagnostics: DiagnosticsGateway
 ) {
     private var localAnalysisJob: Job? = null
 
@@ -41,10 +42,12 @@ class LocalAnalysisCoordinator(
         uri: Uri,
         displayName: String?,
         initialArtist: String? = null,
-        playAfterLoaded: Boolean = false
+        playAfterLoaded: Boolean = false,
+        source: String = "file"
     ) {
         val state = getState()
         if (state.appMode != AppMode.Local) return
+        diagnostics.logAnalysisStarted(source)
         if (shouldCancelLocalAnalysisOnInputChange(
                 mode = state.appMode,
                 isLocalAnalysisRunning = isAnalysisRunning()
@@ -81,6 +84,7 @@ class LocalAnalysisCoordinator(
                             playbackCoordinator.setAnalysisProgress(update.percent, update.status)
                         }
                         is LocalAnalysisUpdate.Completed -> {
+                            diagnostics.logAnalysisCompleted(source)
                             applyLocalAnalysisArtifact(update.artifact)
                         }
                     }
@@ -88,42 +92,41 @@ class LocalAnalysisCoordinator(
             } catch (_: CancellationException) {
                 // No-op: user cancelled.
             } catch (_: UnsupportedAudioFormatException) {
+                diagnostics.logAnalysisFailed(source, "unsupported_format")
                 playbackCoordinator.setAnalysisError("Unsupported audio format")
                 applyActiveTab(TabId.Input, true)
             } catch (error: AudioTooLargeException) {
+                diagnostics.logAnalysisFailed(source, "too_large")
                 playbackCoordinator.setAnalysisError(
                     ErrorDisplay.clean(error.message, "This track is too large to analyze on this device.")
                 )
                 applyActiveTab(TabId.Input, true)
             } catch (error: NativeLocalAnalysisNotReadyException) {
+                diagnostics.logAnalysisFailed(source, "native_not_ready")
                 playbackCoordinator.setAnalysisError(
                     ErrorDisplay.clean(error.message, "Native local analysis is unavailable.")
                 )
                 applyActiveTab(TabId.Input, true)
             } catch (error: IOException) {
-                logError("Local analysis failed", error)
-                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
-                playbackCoordinator.setAnalysisError(message)
-                applyActiveTab(TabId.Input, true)
+                handleAnalysisFailure(source, error)
             } catch (error: IllegalArgumentException) {
-                logError("Local analysis failed", error)
-                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
-                playbackCoordinator.setAnalysisError(message)
-                applyActiveTab(TabId.Input, true)
+                handleAnalysisFailure(source, error)
             } catch (error: IllegalStateException) {
-                logError("Local analysis failed", error)
-                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
-                playbackCoordinator.setAnalysisError(message)
-                applyActiveTab(TabId.Input, true)
+                handleAnalysisFailure(source, error)
             } catch (error: SecurityException) {
-                logError("Local analysis failed", error)
-                val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
-                playbackCoordinator.setAnalysisError(message)
-                applyActiveTab(TabId.Input, true)
+                handleAnalysisFailure(source, error)
             } finally {
                 localAnalysisJob = null
             }
         }
+    }
+
+    private fun handleAnalysisFailure(source: String, error: Throwable) {
+        diagnostics.logAnalysisFailed(source, error.javaClass.simpleName)
+        logError("Local analysis failed", error)
+        val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
+        playbackCoordinator.setAnalysisError(message)
+        applyActiveTab(TabId.Input, true)
     }
 
     fun openCachedLocalTrack(
@@ -157,7 +160,8 @@ class LocalAnalysisCoordinator(
                 uri = sourceUri.toUri(),
                 displayName = cachedTrack.title,
                 initialArtist = cachedTrack.artist,
-                playAfterLoaded = playAfterLoaded
+                playAfterLoaded = playAfterLoaded,
+                source = "cached"
             )
         }
     }

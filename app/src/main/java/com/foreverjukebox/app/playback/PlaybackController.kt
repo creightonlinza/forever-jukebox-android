@@ -142,7 +142,7 @@ class PlaybackController {
     private fun beginPlayback(resetFromStart: Boolean, requestFocus: Boolean = true): PlaybackStartResult {
         if (!player.hasAudio()) {
             transportState = TransportState.Stopped
-            AppLog.warn(TAG, "Jukebox playback start failed: no audio in player")
+            AppLog.error(TAG, "Jukebox playback start failed: no audio in player")
             return PlaybackStartResult.NoAudio
         }
         if (requestFocus) {
@@ -161,7 +161,7 @@ class PlaybackController {
                 }
                 AudioFocusRequestResult.Denied -> {
                     transportState = TransportState.Stopped
-                    AppLog.warn(TAG, "Jukebox playback start failed: audio focus denied")
+                    AppLog.error(TAG, "Jukebox playback start failed: audio focus denied")
                     return PlaybackStartResult.FocusDenied
                 }
             }
