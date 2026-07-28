@@ -44,6 +44,14 @@ class AnalyticsEventMappingTest {
     }
 
     @Test
+    fun playTitleIsOmittedForOnDeviceTracksAndKeptForServerTracks() {
+        assertNull(analyticsPlayTrackTitle("local-a3f3c0dc73c6476c9db95c227f9206f2", "My Song.mp3"))
+        assertEquals("Never Gonna Give You Up", analyticsPlayTrackTitle("dQw4w9WgXcQ", " Never Gonna Give You Up "))
+        assertNull(analyticsPlayTrackTitle("dQw4w9WgXcQ", "  "))
+        assertNull(analyticsPlayTrackTitle(null, "My Song.mp3"))
+    }
+
+    @Test
     fun playTrackIdPrefersJobIdThenFallsBackToYoutubeId() {
         val withJobId = PlaybackState(lastJobId = "abc123", lastYouTubeId = "dQw4w9WgXcQ")
         val youtubeOnly = PlaybackState(lastJobId = null, lastYouTubeId = "dQw4w9WgXcQ")

@@ -2334,8 +2334,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val playback = state.value.playback
         val trackId = playback.analyticsPlayTrackId()
         if (trackId == null) {
-            // A track with no analytics id (e.g. a local upload) is now playing. Clear the dedup
-            // key so a later replay of a previously-logged track is not mistaken for a resume.
+            // A track with no analytics id is now playing. Clear the dedup key so a later
+            // replay of a previously-logged track is not mistaken for a resume.
             lastLoggedPlayKey = null
             return
         }
@@ -2343,7 +2343,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val key = "$mode:$trackId"
         if (lastLoggedPlayKey == key) return
         lastLoggedPlayKey = key
-        analytics.logPlay(mode, trackId, playback.trackTitle?.takeIf { it.isNotBlank() })
+        analytics.logPlay(mode, trackId, analyticsPlayTrackTitle(trackId, playback.trackTitle))
     }
 
     fun togglePlayback() {

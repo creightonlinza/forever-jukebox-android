@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
+
 /**
  * Usage analytics events shared with the web app's GA4 event dictionary: play,
  * search, select_track, favorite, share, upload, audio_mode, tune, select_viz. Event names,
@@ -52,6 +54,17 @@ fun analyticsSearchResultTitle(name: String?, artist: String?): String? {
 
 fun PlaybackState.analyticsPlayTrackId(): String? =
     shareTrackIdOrNull() ?: lastYouTubeId?.trim()?.takeIf { it.isNotBlank() }
+
+/**
+ * Titles of tracks from the user's own library are personal content and never leave the
+ * device, so the `play` event carries no title for on-device tracks. Their `local-` id is
+ * a cache fingerprint that still counts the play without describing what was played.
+ * Server tracks are public catalog entries and keep their title, matching the web app.
+ */
+fun analyticsPlayTrackTitle(trackId: String?, title: String?): String? {
+    if (trackId?.startsWith(LOCAL_TRACK_ID_PREFIX) != false) return null
+    return title?.trim()?.takeIf { it.isNotBlank() }
+}
 
 /**
  * The `control` values for the `tune` event, one per changed control, in the order the
