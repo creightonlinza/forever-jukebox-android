@@ -786,9 +786,15 @@ private fun computeDefaultThreshold(
     config: JukeboxConfig
 ): Int {
     val targetBranchCount = quanta.size / TARGET_BRANCH_DIVISOR.toDouble()
+    // Branch-type filters must not influence the density search: filtering during the
+    // sweep escalates the threshold, which would add branches when a filter is enabled.
+    val densityConfig = config.copy(
+        justBackwards = false,
+        justLongBranches = false
+    )
     var t = THRESHOLD_START
     while (t < config.maxBranchThreshold) {
-        val count = collectNearestNeighbors(quanta, t, config)
+        val count = collectNearestNeighbors(quanta, t, densityConfig)
         if (count >= targetBranchCount) {
             return t
         }
@@ -812,6 +818,9 @@ private fun addAnchorBranch(
     )
     if (existingAnchorSource != null && existingAnchorSource >= preferredLateStart) {
         // Existing end-of-track branch already reaches the early target zone.
+        return existingAnchorSource
+    }
+    if (config.justBackwards || config.justLongBranches) {
         return existingAnchorSource
     }
     val lateInsertedSource = insertBestBackwardBranch(
