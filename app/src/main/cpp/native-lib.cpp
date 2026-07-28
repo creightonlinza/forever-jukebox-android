@@ -16,7 +16,12 @@ constexpr const char* kLogTag = "FJOboe";
 constexpr const char* kPackageName = "com.foreverjukebox.app";
 constexpr const char* kPlaybackAttributionTag = "audio_playback";
 constexpr double kPi = 3.14159265358979323846;
+// Butterworth: a flat passband with no resonant bump, so a hot master cannot be
+// pushed past full scale by the high/low pass mode filters themselves.
 constexpr float kBiquadQ = 0.70710678f;
+// A bandpass peaks at 0 dB regardless of Q, so Q only sets bandwidth here. This
+// matches the web player's lofi bandpass so the two platforms share a tone.
+constexpr float kBandPassQ = 1.0f;
 constexpr double kPanRadiansPerSecond = 0.42;
 constexpr double kJumpFrameEpsilon = 2.0;
 constexpr double kMaxLateJumpFrames = 8.0;
@@ -107,6 +112,13 @@ AudioModeSettings settingsForMode(int32_t mode) {
         default:
             return {};
     }
+}
+
+// Only reverb modes can sum past full scale (dry <= 1.0 plus a wet tail), so
+// only they route through the limiter. Everything else reaches the output
+// untouched, exactly as the web player wires it.
+bool audioModeNeedsLimiter(const AudioModeSettings& settings) {
+    return settings.reverbMix > 0.0f;
 }
 
 int32_t sanitizeAudioModeCode(int32_t mode) {
@@ -249,7 +261,8 @@ public:
                             static_cast<float>(sampleRate);
         const float sinOmega = std::sin(omega);
         const float cosOmega = std::cos(omega);
-        const float alpha = sinOmega / (2.0f * kBiquadQ);
+        const float q = type == Type::BandPass ? kBandPassQ : kBiquadQ;
+        const float alpha = sinOmega / (2.0f * q);
 
         float b0 = 0.0f;
         float b1 = 0.0f;
@@ -893,6 +906,13 @@ private:
         const int32_t channels = mChannelCount;
         std::lock_guard<std::mutex> dspLock(mDspMutex);
         const AudioModeSettings settings = updateDspModeIfNeeded();
+        // Settings are fixed for the whole callback, so the routing decision is
+        // made once here rather than per frame. Modes that bypass the limiter
+        // leave the envelope parked at zero so they never start ducked.
+        const bool limiterActive = audioModeNeedsLimiter(settings);
+        if (!limiterActive) {
+            mLimiterEnvelope = 0.0f;
+        }
         double sourceFrame = startFrame;
 
         if (frames <= 0) return sourceFrame;
@@ -909,7 +929,9 @@ private:
             const float outputGain = mGain.load() * nextDuckingVolume();
             if (sourceFrame >= static_cast<double>(totalFrames) || audioData.empty()) {
                 std::fill(output, output + channels, 0);
-                mLimiterEnvelope *= mLimiterReleaseCoeff;
+                if (limiterActive) {
+                    mLimiterEnvelope *= mLimiterReleaseCoeff;
+                }
                 output += channels;
                 sourceFrame += settings.rate;
                 advanceDspFrame(settings);
@@ -920,7 +942,9 @@ private:
             const int64_t frame1 = std::min<int64_t>(frame0 + 1, totalFrames - 1);
             const float frac = static_cast<float>(sourceFrame - static_cast<double>(frame0));
             prepareCowbellHitsForFrame(sourceFrame);
-            float* mixed = mMixScratch.data();
+            // The scratch buffer holds the music path only. The cowbell overlay
+            // is deliberately kept out of it so it never drives the limiter.
+            float* music = mMixScratch.data();
             float framePeak = 0.0f;
             for (int32_t channel = 0; channel < channels; channel += 1) {
                 const size_t offset0 = static_cast<size_t>(frame0 * channels + channel);
@@ -929,19 +953,31 @@ private:
                 const float s1 = static_cast<float>(audioData[offset1]) / 32768.0f;
                 float sample = s0 + (s1 - s0) * frac;
                 sample = processDspSample(sample, channel, settings);
-                const float cowbell = cowbellSampleForChannel(channel, channels);
-                mixed[channel] = sample * outputGain + cowbell;
-                framePeak = std::max(framePeak, std::fabs(mixed[channel]));
+                music[channel] = sample * outputGain;
+                if (limiterActive) {
+                    framePeak = std::max(framePeak, std::fabs(music[channel]));
+                }
             }
-            // Linked peak limiter: unity gain whenever the mix stays within
-            // full scale, so unaffected modes pass through bit-identically.
-            const float coeff = framePeak > mLimiterEnvelope ? mLimiterAttackCoeff
-                                                             : mLimiterReleaseCoeff;
-            mLimiterEnvelope = coeff * mLimiterEnvelope + (1.0f - coeff) * framePeak;
-            const float limiterGain =
-                mLimiterEnvelope > 1.0f ? 1.0f / mLimiterEnvelope : 1.0f;
+            // Linked peak limiter: one gain across channels so the stereo image
+            // holds still, and unity gain whenever the music stays within full
+            // scale, so even limited modes are transparent below 0 dBFS.
+            float limiterGain = 1.0f;
+            if (limiterActive) {
+                const float coeff = framePeak > mLimiterEnvelope ? mLimiterAttackCoeff
+                                                                 : mLimiterReleaseCoeff;
+                mLimiterEnvelope = coeff * mLimiterEnvelope + (1.0f - coeff) * framePeak;
+                if (mLimiterEnvelope > 1.0f) {
+                    limiterGain = 1.0f / mLimiterEnvelope;
+                }
+            }
+            // Cowbell is summed after the limiter on purpose: routing it through
+            // ducked the whole mix ~3.5 dB per hit with a 250 ms tail, which
+            // reads as the cowbell getting quieter. The clamp below is all the
+            // ceiling a ~20 ms percussive transient gets, and that is the sound.
             for (int32_t channel = 0; channel < channels; channel += 1) {
-                output[channel] = floatToInt16(mixed[channel] * limiterGain);
+                output[channel] = floatToInt16(
+                    music[channel] * limiterGain +
+                    cowbellSampleForChannel(channel, channels));
             }
             advanceCowbellHits();
             applyPan(output, channels, settings);

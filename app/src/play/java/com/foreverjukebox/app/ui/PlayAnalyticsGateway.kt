@@ -13,4 +13,8 @@ private object PlayAnalyticsGateway : AnalyticsGateway {
     override fun logFavorite(trackId: String, trackTitle: String?) = Unit
     override fun logShare(trackId: String) = Unit
     override fun logUpload(method: String) = Unit
+    override fun logAudioMode(audioMode: String, intensity: Int?) = Unit
+    override fun logTune(control: String) = Unit
+    override fun logSelectViz(viz: String) = Unit
+    override fun logCastStart(mode: String) = Unit
 }

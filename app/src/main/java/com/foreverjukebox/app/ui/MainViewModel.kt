@@ -35,6 +35,7 @@ import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.playback.PlaybackStartResult
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
+import com.foreverjukebox.app.visualization.visualizationLabels
 import com.foreverjukebox.app.cast.CastRelayClient
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -2544,6 +2545,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setCastingConnected(isConnected: Boolean, deviceName: String? = null) {
+        // Mirrors handleCastingConnected's own already-casting guard against the same state,
+        // so reconnects and session resumes report one cast_start per session. The play mode
+        // is read before the coordinator forces autocanonizer sessions over to jukebox.
+        val playback = state.value.playback
+        if (isConnected && !playback.isCasting) {
+            analytics.logCastStart(analyticsPlayMode(playback.playMode))
+        }
         castSessionCoordinator.setCastingConnected(isConnected, deviceName)
     }
 
@@ -2969,6 +2977,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (index !in 0 until visualizationCount) {
             return
         }
+        // Only the picker's onClick handlers call this. The saved-preference collector and
+        // cast status sync write activeVizIndex straight to state, so restores, initial
+        // render, and rotation never log. Re-picking the active entry isn't a change.
+        if (index != state.value.playback.activeVizIndex) {
+            visualizationLabels.getOrNull(index)?.let(analytics::logSelectViz)
+        }
         _state.update { it.copy(playback = it.playback.copy(activeVizIndex = index)) }
         viewModelScope.launch {
             preferences.setActiveVizIndex(index)
@@ -3062,6 +3076,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             val currentPlayback = state.value.playback
+            val currentTuning = state.value.tuning
             val requestedAudioModeWireValue = audioModeWireValue
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
@@ -3112,6 +3127,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 audioModeWireValue = requestedAudioModeWireValue,
                 audioModeIntensity = requestedIntensity
             )
+            // Cast-side tuning isn't logged, so the local values are always authoritative
+            // here. Logged after the apply so a failed apply reports nothing.
+            if (!currentPlayback.isCasting) {
+                logTuningAnalytics(
+                    audioSettingsChanged = audioSettingsChanged,
+                    audioMode = requestedAudioMode,
+                    audioModeIntensity = requestedIntensity,
+                    previousTuning = currentTuning,
+                    nextTuning = currentTuning.withAppliedTuning(
+                        threshold = threshold,
+                        minProb = minProb,
+                        maxProb = maxProb,
+                        ramp = ramp,
+                        highlightAnchorBranch = highlightAnchorBranch,
+                        justBackwards = justBackwards,
+                        minJumpDistancePercent = minJumpDistancePercent,
+                        removeSequentialBranches = removeSequentialBranches,
+                        randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE
+                    )
+                )
+            }
             if (audioSettingsChanged && !currentPlayback.isCasting &&
                 (currentPlayback.isRunning || currentPlayback.isPaused)
             ) {
@@ -3137,8 +3173,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // audioSettingsChanged is already the web app's audio_mode firing rule: the mode changed,
+    // or the intensity changed on a mode that has the slider.
+    private fun logTuningAnalytics(
+        audioSettingsChanged: Boolean,
+        audioMode: JukeboxAudioMode,
+        audioModeIntensity: Int,
+        previousTuning: TuningState,
+        nextTuning: TuningState
+    ) {
+        if (audioSettingsChanged) {
+            analytics.logAudioMode(
+                audioMode = audioMode.wireValue,
+                intensity = audioModeIntensity.takeIf { audioMode.supportsIntensity }
+            )
+        }
+        analyticsChangedTuneControls(previousTuning, nextTuning).forEach(analytics::logTune)
+    }
+
     fun resetBranchTuningDefaults() {
         viewModelScope.launch {
+            // No analytics here: the web app fires `tune` only from the apply path, so a
+            // reset that changes six controls deliberately reports nothing.
             tuningCoordinator.resetBranchTuningDefaults()
         }
     }
@@ -3157,6 +3213,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
             if (!resetAudioMode) {
                 return@launch
+            }
+            // Narrower than the resetAudioMode guard on purpose: that one also covers a
+            // stale non-default intensity on an already-off mode, where nothing is turned off.
+            if (currentPlayback.jukeboxAudioMode != JukeboxAudioMode.Off) {
+                analytics.logAudioMode(JukeboxAudioMode.Off.wireValue, intensity = null)
             }
             lastCowbellBeatsPlayed = -1
             controller.setJukeboxAudioMode(JukeboxAudioMode.Off)

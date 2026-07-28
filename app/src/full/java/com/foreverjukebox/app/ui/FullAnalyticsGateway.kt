@@ -33,6 +33,27 @@ private class FullAnalyticsGateway(context: Context) : AnalyticsGateway {
         log("upload", "method" to method)
     }
 
+    // Built inline rather than through log(): audio_intensity must be a Long so GA4
+    // registers it as a metric, and the shared helper is string-only by design.
+    override fun logAudioMode(audioMode: String, intensity: Int?) {
+        val bundle = Bundle()
+        bundle.putString("audio_mode", audioMode)
+        intensity?.let { bundle.putLong("audio_intensity", it.toLong()) }
+        firebase.logEvent("audio_mode", bundle)
+    }
+
+    override fun logTune(control: String) {
+        log("tune", "control" to control)
+    }
+
+    override fun logSelectViz(viz: String) {
+        log("select_viz", "viz" to viz)
+    }
+
+    override fun logCastStart(mode: String) {
+        log("cast_start", "mode" to mode)
+    }
+
     private fun log(event: String, vararg params: Pair<String, String?>) {
         val bundle = Bundle()
         for ((key, value) in params) {
