@@ -43,10 +43,17 @@ internal fun isAnalysisInProgressStatus(status: String?): Boolean {
 // been reclaimed (common while the app is backgrounded with the screen off), and an
 // OutOfMemoryError reflects momentary heap pressure, not a corrupt file. Cached audio must
 // not be discarded on these — the same file decodes fine once resources free up.
+//
+// A CodecException with the generic error code (Integer.MIN_VALUE / ERROR_UNKNOWN) is also
+// treated as transient regardless of its isTransient/isRecoverable flags: vendor codecs
+// report it for resource/service failures with both flags false, and it carries no evidence
+// that the bitstream is bad. Genuine file corruption still surfaces as extractor/format
+// errors (IllegalArgumentException, "No audio track found"), which remain non-transient.
 internal fun isTransientDecodeError(error: Throwable): Boolean {
     return when (error) {
         is OutOfMemoryError -> true
-        is MediaCodec.CodecException -> error.isTransient || error.isRecoverable
+        is MediaCodec.CodecException ->
+            error.isTransient || error.isRecoverable || error.errorCode == Int.MIN_VALUE
         else -> false
     }
 }

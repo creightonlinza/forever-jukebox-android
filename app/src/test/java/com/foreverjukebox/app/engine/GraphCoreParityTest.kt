@@ -134,6 +134,45 @@ class GraphCoreParityTest {
     }
 
     @Test
+    fun keepsReversePlusLongFiltersASubsetOfLongFiltersWithAutoThreshold() {
+        val longOnlyAnalysis = normalizeAnalysis(makeHappyPathAnalysisPayload())
+        val reverseLongAnalysis = normalizeAnalysis(makeHappyPathAnalysisPayload())
+        val longOnlyGraph = buildJumpGraph(
+            longOnlyAnalysis,
+            autoThresholdConfig(justLongBranches = true)
+        )
+        val reverseLongGraph = buildJumpGraph(
+            reverseLongAnalysis,
+            autoThresholdConfig(justBackwards = true, justLongBranches = true)
+        )
+        val longOnlyEdges = collectEdgeKeys(longOnlyAnalysis).toSet()
+        val reverseLongEdges = collectEdgeKeys(reverseLongAnalysis)
+
+        assertEquals(longOnlyGraph.currentThreshold, reverseLongGraph.currentThreshold)
+        assertTrue(reverseLongEdges.size <= longOnlyEdges.size)
+        assertTrue(longOnlyEdges.containsAll(reverseLongEdges))
+    }
+
+    @Test
+    fun longBranchFilterDoesNotEscalateAutoThresholdOrAddBranches() {
+        val unfilteredAnalysis = normalizeAnalysis(makeThresholdEscalationPayload())
+        val filteredAnalysis = normalizeAnalysis(makeThresholdEscalationPayload())
+        val unfilteredGraph = buildJumpGraph(
+            unfilteredAnalysis,
+            autoThresholdConfig(minLongBranch = 8)
+        )
+        val filteredGraph = buildJumpGraph(
+            filteredAnalysis,
+            autoThresholdConfig(justLongBranches = true, minLongBranch = 8)
+        )
+
+        assertEquals(unfilteredGraph.computedThreshold, filteredGraph.computedThreshold)
+        assertTrue(
+            collectEdgeKeys(filteredAnalysis).size <= collectEdgeKeys(unfilteredAnalysis).size
+        )
+    }
+
+    @Test
     fun reusesCachedNeighborsAndReturnsStableAllEdges() {
         val analysis = normalizeAnalysis(makeAnalysisPayload())
         val cfg = config(currentThreshold = 60, minLongBranch = 1)
@@ -164,6 +203,169 @@ class GraphCoreParityTest {
             maxRandomBranchChance = 0.5,
             randomBranchChanceDelta = 0.018,
             minLongBranch = minLongBranch
+        )
+    }
+
+    private fun autoThresholdConfig(
+        justBackwards: Boolean = false,
+        justLongBranches: Boolean = false,
+        minLongBranch: Int = 4
+    ): JukeboxConfig {
+        return JukeboxConfig(
+            maxBranches = 4,
+            maxBranchThreshold = 80,
+            currentThreshold = 0,
+            justBackwards = justBackwards,
+            justLongBranches = justLongBranches,
+            removeSequentialBranches = false,
+            minRandomBranchChance = 0.18,
+            maxRandomBranchChance = 0.5,
+            randomBranchChanceDelta = 0.018,
+            minLongBranch = minLongBranch
+        )
+    }
+
+    private fun collectEdgeKeys(analysis: TrackAnalysis): List<Pair<Int, Int>> {
+        return analysis.beats.flatMap { beat ->
+            beat.neighbors.map { edge -> edge.src.which to edge.dest.which }
+        }
+    }
+
+    private fun vector(seed: Double): JsonArray {
+        return JsonArray(List(12) { index -> JsonPrimitive(seed + index * 0.01) })
+    }
+
+    private fun quantaArray(count: Int, duration: Double, confidence: Double): JsonArray {
+        return JsonArray((0 until count).map { i ->
+            JsonObject(
+                mapOf(
+                    "start" to JsonPrimitive(i * duration),
+                    "duration" to JsonPrimitive(duration),
+                    "confidence" to JsonPrimitive(confidence)
+                )
+            )
+        })
+    }
+
+    // Mirrors the web engine's happyPathAnalysis fixture: 12 beats whose segments repeat
+    // a 4-beat phrase, so matching phrase positions produce similar branch candidates.
+    private fun makeHappyPathAnalysisPayload(): JsonElement {
+        val sections = JsonArray(
+            listOf(1.0, 0.92, 0.88).mapIndexed { i, confidence ->
+                JsonObject(
+                    mapOf(
+                        "start" to JsonPrimitive(i * 4.0),
+                        "duration" to JsonPrimitive(4.0),
+                        "confidence" to JsonPrimitive(confidence)
+                    )
+                )
+            }
+        )
+        val bars = JsonArray(
+            listOf(0.86, 0.82, 0.79).mapIndexed { i, confidence ->
+                JsonObject(
+                    mapOf(
+                        "start" to JsonPrimitive(i * 4.0),
+                        "duration" to JsonPrimitive(4.0),
+                        "confidence" to JsonPrimitive(confidence)
+                    )
+                )
+            }
+        )
+        val segments = JsonArray((0 until 12).map { i ->
+            val phrase = i % 4
+            JsonObject(
+                mapOf(
+                    "start" to JsonPrimitive(i.toDouble()),
+                    "duration" to JsonPrimitive(1.0),
+                    "confidence" to JsonPrimitive(0.62 + phrase * 0.02),
+                    "loudness_start" to JsonPrimitive(-22.0 + phrase),
+                    "loudness_max" to JsonPrimitive(-8.0 + phrase * 0.4),
+                    "loudness_max_time" to JsonPrimitive(0.12),
+                    "pitches" to vector(0.2 + phrase * 0.03),
+                    "timbre" to vector(1.0 + phrase * 0.05)
+                )
+            )
+        })
+
+        return JsonObject(
+            mapOf(
+                "sections" to sections,
+                "bars" to bars,
+                "beats" to quantaArray(12, 1.0, 0.72),
+                "tatums" to quantaArray(24, 0.5, 0.63),
+                "segments" to segments,
+                "track" to JsonObject(
+                    mapOf(
+                        "duration" to JsonPrimitive(12.0),
+                        "tempo" to JsonPrimitive(120.0),
+                        "time_signature" to JsonPrimitive(4.0)
+                    )
+                )
+            )
+        )
+    }
+
+    // 24 beats in 6 four-beat bars. Timbre seeds pair up adjacent bars, so every beat has
+    // a near-identical partner 4 beats away (a short branch at distance ~0) while all
+    // longer same-position matches sit near distance 40. With minLongBranch = 8 the long
+    // filter discards every cheap branch, so a density sweep that honors the filter would
+    // escalate the auto threshold until the ~40-distance edges qualify — flooding the
+    // graph with branches the moment the filter turns on.
+    private fun makeThresholdEscalationPayload(): JsonElement {
+        val beatCount = 24
+        val barTimbreSeeds = listOf(0.0, 0.1, 12.0, 12.1, 24.0, 24.1)
+        val sections = JsonArray(
+            listOf(
+                JsonObject(
+                    mapOf(
+                        "start" to JsonPrimitive(0.0),
+                        "duration" to JsonPrimitive(beatCount.toDouble()),
+                        "confidence" to JsonPrimitive(1.0)
+                    )
+                )
+            )
+        )
+        val bars = JsonArray((0 until beatCount / 4).map { b ->
+            JsonObject(
+                mapOf(
+                    "start" to JsonPrimitive(b * 4.0),
+                    "duration" to JsonPrimitive(4.0),
+                    "confidence" to JsonPrimitive(0.8)
+                )
+            )
+        })
+        val segments = JsonArray((0 until beatCount).map { i ->
+            val bar = i / 4
+            JsonObject(
+                mapOf(
+                    "start" to JsonPrimitive(i.toDouble()),
+                    "duration" to JsonPrimitive(1.0),
+                    "confidence" to JsonPrimitive(0.6),
+                    "loudness_start" to JsonPrimitive(-20.0),
+                    "loudness_max" to JsonPrimitive(-6.0),
+                    "loudness_max_time" to JsonPrimitive(0.12),
+                    "pitches" to vector(0.2),
+                    "timbre" to vector(1.0 + barTimbreSeeds[bar])
+                )
+            )
+        })
+
+        return JsonObject(
+            mapOf(
+                "sections" to sections,
+                "bars" to bars,
+                "beats" to quantaArray(beatCount, 1.0, 0.72),
+                "tatums" to quantaArray(beatCount * 2, 0.5, 0.63),
+                "segments" to segments,
+                "track" to JsonObject(
+                    mapOf(
+                        "duration" to JsonPrimitive(beatCount.toDouble()),
+                        "tempo" to JsonPrimitive(120.0),
+                        "time_signature" to JsonPrimitive(4.0)
+                    )
+                )
+            )
         )
     }
 

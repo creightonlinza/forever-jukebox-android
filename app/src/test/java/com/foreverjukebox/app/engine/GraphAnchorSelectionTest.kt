@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -98,6 +99,22 @@ class GraphAnchorSelectionTest {
                 edge.src.which == 8 && edge.dest.which == 1
             }
         )
+    }
+
+    @Test
+    fun doesNotInsertAboveThresholdAnchorsWhenBranchTypeFiltersAreActive() {
+        val analysis = makeInsertionWithoutExistingAnchorScenario()
+        val graph = buildJumpGraph(
+            analysis,
+            testConfig().copy(justBackwards = true)
+        )
+
+        assertFalse(
+            analysis.beats.flatMap { it.neighbors }.any { edge ->
+                edge.src.which == 8 && edge.dest.which == 1
+            }
+        )
+        assertEquals(-1, graph.lastBranchPoint)
     }
 
     @Test
