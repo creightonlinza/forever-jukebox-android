@@ -3150,13 +3150,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 AudioModeIntensity.DEFAULT
             }
-            val audioModeChanged = currentPlayback.playMode == PlaybackMode.Jukebox &&
-                currentPlayback.jukeboxAudioMode != requestedAudioMode
+            // While casting, the receiver owns the audio mode and the local engine sits idle,
+            // so the comparison base is the cast state the receiver last reported. Matching
+            // buildCastTuningUpdate's own change test keeps "we sent it" and "we logged it"
+            // from ever disagreeing.
+            val audioModeChanged = currentPlayback.playMode == PlaybackMode.Jukebox && (
+                if (currentPlayback.isCasting) {
+                    currentPlayback.castAudioModeWireValue.trim() !=
+                        requestedAudioModeWireValue.trim()
+                } else {
+                    currentPlayback.jukeboxAudioMode != requestedAudioMode
+                }
+                )
+            val currentAudioModeIntensity = if (currentPlayback.isCasting) {
+                currentPlayback.castAudioModeIntensity
+            } else {
+                currentPlayback.jukeboxAudioModeIntensity
+            }
             val audioSettingsChanged = audioModeChanged ||
                 (
                     currentPlayback.playMode == PlaybackMode.Jukebox &&
                         requestedAudioMode.supportsIntensity &&
-                        currentPlayback.jukeboxAudioModeIntensity != requestedIntensity
+                        currentAudioModeIntensity != requestedIntensity
                     )
             if (audioSettingsChanged && !currentPlayback.isCasting) {
                 lastCowbellBeatsPlayed = -1
@@ -3175,27 +3190,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 audioModeWireValue = requestedAudioModeWireValue,
                 audioModeIntensity = requestedIntensity
             )
-            // Cast-side tuning isn't logged, so the local values are always authoritative
-            // here. Logged after the apply so a failed apply reports nothing.
-            if (!currentPlayback.isCasting) {
-                logTuningAnalytics(
-                    audioSettingsChanged = audioSettingsChanged,
-                    audioMode = requestedAudioMode,
-                    audioModeIntensity = requestedIntensity,
-                    previousTuning = currentTuning,
-                    nextTuning = currentTuning.withAppliedTuning(
-                        threshold = threshold,
-                        minProb = minProb,
-                        maxProb = maxProb,
-                        ramp = ramp,
-                        highlightAnchorBranch = highlightAnchorBranch,
-                        justBackwards = justBackwards,
-                        minJumpDistancePercent = minJumpDistancePercent,
-                        removeSequentialBranches = removeSequentialBranches,
-                        randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE
-                    )
+            // Logged after the apply so a failed apply reports nothing. Casting reports the
+            // same events: the phone is the only controller, and the cast status sync keeps
+            // state.tuning matching the receiver, so the diff below stays authoritative.
+            logTuningAnalytics(
+                audioSettingsChanged = audioSettingsChanged,
+                audioMode = requestedAudioMode,
+                audioModeIntensity = requestedIntensity,
+                previousTuning = currentTuning,
+                nextTuning = currentTuning.withAppliedTuning(
+                    threshold = threshold,
+                    minProb = minProb,
+                    maxProb = maxProb,
+                    ramp = ramp,
+                    highlightAnchorBranch = highlightAnchorBranch,
+                    justBackwards = justBackwards,
+                    minJumpDistancePercent = minJumpDistancePercent,
+                    removeSequentialBranches = removeSequentialBranches,
+                    randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE
                 )
-            }
+            )
             if (audioSettingsChanged && !currentPlayback.isCasting &&
                 (currentPlayback.isRunning || currentPlayback.isPaused)
             ) {
@@ -3251,6 +3265,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val currentPlayback = state.value.playback
             if (currentPlayback.isCasting) {
+                // Reuses the reset builder's already-off test so a no-op reset reports
+                // nothing, matching the narrower guard on the local branch below.
+                if (buildCastAudioModeResetParams(currentPlayback.castAudioModeWireValue) != null) {
+                    analytics.logAudioMode(JukeboxAudioMode.Off.wireValue, intensity = null)
+                }
                 tuningCoordinator.resetCastAudioModeDefaults()
                 return@launch
             }
