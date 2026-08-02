@@ -3195,7 +3195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // state.tuning matching the receiver, so the diff below stays authoritative.
             logTuningAnalytics(
                 audioSettingsChanged = audioSettingsChanged,
-                audioMode = requestedAudioMode,
+                audioModeWireValue = requestedAudioModeWireValue,
                 audioModeIntensity = requestedIntensity,
                 previousTuning = currentTuning,
                 nextTuning = currentTuning.withAppliedTuning(
@@ -3239,15 +3239,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // or the intensity changed on a mode that has the slider.
     private fun logTuningAnalytics(
         audioSettingsChanged: Boolean,
-        audioMode: JukeboxAudioMode,
+        audioModeWireValue: String,
         audioModeIntensity: Int,
         previousTuning: TuningState,
         nextTuning: TuningState
     ) {
         if (audioSettingsChanged) {
+            // The wire value actually applied is authoritative: while casting the picker
+            // offers the receiver's own mode list, which can name modes the local engine
+            // has no enum for.
             analytics.logAudioMode(
-                audioMode = audioMode.wireValue,
-                intensity = audioModeIntensity.takeIf { audioMode.supportsIntensity }
+                audioMode = audioModeWireValue,
+                intensity = analyticsAudioModeIntensity(audioModeWireValue, audioModeIntensity)
             )
         }
         analyticsChangedTuneControls(previousTuning, nextTuning).forEach(analytics::logTune)

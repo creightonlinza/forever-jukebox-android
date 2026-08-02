@@ -67,6 +67,17 @@ fun analyticsPlayTrackTitle(trackId: String?, title: String?): String? {
 }
 
 /**
+ * `audio_intensity` accompanies `audio_mode` only for a mode this build knows has the slider.
+ * While casting, the mode picker offers the receiver's own list, which can name modes the local
+ * engine has no enum for; the mode is still reported by its wire value, but without an intensity
+ * the sender never chose.
+ */
+fun analyticsAudioModeIntensity(audioModeWireValue: String, intensity: Int): Int? =
+    intensity.takeIf {
+        JukeboxAudioMode.fromWireValue(audioModeWireValue)?.supportsIntensity == true
+    }
+
+/**
  * The `control` values for the `tune` event, one per changed control, in the order the
  * tuning dialog presents them. The three probability fields collapse into a single
  * `branch_probability` because the web app treats them as one conceptual control.

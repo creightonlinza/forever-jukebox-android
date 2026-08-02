@@ -58,6 +58,16 @@ jobs:
           keyPassword=${KEYSTORE_PASS}
           EOF
 
+      - name: Create Firebase config
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          test -n "${GOOGLE_SERVICES_JSON_BASE64}" || (echo "Missing secret: GOOGLE_SERVICES_JSON_BASE64" && exit 1)
+          echo "${GOOGLE_SERVICES_JSON_BASE64}" | base64 --decode > app/google-services.json
+          # The build silently ships without Crashlytics/Analytics when this file is
+          # absent or malformed, so a release must prove it decoded to real config.
+          python3 -c "import json,sys; json.load(open('app/google-services.json'))['client'][0]['client_info']['mobilesdk_app_id']"
+
       - name: Run Unit Tests
         run: ./gradlew :app:test
 
@@ -84,4 +94,4 @@ jobs:
 
       - name: Cleanup signing files
         if: always()
-        run: rm -f release.keystore keystore.properties
+        run: rm -f release.keystore keystore.properties app/google-services.json

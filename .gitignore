@@ -4,6 +4,9 @@ build/
 **/build/
 local.properties
 keystore.properties
+# Firebase config is untracked so builds made outside this project have no
+# Crashlytics/Analytics destination. Release jobs restore it from a secret.
+app/google-services.json
 *.iml
 .idea/
 .DS_Store

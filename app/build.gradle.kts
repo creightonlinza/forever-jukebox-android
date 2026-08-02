@@ -1,6 +1,7 @@
 import com.android.build.api.dsl.ApplicationExtension
 import com.android.build.api.variant.ApplicationAndroidComponentsExtension
 import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
+import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import org.gradle.api.file.Directory
 import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Provider
@@ -23,6 +24,19 @@ plugins {
 
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
+}
+
+// google-services.json is untracked: only builds made from this project — locally or
+// from the release workflows, which restore it from a secret — carry Firebase config.
+// Anyone else's build compiles and runs identically minus Crashlytics and Analytics,
+// which keeps their crashes and events out of this project's data.
+val hasGoogleServices = layout.projectDirectory.file("google-services.json").asFile.exists()
+
+googleServices {
+    // Without the file the plugin emits no google_app_id, so FirebaseApp never
+    // auto-initializes and AppLog/AnalyticsGateway/DiagnosticsGateway no-op through
+    // their runCatching accessors.
+    missingGoogleServicesStrategy = MissingGoogleServicesStrategy.IGNORE
 }
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -215,8 +229,11 @@ extensions.configure<ApplicationExtension>("android") {
             // Crashlytics mapping upload is automatic for minified builds; native
             // symbol upload only runs via the explicit
             // uploadCrashlyticsSymbolFile<Variant> task (wired in CI release jobs).
+            // Both resolve the app id from google-services.json, so a build without
+            // it skips them instead of failing.
             configure<CrashlyticsExtension> {
-                nativeSymbolUploadEnabled = true
+                mappingFileUploadEnabled = hasGoogleServices
+                nativeSymbolUploadEnabled = hasGoogleServices
             }
         }
     }

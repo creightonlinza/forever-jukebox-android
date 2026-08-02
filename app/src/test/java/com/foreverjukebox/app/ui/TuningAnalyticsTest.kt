@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -146,5 +147,15 @@ class TuningAnalyticsTest {
         )
 
         assertEquals(emptyList<String>(), analyticsChangedTuneControls(previous, next))
+    }
+
+    @Test
+    fun intensityAccompaniesOnlyModesThisBuildKnowsHaveTheSlider() {
+        assertEquals(130, analyticsAudioModeIntensity("nightcore", 130))
+        assertNull(analyticsAudioModeIntensity("lofi", 130))
+        // A receiver-only mode is still reported by wire value, but carries no intensity:
+        // the sender has no slider for it, so any value here would be a stale local one.
+        assertNull(analyticsAudioModeIntensity("swing", 130))
+        assertNull(analyticsAudioModeIntensity("", 130))
     }
 }
