@@ -1,11 +1,13 @@
 package com.foreverjukebox.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Bundle
+import androidx.core.content.IntentCompat
 import androidx.activity.compose.setContent
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
@@ -45,6 +47,11 @@ class MainActivity : FragmentActivity() {
         if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
             viewModel.openListenTab()
         }
+        // A configuration change replays onCreate with the launching intent, so a share is only
+        // read on a genuinely new instance.
+        if (savedInstanceState == null) {
+            handleShareIntent(intent)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -80,6 +87,24 @@ class MainActivity : FragmentActivity() {
         if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
             viewModel.openListenTab()
         }
+        handleShareIntent(intent)
+    }
+
+    /**
+     * Hands share-sheet content to the view model. The ACTION_SEND filters ship only in the
+     * server-mode flavor; a send aimed at a local-only build resolves to the local-mode message.
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val audioUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+        if (audioUri != null) {
+            viewModel.handleSharedAudio(audioUri)
+            return
+        }
+        viewModel.handleSharedText(
+            sharedText = intent.getStringExtra(Intent.EXTRA_TEXT),
+            sharedSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
+        )
     }
 
     override fun onStart() {

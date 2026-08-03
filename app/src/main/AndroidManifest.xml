@@ -54,9 +54,10 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- The foreverjukebox.com/listen deep link is server-mode only and
-                 lives in the `full` flavor manifest (src/full/AndroidManifest.xml).
-                 The `play` flavor is local-only and intentionally has no App Links. -->
+            <!-- The foreverjukebox.com/listen deep link and the share-sheet
+                 targets are server-mode only and live in the `full` flavor
+                 manifest (src/full/AndroidManifest.xml). The `play` flavor is
+                 local-only and intentionally has neither. -->
         </activity>
         <service
             android:name=".playback.ForegroundPlaybackService"

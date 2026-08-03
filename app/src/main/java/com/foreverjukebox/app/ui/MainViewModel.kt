@@ -325,6 +325,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var foregroundRecoveryInFlight = false
     private var castSelectionJob: Job? = null
     private var pendingDeepLinkUriString: String? = null
+    private var pendingShare: PendingShare? = null
+    private var baseUrlLoaded = false
+    private var serverConfigState = ServerConfigState.Pending
     private var savedPlaylistTracks: List<SavedPlaylistTrack> = emptyList()
     private var lastCowbellBeatsPlayed = -1
     private val tabHistory = ArrayDeque<TabId>()
@@ -521,6 +524,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 hydrateSavedPlaylistIfInactive()
                 maybeRefreshServerDataForCurrentState()
                 maybeShowAutomaticWhatsNew()
+                consumePendingShareIfReady()
             }
         }
         viewModelScope.launch {
@@ -533,8 +537,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         castEnabled = resolveCastEnabled(mode, relayConfigured)
                     )
                 }
+                baseUrlLoaded = true
                 maybeRefreshServerDataForCurrentState()
                 consumePendingDeepLinkIfReady()
+                consumePendingShareIfReady()
             }
         }
         viewModelScope.launch {
@@ -580,6 +586,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             preferences.appConfig.collect { config ->
                 if (config != null) {
+                    serverConfigState = ServerConfigState.Loaded
                     val maxFavorites = sanitizeMaxFavorites(config.maxFavorites)
                     val currentFavorites = state.value.favorites
                     val normalizedFavorites = favoritesController.normalizeFavorites(
@@ -631,6 +638,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         favoritesController.updateFavorites(normalizedFavorites, sync = false)
                     }
                 }
+                consumePendingShareIfReady()
             }
         }
         viewModelScope.launch {
@@ -914,6 +922,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         consumePendingDeepLinkIfReady()
+        consumePendingShareIfReady()
         viewModelScope.launch {
             preferences.setBaseUrl(trimmedUrl)
             if (didServerChange) {
@@ -1078,6 +1087,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             appConfigLoaded = true
             viewModelScope.launch {
                 runCatching { serverGateway.getAppConfig(baseUrl).also { preferences.setAppConfig(it) } }
+                // The config is settled either way: a success re-enters through the appConfig
+                // collector, a failure leaves whatever was already cached as the answer. This is
+                // what keeps a shared track from waiting forever on an unreachable server.
+                if (serverConfigState == ServerConfigState.Pending) {
+                    serverConfigState = ServerConfigState.Missing
+                }
+                consumePendingShareIfReady()
             }
         }
         searchCoordinator.maybeRefreshForState(currentState)
@@ -1090,6 +1106,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         searchCoordinator.resetRuntimeState()
         appConfigLoaded = false
+        serverConfigState = ServerConfigState.Pending
         tabHistory.clear()
 
         if (targetMode == AppMode.Local || state.value.playback.isCasting) {
@@ -1116,6 +1133,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         searchCoordinator.resetRuntimeState()
         favoritesController.resetRuntimeState()
         appConfigLoaded = false
+        serverConfigState = ServerConfigState.Pending
         tabHistory.clear()
 
         stopCasting()
@@ -1809,10 +1827,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun submitTrackUrl(rawUrl: String) {
+    fun submitTrackUrl(rawUrl: String) = submitTrackUrl(rawUrl, bypassConfigGate = false)
+
+    private fun submitTrackUrl(rawUrl: String, bypassConfigGate: Boolean) {
         if (blockPlaybackChangeWhileLoading()) return
         val baseUrl = state.value.baseUrl
-        if (baseUrl.isBlank() || !state.value.allowUserUrl) return
+        if (baseUrl.isBlank() || !(state.value.allowUserUrl || bypassConfigGate)) return
         val normalized = normalizeSupportedSourceUrl(rawUrl)
         if (normalized == null) {
             updateSearchState {
@@ -1884,13 +1904,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun uploadTrackFile(uri: Uri, displayName: String?) {
+    fun uploadTrackFile(uri: Uri, displayName: String?) =
+        uploadTrackFile(uri, displayName, bypassConfigGate = false)
+
+    private fun uploadTrackFile(uri: Uri, displayName: String?, bypassConfigGate: Boolean) {
         if (blockPlaybackChangeWhileLoading()) return
         val baseUrl = state.value.baseUrl
-        if (baseUrl.isBlank() || !state.value.allowUserUpload) return
+        if (baseUrl.isBlank() || !(state.value.allowUserUpload || bypassConfigGate)) return
         val resolver = getApplication<Application>().contentResolver
         val mimeType = runCatching { resolver.getType(uri) }.getOrNull()
-        val fileName = resolveUploadFileName(displayName, mimeType, state.value.allowedUploadExts)
+        val resolvedDisplayName = displayName ?: queryDisplayName(uri)
+        val fileName =
+            resolveUploadFileName(resolvedDisplayName, mimeType, state.value.allowedUploadExts)
         if (fileName == null) {
             viewModelScope.launch {
                 showToast(unsupportedUploadTypeMessage(state.value.allowedUploadExts))
@@ -3048,6 +3073,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
     }.getOrNull()
 
+    /**
+     * The provider's name for a content URI. The server validates uploads by filename suffix and
+     * derives the track title from the stem, so a share that arrives without a name still gets one.
+     */
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        getApplication<Application>().contentResolver
+            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) {
+                    cursor.getString(index)
+                } else {
+                    null
+                }
+            }
+    }.getOrNull()
+
     fun retryFailedLoad() {
         if (blockPlaybackChangeWhileLoading()) return
         val baseUrl = state.value.baseUrl.trim()
@@ -3626,6 +3668,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         consumePendingDeepLinkIfReady()
     }
 
+    /** Entry point for text sent to the app by the share sheet. */
+    fun handleSharedText(sharedText: String?, sharedSubject: String? = null) {
+        if (sharedText.isNullOrBlank() && sharedSubject.isNullOrBlank()) return
+        pendingShare = PendingShare.Text(sharedText, sharedSubject)
+        consumePendingShareIfReady()
+    }
+
+    /** Entry point for an audio file sent to the app by the share sheet. */
+    fun handleSharedAudio(uri: Uri) {
+        pendingShare = PendingShare.Audio(uri)
+        consumePendingShareIfReady()
+    }
+
     fun refreshCacheSize() {
         playbackCoordinator.refreshCacheSize()
     }
@@ -3688,6 +3743,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         pendingDeepLinkUriString = null
         listenLinkCoordinator.handleDeepLink(pending)
+    }
+
+    /**
+     * Act on a shared track once the app mode, server URL, and server config have settled. A share
+     * can land before any of the preference flows have emitted, so anything unsettled holds the
+     * share rather than rejecting it with the wrong reason.
+     */
+    private fun consumePendingShareIfReady() {
+        val pending = pendingShare ?: return
+        val current = state.value
+        val readiness = resolveShareReadiness(
+            showAppModeGate = current.showAppModeGate,
+            appMode = current.appMode,
+            baseUrlLoaded = baseUrlLoaded,
+            baseUrl = current.baseUrl,
+            serverConfigPending = serverConfigState == ServerConfigState.Pending
+        )
+        when (readiness) {
+            ShareReadiness.Wait -> return
+            ShareReadiness.NotServerMode -> {
+                pendingShare = null
+                viewModelScope.launch { showToast(SHARE_NEEDS_SERVER_MODE_MESSAGE) }
+                return
+            }
+            ShareReadiness.NoServer -> {
+                pendingShare = null
+                viewModelScope.launch { showToast(SHARE_NO_SERVER_MESSAGE) }
+                return
+            }
+            ShareReadiness.Ready -> Unit
+        }
+        pendingShare = null
+        when (pending) {
+            is PendingShare.Text -> dispatchSharedText(pending)
+            is PendingShare.Audio -> dispatchSharedAudio(pending.uri)
+        }
+    }
+
+    private fun dispatchSharedText(pending: PendingShare.Text) {
+        val candidates = sharedSourceCandidates(pending.text, pending.subject)
+        // A listen link carries a track id rather than a user-supplied source, so it takes the
+        // deep-link path and is not subject to the server's user-URL setting.
+        if (candidates.any { listenLinkCoordinator.handleDeepLink(it) }) {
+            return
+        }
+        val sourceUrl = candidates.firstNotNullOfOrNull { normalizeSupportedSourceUrl(it) }
+        if (sourceUrl == null) {
+            viewModelScope.launch { showToast(SHARE_UNSUPPORTED_MESSAGE) }
+            return
+        }
+        val bypassConfigGate = shareBypassesConfigGate(state.value.allowUserUrl) ?: run {
+            viewModelScope.launch { showToast(SHARE_URL_NOT_ALLOWED_MESSAGE) }
+            return
+        }
+        submitTrackUrl(sourceUrl.url, bypassConfigGate)
+    }
+
+    private fun dispatchSharedAudio(uri: Uri) {
+        val bypassConfigGate = shareBypassesConfigGate(state.value.allowUserUpload) ?: run {
+            viewModelScope.launch { showToast(SHARE_UPLOAD_NOT_ALLOWED_MESSAGE) }
+            return
+        }
+        uploadTrackFile(uri, displayName = null, bypassConfigGate = bypassConfigGate)
+    }
+
+    /**
+     * Whether a share may skip the local user-source gate, or null when the server has refused it.
+     * With no config to consult the request goes out anyway so the server itself answers: its 403
+     * carries the same message, and an unreachable server reports a connection failure rather than
+     * a permission it never expressed.
+     */
+    private fun shareBypassesConfigGate(allowed: Boolean): Boolean? = when {
+        allowed -> false
+        serverConfigState == ServerConfigState.Missing -> true
+        else -> null
     }
 
     private fun recoverServerLoadingOnForeground(current: UiState, playback: PlaybackState) {
@@ -3793,5 +3923,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val GITHUB_REPO_NAME = "forever-jukebox-android"
         private const val LOADING_LOCK_MESSAGE = "Please wait for the current track to finish loading."
         private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 500.0
+        private const val SHARE_NEEDS_SERVER_MODE_MESSAGE = "Switch to server mode to add tracks."
+        private const val SHARE_NO_SERVER_MESSAGE = "Set up a Forever Jukebox server first."
+        private const val SHARE_URL_NOT_ALLOWED_MESSAGE =
+            "This server doesn't allow adding tracks by link."
+        private const val SHARE_UPLOAD_NOT_ALLOWED_MESSAGE = "This server doesn't allow uploads."
+        private const val SHARE_UNSUPPORTED_MESSAGE =
+            "Share a YouTube, SoundCloud, or Bandcamp link."
     }
+}
+
+/** A track handed over by the share sheet, held until the app state can act on it. */
+private sealed interface PendingShare {
+    data class Text(val text: String?, val subject: String?) : PendingShare
+
+    data class Audio(val uri: Uri) : PendingShare
+}
+
+/**
+ * How much is known about the server's config. An `allowUserUrl` of false cannot by itself
+ * distinguish a server that refuses user sources from one that has not been asked yet, and a
+ * shared track needs that distinction to report the right reason.
+ */
+private enum class ServerConfigState {
+    Pending,
+
+    /** The config fetch finished without producing a config; let the server answer directly. */
+    Missing,
+    Loaded
 }
