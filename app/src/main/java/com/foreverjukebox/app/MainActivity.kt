@@ -92,9 +92,11 @@ class MainActivity : FragmentActivity() {
 
     /**
      * Hands share-sheet content to the view model. The ACTION_SEND filters ship only in the
-     * server-mode flavor; a send aimed at a local-only build resolves to the local-mode message.
+     * server-mode flavor; the build-config guard keeps a local-only build inert even against an
+     * explicit send aimed at it, which no manifest filter can prevent.
      */
     private fun handleShareIntent(intent: Intent?) {
+        if (!BuildConfig.SERVER_MODE_AVAILABLE) return
         if (intent?.action != Intent.ACTION_SEND) return
         val audioUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
         if (audioUri != null) {
