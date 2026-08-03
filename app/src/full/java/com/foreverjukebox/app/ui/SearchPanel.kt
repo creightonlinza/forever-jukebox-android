@@ -1,5 +1,9 @@
 package com.foreverjukebox.app.ui
 
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -26,6 +30,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -51,7 +58,10 @@ fun SearchPanel(
     onSearch: (String) -> Unit,
     onSpotifySelect: (RemoteMusicSearchItem) -> Unit,
     onYoutubeSelect: (RemoteVideoSearchItem) -> Unit,
-    onOpenYoutube: (String) -> Unit
+    onOpenYoutube: (String) -> Unit,
+    onSubmitUrl: (String) -> Unit,
+    onClearUrlError: () -> Unit,
+    onUploadFile: (Uri, String?) -> Unit
 ) {
     val searchState = state.search
     var query by remember(searchState.query) { mutableStateOf(searchState.query) }
@@ -143,6 +153,19 @@ fun SearchPanel(
                     }
                 }
             }
+
+            val searchFlowActive = searchState.spotifyLoading ||
+                searchState.spotifyResults.isNotEmpty() ||
+                searchState.youtubeLoading ||
+                searchState.videoMatches.isNotEmpty()
+            if (!searchFlowActive && (state.allowUserUrl || state.allowUserUpload)) {
+                AddYourOwnSection(
+                    state = state,
+                    onSubmitUrl = onSubmitUrl,
+                    onClearUrlError = onClearUrlError,
+                    onUploadFile = onUploadFile
+                )
+            }
         }
     }
 
@@ -158,6 +181,85 @@ fun SearchPanel(
             },
             onOpenYoutube = { onOpenYoutube(videoId) },
             onClose = { previewItem = null }
+        )
+    }
+}
+
+@Composable
+private fun AddYourOwnSection(
+    state: UiState,
+    onSubmitUrl: (String) -> Unit,
+    onClearUrlError: () -> Unit,
+    onUploadFile: (Uri, String?) -> Unit
+) {
+    val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    Text("Add your own", style = MaterialTheme.typography.labelLarge)
+    if (state.allowUserUrl) {
+        var urlInput by remember { mutableStateOf("") }
+        val trimmedUrl = urlInput.trim()
+        val urlError = state.search.urlErrorMessage
+        val submitUrl = {
+            if (trimmedUrl.isNotBlank()) {
+                onSubmitUrl(trimmedUrl)
+                keyboardController?.hide()
+                focusManager.clearFocus()
+            }
+        }
+        OutlinedTextField(
+            value = urlInput,
+            onValueChange = {
+                urlInput = it
+                if (urlError != null) onClearUrlError()
+            },
+            label = { Text("YouTube, SoundCloud, or Bandcamp link") },
+            textStyle = MaterialTheme.typography.bodySmall,
+            singleLine = true,
+            isError = urlError != null,
+            supportingText = urlError?.let { message ->
+                { Text(message, style = MaterialTheme.typography.labelSmall) }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { submitUrl() }),
+            trailingIcon = {
+                SquareIconButton(
+                    onClick = submitUrl,
+                    enabled = trimmedUrl.isNotBlank()
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "Add by link"
+                    )
+                }
+            },
+            shape = SurfaceShape,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+    if (state.allowUserUpload) {
+        val filePicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val displayName = context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            }
+            onUploadFile(uri, displayName)
+        }
+        SubTabCard(
+            label = "Upload Audio",
+            icon = Icons.Outlined.AudioFile,
+            iconTint = LocalThemeTokens.current.titleAccent,
+            onClick = { filePicker.launch(uploadMimeTypesForPicker(state.allowedUploadExts)) },
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

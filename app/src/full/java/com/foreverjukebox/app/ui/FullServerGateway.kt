@@ -13,6 +13,7 @@ import com.foreverjukebox.app.data.SpotifySearchItem
 import com.foreverjukebox.app.data.TopSongItem
 import com.foreverjukebox.app.data.YoutubeSearchItem
 import java.io.File
+import java.io.InputStream
 
 fun createServerGateway(): ServerGateway = FullServerGateway()
 
@@ -75,6 +76,25 @@ private class FullServerGateway(
         artist: String?
     ): TrackAnalysisStartResult =
         api.startYoutubeAnalysis(baseUrl, videoId, title, artist).toTrackAnalysisStartResult()
+
+    override suspend fun startUrlAnalysis(
+        baseUrl: String,
+        url: String,
+        title: String?,
+        artist: String?
+    ): TrackAnalysisResult =
+        api.startUrlAnalysis(baseUrl, url, title, artist).toTrackAnalysisResult()
+
+    override suspend fun uploadTrack(
+        baseUrl: String,
+        fileName: String,
+        sizeBytes: Long,
+        contentType: String?,
+        onBytesWritten: ((Long) -> Unit)?,
+        streamProvider: () -> InputStream
+    ): TrackAnalysisResult =
+        api.uploadTrack(baseUrl, fileName, sizeBytes, contentType, onBytesWritten, streamProvider)
+            .toTrackAnalysisResult()
 
     override suspend fun postPlay(baseUrl: String, jobId: String) {
         api.postPlay(baseUrl, jobId)
@@ -171,7 +191,11 @@ private fun AppConfigResponse.toServerAppConfig(): ServerAppConfig {
     return ServerAppConfig(
         allowFavoritesSync = allowFavoritesSync,
         maxFavorites = maxFavorites,
-        maxTrackLength = maxTrackLength
+        maxTrackLength = maxTrackLength,
+        allowUserUrl = allowUserUrl,
+        allowUserUpload = allowUserUpload,
+        maxUploadSize = maxUploadSize,
+        allowedUploadExts = allowedUploadExts.orEmpty().map { it.trim().lowercase() }
     )
 }
 

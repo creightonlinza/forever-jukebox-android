@@ -74,7 +74,10 @@ fun ServerTabContent(
                     )
                     context.startActivity(intent)
                 }
-            }
+            },
+            onSubmitUrl = viewModel::submitTrackUrl,
+            onClearUrlError = viewModel::clearUrlErrorMessage,
+            onUploadFile = viewModel::uploadTrackFile
         )
         TabId.Input,
         TabId.Play,

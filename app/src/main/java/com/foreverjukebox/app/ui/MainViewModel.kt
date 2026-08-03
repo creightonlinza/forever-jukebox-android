@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.OpenableColumns
@@ -86,7 +87,8 @@ internal fun resetSearchStateAfterTrackSelection(search: SearchState): SearchSta
         videoMatches = emptyList(),
         youtubeLoading = false,
         pendingTrackName = null,
-        pendingTrackArtist = null
+        pendingTrackArtist = null,
+        urlErrorMessage = null
     )
 }
 
@@ -592,7 +594,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 items = it.favorites,
                                 maxFavorites = maxFavorites
                             ),
-                            maxTrackLengthMinutes = config.maxTrackLength
+                            maxTrackLengthMinutes = config.maxTrackLength,
+                            allowUserUrl = config.allowUserUrl,
+                            allowUserUpload = config.allowUserUpload,
+                            maxUploadSizeBytes = config.maxUploadSize,
+                            allowedUploadExts = config.allowedUploadExts
                         )
                     }
                     if (normalizedFavorites != currentFavorites) {
@@ -614,7 +620,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 items = it.favorites,
                                 maxFavorites = maxFavorites
                             ),
-                            maxTrackLengthMinutes = null
+                            maxTrackLengthMinutes = null,
+                            allowUserUrl = false,
+                            allowUserUpload = false,
+                            maxUploadSizeBytes = null,
+                            allowedUploadExts = emptyList()
                         )
                     }
                     if (normalizedFavorites != currentFavorites) {
@@ -1797,6 +1807,302 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             playbackCoordinator.startPoll(responseId)
             true
         }
+    }
+
+    fun submitTrackUrl(rawUrl: String) {
+        if (blockPlaybackChangeWhileLoading()) return
+        val baseUrl = state.value.baseUrl
+        if (baseUrl.isBlank() || !state.value.allowUserUrl) return
+        val normalized = normalizeSupportedSourceUrl(rawUrl)
+        if (normalized == null) {
+            updateSearchState {
+                it.copy(urlErrorMessage = "Enter a YouTube, SoundCloud, or Bandcamp link.")
+            }
+            return
+        }
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        analytics.logUpload("url")
+        if (state.value.playback.isCasting) {
+            updateSearchState(::resetSearchStateAfterTrackSelection)
+            applyActiveTab(TabId.Play, recordHistory = true)
+            launchCastSelection {
+                val jobId = queueUrlAnalysisForCast(normalized) ?: return@launchCastSelection
+                castPlaybackCoordinator.castTrackId(
+                    jobId = jobId,
+                    youtubeId = normalized.youtubeId
+                )
+            }
+            return
+        }
+        prepareServerTrackLoad(tuningParams = null) { current ->
+            current.copy(
+                search = resetSearchStateAfterTrackSelection(current.search),
+                playback = current.playback.copy(
+                    audioLoading = false,
+                    lastYouTubeId = normalized.youtubeId
+                )
+            )
+        }
+        launchServerTrackLoadWithCache(
+            cachedJobId = null,
+            failureLogMessage = "Failed to start URL analysis"
+        ) {
+            // Known-video fast path: skips the slow server-side source resolution when the job
+            // already exists. Lookup failures fall through to the URL endpoint, which dedupes too.
+            if (normalized.youtubeId != null) {
+                val existing = try {
+                    serverGateway.getJobBySource(baseUrl, SOURCE_PROVIDER_YOUTUBE, normalized.youtubeId)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: IOException) {
+                    null
+                } catch (_: IllegalArgumentException) {
+                    null
+                } catch (_: IllegalStateException) {
+                    null
+                }
+                val existingJobId = canonicalJobId(existing?.id)
+                if (existing != null && existingJobId != null) {
+                    return@launchServerTrackLoadWithCache remoteTrackLoadCoordinator.loadOrPoll(
+                        existing,
+                        fallbackJobId = existingJobId
+                    )
+                }
+            }
+            val response = try {
+                serverGateway.startUrlAnalysis(baseUrl, normalized.url, null, null)
+            } catch (error: HttpStatusException) {
+                val message = urlAnalysisHttpErrorMessage(
+                    statusCode = error.statusCode,
+                    responseBody = error.responseBody,
+                    sourceProvider = normalized.provider
+                ) ?: throw error
+                playbackCoordinator.setAnalysisError(message)
+                return@launchServerTrackLoadWithCache true
+            }
+            remoteTrackLoadCoordinator.loadOrPoll(response)
+        }
+    }
+
+    fun uploadTrackFile(uri: Uri, displayName: String?) {
+        if (blockPlaybackChangeWhileLoading()) return
+        val baseUrl = state.value.baseUrl
+        if (baseUrl.isBlank() || !state.value.allowUserUpload) return
+        val resolver = getApplication<Application>().contentResolver
+        val mimeType = runCatching { resolver.getType(uri) }.getOrNull()
+        val fileName = resolveUploadFileName(displayName, mimeType, state.value.allowedUploadExts)
+        if (fileName == null) {
+            viewModelScope.launch {
+                showToast(unsupportedUploadTypeMessage(state.value.allowedUploadExts))
+            }
+            return
+        }
+        val sizeBytes = queryContentSize(uri)
+        val maxUploadSize = state.value.maxUploadSizeBytes
+        if (maxUploadSize != null && sizeBytes != null && sizeBytes > maxUploadSize) {
+            viewModelScope.launch {
+                showToast(
+                    "This file is larger than the server's " +
+                        "${formatUploadSizeLimitMb(maxUploadSize)} upload limit."
+                )
+            }
+            return
+        }
+        // Local duration probe saves a doomed upload; the server's 422 remains the authority.
+        if (showTrackLengthLimitIfExceeded(probeContentDurationSeconds(uri))) {
+            return
+        }
+        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        analytics.logUpload("file")
+        val title = uploadTitleFromFileName(fileName)
+        if (state.value.playback.isCasting) {
+            applyActiveTab(TabId.Play, recordHistory = true)
+            launchCastSelection {
+                val jobId = queueUploadForCast(uri, fileName, sizeBytes, mimeType)
+                    ?: return@launchCastSelection
+                castPlaybackCoordinator.castTrackId(jobId = jobId, title = title)
+            }
+            return
+        }
+        prepareServerTrackLoad(tuningParams = null) { current ->
+            current.copy(
+                search = resetSearchStateAfterTrackSelection(current.search),
+                playback = current.playback.copy(
+                    audioLoading = false,
+                    trackTitle = title
+                )
+            )
+        }
+        launchServerTrackLoadWithCache(
+            cachedJobId = null,
+            failureLogMessage = "Failed to upload track"
+        ) {
+            val response = try {
+                uploadTrackToServer(baseUrl, uri, fileName, sizeBytes, mimeType)
+            } catch (error: HttpStatusException) {
+                val message = uploadHttpErrorMessage(error.statusCode, error.responseBody)
+                    ?: throw error
+                playbackCoordinator.setAnalysisError(message)
+                return@launchServerTrackLoadWithCache true
+            }
+            remoteTrackLoadCoordinator.loadOrPoll(response)
+        }
+    }
+
+    /**
+     * Run the multipart upload with progress relayed into the loading UI. The progress callback
+     * fires on OkHttp's IO thread and keeps firing if the surrounding coroutine is cancelled
+     * mid-body (the blocking call can't be interrupted), so it re-checks the job before touching
+     * state to keep a stale upload from stomping a newer track's loading screen.
+     */
+    private suspend fun uploadTrackToServer(
+        baseUrl: String,
+        uri: Uri,
+        fileName: String,
+        sizeBytes: Long?,
+        mimeType: String?
+    ): TrackAnalysisResult {
+        val resolver = getApplication<Application>().contentResolver
+        // Fail fast on an unreadable URI before any bytes hit the network.
+        withContext(Dispatchers.IO) {
+            resolver.openInputStream(uri)?.close()
+                ?: throw IOException("Unable to open $uri")
+        }
+        val requestJob = kotlin.coroutines.coroutineContext[Job]
+        var lastPercent = -1
+        val onBytesWritten: ((Long) -> Unit)? = if (sizeBytes != null && sizeBytes > 0) {
+            { bytes ->
+                val percent = ((bytes * 100) / sizeBytes).toInt().coerceIn(0, 100)
+                if (percent != lastPercent && requestJob?.isActive != false) {
+                    lastPercent = percent
+                    playbackCoordinator.setAnalysisProgress(percent, "Uploading...")
+                }
+            }
+        } else {
+            null
+        }
+        return serverGateway.uploadTrack(
+            baseUrl = baseUrl,
+            fileName = fileName,
+            sizeBytes = sizeBytes ?: -1L,
+            contentType = mimeType,
+            onBytesWritten = onBytesWritten
+        ) {
+            resolver.openInputStream(uri) ?: throw IOException("Unable to open $uri")
+        }
+    }
+
+    private suspend fun queueUrlAnalysisForCast(normalized: NormalizedSourceUrl): String? {
+        val baseUrl = state.value.baseUrl.trim()
+        if (baseUrl.isBlank()) {
+            showToast("Unable to queue this track for casting.")
+            return null
+        }
+        return try {
+            val response = serverGateway.startUrlAnalysis(baseUrl, normalized.url, null, null)
+            if (response.status == "failed") {
+                showToast(
+                    ErrorDisplay.format(
+                        raw = response.error,
+                        errorCode = response.errorCode,
+                        sourceProvider = response.sourceProvider ?: normalized.provider,
+                        fallback = "Unable to queue this track for casting."
+                    )
+                )
+                return null
+            }
+            canonicalJobId(response.id)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: HttpStatusException) {
+            if (error.statusCode == 422) {
+                showServerTrackLengthLimitError()
+            } else {
+                showToast(
+                    urlAnalysisHttpErrorMessage(
+                        statusCode = error.statusCode,
+                        responseBody = error.responseBody,
+                        sourceProvider = normalized.provider
+                    ) ?: "Unable to queue this track for casting."
+                )
+            }
+            null
+        } catch (_: IOException) {
+            showToast("Unable to queue this track for casting.")
+            null
+        } catch (_: IllegalArgumentException) {
+            showToast("Unable to queue this track for casting.")
+            null
+        } catch (_: IllegalStateException) {
+            showToast("Unable to queue this track for casting.")
+            null
+        }
+    }
+
+    private suspend fun queueUploadForCast(
+        uri: Uri,
+        fileName: String,
+        sizeBytes: Long?,
+        mimeType: String?
+    ): String? {
+        val baseUrl = state.value.baseUrl.trim()
+        if (baseUrl.isBlank()) {
+            showToast("Unable to queue this track for casting.")
+            return null
+        }
+        return try {
+            val response = uploadTrackToServer(baseUrl, uri, fileName, sizeBytes, mimeType)
+            if (response.status == "failed") {
+                showToast(
+                    ErrorDisplay.format(
+                        raw = response.error,
+                        errorCode = response.errorCode,
+                        fallback = "Unable to queue this track for casting."
+                    )
+                )
+                return null
+            }
+            canonicalJobId(response.id)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: HttpStatusException) {
+            if (error.statusCode == 422) {
+                showServerTrackLengthLimitError()
+            } else {
+                showToast(
+                    uploadHttpErrorMessage(error.statusCode, error.responseBody)
+                        ?: "Unable to queue this track for casting."
+                )
+            }
+            null
+        } catch (_: IOException) {
+            showToast("Unable to queue this track for casting.")
+            null
+        } catch (_: IllegalArgumentException) {
+            showToast("Unable to queue this track for casting.")
+            null
+        } catch (_: IllegalStateException) {
+            showToast("Unable to queue this track for casting.")
+            null
+        }
+    }
+
+    private fun probeContentDurationSeconds(uri: Uri): Double? = runCatching {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(getApplication(), uri)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0 }
+                ?.let { it / 1000.0 }
+        } finally {
+            retriever.release()
+        }
+    }.getOrNull()
+
+    fun clearUrlErrorMessage() {
+        if (state.value.search.urlErrorMessage == null) return
+        updateSearchState { it.copy(urlErrorMessage = null) }
     }
 
     fun loadTrackById(

@@ -152,6 +152,10 @@ data class UiState(
     val allowFavoritesSync: Boolean = false,
     val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     val maxTrackLengthMinutes: Double? = null,
+    val allowUserUrl: Boolean = false,
+    val allowUserUpload: Boolean = false,
+    val maxUploadSizeBytes: Long? = null,
+    val allowedUploadExts: List<String> = emptyList(),
     val loadingAudioFeedbackEnabled: Boolean = false,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,
@@ -210,7 +214,8 @@ data class SearchState(
     val videoMatches: List<RemoteVideoSearchItem> = emptyList(),
     val youtubeLoading: Boolean = false,
     val pendingTrackName: String? = null,
-    val pendingTrackArtist: String? = null
+    val pendingTrackArtist: String? = null,
+    val urlErrorMessage: String? = null
 )
 
 data class AutocanonizerUiState(
