@@ -40,7 +40,9 @@ import com.foreverjukebox.app.visualization.visualizationLabels
 import com.foreverjukebox.app.cast.CastRelayClient
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.net.ConnectException
 import java.net.URI
+import java.net.UnknownHostException
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.asRequestBody
 import kotlin.coroutines.cancellation.CancellationException
@@ -2595,37 +2597,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             diagnostics.logAnalysisStarted("server")
             playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
-            try {
-                val handled = request()
-                if (handled) {
-                    diagnostics.logAnalysisCompleted("server")
-                } else {
-                    diagnostics.logAnalysisFailed("server", "unhandled")
-                    playbackCoordinator.setAnalysisError("Loading failed.")
-                }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (error: HttpStatusException) {
-                if (error.statusCode == 422) {
-                    diagnostics.logAnalysisFailed("server", "track_length_limit")
-                    showServerTrackLengthLimitError()
-                } else {
+            var attempt = 1
+            while (true) {
+                try {
+                    val handled = request()
+                    if (handled) {
+                        diagnostics.logAnalysisCompleted("server")
+                    } else {
+                        diagnostics.logAnalysisFailed("server", "unhandled")
+                        playbackCoordinator.setAnalysisError("Loading failed.")
+                    }
+                    return@launch
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (error: HttpStatusException) {
+                    if (error.statusCode == 422) {
+                        diagnostics.logAnalysisFailed("server", "track_length_limit")
+                        showServerTrackLengthLimitError()
+                    } else {
+                        diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
+                        AppLog.warn(TAG, failureLogMessage, error)
+                        playbackCoordinator.setAnalysisError("Loading failed.")
+                    }
+                    return@launch
+                } catch (error: IOException) {
+                    // UnknownHostException/ConnectException here usually means Android is
+                    // gating the app's network (doze/app standby, network transition), not
+                    // that the host is down — the same restriction that transiently blocks
+                    // MediaCodec. Both clear on their own, so back off and retry, preferring
+                    // the cached copy over re-downloading.
+                    if (isRetryableNetworkError(error) && attempt < SERVER_LOAD_NETWORK_MAX_ATTEMPTS) {
+                        AppLog.warn(TAG, "$failureLogMessage (attempt $attempt); retrying", error)
+                        delay(SERVER_LOAD_NETWORK_BASE_RETRY_DELAY_MS shl (attempt - 1))
+                        attempt += 1
+                        if (cachedJobId != null && playbackCoordinator.tryLoadCachedTrack(cachedJobId)) {
+                            diagnostics.logAnalysisCompleted("server")
+                            return@launch
+                        }
+                        playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
+                        continue
+                    }
+                    diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
+                    AppLog.warn(TAG, failureLogMessage, error)
+                    if (isRetryableNetworkError(error)) {
+                        playbackCoordinator.setAnalysisError("Network error.", expected = true)
+                    } else {
+                        playbackCoordinator.setAnalysisError("Loading failed.")
+                    }
+                    return@launch
+                } catch (error: IllegalArgumentException) {
                     diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                     AppLog.warn(TAG, failureLogMessage, error)
                     playbackCoordinator.setAnalysisError("Loading failed.")
+                    return@launch
+                } catch (error: IllegalStateException) {
+                    diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
+                    AppLog.warn(TAG, failureLogMessage, error)
+                    playbackCoordinator.setAnalysisError("Loading failed.")
+                    return@launch
                 }
-            } catch (error: IOException) {
-                diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
-                AppLog.warn(TAG, failureLogMessage, error)
-                playbackCoordinator.setAnalysisError("Loading failed.")
-            } catch (error: IllegalArgumentException) {
-                diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
-                AppLog.warn(TAG, failureLogMessage, error)
-                playbackCoordinator.setAnalysisError("Loading failed.")
-            } catch (error: IllegalStateException) {
-                diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
-                AppLog.warn(TAG, failureLogMessage, error)
-                playbackCoordinator.setAnalysisError("Loading failed.")
             }
         }
     }
@@ -3265,6 +3295,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!playlist.canSelectTrackAt(index)) return
         if (blockPlaybackChangeWhileLoading()) return
         val track = playlist.tracks[index]
+        diagnostics.logPlaylistTrackSelected(index, track.id, track.title)
         _state.update {
             it.copy(playlist = it.playlist.selectTrackAt(index))
         }
@@ -3922,6 +3953,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val GITHUB_REPO_OWNER = "creightonlinza"
         private const val GITHUB_REPO_NAME = "forever-jukebox-android"
         private const val LOADING_LOCK_MESSAGE = "Please wait for the current track to finish loading."
+        private const val SERVER_LOAD_NETWORK_MAX_ATTEMPTS = 3
+        private const val SERVER_LOAD_NETWORK_BASE_RETRY_DELAY_MS = 2000L
         private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 500.0
         private const val SHARE_NEEDS_SERVER_MODE_MESSAGE = "Switch to server mode to add tracks."
         private const val SHARE_NO_SERVER_MESSAGE = "Set up a Forever Jukebox server first."
@@ -3932,6 +3965,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "Share a YouTube, SoundCloud, or Bandcamp link."
     }
 }
+
+// DNS and connect failures on Android frequently mean the OS is restricting the
+// app's network access (doze, app standby, wifi/cellular handoff) rather than a
+// server or connectivity outage, so they are worth retrying before surfacing.
+internal fun isRetryableNetworkError(error: IOException): Boolean =
+    error is UnknownHostException || error is ConnectException
 
 /** A track handed over by the share sheet, held until the app state can act on it. */
 private sealed interface PendingShare {

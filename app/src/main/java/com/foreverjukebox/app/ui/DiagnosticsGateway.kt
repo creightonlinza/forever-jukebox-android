@@ -20,6 +20,9 @@ interface DiagnosticsGateway {
 
     fun logAnalysisFailed(source: String, reason: String)
 
+    /** Playlist selection/advance, which loads tracks without a select_track event. */
+    fun logPlaylistTrackSelected(index: Int, trackId: String?, title: String?)
+
     /** mode: "jukebox" | "autocanonizer" */
     fun logCastConnected(mode: String)
 
@@ -49,6 +52,15 @@ private class FirebaseDiagnosticsGateway(context: Context) : DiagnosticsGateway 
 
     override fun logAnalysisFailed(source: String, reason: String) {
         log("analysis_failed", "source" to source, "reason" to reason)
+    }
+
+    override fun logPlaylistTrackSelected(index: Int, trackId: String?, title: String?) {
+        log(
+            "playlist_track_selected",
+            "index" to index.toString(),
+            "track_id" to trackId,
+            "track_title" to title
+        )
     }
 
     override fun logCastConnected(mode: String) {

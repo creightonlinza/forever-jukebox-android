@@ -177,14 +177,20 @@ class PlaybackCoordinator(
         applyLoadingEvent(LoadingEvent.AnalysisCalculating)
     }
 
-    fun setAnalysisError(message: String) {
+    fun setAnalysisError(message: String, expected: Boolean = false) {
         // Single chokepoint for every surfaced load/analysis error (server, cached,
         // local, playback, autocanonizer). Persisting the message here guarantees
         // the cause of any "Loading failed." is captured even on paths that have no
         // throwable to log at the call site (e.g. server-reported failures). The
-        // benign user-cancel sentinel is excluded as noise.
+        // benign user-cancel sentinel is excluded as noise. Expected environmental
+        // failures (e.g. no network after retries) log as warn breadcrumbs so they
+        // don't pile up as Crashlytics non-fatals.
         if (message != LoadingAudioFeedbackController.LOCAL_ANALYSIS_CANCELLED_MESSAGE) {
-            AppLog.error(TAG, "Load/analysis error surfaced: $message")
+            if (expected) {
+                AppLog.warn(TAG, "Load/analysis error surfaced: $message")
+            } else {
+                AppLog.error(TAG, "Load/analysis error surfaced: $message")
+            }
         }
         applyLoadingEvent(LoadingEvent.AnalysisError(message))
     }
@@ -482,7 +488,10 @@ class PlaybackCoordinator(
             throw error
         }
         setAnalysisProgress(0, "Loading audio")
-        delay(SERVER_AUDIO_DECODE_RETRY_DELAY_MS)
+        // Exponential backoff: codec reclaim under memory/background pressure can take
+        // several seconds to clear (screen off, app cached), so short fixed delays
+        // exhaust retries before the codec is grantable again.
+        delay(SERVER_AUDIO_DECODE_BASE_RETRY_DELAY_MS shl (attempt - 1))
         return isActiveJobId(jobId)
     }
 
@@ -1184,8 +1193,8 @@ class PlaybackCoordinator(
 
     private companion object {
         const val TAG = "PlaybackCoordinator"
-        const val SERVER_AUDIO_DECODE_MAX_ATTEMPTS = 3
-        const val SERVER_AUDIO_DECODE_RETRY_DELAY_MS = 500L
+        const val SERVER_AUDIO_DECODE_MAX_ATTEMPTS = 5
+        const val SERVER_AUDIO_DECODE_BASE_RETRY_DELAY_MS = 500L
         const val AUDIO_LOAD_WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L
         const val AUDIO_LOAD_WAKE_LOCK_TAG = "ForeverJukebox:AudioLoad"
     }
