@@ -30,6 +30,16 @@ enum class TopSongsTab {
     Favorites
 }
 
+/**
+ * Sub-tabs of the Search panel. The Upload tab hosts the user-source paths (add by link, upload a
+ * file) and is offered only when the server allows at least one of them; otherwise the panel shows
+ * the Search content alone with no sub-tab row.
+ */
+enum class SearchPanelTab {
+    Search,
+    Upload
+}
+
 enum class PlaybackMode {
     Jukebox,
     Autocanonizer
@@ -144,6 +154,7 @@ data class UiState(
     val themeMode: ThemeMode = ThemeMode.System,
     val activeTab: TabId = TabId.Top,
     val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,
+    val searchPanelTab: SearchPanelTab = SearchPanelTab.Search,
     val cacheSizeBytes: Long = 0,
     val favorites: List<FavoriteTrack> = emptyList(),
     val favoritesSortKey: FavoriteSortKey = FavoriteSortKey.Title,
@@ -673,6 +684,7 @@ fun stateAfterModeChangeReset(
         localAnalysisJsonPath = null,
         activeTab = defaultTabForMode(resolvedTargetMode),
         topSongsTab = TopSongsTab.TopSongs,
+        searchPanelTab = SearchPanelTab.Search,
         search = SearchState(),
         playback = PlaybackState(),
         playlist = JukeboxPlaylistState(),

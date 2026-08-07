@@ -75,6 +75,7 @@ fun ServerTabContent(
                     context.startActivity(intent)
                 }
             },
+            onSelectPanelTab = viewModel::setSearchPanelTab,
             onSubmitUrl = viewModel::submitTrackUrl,
             onClearUrlError = viewModel::clearUrlErrorMessage,
             onUploadFile = viewModel::uploadTrackFile

@@ -1019,6 +1019,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             setTopSongsTab(TopSongsTab.TopSongs)
             return
         }
+        if (resolvedTab == TabId.Search && state.value.activeTab == TabId.Search) {
+            setSearchPanelTab(SearchPanelTab.Search)
+            return
+        }
         applyActiveTab(resolvedTab, recordHistory = true)
     }
 
@@ -1032,6 +1036,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setTopSongsTab(tab: TopSongsTab) {
         _state.update { it.copy(topSongsTab = tab) }
         searchCoordinator.onTopSongsTabSelected(tab)
+    }
+
+    fun setSearchPanelTab(tab: SearchPanelTab) {
+        _state.update { it.copy(searchPanelTab = tab) }
     }
 
     fun refreshFavoritesFromSync() {
@@ -1067,7 +1075,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _state.update {
             val nextTopTab = if (resolvedTab == TabId.Top) TopSongsTab.TopSongs else it.topSongsTab
-            it.copy(activeTab = resolvedTab, topSongsTab = nextTopTab)
+            val nextSearchTab = if (resolvedTab == TabId.Search) {
+                SearchPanelTab.Search
+            } else {
+                it.searchPanelTab
+            }
+            it.copy(activeTab = resolvedTab, topSongsTab = nextTopTab, searchPanelTab = nextSearchTab)
         }
         if (resolvedTab == TabId.Top) {
             searchCoordinator.onTopTabActivated()
@@ -1155,6 +1168,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 castEnabled = resolveCastEnabled(mode, relayConfigured),
                 activeTab = TabId.Top,
                 topSongsTab = TopSongsTab.TopSongs,
+                searchPanelTab = SearchPanelTab.Search,
                 favorites = emptyList(),
                 favoritesSyncCode = null,
                 allowFavoritesSync = false,
@@ -3174,7 +3188,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             playbackCoordinator.resetForNewTrack()
             _state.update {
                 val nextTab = defaultTabForMode(it.appMode)
-                it.copy(activeTab = nextTab, topSongsTab = TopSongsTab.TopSongs)
+                it.copy(
+                    activeTab = nextTab,
+                    topSongsTab = TopSongsTab.TopSongs,
+                    searchPanelTab = SearchPanelTab.Search
+                )
             }
             tabHistory.removeLastOrNull()?.let { last ->
                 if (last != TabId.Play) {
