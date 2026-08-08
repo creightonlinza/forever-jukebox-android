@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -227,5 +228,22 @@ class SharedTextSourceTest {
 
         assertEquals("watch https://youtu.be/dQw4w9WgXcQ", candidates.first())
         assertNotNull(candidates.firstNotNullOfOrNull { normalizeSupportedSourceUrl(it) })
+    }
+
+    @Test
+    fun linkBearingTextOwnsAShareThatAlsoCarriesAStream() {
+        assertTrue(sharedTextCarriesLink("Check this out https://youtu.be/dQw4w9WgXcQ"))
+        assertTrue(sharedTextCarriesLink("Video Title\nhttps://youtu.be/dQw4w9WgXcQ?si=TOKEN"))
+        assertTrue(sharedTextCarriesLink(null, "https://soundcloud.com/artist/track"))
+    }
+
+    @Test
+    fun textNamingNoLinkReadsAsACaptionForTheAttachment() {
+        assertFalse(sharedTextCarriesLink("Voice recording 3"))
+        assertFalse(sharedTextCarriesLink(null, null))
+        assertFalse(sharedTextCarriesLink("   "))
+        // A bare video id is a source only when it is the whole share, and a share carrying a file
+        // is that file's; the id form stays out of the attachment decision.
+        assertFalse(sharedTextCarriesLink("dQw4w9WgXcQ"))
     }
 }

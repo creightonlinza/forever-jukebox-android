@@ -2,7 +2,7 @@ package com.foreverjukebox.app.ui
 
 import java.util.Locale
 import kotlin.math.floor
-import kotlin.math.roundToInt
+import kotlin.math.round
 
 /**
  * Bytes as megabytes with at most one decimal, e.g. "20 MB" or "2.5 MB". [unitSeparator] is what
@@ -10,9 +10,10 @@ import kotlin.math.roundToInt
  */
 fun formatMegabytes(bytes: Long, unitSeparator: String = " "): String {
     val mb = bytes.coerceAtLeast(0).toDouble() / (1024.0 * 1024.0)
-    val rounded = (mb * 10).roundToInt() / 10.0
+    // Rounded in Double so a size beyond Int range keeps its magnitude instead of saturating.
+    val rounded = round(mb * 10.0) / 10.0
     return if (rounded % 1.0 == 0.0) {
-        "${rounded.toInt()}${unitSeparator}MB"
+        "${rounded.toLong()}${unitSeparator}MB"
     } else {
         String.format(Locale.US, "%.1f${unitSeparator}MB", rounded)
     }

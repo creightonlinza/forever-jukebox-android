@@ -37,6 +37,18 @@ fun sharedSourceCandidates(sharedText: String?, sharedSubject: String? = null): 
     return candidates.take(MAX_SHARED_CANDIDATES)
 }
 
+/**
+ * True when shared text carries a link, which is what decides who owns a share that arrives with
+ * both text and a stream attachment. A link share attaches preview artwork; a file share captions
+ * itself. Only an explicit http(s) token counts, so a caption naming the file reads as a caption.
+ */
+fun sharedTextCarriesLink(sharedText: String?, sharedSubject: String? = null): Boolean {
+    val tokens = LinkedHashSet<String>()
+    collectUrlTokens(sharedText, tokens)
+    collectUrlTokens(sharedSubject, tokens)
+    return tokens.isNotEmpty()
+}
+
 private fun collectUrlTokens(value: String?, into: MutableSet<String>) {
     if (value.isNullOrBlank()) return
     value.split(SHARED_TEXT_TOKENS)

@@ -191,7 +191,8 @@ class PlaybackCoordinator(
     /**
      * Drop the in-flight loading state for an attempt that ended without a loading screen to report
      * into — a cast queue failure surfaces as a toast, and anything left in flight keeps the
-     * playback-change lock engaged. Any error already on screen stays.
+     * playback-change lock engaged. Clears every field that lock reads, so releasing it here does
+     * not depend on which of them the attempt happened to raise. Any error already on screen stays.
      */
     fun clearAnalysisLoading() {
         applyLoadingEvent(LoadingEvent.AnalysisIdle)
@@ -1080,7 +1081,8 @@ class PlaybackCoordinator(
                         analysisProgress = null,
                         analysisMessage = null,
                         analysisInFlight = false,
-                        analysisCalculating = false
+                        analysisCalculating = false,
+                        audioLoading = false
                     )
                 }
             )

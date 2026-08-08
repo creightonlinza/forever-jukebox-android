@@ -993,7 +993,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setSearchPanelTab(tab: SearchPanelTab) {
-        _state.update { it.copy(searchPanelTab = tab) }
+        _state.update {
+            it.copy(
+                searchPanelTab = coerceSearchPanelTab(
+                    tab = tab,
+                    allowUserUrl = it.allowUserUrl,
+                    allowUserUpload = it.allowUserUpload
+                )
+            )
+        }
     }
 
     fun refreshFavoritesFromSync() {
@@ -1957,6 +1965,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (blockPlaybackChangeWhileLoading()) return
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
+        val appMode = state.value.appMode
         if (
             !allowsUserSource(
                 allowed = state.value.allowUserUpload,
@@ -1997,6 +2006,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // The metadata hops above yield the main thread, so re-check what a load started
             // meanwhile before committing to this one.
             if (blockPlaybackChangeWhileLoading()) return@launch
+            // The file was chosen for the server that was selected when the picker returned, and
+            // the size was measured against that server's limits. Pointing the app elsewhere
+            // mid-hop makes both stale, so the upload is dropped rather than sent to a server the
+            // user has moved away from.
+            if (state.value.baseUrl != baseUrl || state.value.appMode != appMode) return@launch
             startUploadTrackLoad(baseUrl, uri, fileName, sizeBytes, mimeType)
         }
     }
@@ -2093,9 +2107,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Open a shared content URI for upload. A grant can lapse between the share arriving and the
-     * bytes being read, which surfaces as a [SecurityException] the load paths have no handler for,
-     * so it reads as the unreadable-source failure it is.
+     * Open a content URI for upload. A grant can lapse between the URI being handed over and the
+     * bytes being read, which surfaces as a [SecurityException] the transfer paths have no handler
+     * for, so it reads as the unreadable-source failure it is. The relay reopens the stream on
+     * retry, which puts a lapsed grant in the middle of a transfer as well as at its start.
      */
     private fun openUploadStream(resolver: ContentResolver, uri: Uri): InputStream =
         try {
@@ -3052,10 +3067,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return castPlaybackCoordinator.sendCastCommand(command)
     }
 
+    /**
+     * Run a cast track selection, guaranteeing the loading state it raises is released. Handing a
+     * track to the receiver clears that state itself, so reaching the end of [block] means the
+     * selection ended without a handover — a refused queue, or a receiver that went away before it
+     * could be given the track. A cast has no loading screen to cancel from, so anything left
+     * raised locks out every later track selection. A cancelled selection is left to its canceller,
+     * which is either tearing the cast down or starting the selection that replaces this one.
+     */
     private fun launchCastSelection(block: suspend () -> Unit) {
         cancelCastSelection()
         castSelectionJob = viewModelScope.launch {
             block()
+            playbackCoordinator.clearAnalysisLoading()
         }
     }
 
@@ -3123,7 +3147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             sizeBytes = sizeBytes ?: -1L,
             onBytesWritten = { bytes -> onAudioProgress(bytes, sizeBytes) }
         ) {
-            resolver.openInputStream(uri) ?: throw IOException("Unable to open $uri")
+            openUploadStream(resolver, uri)
         }
         val analysisBody = analysisFile.asRequestBody("application/json".toMediaTypeOrNull())
         return CastLocalUploadSource(sizeBytes, audioBody, analysisBody)
@@ -3763,8 +3787,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
+        // A share still waiting for readiness is content the user handed the app, so it only gives
+        // up its turn to a link that actually takes over. A link naming no track hands it back.
+        val displacedShare = pendingExternalIntent?.takeUnless { it is PendingExternalIntent.DeepLink }
         pendingExternalIntent = PendingExternalIntent.DeepLink(uriString)
-        consumePendingExternalIntentIfReady()
+        val abandoned = consumePendingExternalIntentIfReady()
+        if (abandoned && displacedShare != null) {
+            pendingExternalIntent = displacedShare
+            consumePendingExternalIntentIfReady()
+        }
     }
 
     /** Entry point for text sent to the app by the share sheet. */
@@ -3840,31 +3871,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * settled. Both deep links and shares wait here, so a collector that changes readiness has one
      * function to call rather than a per-mechanism list to keep up with.
      *
-     * Readiness is not uniform, and deliberately so. A listen link — tapped or shared — carries a
-     * track id rather than a user-supplied source, so a server URL is all it needs, neither server
-     * mode nor the server's user-source config. Anything else in a share is a user source and waits
-     * for all three; unsettled state holds it rather than rejecting it with the wrong reason.
+     * Readiness is not uniform, and deliberately so. A listen link carries a track id rather than a
+     * user-supplied source, so it needs no user-source config to be settled. A tapped one needs only
+     * a server URL — it is the user aiming the app at that track. A shared one still answers to the
+     * app-mode gate, so a share arriving in Local mode is refused rather than quietly pulling the
+     * app back to the server behind it. Anything else in a share is a user source and waits for all
+     * three; unsettled state holds it rather than rejecting it with the wrong reason.
+     *
+     * Returns true when the pending intent was dropped without producing any outcome, so a caller
+     * that displaced something to make room can hand the slot back.
      */
-    private fun consumePendingExternalIntentIfReady() {
-        val pending = pendingExternalIntent ?: return
+    private fun consumePendingExternalIntentIfReady(): Boolean {
+        val pending = pendingExternalIntent ?: return false
         val current = state.value
         val serverUrlReady = current.baseUrl.isNotBlank()
+        val listenLinkReady = serverUrlReady && when (pending) {
+            is PendingExternalIntent.DeepLink -> true
+            else -> current.appMode == AppMode.Server
+        }
         val sharedCandidates = when (pending) {
             is PendingExternalIntent.DeepLink -> listOf(pending.uriString)
             is PendingExternalIntent.SharedText ->
                 sharedSourceCandidates(pending.text, pending.subject)
             is PendingExternalIntent.SharedAudio -> emptyList()
         }
-        if (serverUrlReady && sharedCandidates.any { listenLinkCoordinator.handleDeepLink(it) }) {
+        if (listenLinkReady && sharedCandidates.any { listenLinkCoordinator.handleDeepLink(it) }) {
             pendingExternalIntent = null
-            return
+            return false
         }
         if (pending is PendingExternalIntent.DeepLink) {
             // A deep link that names no listen track has nowhere else to go.
             if (serverUrlReady) {
                 pendingExternalIntent = null
+                return true
             }
-            return
+            return false
         }
         val readiness = resolveShareReadiness(
             showAppModeGate = current.showAppModeGate,
@@ -3874,16 +3915,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             serverConfigPending = serverConfigState == ServerConfigState.Pending
         )
         when (readiness) {
-            ShareReadiness.Wait -> return
+            ShareReadiness.Wait -> return false
             ShareReadiness.NotServerMode -> {
                 pendingExternalIntent = null
                 viewModelScope.launch { showToast(SHARE_NEEDS_SERVER_MODE_MESSAGE) }
-                return
+                return false
             }
             ShareReadiness.NoServer -> {
                 pendingExternalIntent = null
                 viewModelScope.launch { showToast(SHARE_NO_SERVER_MESSAGE) }
-                return
+                return false
             }
             ShareReadiness.Ready -> Unit
         }
@@ -3893,6 +3934,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is PendingExternalIntent.SharedAudio -> dispatchSharedAudio(pending.uri)
             is PendingExternalIntent.DeepLink -> Unit
         }
+        return false
     }
 
     private fun dispatchSharedText(candidates: List<String>) {

@@ -67,7 +67,7 @@ fun SearchPanel(
     var query by remember(searchState.query) { mutableStateOf(searchState.query) }
     var previewItem by remember { mutableStateOf<RemoteVideoSearchItem?>(null) }
     var thumbnailFailed by remember { mutableStateOf(false) }
-    val uploadTabAvailable = state.allowUserUrl || state.allowUserUpload
+    val uploadTabAvailable = uploadTabAvailable(state.allowUserUrl, state.allowUserUpload)
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(

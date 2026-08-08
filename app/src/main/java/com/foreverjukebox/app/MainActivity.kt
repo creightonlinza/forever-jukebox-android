@@ -18,6 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.ui.ForeverJukeboxApp
 import com.foreverjukebox.app.ui.MainViewModel
+import com.foreverjukebox.app.ui.sharedTextCarriesLink
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
@@ -99,16 +100,20 @@ class MainActivity : FragmentActivity() {
         if (!BuildConfig.SERVER_MODE_AVAILABLE) return
         if (intent?.action != Intent.ACTION_SEND) return
         val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val sharedSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
         val audioUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-        // A text share may attach artwork or a link preview in EXTRA_STREAM; the text is the payload.
-        val textShare = intent.type?.startsWith("text/") == true && !sharedText.isNullOrBlank()
+        // Text and a stream attachment arrive together in both directions: a link share attaches
+        // preview artwork, and a file share captions itself. The link decides which is the payload,
+        // and only a text-typed share can carry one.
+        val textShare = intent.type?.startsWith("text/") == true &&
+            sharedTextCarriesLink(sharedText, sharedSubject)
         if (audioUri != null && !textShare) {
             viewModel.handleSharedAudio(audioUri)
             return
         }
         viewModel.handleSharedText(
             sharedText = sharedText,
-            sharedSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
+            sharedSubject = sharedSubject
         )
     }
 

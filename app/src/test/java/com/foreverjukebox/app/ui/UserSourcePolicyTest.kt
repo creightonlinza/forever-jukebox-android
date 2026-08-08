@@ -157,6 +157,20 @@ class UserSourcePolicyTest {
     }
 
     @Test
+    fun megabytesKeepTheirMagnitudeBeyondIntRange() {
+        // A limit this large only comes from a server spelling out "effectively unlimited", but the
+        // number in the message still has to be the one it sent.
+        assertEquals("314572800 MB", formatMegabytes(300L * 1024 * 1024 * 1024 * 1024))
+    }
+
+    @Test
+    fun uploadTabExistsWhileEitherUserSourceIsAllowed() {
+        assertEquals(true, uploadTabAvailable(allowUserUrl = true, allowUserUpload = false))
+        assertEquals(true, uploadTabAvailable(allowUserUrl = false, allowUserUpload = true))
+        assertEquals(false, uploadTabAvailable(allowUserUrl = false, allowUserUpload = false))
+    }
+
+    @Test
     fun searchPanelTabFallsBackToSearchWhenNoUserSourceIsAllowed() {
         assertEquals(
             SearchPanelTab.Search,

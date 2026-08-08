@@ -414,16 +414,21 @@ fun coerceTabForMode(mode: AppMode?, tabId: TabId): TabId {
     }
 }
 
+/** The Upload sub-tab exists only while the server allows a user source. */
+fun uploadTabAvailable(allowUserUrl: Boolean, allowUserUpload: Boolean): Boolean =
+    allowUserUrl || allowUserUpload
+
 /**
- * The Upload sub-tab exists only while the server allows a user source, so a config that permits
- * neither drops the selection back to Search instead of leaving a tab that nothing renders.
+ * Drop an Upload selection back to Search when no user source is allowed, so the selected tab is
+ * never one that nothing renders. Applied wherever the selection is written rather than only where
+ * the config lands, so a selection made in the frame a config revocation arrives cannot outlive it.
  */
 fun coerceSearchPanelTab(
     tab: SearchPanelTab,
     allowUserUrl: Boolean,
     allowUserUpload: Boolean
 ): SearchPanelTab {
-    return if (tab == SearchPanelTab.Upload && !allowUserUrl && !allowUserUpload) {
+    return if (tab == SearchPanelTab.Upload && !uploadTabAvailable(allowUserUrl, allowUserUpload)) {
         SearchPanelTab.Search
     } else {
         tab
