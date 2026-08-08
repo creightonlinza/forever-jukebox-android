@@ -244,7 +244,6 @@ private fun AddYourOwnSection(
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    Text("Add your own", style = MaterialTheme.typography.labelLarge)
     if (state.allowUserUrl) {
         var urlInput by remember { mutableStateOf("") }
         val trimmedUrl = urlInput.trim()
@@ -256,6 +255,7 @@ private fun AddYourOwnSection(
                 focusManager.clearFocus()
             }
         }
+        Text("By URL", style = MaterialTheme.typography.labelLarge)
         OutlinedTextField(
             value = urlInput,
             onValueChange = {
@@ -303,6 +303,7 @@ private fun AddYourOwnSection(
             }
             onUploadFile(uri, displayName)
         }
+        Text("By audio file", style = MaterialTheme.typography.labelLarge)
         SubTabCard(
             label = "Upload Audio",
             icon = Icons.Outlined.AudioFile,
