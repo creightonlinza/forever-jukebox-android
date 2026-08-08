@@ -39,7 +39,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
-import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,10 +53,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         playback = playback,
         localSelectedFileName = state.localSelectedFileName.takeIf { state.appMode == AppMode.Local }
     )
-    val favoriteTargetIds = playback.reusableTrackIdsForMatching()
-    val isFavorite = favoriteTargetIds.isNotEmpty() && state.favorites.any { favorite ->
-        canonicalTrackId(favorite.uniqueSongId) in favoriteTargetIds
-    }
+    val currentFavorite = favoriteForCurrentTrack(state)
+    val isFavorite = currentFavorite != null
+    val hasTuningDrift = hasFavoriteTuningDrift(state, currentFavorite)
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
@@ -163,6 +161,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 adminKey = state.adminKey,
                 vizLabels = vizLabels,
                 isFavorite = isFavorite,
+                hasTuningDrift = hasTuningDrift,
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
@@ -185,6 +184,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 vizLabels = vizLabels,
                 jumpLine = jumpLine,
                 isFavorite = isFavorite,
+                hasTuningDrift = hasTuningDrift,
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,

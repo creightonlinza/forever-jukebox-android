@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -606,5 +607,71 @@ class TuningParamsCodecTest {
         )
 
         assertEquals(0, merged.minJumpDistancePercent)
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentTreatsEveryEmptyFormAsUntuned() {
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent(null, null))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("", null))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("zz=1", null))
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentIgnoresKeyOrder() {
+        assertTrue(
+            TuningParamsCodec.savedTuningParamsEquivalent(
+                "jb=1&bl=10&am=lofi",
+                "am=lofi&bl=10&jb=1"
+            )
+        )
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentAcceptsLegacySpellings() {
+        // Favorites synced from the web predate the bl/jb spellings this app writes.
+        assertTrue(
+            TuningParamsCodec.savedTuningParamsEquivalent(
+                "lg=1",
+                "bl=$DEFAULT_MIN_LONG_BRANCH_PERCENT"
+            )
+        )
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("lg=0", null))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("jb=true", "jb=1"))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("sq=false", null))
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentAcceptsExplicitlyWrittenDefaults() {
+        assertTrue(
+            TuningParamsCodec.savedTuningParamsEquivalent("jb=0&bl=0&sq=1&bp=18,50,10", null)
+        )
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentFoldsAudioModeOffAndDefaultIntensity() {
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("am=off", null))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("jb=1&am=off", "jb=1"))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("am=daycore&ai=100", "am=daycore"))
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentIgnoresBranchEditsAndHighlightAnchor() {
+        // Edge ids are positional in the rebuilt graph, so a restored list can differ
+        // numerically from the saved one; ah is never part of persisted tuning.
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("jb=1&d=4,9&ab=12", "jb=1"))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("d=4,9", "d=9,4"))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("jb=1&ah=1", "jb=1"))
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentSeparatesRealDifferences() {
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("thresh=45", "thresh=40"))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("thresh=45", null))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("bp=12,34,56", null))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("am=daycore", "am=nightcore"))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("am=lofi", null))
+        assertFalse(
+            TuningParamsCodec.savedTuningParamsEquivalent("am=daycore&ai=150", "am=daycore")
+        )
     }
 }

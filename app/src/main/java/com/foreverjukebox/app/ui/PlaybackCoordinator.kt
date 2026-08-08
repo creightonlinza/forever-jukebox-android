@@ -978,7 +978,13 @@ class PlaybackCoordinator(
             state.copy(
                 tuning = state.tuning.copy(
                     threshold = thresholdValue,
-                    computedThreshold = null,
+                    // The local graph computes the auto threshold on device; while casting the
+                    // receiver owns it and reports it with every status.
+                    computedThreshold = if (state.playback.isCasting) {
+                        state.tuning.computedThreshold
+                    } else {
+                        graph?.computedThreshold
+                    },
                     minProb = (config.minRandomBranchChance * 100).toInt(),
                     maxProb = (config.maxRandomBranchChance * 100).toInt(),
                     ramp = (config.randomBranchChanceDelta * RANDOM_BRANCH_DELTA_PERCENT_SCALE).toInt(),

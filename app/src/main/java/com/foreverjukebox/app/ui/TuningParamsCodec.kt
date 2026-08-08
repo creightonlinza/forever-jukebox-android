@@ -213,6 +213,51 @@ object TuningParamsCodec {
         return if (params.isEmpty()) null else params.joinToString("&")
     }
 
+    /**
+     * Whether two persisted tuning strings describe the same tuning. Favorites arrive from the web
+     * app as well as from here, so key order, legacy spellings (`lg`, `jb=true`, `am=off`), and
+     * explicitly written defaults all have to read as a match against a locally built string.
+     *
+     * Deleted branches (`d`) and the anchor branch (`ab`) are excluded: no on-device control
+     * touches them, they enter tuning only when saved params are applied at load, and edge ids are
+     * positional in the rebuilt graph, so the restored list can differ numerically from the saved
+     * one. `ah` is excluded because persisted tuning never carries it.
+     */
+    fun savedTuningParamsEquivalent(left: String?, right: String?): Boolean {
+        return comparableTuning(left) == comparableTuning(right)
+    }
+
+    private data class ComparableTuning(
+        val threshold: Int?,
+        val minProb: Int,
+        val maxProb: Int,
+        val ramp: Int,
+        val justBackwards: Boolean,
+        val minJumpDistancePercent: Int,
+        val removeSequential: Boolean,
+        val audioMode: JukeboxAudioMode?,
+        val audioModeIntensity: Int
+    )
+
+    private fun comparableTuning(raw: String?): ComparableTuning {
+        val defaults = TuningState()
+        val parsed = parse(raw)
+        return ComparableTuning(
+            // An absent threshold means the auto value, which neither string carries.
+            threshold = parsed?.threshold,
+            minProb = parsed?.minProbPercent ?: defaults.minProb,
+            maxProb = parsed?.maxProbPercent ?: defaults.maxProb,
+            ramp = parsed?.rampPercent ?: defaults.ramp,
+            justBackwards = parsed?.justBackwards ?: defaults.justBackwards,
+            minJumpDistancePercent =
+                parsed?.minJumpDistancePercent ?: defaults.minJumpDistancePercent,
+            removeSequential = parsed?.removeSequentialBranches ?: defaults.removeSequential,
+            // A built string omits the mode when it is off, so `am=off` has to fold to the same.
+            audioMode = parsed?.audioMode?.takeIf { it != JukeboxAudioMode.Off },
+            audioModeIntensity = parsed?.audioModeIntensity ?: AudioModeIntensity.DEFAULT
+        )
+    }
+
     fun buildHighlightParam(enabled: Boolean): String {
         return "ah=${if (enabled) 1 else 0}"
     }
