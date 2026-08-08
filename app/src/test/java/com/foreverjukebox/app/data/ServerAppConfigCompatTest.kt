@@ -11,7 +11,7 @@ class ServerAppConfigCompatTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * Configs persisted before the user-source fields existed must still decode, with the new
+     * A config persisted without the user-source fields must still decode, with the user-source
      * features defaulting to off — this pins the DataStore backward-compat guarantee.
      */
     @Test

@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import android.app.Application
 import android.content.BroadcastReceiver
+import android.content.ContentResolver
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.MediaMetadataRetriever
@@ -22,6 +23,7 @@ import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.SavedPlaylistTrack
+import com.foreverjukebox.app.data.ServerAppConfig
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.canonicalTrackId
@@ -40,6 +42,7 @@ import com.foreverjukebox.app.visualization.visualizationLabels
 import com.foreverjukebox.app.cast.CastRelayClient
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.InputStream
 import java.net.ConnectException
 import java.net.URI
 import java.net.UnknownHostException
@@ -323,12 +326,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
-    private var appConfigLoaded = false
     private var foregroundRecoveryInFlight = false
     private var castSelectionJob: Job? = null
-    private var pendingDeepLinkUriString: String? = null
-    private var pendingShare: PendingShare? = null
+    private var pendingExternalIntent: PendingExternalIntent? = null
     private var baseUrlLoaded = false
+
+    // Two independent halves of the same story, reset together by resetServerConfigTracking():
+    // whether this server has been asked yet, and what the answer is. They are not derivable from
+    // each other — a cached config makes the state Loaded before any fetch goes out, and the fetch
+    // still has to happen to catch a config the operator has since changed.
+    private var appConfigFetchStarted = false
     private var serverConfigState = ServerConfigState.Pending
     private var savedPlaylistTracks: List<SavedPlaylistTrack> = emptyList()
     private var lastCowbellBeatsPlayed = -1
@@ -527,7 +534,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 hydrateSavedPlaylistIfInactive()
                 maybeRefreshServerDataForCurrentState()
                 maybeShowAutomaticWhatsNew()
-                consumePendingShareIfReady()
+                consumePendingExternalIntentIfReady()
             }
         }
         viewModelScope.launch {
@@ -542,8 +549,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 baseUrlLoaded = true
                 maybeRefreshServerDataForCurrentState()
-                consumePendingDeepLinkIfReady()
-                consumePendingShareIfReady()
+                consumePendingExternalIntentIfReady()
             }
         }
         viewModelScope.launch {
@@ -588,60 +594,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             preferences.appConfig.collect { config ->
-                if (config != null) {
-                    serverConfigState = ServerConfigState.Loaded
-                    val maxFavorites = sanitizeMaxFavorites(config.maxFavorites)
-                    val currentFavorites = state.value.favorites
-                    val normalizedFavorites = favoritesController.normalizeFavorites(
-                        items = currentFavorites,
-                        maxFavorites = maxFavorites
-                    )
-                    _state.update {
-                        it.copy(
-                            allowFavoritesSync = config.allowFavoritesSync,
-                            maxFavorites = maxFavorites,
-                            favorites = favoritesController.normalizeFavorites(
-                                items = it.favorites,
-                                maxFavorites = maxFavorites
-                            ),
-                            maxTrackLengthMinutes = config.maxTrackLength,
-                            allowUserUrl = config.allowUserUrl,
-                            allowUserUpload = config.allowUserUpload,
-                            maxUploadSizeBytes = config.maxUploadSize,
-                            allowedUploadExts = config.allowedUploadExts
-                        )
-                    }
-                    if (normalizedFavorites != currentFavorites) {
-                        favoritesController.updateFavorites(normalizedFavorites, sync = false)
-                    }
-                    favoritesController.maybeHydrateFavoritesFromSync()
-                } else {
-                    val maxFavorites = sanitizeMaxFavorites(null)
-                    val currentFavorites = state.value.favorites
-                    val normalizedFavorites = favoritesController.normalizeFavorites(
-                        items = currentFavorites,
-                        maxFavorites = maxFavorites
-                    )
-                    _state.update {
-                        it.copy(
-                            allowFavoritesSync = false,
-                            maxFavorites = maxFavorites,
-                            favorites = favoritesController.normalizeFavorites(
-                                items = it.favorites,
-                                maxFavorites = maxFavorites
-                            ),
-                            maxTrackLengthMinutes = null,
-                            allowUserUrl = false,
-                            allowUserUpload = false,
-                            maxUploadSizeBytes = null,
-                            allowedUploadExts = emptyList()
-                        )
-                    }
-                    if (normalizedFavorites != currentFavorites) {
-                        favoritesController.updateFavorites(normalizedFavorites, sync = false)
-                    }
-                }
-                consumePendingShareIfReady()
+                applyAppConfig(config)
+                consumePendingExternalIntentIfReady()
             }
         }
         viewModelScope.launch {
@@ -924,8 +878,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
-        consumePendingDeepLinkIfReady()
-        consumePendingShareIfReady()
+        consumePendingExternalIntentIfReady()
         viewModelScope.launch {
             preferences.setBaseUrl(trimmedUrl)
             if (didServerChange) {
@@ -1087,22 +1040,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Apply a server config to the state that gates favorites and user sources. A null config is the
+     * "nothing known" answer and closes every user-source door. Applied both from the preference
+     * flow and directly by the fetch, so a caller that acts on [serverConfigState] right after a
+     * successful fetch already sees the matching flags.
+     */
+    private suspend fun applyAppConfig(config: ServerAppConfig?) {
+        if (config != null) {
+            serverConfigState = ServerConfigState.Loaded
+        }
+        val maxFavorites = sanitizeMaxFavorites(config?.maxFavorites)
+        val currentFavorites = state.value.favorites
+        val normalizedFavorites = favoritesController.normalizeFavorites(
+            items = currentFavorites,
+            maxFavorites = maxFavorites
+        )
+        val allowUserUrl = config?.allowUserUrl ?: false
+        val allowUserUpload = config?.allowUserUpload ?: false
+        _state.update {
+            it.copy(
+                allowFavoritesSync = config?.allowFavoritesSync ?: false,
+                maxFavorites = maxFavorites,
+                favorites = favoritesController.normalizeFavorites(
+                    items = it.favorites,
+                    maxFavorites = maxFavorites
+                ),
+                maxTrackLengthMinutes = config?.maxTrackLength,
+                allowUserUrl = allowUserUrl,
+                allowUserUpload = allowUserUpload,
+                maxUploadSizeBytes = config?.maxUploadSize,
+                allowedUploadExts = config?.allowedUploadExts ?: emptyList(),
+                searchPanelTab = coerceSearchPanelTab(
+                    tab = it.searchPanelTab,
+                    allowUserUrl = allowUserUrl,
+                    allowUserUpload = allowUserUpload
+                )
+            )
+        }
+        if (normalizedFavorites != currentFavorites) {
+            favoritesController.updateFavorites(normalizedFavorites, sync = false)
+        }
+        if (config != null) {
+            favoritesController.maybeHydrateFavoritesFromSync()
+        }
+    }
+
+    /** Forget everything known about a server's config, so the next one is asked from scratch. */
+    private fun resetServerConfigTracking() {
+        appConfigFetchStarted = false
+        serverConfigState = ServerConfigState.Pending
+    }
+
     private fun maybeRefreshServerDataForCurrentState() {
         val currentState = state.value
         if (currentState.appMode != AppMode.Server) return
         val baseUrl = currentState.baseUrl
         if (baseUrl.isBlank()) return
-        if (!appConfigLoaded) {
-            appConfigLoaded = true
+        if (!appConfigFetchStarted) {
+            appConfigFetchStarted = true
             viewModelScope.launch {
-                runCatching { serverGateway.getAppConfig(baseUrl).also { preferences.setAppConfig(it) } }
-                // The config is settled either way: a success re-enters through the appConfig
-                // collector, a failure leaves whatever was already cached as the answer. This is
-                // what keeps a shared track from waiting forever on an unreachable server.
-                if (serverConfigState == ServerConfigState.Pending) {
+                val config = runCatching { serverGateway.getAppConfig(baseUrl) }.getOrNull()
+                // The config is settled either way: a success is applied here rather than awaited
+                // from the preference flow, so anything released below reads the fetched flags; a
+                // failure leaves whatever was already cached as the answer, which keeps a shared
+                // track from waiting forever on an unreachable server.
+                if (config != null) {
+                    runCatching { preferences.setAppConfig(config) }
+                    applyAppConfig(config)
+                } else if (serverConfigState == ServerConfigState.Pending) {
                     serverConfigState = ServerConfigState.Missing
                 }
-                consumePendingShareIfReady()
+                consumePendingExternalIntentIfReady()
             }
         }
         searchCoordinator.maybeRefreshForState(currentState)
@@ -1114,8 +1123,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cancelCastSelection()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         searchCoordinator.resetRuntimeState()
-        appConfigLoaded = false
-        serverConfigState = ServerConfigState.Pending
+        resetServerConfigTracking()
         tabHistory.clear()
 
         if (targetMode == AppMode.Local || state.value.playback.isCasting) {
@@ -1141,8 +1149,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cancelCastSelection()
         searchCoordinator.resetRuntimeState()
         favoritesController.resetRuntimeState()
-        appConfigLoaded = false
-        serverConfigState = ServerConfigState.Pending
+        resetServerConfigTracking()
         tabHistory.clear()
 
         stopCasting()
@@ -1858,12 +1865,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun submitTrackUrl(rawUrl: String) = submitTrackUrl(rawUrl, bypassConfigGate = false)
+    fun submitTrackUrl(rawUrl: String) = submitTrackUrl(rawUrl, UserSourceEntryPoint.Ui)
 
-    private fun submitTrackUrl(rawUrl: String, bypassConfigGate: Boolean) {
+    private fun submitTrackUrl(rawUrl: String, entryPoint: UserSourceEntryPoint) {
         if (blockPlaybackChangeWhileLoading()) return
         val baseUrl = state.value.baseUrl
-        if (baseUrl.isBlank() || !(state.value.allowUserUrl || bypassConfigGate)) return
+        if (baseUrl.isBlank()) return
+        if (
+            !allowsUserSource(
+                allowed = state.value.allowUserUrl,
+                entryPoint = entryPoint,
+                deniedMessage = SHARE_URL_NOT_ALLOWED_MESSAGE
+            )
+        ) {
+            return
+        }
         val normalized = normalizeSupportedSourceUrl(rawUrl)
         if (normalized == null) {
             updateSearchState {
@@ -1935,39 +1951,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun uploadTrackFile(uri: Uri, displayName: String?) =
-        uploadTrackFile(uri, displayName, bypassConfigGate = false)
+    fun uploadTrackFile(uri: Uri) = uploadTrackFile(uri, UserSourceEntryPoint.Ui)
 
-    private fun uploadTrackFile(uri: Uri, displayName: String?, bypassConfigGate: Boolean) {
+    private fun uploadTrackFile(uri: Uri, entryPoint: UserSourceEntryPoint) {
         if (blockPlaybackChangeWhileLoading()) return
         val baseUrl = state.value.baseUrl
-        if (baseUrl.isBlank() || !(state.value.allowUserUpload || bypassConfigGate)) return
-        val resolver = getApplication<Application>().contentResolver
-        val mimeType = runCatching { resolver.getType(uri) }.getOrNull()
-        val resolvedDisplayName = displayName ?: queryDisplayName(uri)
-        val fileName =
-            resolveUploadFileName(resolvedDisplayName, mimeType, state.value.allowedUploadExts)
-        if (fileName == null) {
-            viewModelScope.launch {
-                showToast(unsupportedUploadTypeMessage(state.value.allowedUploadExts))
-            }
+        if (baseUrl.isBlank()) return
+        if (
+            !allowsUserSource(
+                allowed = state.value.allowUserUpload,
+                entryPoint = entryPoint,
+                deniedMessage = SHARE_UPLOAD_NOT_ALLOWED_MESSAGE
+            )
+        ) {
             return
         }
-        val sizeBytes = queryContentSize(uri)
-        val maxUploadSize = state.value.maxUploadSizeBytes
-        if (maxUploadSize != null && sizeBytes != null && sizeBytes > maxUploadSize) {
-            viewModelScope.launch {
+        // Resolving a content URI reaches the providing app, which for a cloud-backed document can
+        // mean fetching the file, so none of it may run on the caller's thread.
+        viewModelScope.launch {
+            val resolver = getApplication<Application>().contentResolver
+            val mimeType = withContext(Dispatchers.IO) {
+                runCatching { resolver.getType(uri) }.getOrNull()
+            }
+            val resolvedDisplayName = withContext(Dispatchers.IO) { queryDisplayName(uri) }
+            val fileName =
+                resolveUploadFileName(resolvedDisplayName, mimeType, state.value.allowedUploadExts)
+            if (fileName == null) {
+                showToast(unsupportedUploadTypeMessage(state.value.allowedUploadExts))
+                return@launch
+            }
+            val sizeBytes = withContext(Dispatchers.IO) { queryContentSize(uri) }
+            val maxUploadSize = state.value.maxUploadSizeBytes
+            if (maxUploadSize != null && sizeBytes != null && sizeBytes > maxUploadSize) {
                 showToast(
                     "This file is larger than the server's " +
                         "${formatUploadSizeLimitMb(maxUploadSize)} upload limit."
                 )
+                return@launch
             }
-            return
+            // Local duration probe saves a doomed upload; the server's 422 remains the authority.
+            val durationSeconds = withContext(Dispatchers.IO) { probeContentDurationSeconds(uri) }
+            if (showTrackLengthLimitIfExceeded(durationSeconds)) {
+                return@launch
+            }
+            // The metadata hops above yield the main thread, so re-check what a load started
+            // meanwhile before committing to this one.
+            if (blockPlaybackChangeWhileLoading()) return@launch
+            startUploadTrackLoad(baseUrl, uri, fileName, sizeBytes, mimeType)
         }
-        // Local duration probe saves a doomed upload; the server's 422 remains the authority.
-        if (showTrackLengthLimitIfExceeded(probeContentDurationSeconds(uri))) {
-            return
-        }
+    }
+
+    private fun startUploadTrackLoad(
+        baseUrl: String,
+        uri: Uri,
+        fileName: String,
+        sizeBytes: Long?,
+        mimeType: String?
+    ) {
         clearInactiveSavedPlaylistBeforeOutsideSelection()
         analytics.logUpload("file")
         val title = uploadTitleFromFileName(fileName)
@@ -2009,7 +2049,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Run the multipart upload with progress relayed into the loading UI. The progress callback
      * fires on OkHttp's IO thread and keeps firing if the surrounding coroutine is cancelled
      * mid-body (the blocking call can't be interrupted), so it re-checks the job before touching
-     * state to keep a stale upload from stomping a newer track's loading screen.
+     * state to keep a stale upload from stomping a newer track's loading screen. Loading state is
+     * applied on the main thread because it also drives the foreground playback service.
      */
     private suspend fun uploadTrackToServer(
         baseUrl: String,
@@ -2021,8 +2062,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val resolver = getApplication<Application>().contentResolver
         // Fail fast on an unreadable URI before any bytes hit the network.
         withContext(Dispatchers.IO) {
-            resolver.openInputStream(uri)?.close()
-                ?: throw IOException("Unable to open $uri")
+            openUploadStream(resolver, uri).close()
         }
         val requestJob = kotlin.coroutines.coroutineContext[Job]
         var lastPercent = -1
@@ -2031,7 +2071,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val percent = ((bytes * 100) / sizeBytes).toInt().coerceIn(0, 100)
                 if (percent != lastPercent && requestJob?.isActive != false) {
                     lastPercent = percent
-                    playbackCoordinator.setAnalysisProgress(percent, "Uploading...")
+                    viewModelScope.launch {
+                        if (requestJob?.isActive != false) {
+                            playbackCoordinator.setAnalysisProgress(percent, "Uploading...")
+                        }
+                    }
                 }
             }
         } else {
@@ -2044,104 +2088,106 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             contentType = mimeType,
             onBytesWritten = onBytesWritten
         ) {
-            resolver.openInputStream(uri) ?: throw IOException("Unable to open $uri")
+            openUploadStream(resolver, uri)
         }
     }
 
-    private suspend fun queueUrlAnalysisForCast(normalized: NormalizedSourceUrl): String? {
+    /**
+     * Open a shared content URI for upload. A grant can lapse between the share arriving and the
+     * bytes being read, which surfaces as a [SecurityException] the load paths have no handler for,
+     * so it reads as the unreadable-source failure it is.
+     */
+    private fun openUploadStream(resolver: ContentResolver, uri: Uri): InputStream =
+        try {
+            resolver.openInputStream(uri) ?: throw IOException("Unable to open $uri")
+        } catch (error: SecurityException) {
+            throw IOException("No longer permitted to read $uri", error)
+        }
+
+    /**
+     * Queue a track on the server for casting and return its job id, or null once the reason has
+     * been surfaced as a toast. Every failure clears the loading state the request may have raised:
+     * a cast has no loading screen to cancel from, so anything left in flight would lock out the
+     * next track selection. [httpErrorMessage] maps a non-422 HTTP failure, falling back to the
+     * generic message when it has nothing specific to say.
+     */
+    private suspend fun queueForCast(
+        fallbackSourceProvider: String? = null,
+        httpErrorMessage: (statusCode: Int, responseBody: String?) -> String? = { _, _ -> null },
+        request: suspend (baseUrl: String) -> CastQueueResponse
+    ): String? {
         val baseUrl = state.value.baseUrl.trim()
-        if (baseUrl.isBlank()) {
-            showToast("Unable to queue this track for casting.")
-            return null
-        }
-        return try {
-            val response = serverGateway.startUrlAnalysis(baseUrl, normalized.url, null, null)
-            if (response.status == "failed") {
-                showToast(
-                    ErrorDisplay.format(
-                        raw = response.error,
-                        errorCode = response.errorCode,
-                        sourceProvider = response.sourceProvider ?: normalized.provider,
-                        fallback = "Unable to queue this track for casting."
+        val jobId = if (baseUrl.isBlank()) {
+            showToast(CAST_QUEUE_FAILURE_MESSAGE)
+            null
+        } else {
+            try {
+                val response = request(baseUrl)
+                if (response.status == "failed") {
+                    showToast(
+                        ErrorDisplay.format(
+                            raw = response.error,
+                            errorCode = response.errorCode,
+                            sourceProvider = response.sourceProvider ?: fallbackSourceProvider,
+                            fallback = CAST_QUEUE_FAILURE_MESSAGE
+                        )
                     )
-                )
-                return null
+                    null
+                } else {
+                    canonicalJobId(response.id)
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: HttpStatusException) {
+                if (error.statusCode == 422) {
+                    showServerTrackLengthLimitError()
+                } else {
+                    showToast(
+                        httpErrorMessage(error.statusCode, error.responseBody)
+                            ?: CAST_QUEUE_FAILURE_MESSAGE
+                    )
+                }
+                null
+            } catch (_: IOException) {
+                showToast(CAST_QUEUE_FAILURE_MESSAGE)
+                null
+            } catch (_: IllegalArgumentException) {
+                showToast(CAST_QUEUE_FAILURE_MESSAGE)
+                null
+            } catch (_: IllegalStateException) {
+                showToast(CAST_QUEUE_FAILURE_MESSAGE)
+                null
             }
-            canonicalJobId(response.id)
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: HttpStatusException) {
-            if (error.statusCode == 422) {
-                showServerTrackLengthLimitError()
-            } else {
-                showToast(
-                    urlAnalysisHttpErrorMessage(
-                        statusCode = error.statusCode,
-                        responseBody = error.responseBody,
-                        sourceProvider = normalized.provider
-                    ) ?: "Unable to queue this track for casting."
-                )
-            }
-            null
-        } catch (_: IOException) {
-            showToast("Unable to queue this track for casting.")
-            null
-        } catch (_: IllegalArgumentException) {
-            showToast("Unable to queue this track for casting.")
-            null
-        } catch (_: IllegalStateException) {
-            showToast("Unable to queue this track for casting.")
-            null
         }
+        if (jobId == null) {
+            playbackCoordinator.clearAnalysisLoading()
+        }
+        return jobId
     }
+
+    private suspend fun queueUrlAnalysisForCast(normalized: NormalizedSourceUrl): String? =
+        queueForCast(
+            fallbackSourceProvider = normalized.provider,
+            httpErrorMessage = { statusCode, responseBody ->
+                urlAnalysisHttpErrorMessage(
+                    statusCode = statusCode,
+                    responseBody = responseBody,
+                    sourceProvider = normalized.provider
+                )
+            }
+        ) { baseUrl ->
+            serverGateway.startUrlAnalysis(baseUrl, normalized.url, null, null).toCastQueueResponse()
+        }
 
     private suspend fun queueUploadForCast(
         uri: Uri,
         fileName: String,
         sizeBytes: Long?,
         mimeType: String?
-    ): String? {
-        val baseUrl = state.value.baseUrl.trim()
-        if (baseUrl.isBlank()) {
-            showToast("Unable to queue this track for casting.")
-            return null
+    ): String? =
+        queueForCast(httpErrorMessage = ::uploadHttpErrorMessage) { baseUrl ->
+            uploadTrackToServer(baseUrl, uri, fileName, sizeBytes, mimeType).toCastQueueResponse()
         }
-        return try {
-            val response = uploadTrackToServer(baseUrl, uri, fileName, sizeBytes, mimeType)
-            if (response.status == "failed") {
-                showToast(
-                    ErrorDisplay.format(
-                        raw = response.error,
-                        errorCode = response.errorCode,
-                        fallback = "Unable to queue this track for casting."
-                    )
-                )
-                return null
-            }
-            canonicalJobId(response.id)
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: HttpStatusException) {
-            if (error.statusCode == 422) {
-                showServerTrackLengthLimitError()
-            } else {
-                showToast(
-                    uploadHttpErrorMessage(error.statusCode, error.responseBody)
-                        ?: "Unable to queue this track for casting."
-                )
-            }
-            null
-        } catch (_: IOException) {
-            showToast("Unable to queue this track for casting.")
-            null
-        } catch (_: IllegalArgumentException) {
-            showToast("Unable to queue this track for casting.")
-            null
-        } catch (_: IllegalStateException) {
-            showToast("Unable to queue this track for casting.")
-            null
-        }
-    }
 
     private fun probeContentDurationSeconds(uri: Uri): Double? = runCatching {
         val retriever = MediaMetadataRetriever()
@@ -2360,7 +2406,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val existing = serverGateway.getJobBySource(baseUrl, provider, normalizedSourceId)
                     val resolvedJobId = canonicalJobId(existing?.id)
                     if (resolvedJobId.isNullOrBlank()) {
-                        showToast("Unable to queue this track for casting.")
+                        showToast(CAST_QUEUE_FAILURE_MESSAGE)
                         return@launchCastSelection
                     }
                     migrateLegacyServerTrackId(
@@ -2384,16 +2430,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@launchCastSelection
                     }
                     AppLog.error(TAG, "Failed to resolve source for cast", error)
-                    showToast("Unable to queue this track for casting.")
+                    showToast(CAST_QUEUE_FAILURE_MESSAGE)
                 } catch (error: IOException) {
                     AppLog.error(TAG, "Failed to resolve source for cast", error)
-                    showToast("Unable to queue this track for casting.")
+                    showToast(CAST_QUEUE_FAILURE_MESSAGE)
                 } catch (error: IllegalArgumentException) {
                     AppLog.error(TAG, "Failed to resolve source for cast", error)
-                    showToast("Unable to queue this track for casting.")
+                    showToast(CAST_QUEUE_FAILURE_MESSAGE)
                 } catch (error: IllegalStateException) {
                     AppLog.error(TAG, "Failed to resolve source for cast", error)
-                    showToast("Unable to queue this track for casting.")
+                    showToast(CAST_QUEUE_FAILURE_MESSAGE)
                 }
             }
             return
@@ -3022,51 +3068,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         youtubeId: String,
         title: String?,
         artist: String?
-    ): String? {
-        val normalizedBaseUrl = state.value.baseUrl.trim()
-        if (normalizedBaseUrl.isBlank()) {
-            showToast("Unable to queue this track for casting.")
-            return null
-        }
-        return try {
-            val started = serverGateway.startVideoAnalysis(
-                baseUrl = normalizedBaseUrl,
+    ): String? =
+        queueForCast(fallbackSourceProvider = SOURCE_PROVIDER_YOUTUBE) { baseUrl ->
+            serverGateway.startVideoAnalysis(
+                baseUrl = baseUrl,
                 videoId = youtubeId,
                 title = title,
                 artist = artist
-            )
-            if (started.status == "failed") {
-                showToast(
-                    ErrorDisplay.format(
-                        raw = started.error,
-                        errorCode = started.errorCode,
-                        sourceProvider = started.sourceProvider ?: SOURCE_PROVIDER_YOUTUBE,
-                        fallback = "Unable to queue this track for casting."
-                    )
-                )
-                return null
-            }
-            canonicalJobId(started.id)
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: HttpStatusException) {
-            if (error.statusCode == 422) {
-                showServerTrackLengthLimitError()
-            } else {
-                showToast("Unable to queue this track for casting.")
-            }
-            null
-        } catch (_: IOException) {
-            showToast("Unable to queue this track for casting.")
-            null
-        } catch (_: IllegalArgumentException) {
-            showToast("Unable to queue this track for casting.")
-            null
-        } catch (_: IllegalStateException) {
-            showToast("Unable to queue this track for casting.")
-            null
+            ).toCastQueueResponse()
         }
-    }
 
     private fun sendCastVisualizationIndex(index: Int) {
         castPlaybackCoordinator.sendCastVisualizationIndex(index)
@@ -3744,21 +3754,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun handleDeepLink(uri: Uri?) {
-        pendingDeepLinkUriString = uri?.toString()
-        consumePendingDeepLinkIfReady()
+        val uriString = uri?.toString()
+        if (uriString == null) {
+            // An intent carrying no data names no deep link. Drop one still waiting rather than
+            // replaying it, and leave a share that arrived on the same intent alone.
+            if (pendingExternalIntent is PendingExternalIntent.DeepLink) {
+                pendingExternalIntent = null
+            }
+            return
+        }
+        pendingExternalIntent = PendingExternalIntent.DeepLink(uriString)
+        consumePendingExternalIntentIfReady()
     }
 
     /** Entry point for text sent to the app by the share sheet. */
     fun handleSharedText(sharedText: String?, sharedSubject: String? = null) {
         if (sharedText.isNullOrBlank() && sharedSubject.isNullOrBlank()) return
-        pendingShare = PendingShare.Text(sharedText, sharedSubject)
-        consumePendingShareIfReady()
+        pendingExternalIntent = PendingExternalIntent.SharedText(sharedText, sharedSubject)
+        consumePendingExternalIntentIfReady()
     }
 
     /** Entry point for an audio file sent to the app by the share sheet. */
     fun handleSharedAudio(uri: Uri) {
-        pendingShare = PendingShare.Audio(uri)
-        consumePendingShareIfReady()
+        pendingExternalIntent = PendingExternalIntent.SharedAudio(uri)
+        consumePendingExternalIntentIfReady()
     }
 
     fun refreshCacheSize() {
@@ -3816,23 +3835,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun consumePendingDeepLinkIfReady() {
-        val pending = pendingDeepLinkUriString ?: return
-        if (state.value.baseUrl.isBlank()) {
+    /**
+     * Act on whatever the app was handed from outside, once the state that decides its fate has
+     * settled. Both deep links and shares wait here, so a collector that changes readiness has one
+     * function to call rather than a per-mechanism list to keep up with.
+     *
+     * Readiness is not uniform, and deliberately so. A listen link — tapped or shared — carries a
+     * track id rather than a user-supplied source, so a server URL is all it needs, neither server
+     * mode nor the server's user-source config. Anything else in a share is a user source and waits
+     * for all three; unsettled state holds it rather than rejecting it with the wrong reason.
+     */
+    private fun consumePendingExternalIntentIfReady() {
+        val pending = pendingExternalIntent ?: return
+        val current = state.value
+        val serverUrlReady = current.baseUrl.isNotBlank()
+        val sharedCandidates = when (pending) {
+            is PendingExternalIntent.DeepLink -> listOf(pending.uriString)
+            is PendingExternalIntent.SharedText ->
+                sharedSourceCandidates(pending.text, pending.subject)
+            is PendingExternalIntent.SharedAudio -> emptyList()
+        }
+        if (serverUrlReady && sharedCandidates.any { listenLinkCoordinator.handleDeepLink(it) }) {
+            pendingExternalIntent = null
             return
         }
-        pendingDeepLinkUriString = null
-        listenLinkCoordinator.handleDeepLink(pending)
-    }
-
-    /**
-     * Act on a shared track once the app mode, server URL, and server config have settled. A share
-     * can land before any of the preference flows have emitted, so anything unsettled holds the
-     * share rather than rejecting it with the wrong reason.
-     */
-    private fun consumePendingShareIfReady() {
-        val pending = pendingShare ?: return
-        val current = state.value
+        if (pending is PendingExternalIntent.DeepLink) {
+            // A deep link that names no listen track has nowhere else to go.
+            if (serverUrlReady) {
+                pendingExternalIntent = null
+            }
+            return
+        }
         val readiness = resolveShareReadiness(
             showAppModeGate = current.showAppModeGate,
             appMode = current.appMode,
@@ -3843,61 +3876,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when (readiness) {
             ShareReadiness.Wait -> return
             ShareReadiness.NotServerMode -> {
-                pendingShare = null
+                pendingExternalIntent = null
                 viewModelScope.launch { showToast(SHARE_NEEDS_SERVER_MODE_MESSAGE) }
                 return
             }
             ShareReadiness.NoServer -> {
-                pendingShare = null
+                pendingExternalIntent = null
                 viewModelScope.launch { showToast(SHARE_NO_SERVER_MESSAGE) }
                 return
             }
             ShareReadiness.Ready -> Unit
         }
-        pendingShare = null
+        pendingExternalIntent = null
         when (pending) {
-            is PendingShare.Text -> dispatchSharedText(pending)
-            is PendingShare.Audio -> dispatchSharedAudio(pending.uri)
+            is PendingExternalIntent.SharedText -> dispatchSharedText(sharedCandidates)
+            is PendingExternalIntent.SharedAudio -> dispatchSharedAudio(pending.uri)
+            is PendingExternalIntent.DeepLink -> Unit
         }
     }
 
-    private fun dispatchSharedText(pending: PendingShare.Text) {
-        val candidates = sharedSourceCandidates(pending.text, pending.subject)
-        // A listen link carries a track id rather than a user-supplied source, so it takes the
-        // deep-link path and is not subject to the server's user-URL setting.
-        if (candidates.any { listenLinkCoordinator.handleDeepLink(it) }) {
-            return
-        }
+    private fun dispatchSharedText(candidates: List<String>) {
         val sourceUrl = candidates.firstNotNullOfOrNull { normalizeSupportedSourceUrl(it) }
         if (sourceUrl == null) {
             viewModelScope.launch { showToast(SHARE_UNSUPPORTED_MESSAGE) }
             return
         }
-        val bypassConfigGate = shareBypassesConfigGate(state.value.allowUserUrl) ?: run {
-            viewModelScope.launch { showToast(SHARE_URL_NOT_ALLOWED_MESSAGE) }
-            return
-        }
-        submitTrackUrl(sourceUrl.url, bypassConfigGate)
+        submitTrackUrl(sourceUrl.url, UserSourceEntryPoint.Share)
     }
 
     private fun dispatchSharedAudio(uri: Uri) {
-        val bypassConfigGate = shareBypassesConfigGate(state.value.allowUserUpload) ?: run {
-            viewModelScope.launch { showToast(SHARE_UPLOAD_NOT_ALLOWED_MESSAGE) }
-            return
-        }
-        uploadTrackFile(uri, displayName = null, bypassConfigGate = bypassConfigGate)
+        uploadTrackFile(uri, UserSourceEntryPoint.Share)
     }
 
     /**
-     * Whether a share may skip the local user-source gate, or null when the server has refused it.
-     * With no config to consult the request goes out anyway so the server itself answers: its 403
-     * carries the same message, and an unreachable server reports a connection failure rather than
-     * a permission it never expressed.
+     * Whether the server permits a user-supplied source right now. With no config to consult the
+     * request goes out anyway so the server itself answers: its 403 carries the same message, and
+     * an unreachable server reports a connection failure rather than a permission it never
+     * expressed. A refusal is announced only for a share, which arrives from outside and has to say
+     * why it was dropped; the UI never offers a control the server has disabled.
      */
-    private fun shareBypassesConfigGate(allowed: Boolean): Boolean? = when {
-        allowed -> false
-        serverConfigState == ServerConfigState.Missing -> true
-        else -> null
+    private fun allowsUserSource(
+        allowed: Boolean,
+        entryPoint: UserSourceEntryPoint,
+        deniedMessage: String
+    ): Boolean {
+        if (allowed || serverConfigState == ServerConfigState.Missing) {
+            return true
+        }
+        if (entryPoint == UserSourceEntryPoint.Share) {
+            viewModelScope.launch { showToast(deniedMessage) }
+        }
+        return false
     }
 
     private fun recoverServerLoadingOnForeground(current: UiState, playback: PlaybackState) {
@@ -4012,8 +4041,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val SHARE_UPLOAD_NOT_ALLOWED_MESSAGE = "This server doesn't allow uploads."
         private const val SHARE_UNSUPPORTED_MESSAGE =
             "Share a YouTube, SoundCloud, or Bandcamp link."
+        private const val CAST_QUEUE_FAILURE_MESSAGE = "Unable to queue this track for casting."
     }
 }
+
+/** The queue-for-cast fields shared by the analysis-start and upload responses. */
+private data class CastQueueResponse(
+    val id: String?,
+    val status: String?,
+    val sourceProvider: String?,
+    val error: String?,
+    val errorCode: String?
+)
+
+private fun TrackAnalysisResult.toCastQueueResponse(): CastQueueResponse = CastQueueResponse(
+    id = id,
+    status = status,
+    sourceProvider = sourceProvider,
+    error = error,
+    errorCode = errorCode
+)
+
+private fun TrackAnalysisStartResult.toCastQueueResponse(): CastQueueResponse = CastQueueResponse(
+    id = id,
+    status = status,
+    sourceProvider = sourceProvider,
+    error = error,
+    errorCode = errorCode
+)
 
 // DNS and connect failures on Android frequently mean the OS is restricting the
 // app's network access (doze, app standby, wifi/cellular handoff) rather than a
@@ -4021,11 +4076,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 internal fun isRetryableNetworkError(error: IOException): Boolean =
     error is UnknownHostException || error is ConnectException
 
-/** A track handed over by the share sheet, held until the app state can act on it. */
-private sealed interface PendingShare {
-    data class Text(val text: String?, val subject: String?) : PendingShare
+/**
+ * Where a user-supplied track came from. The submit paths resolve the server's user-source policy
+ * themselves; this is only what a caller declares about itself, so a new entry point cannot forget
+ * to apply the policy — at most it picks how a refusal reads.
+ */
+private enum class UserSourceEntryPoint {
+    Ui,
+    Share
+}
 
-    data class Audio(val uri: Uri) : PendingShare
+/** Something the app was handed from outside, held until the app state can act on it. */
+private sealed interface PendingExternalIntent {
+    /** A tapped foreverjukebox link. */
+    data class DeepLink(val uriString: String) : PendingExternalIntent
+
+    data class SharedText(val text: String?, val subject: String?) : PendingExternalIntent
+
+    data class SharedAudio(val uri: Uri) : PendingExternalIntent
 }
 
 /**

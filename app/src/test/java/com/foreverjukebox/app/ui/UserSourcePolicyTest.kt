@@ -147,4 +147,32 @@ class UserSourcePolicyTest {
         assertEquals("20 MB", formatUploadSizeLimitMb(20L * 1024 * 1024))
         assertEquals("2.5 MB", formatUploadSizeLimitMb((2.5 * 1024 * 1024).toLong()))
     }
+
+    @Test
+    fun megabytesFormatSpacesTheUnitOnDemandAndFloorsAtZero() {
+        assertEquals("20MB", formatMegabytes(20L * 1024 * 1024, unitSeparator = ""))
+        assertEquals("2.5MB", formatMegabytes((2.5 * 1024 * 1024).toLong(), unitSeparator = ""))
+        assertEquals("0MB", formatMegabytes(0L, unitSeparator = ""))
+        assertEquals("0MB", formatMegabytes(-1L, unitSeparator = ""))
+    }
+
+    @Test
+    fun searchPanelTabFallsBackToSearchWhenNoUserSourceIsAllowed() {
+        assertEquals(
+            SearchPanelTab.Search,
+            coerceSearchPanelTab(SearchPanelTab.Upload, allowUserUrl = false, allowUserUpload = false)
+        )
+        assertEquals(
+            SearchPanelTab.Upload,
+            coerceSearchPanelTab(SearchPanelTab.Upload, allowUserUrl = true, allowUserUpload = false)
+        )
+        assertEquals(
+            SearchPanelTab.Upload,
+            coerceSearchPanelTab(SearchPanelTab.Upload, allowUserUrl = false, allowUserUpload = true)
+        )
+        assertEquals(
+            SearchPanelTab.Search,
+            coerceSearchPanelTab(SearchPanelTab.Search, allowUserUrl = true, allowUserUpload = true)
+        )
+    }
 }

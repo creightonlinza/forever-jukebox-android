@@ -53,9 +53,27 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         playback = playback,
         localSelectedFileName = state.localSelectedFileName.takeIf { state.appMode == AppMode.Local }
     )
-    val currentFavorite = favoriteForCurrentTrack(state)
+    // Parses a track id per favorite, so it tracks the ids and the list rather than every frame.
+    val currentFavorite = remember(state.favorites, playback.lastJobId, playback.lastYouTubeId) {
+        favoriteForCurrentTrack(state)
+    }
     val isFavorite = currentFavorite != null
-    val hasTuningDrift = hasFavoriteTuningDrift(state, currentFavorite)
+    // Drift builds a tuning query string and parses two more, while the beat tick republishes
+    // playback state throughout a track. Keyed on everything the check reads, so it recomputes
+    // when the tuning or the favorite moves and not once per frame.
+    val hasTuningDrift = remember(
+        currentFavorite,
+        tuning,
+        playback.playMode,
+        playback.isCasting,
+        playback.castTotalBeats,
+        playback.castAudioModeWireValue,
+        playback.castAudioModeIntensity,
+        playback.jukeboxAudioMode,
+        playback.jukeboxAudioModeIntensity
+    ) {
+        hasFavoriteTuningDrift(state, currentFavorite)
+    }
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }

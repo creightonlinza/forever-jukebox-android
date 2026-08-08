@@ -124,6 +124,57 @@ class FavoriteTuningDriftPolicyTest {
     }
 
     @Test
+    fun reportsNoDriftWhileCastingWhenTheSavedThresholdIsTheReceiverAutoValue() {
+        // The receiver owns the auto threshold and a favorite from the web spells it out, while a
+        // locally built string omits it — the same tuning written two ways.
+        val state = stateFor(
+            favorites = listOf(favorite(tuningParams = "thresh=31")),
+            tuning = TuningState(threshold = 31, computedThreshold = 31),
+            playback = castingPlayback(castTotalBeats = 400)
+        )
+
+        assertNull(liveTuningParams(state))
+        assertFalse(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
+    }
+
+    @Test
+    fun reportsDriftWhileCastingWhenTheSavedThresholdIsNotTheReceiverAutoValue() {
+        val state = stateFor(
+            favorites = listOf(favorite(tuningParams = "thresh=45")),
+            tuning = TuningState(threshold = 31, computedThreshold = 31),
+            playback = castingPlayback(castTotalBeats = 400)
+        )
+
+        assertTrue(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
+    }
+
+    @Test
+    fun holdsTheThresholdComparisonUntilTheReceiverReportsForTheCurrentTrack() {
+        // Casting preserves the mirrored computedThreshold across a track change, so until a status
+        // arrives it can still describe the previous track. The saved threshold must not be read
+        // against that stale auto value; castTotalBeats is what marks the status as arrived.
+        val staleAutoThreshold = TuningState(threshold = 29, computedThreshold = 29)
+        val favorites = listOf(favorite(tuningParams = "thresh=29"))
+        val beforeStatus = stateFor(
+            favorites = favorites,
+            tuning = staleAutoThreshold,
+            playback = castingPlayback(castTotalBeats = null)
+        )
+
+        assertFalse(hasFavoriteTuningDrift(beforeStatus, favoriteForCurrentTrack(beforeStatus)))
+
+        // The status lands and carries totalBeats and computedThreshold together, so the comparison
+        // resumes against the current track's auto value.
+        val afterStatus = stateFor(
+            favorites = favorites,
+            tuning = TuningState(threshold = 31, computedThreshold = 31),
+            playback = castingPlayback(castTotalBeats = 400)
+        )
+
+        assertTrue(hasFavoriteTuningDrift(afterStatus, favoriteForCurrentTrack(afterStatus)))
+    }
+
+    @Test
     fun emitsThresholdOnceTheGraphReportsItsComputedValue() {
         val state = stateFor(tuning = TuningState(threshold = 45, computedThreshold = 29))
 
@@ -156,6 +207,11 @@ class FavoriteTuningDriftPolicyTest {
         lastJobId = JOB_ID,
         audioLoaded = true,
         analysisLoaded = true
+    )
+
+    private fun castingPlayback(castTotalBeats: Int?): PlaybackState = loadedPlayback().copy(
+        isCasting = true,
+        castTotalBeats = castTotalBeats
     )
 
     private fun favorite(

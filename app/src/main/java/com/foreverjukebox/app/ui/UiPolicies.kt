@@ -96,7 +96,8 @@ internal fun hasFavoriteTuningDrift(state: UiState, favorite: FavoriteTrack?): B
     }
     return !TuningParamsCodec.savedTuningParamsEquivalent(
         liveTuningParams(state),
-        favorite.tuningParams
+        favorite.tuningParams,
+        computedThreshold = state.tuning.computedThreshold
     )
 }
 

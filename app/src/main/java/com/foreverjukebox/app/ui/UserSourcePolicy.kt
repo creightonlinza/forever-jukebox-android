@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.isYoutubeLikeSourceId
 import java.net.URI
 
 /**
@@ -15,8 +16,6 @@ data class NormalizedSourceUrl(
     val youtubeId: String? = null
 )
 
-private val YOUTUBE_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}$")
-
 /**
  * Validate and normalize a user-pasted source reference. A bare 11-char YouTube id expands to a
  * watch URL; otherwise the value must be an http(s) URL on YouTube, SoundCloud, or Bandcamp
@@ -25,7 +24,7 @@ private val YOUTUBE_ID_REGEX = Regex("^[A-Za-z0-9_-]{11}$")
 fun normalizeSupportedSourceUrl(raw: String): NormalizedSourceUrl? {
     val value = raw.trim()
     if (value.isEmpty()) return null
-    if (YOUTUBE_ID_REGEX.matches(value)) {
+    if (isYoutubeLikeSourceId(value)) {
         return NormalizedSourceUrl(
             url = "https://www.youtube.com/watch?v=$value",
             provider = "youtube",
@@ -59,7 +58,7 @@ private fun extractYoutubeId(uri: URI, normalizedHost: String): String? {
             ?.firstOrNull { it.startsWith("v=") }
             ?.substringAfter('=')
     }
-    return candidate?.takeIf { YOUTUBE_ID_REGEX.matches(it) }
+    return candidate?.takeIf { isYoutubeLikeSourceId(it) }
 }
 
 /** Server-default upload extensions, used when the config hasn't provided a list. */
@@ -187,8 +186,4 @@ fun uploadHttpErrorMessage(statusCode: Int, responseBody: String?): String? = wh
 }
 
 /** Human-readable size limit for the local too-large error, e.g. "20 MB". */
-fun formatUploadSizeLimitMb(maxUploadSize: Long): String {
-    val mb = maxUploadSize.toDouble() / (1024.0 * 1024.0)
-    val rounded = kotlin.math.round(mb * 10.0) / 10.0
-    return if (rounded % 1.0 == 0.0) "${rounded.toInt()} MB" else "$rounded MB"
-}
+fun formatUploadSizeLimitMb(maxUploadSize: Long): String = formatMegabytes(maxUploadSize)

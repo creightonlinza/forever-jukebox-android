@@ -195,7 +195,8 @@ private fun AppConfigResponse.toServerAppConfig(): ServerAppConfig {
         allowUserUrl = allowUserUrl,
         allowUserUpload = allowUserUpload,
         maxUploadSize = maxUploadSize,
-        allowedUploadExts = allowedUploadExts.orEmpty().map { it.trim().lowercase() }
+        // Kept as the server sent it; the extension rules in UserSourcePolicy own normalization.
+        allowedUploadExts = allowedUploadExts.orEmpty()
     )
 }
 

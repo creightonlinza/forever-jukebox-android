@@ -98,13 +98,16 @@ class MainActivity : FragmentActivity() {
     private fun handleShareIntent(intent: Intent?) {
         if (!BuildConfig.SERVER_MODE_AVAILABLE) return
         if (intent?.action != Intent.ACTION_SEND) return
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
         val audioUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-        if (audioUri != null) {
+        // A text share may attach artwork or a link preview in EXTRA_STREAM; the text is the payload.
+        val textShare = intent.type?.startsWith("text/") == true && !sharedText.isNullOrBlank()
+        if (audioUri != null && !textShare) {
             viewModel.handleSharedAudio(audioUri)
             return
         }
         viewModel.handleSharedText(
-            sharedText = intent.getStringExtra(Intent.EXTRA_TEXT),
+            sharedText = sharedText,
             sharedSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
         )
     }

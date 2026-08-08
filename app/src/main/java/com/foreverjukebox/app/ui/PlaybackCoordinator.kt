@@ -188,6 +188,15 @@ class PlaybackCoordinator(
         applyLoadingEvent(LoadingEvent.AnalysisCalculating)
     }
 
+    /**
+     * Drop the in-flight loading state for an attempt that ended without a loading screen to report
+     * into — a cast queue failure surfaces as a toast, and anything left in flight keeps the
+     * playback-change lock engaged. Any error already on screen stays.
+     */
+    fun clearAnalysisLoading() {
+        applyLoadingEvent(LoadingEvent.AnalysisIdle)
+    }
+
     fun setAnalysisError(message: String, expected: Boolean = false) {
         // Single chokepoint for every surfaced load/analysis error (server, cached,
         // local, playback, autocanonizer). Persisting the message here guarantees
@@ -1029,6 +1038,7 @@ class PlaybackCoordinator(
         data object AnalysisCalculating : LoadingEvent()
         data class AnalysisError(val message: String) : LoadingEvent()
         data class AudioLoading(val loading: Boolean) : LoadingEvent()
+        object AnalysisIdle : LoadingEvent()
     }
 
     private fun applyLoadingEvent(event: LoadingEvent) {
@@ -1066,6 +1076,12 @@ class PlaybackCoordinator(
                         audioLoading = false
                     )
                     is LoadingEvent.AudioLoading -> playback.copy(audioLoading = event.loading)
+                    LoadingEvent.AnalysisIdle -> playback.copy(
+                        analysisProgress = null,
+                        analysisMessage = null,
+                        analysisInFlight = false,
+                        analysisCalculating = false
+                    )
                 }
             )
         }

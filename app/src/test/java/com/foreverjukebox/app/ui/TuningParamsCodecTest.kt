@@ -674,4 +674,31 @@ class TuningParamsCodecTest {
             TuningParamsCodec.savedTuningParamsEquivalent("am=daycore&ai=150", "am=daycore")
         )
     }
+
+    @Test
+    fun savedTuningParamsEquivalentFoldsThresholdWrittenAsTheAutoValue() {
+        // A built string omits thresh at the auto value; a favorite from the web spells it out.
+        assertTrue(
+            TuningParamsCodec.savedTuningParamsEquivalent(
+                null,
+                "thresh=29",
+                computedThreshold = 29
+            )
+        )
+        assertTrue(
+            TuningParamsCodec.savedTuningParamsEquivalent(
+                "jb=1",
+                "jb=1&thresh=29",
+                computedThreshold = 29
+            )
+        )
+        // A threshold the user actually moved off the auto value is still a difference.
+        assertFalse(
+            TuningParamsCodec.savedTuningParamsEquivalent(
+                null,
+                "thresh=45",
+                computedThreshold = 29
+            )
+        )
+    }
 }

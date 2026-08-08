@@ -414,6 +414,22 @@ fun coerceTabForMode(mode: AppMode?, tabId: TabId): TabId {
     }
 }
 
+/**
+ * The Upload sub-tab exists only while the server allows a user source, so a config that permits
+ * neither drops the selection back to Search instead of leaving a tab that nothing renders.
+ */
+fun coerceSearchPanelTab(
+    tab: SearchPanelTab,
+    allowUserUrl: Boolean,
+    allowUserUpload: Boolean
+): SearchPanelTab {
+    return if (tab == SearchPanelTab.Upload && !allowUserUrl && !allowUserUpload) {
+        SearchPanelTab.Search
+    } else {
+        tab
+    }
+}
+
 fun shouldShowAppModeGate(mode: AppMode?): Boolean {
     return BuildConfig.SERVER_MODE_AVAILABLE && mode == null
 }

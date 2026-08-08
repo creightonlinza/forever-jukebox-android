@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.ui
 
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -41,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -61,7 +59,7 @@ fun SearchPanel(
     onSelectPanelTab: (SearchPanelTab) -> Unit,
     onSubmitUrl: (String) -> Unit,
     onClearUrlError: () -> Unit,
-    onUploadFile: (Uri, String?) -> Unit
+    onUploadFile: (Uri) -> Unit
 ) {
     val searchState = state.search
     // Hoisted above the sub-tab switch so a typed query and an open preview survive a visit to
@@ -89,7 +87,7 @@ fun SearchPanel(
                     onTabSelected = onSelectPanelTab
                 )
             }
-            if (uploadTabAvailable && state.searchPanelTab == SearchPanelTab.Upload) {
+            if (state.searchPanelTab == SearchPanelTab.Upload) {
                 AddYourOwnSection(
                     state = state,
                     onSubmitUrl = onSubmitUrl,
@@ -239,9 +237,8 @@ private fun AddYourOwnSection(
     state: UiState,
     onSubmitUrl: (String) -> Unit,
     onClearUrlError: () -> Unit,
-    onUploadFile: (Uri, String?) -> Unit
+    onUploadFile: (Uri) -> Unit
 ) {
-    val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     if (state.allowUserUrl) {
@@ -291,17 +288,7 @@ private fun AddYourOwnSection(
             contract = ActivityResultContracts.OpenDocument()
         ) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
-            val displayName = context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-            }
-            onUploadFile(uri, displayName)
+            onUploadFile(uri)
         }
         Text("By audio file", style = MaterialTheme.typography.labelLarge)
         SubTabCard(
