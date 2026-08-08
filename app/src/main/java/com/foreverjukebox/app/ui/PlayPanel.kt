@@ -191,7 +191,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
-                onSetPlaybackMode = viewModel::setPlaybackMode,
+                onSetPlaybackMode = viewModel::selectPlaybackMode,
                 onSetVisualization = viewModel::setActiveVisualization,
                 onSetCanonizerFinishOutSong = viewModel::setCanonizerFinishOutSong,
                 onSelectBeat = viewModel::selectBeat,

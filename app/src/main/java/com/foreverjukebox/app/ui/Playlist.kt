@@ -28,6 +28,34 @@ data class JukeboxPlaylistState(
     val currentIndex: Int = -1
 )
 
+/** Identifies the loaded track as a playlist entry key. */
+internal data class PlaylistTrackIdentity(
+    val id: String,
+    val type: PlaylistTrackType
+)
+
+/**
+ * The loaded track as a playlist key, or null while nothing is playable yet.
+ *
+ * Settings captured after load are matched against this, so a capture that lands mid
+ * track-switch — where the playlist has already moved on but playback still reports the
+ * outgoing track — resolves to a key that no longer matches and is dropped.
+ */
+internal fun loadedPlaylistTrackIdentityOrNull(state: UiState): PlaylistTrackIdentity? {
+    val playback = state.playback
+    val hasLoadedTrack = (playback.audioLoaded && playback.analysisLoaded) || playback.hasCastTrack()
+    if (!hasLoadedTrack) return null
+    val trackId = playback.shareTrackIdOrNull() ?: return null
+    return PlaylistTrackIdentity(
+        id = canonicalTrackId(trackId) ?: trackId.trim(),
+        type = if (state.appMode == AppMode.Local) {
+            PlaylistTrackType.LocalCached
+        } else {
+            PlaylistTrackType.Server
+        }
+    )
+}
+
 internal fun JukeboxPlaylistState.isInitialized(): Boolean = tracks.isNotEmpty()
 
 internal fun JukeboxPlaylistState.isActive(): Boolean {
@@ -95,6 +123,35 @@ internal fun JukeboxPlaylistState.replaceCurrentTrackWith(track: PlaylistTrack):
     }
     val nextTracks = tracks.toMutableList()
     nextTracks[currentIndex] = track
+    return copy(tracks = nextTracks)
+}
+
+/**
+ * Writes tuning and play mode onto the current entry when it is still the loaded track.
+ *
+ * Unlike [replaceCurrentTrackWith] this sets both fields outright, so a tuning reset clears
+ * the entry and a switch back to jukebox demotes an autocanonizer entry — neither of which
+ * the metadata merge can express.
+ */
+internal fun JukeboxPlaylistState.withCurrentTrackSettings(
+    trackId: String,
+    type: PlaylistTrackType,
+    tuningParams: String?,
+    playMode: FavoritePlayMode?
+): JukeboxPlaylistState {
+    val current = currentTrack() ?: return this
+    if (current.playlistKey != playlistKeyOf(type, trackId)) {
+        return this
+    }
+    val normalizedTuningParams = tuningParams.takeIfNotBlank()
+    if (current.tuningParams == normalizedTuningParams && current.playMode == playMode) {
+        return this
+    }
+    val nextTracks = tracks.toMutableList()
+    nextTracks[currentIndex] = current.copy(
+        tuningParams = normalizedTuningParams,
+        playMode = playMode
+    )
     return copy(tracks = nextTracks)
 }
 
@@ -231,8 +288,10 @@ internal fun playablePlaylistTracks(
     }
 }
 
+private fun playlistKeyOf(type: PlaylistTrackType, id: String): String = "${type.name}:${id.trim()}"
+
 private val PlaylistTrack.playlistKey: String
-    get() = "${type.name}:${id.trim()}"
+    get() = playlistKeyOf(type, id)
 
 private fun PlaylistTrack.withMetadataFrom(incoming: PlaylistTrack): PlaylistTrack {
     return copy(

@@ -140,6 +140,17 @@ class PlaybackCoordinator(
     }
 
     fun buildTuningParamsString(): String? {
+        return buildTuningParamsString(
+            audioModeWireValue = getState().playback.jukeboxAudioMode.wireValue,
+            audioModeIntensity = getState().playback.jukeboxAudioModeIntensity
+        )
+    }
+
+    /** Engine tuning paired with an audio mode the caller knows better than playback state. */
+    fun buildTuningParamsString(
+        audioModeWireValue: String,
+        audioModeIntensity: Int
+    ): String? {
         return TuningParamsCodec.buildSavedTuningParams(
             tuning = engineTuningState(
                 config = engine.getConfig(),
@@ -147,8 +158,8 @@ class PlaybackCoordinator(
                 deletedEdgeIds = getDeletedEdgeIds(),
                 anchorBranchId = engine.getUserAnchorEdgeId()
             ),
-            audioModeWireValue = getState().playback.jukeboxAudioMode.wireValue,
-            audioModeIntensity = getState().playback.jukeboxAudioModeIntensity
+            audioModeWireValue = audioModeWireValue,
+            audioModeIntensity = audioModeIntensity
         )
     }
 

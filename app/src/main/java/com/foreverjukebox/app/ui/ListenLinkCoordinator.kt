@@ -55,6 +55,8 @@ class ListenLinkCoordinator(
         } else {
             PlaybackMode.Jukebox
         }
+        // The link's mode belongs to the track it opens, so this stays off the
+        // capture path that records a mode switch on the loaded track.
         setPlaybackMode(mode)
         val tuningParams = if (mode == PlaybackMode.Jukebox) {
             buildQueryWithoutMode(queryParams)

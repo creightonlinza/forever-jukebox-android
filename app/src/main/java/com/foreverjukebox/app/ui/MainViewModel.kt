@@ -410,7 +410,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         randomBranchDeltaPercentScale = RANDOM_BRANCH_DELTA_PERCENT_SCALE,
-        persistLocalTrackTuning = { localId, params -> localAnalysisService.saveTuning(localId, params) }
+        persistLocalTrackTuning = { localId, params -> localAnalysisService.saveTuning(localId, params) },
+        onTuningCommitted = ::captureActivePlaylistTrackSettings
     )
     private val castSessionCoordinator = CastSessionCoordinator(
         controller = controller,
@@ -1354,20 +1355,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun currentPlaylistTrackOrNull(): PlaylistTrack? {
         val currentState = state.value
         val playback = currentState.playback
-        val hasLoadedTrack = (playback.audioLoaded && playback.analysisLoaded) || playback.hasCastTrack()
-        if (!hasLoadedTrack) return null
-        val trackId = playback.shareTrackIdOrNull() ?: return null
-        val type = if (currentState.appMode == AppMode.Local) {
-            PlaylistTrackType.LocalCached
-        } else {
-            PlaylistTrackType.Server
-        }
+        val identity = loadedPlaylistTrackIdentityOrNull(currentState) ?: return null
+        val isServerTrack = identity.type == PlaylistTrackType.Server
         return PlaylistTrack(
-            id = canonicalTrackId(trackId) ?: trackId.trim(),
-            type = type,
+            id = identity.id,
+            type = identity.type,
             title = playback.trackTitle,
             artist = playback.trackArtist,
-            tuningParams = if (type == PlaylistTrackType.Server) {
+            tuningParams = if (isServerTrack) {
                 tuningParamsForCurrentTrack(
                     currentState,
                     playbackCoordinator::buildTuningParamsString
@@ -1375,12 +1370,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 null
             },
-            playMode = if (type == PlaylistTrackType.Server) {
+            playMode = if (isServerTrack) {
                 playback.playMode.toFavoritePlayModeOrNull()
             } else {
                 null
             }
         )
+    }
+
+    /**
+     * Writes tuning and play mode edited after load onto the active playlist entry, so
+     * reopening a saved playlist replays what the track last sounded like rather than the
+     * settings it carried when it was added.
+     *
+     * Local-cached entries are skipped: their tuning lives in the per-track file that
+     * [LocalAnalysisService] writes and reads back on open.
+     */
+    private fun captureActivePlaylistTrackSettings(tuningParams: String?) {
+        val currentState = state.value
+        if (!currentState.playlist.isActive()) return
+        val identity = loadedPlaylistTrackIdentityOrNull(currentState) ?: return
+        if (identity.type != PlaylistTrackType.Server) return
+        updatePlaylistState {
+            it.withCurrentTrackSettings(
+                trackId = identity.id,
+                type = identity.type,
+                tuningParams = tuningParams,
+                playMode = currentState.playback.playMode.toFavoritePlayModeOrNull()
+            )
+        }
     }
 
     private fun addTrackToPlaylistFromLongPress(track: PlaylistTrack) {
@@ -1432,6 +1450,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             PlaylistTrackType.Server -> {
                 // Honor the track's saved play mode as the playlist advances; a null
                 // playMode (untagged/jukebox favorites, top songs) falls back to jukebox.
+                // Not selectPlaybackMode: this switch belongs to the incoming track, and
+                // the outgoing entry is still the one playing.
                 setPlaybackMode(track.playMode.toPlaybackMode())
                 loadTrackByIdInternal(
                     track.id,
@@ -1567,7 +1587,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         analytics.logSelectTrack("favorites", trackId, title)
         // Restore the play mode the track was favorited in before loading so the
         // track opens in jukebox or autocanonizer accordingly. Legacy favorites
-        // (null playMode) fall back to jukebox.
+        // (null playMode) fall back to jukebox. Not selectPlaybackMode: the outgoing
+        // track is still loaded and still the active playlist entry, which would take
+        // the incoming favorite's mode as its own.
         setPlaybackMode(playMode.toPlaybackMode())
         selectServerTrackInternal(trackId, title, artist, tuningParams, playMode)
     }
@@ -3438,6 +3460,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update(::stateAfterFullscreenVisualizationClose)
     }
 
+    /**
+     * Mode switch driven by the user on the loaded track, which the active playlist entry
+     * records. Callers that switch mode on the way into a *different* track use
+     * [setPlaybackMode] instead, so the outgoing entry keeps its own mode.
+     */
+    fun selectPlaybackMode(mode: PlaybackMode) {
+        if (state.value.playback.playMode == mode) return
+        setPlaybackMode(mode)
+        captureActivePlaylistTrackSettings(
+            tuningParamsForCurrentTrack(
+                state.value,
+                playbackCoordinator::buildTuningParamsString
+            )
+        )
+    }
+
     fun setPlaybackMode(mode: PlaybackMode) {
         val current = state.value.playback
         if (current.playMode == mode) {
@@ -3701,7 +3739,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             syncPlaybackServiceSession()
             // The auto-saved tuning bundles am/ai; re-persist after the state update so a
             // reload doesn't restore the just-reset audio mode.
-            tuningCoordinator.persistCurrentLocalTuning()
+            tuningCoordinator.commitCurrentTuning()
         }
     }
 

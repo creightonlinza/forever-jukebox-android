@@ -189,9 +189,23 @@ class TuningCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val randomBranchDeltaPercentScale: Double,
-    private val persistLocalTrackTuning: suspend (localId: String, params: String?) -> Unit
+    private val persistLocalTrackTuning: suspend (localId: String, params: String?) -> Unit,
+    private val onTuningCommitted: (params: String?) -> Unit
 ) {
     private fun currentLocalTrackId(): String? = localTrackTuningId(getState())
+
+    /**
+     * Single exit for every apply and reset, so the local track's saved-tuning file and the
+     * active playlist entry always record the same params. The two sinks never overlap: a
+     * local track id exists only in Local mode, and playlist entries carry tuning only for
+     * server tracks.
+     */
+    private suspend fun commitTuningParams(params: String?) {
+        currentLocalTrackId()?.let { localId ->
+            persistLocalTrackTuning(localId, params)
+        }
+        onTuningCommitted(params)
+    }
 
     suspend fun applyTuning(
         threshold: Int,
@@ -230,7 +244,9 @@ class TuningCoordinator(
             highlightAnchorBranch = highlightAnchorBranch,
             justBackwards = justBackwards,
             minJumpDistancePercent = minJumpDistancePercent,
-            removeSequentialBranches = removeSequentialBranches
+            removeSequentialBranches = removeSequentialBranches,
+            audioMode = audioMode,
+            audioModeIntensity = audioModeIntensity
         )
     }
 
@@ -247,19 +263,12 @@ class TuningCoordinator(
         buildCastAudioModeResetParams(currentState.playback.castAudioModeWireValue)
             ?.let { castPlaybackCoordinator.sendCastTuningParams(it) }
         // Branch tuning survives an audio-only reset, so re-persist it without am/ai.
-        currentLocalTrackId()?.let { localId ->
-            persistLocalTrackTuning(
-                localId,
-                TuningParamsCodec.buildSavedTuningParams(tuning = currentState.tuning)
-            )
-        }
+        commitTuningParams(TuningParamsCodec.buildSavedTuningParams(tuning = currentState.tuning))
         castPlaybackCoordinator.requestCastStatus()
     }
 
-    suspend fun persistCurrentLocalTuning() {
-        currentLocalTrackId()?.let { localId ->
-            persistLocalTrackTuning(localId, playbackCoordinator.buildTuningParamsString())
-        }
+    suspend fun commitCurrentTuning() {
+        commitTuningParams(playbackCoordinator.buildTuningParamsString())
     }
 
     private suspend fun applyCastTuning(
@@ -298,18 +307,15 @@ class TuningCoordinator(
         if (castUpdate.castParams != null) {
             castPlaybackCoordinator.sendCastTuningParams(castUpdate.castParams)
         }
-        // Mirror applyLocalTuning's auto-save for local tracks: cast tuning edits never reach
-        // the local engine, so without this they would vanish on disconnect.
-        currentLocalTrackId()?.let { localId ->
-            persistLocalTrackTuning(
-                localId,
-                TuningParamsCodec.buildSavedTuningParams(
-                    tuning = castUpdate.nextTuning,
-                    audioModeWireValue = audioModeWireValue,
-                    audioModeIntensity = audioModeIntensity
-                )
+        // Mirror applyLocalTuning's auto-save: cast tuning edits never reach the local
+        // engine, so without this they would vanish on disconnect.
+        commitTuningParams(
+            TuningParamsCodec.buildSavedTuningParams(
+                tuning = castUpdate.nextTuning,
+                audioModeWireValue = audioModeWireValue,
+                audioModeIntensity = audioModeIntensity
             )
-        }
+        )
         castPlaybackCoordinator.requestCastStatus()
     }
 
@@ -321,7 +327,9 @@ class TuningCoordinator(
         highlightAnchorBranch: Boolean,
         justBackwards: Boolean,
         minJumpDistancePercent: Int,
-        removeSequentialBranches: Boolean
+        removeSequentialBranches: Boolean,
+        audioMode: JukeboxAudioMode,
+        audioModeIntensity: Int
     ) {
         val vizData = withContext(Dispatchers.Default) {
             val current = engine.getConfig()
@@ -348,9 +356,14 @@ class TuningCoordinator(
         }
         preferences.setHighlightAnchorBranch(highlightAnchorBranch)
         playbackCoordinator.syncTuningState()
-        currentLocalTrackId()?.let { localId ->
-            persistLocalTrackTuning(localId, playbackCoordinator.buildTuningParamsString())
-        }
+        // Playback state receives the audio mode only after applyTuning returns, so the
+        // saved params take the mode being applied rather than the one it replaces.
+        commitTuningParams(
+            playbackCoordinator.buildTuningParamsString(
+                audioModeWireValue = audioMode.wireValue,
+                audioModeIntensity = audioModeIntensity
+            )
+        )
     }
 
     private suspend fun resetCastBranchTuningDefaults() {
@@ -366,16 +379,13 @@ class TuningCoordinator(
         )
         // Mirror resetLocalTuningDefaults: the branch portion of the auto-saved tuning is
         // discarded, but the audio mode survives a branch-only reset.
-        currentLocalTrackId()?.let { localId ->
-            persistLocalTrackTuning(
-                localId,
-                TuningParamsCodec.buildSavedTuningParams(
-                    tuning = TuningState(),
-                    audioModeWireValue = currentState.playback.castAudioModeWireValue,
-                    audioModeIntensity = currentState.playback.castAudioModeIntensity
-                )
+        commitTuningParams(
+            TuningParamsCodec.buildSavedTuningParams(
+                tuning = TuningState(),
+                audioModeWireValue = currentState.playback.castAudioModeWireValue,
+                audioModeIntensity = currentState.playback.castAudioModeIntensity
             )
-        }
+        )
         castPlaybackCoordinator.requestCastStatus()
     }
 
@@ -395,7 +405,7 @@ class TuningCoordinator(
         }
         playbackCoordinator.syncTuningState()
         // Engine is back at defaults, so this saves only the still-active local audio
-        // mode (or deletes the file when the mode is off).
-        persistCurrentLocalTuning()
+        // mode (or clears the saved tuning when the mode is off).
+        commitCurrentTuning()
     }
 }
