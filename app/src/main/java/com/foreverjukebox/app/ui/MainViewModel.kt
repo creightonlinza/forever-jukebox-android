@@ -1073,17 +1073,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (recordHistory && tabHistory.lastOrNull() != current) {
             tabHistory.addLast(current)
         }
-        _state.update {
-            val nextTopTab = if (resolvedTab == TabId.Top) TopSongsTab.TopSongs else it.topSongsTab
-            val nextSearchTab = if (resolvedTab == TabId.Search) {
-                SearchPanelTab.Search
-            } else {
-                it.searchPanelTab
-            }
-            it.copy(activeTab = resolvedTab, topSongsTab = nextTopTab, searchPanelTab = nextSearchTab)
-        }
+        _state.update { it.copy(activeTab = resolvedTab) }
         if (resolvedTab == TabId.Top) {
-            searchCoordinator.onTopTabActivated()
+            // The sub-tab selection survives navigation, so refresh whichever feed it points at.
+            searchCoordinator.onTopSongsTabSelected(state.value.topSongsTab)
         }
         if (resolvedTab == TabId.Input) {
             localAnalysisCoordinator.refreshLocalCachedTracks()

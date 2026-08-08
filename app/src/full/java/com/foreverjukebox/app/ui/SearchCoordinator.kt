@@ -41,10 +41,6 @@ class SearchCoordinator(
         recentSongsLoaded = false
     }
 
-    override fun onTopTabActivated() {
-        scheduleSongsRefresh(SongsFeed.Top)
-    }
-
     override fun onTopSongsTabSelected(tab: TopSongsTab) {
         when (tab) {
             TopSongsTab.TopSongs -> scheduleSongsRefresh(SongsFeed.Top)
