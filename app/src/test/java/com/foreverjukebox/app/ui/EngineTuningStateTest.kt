@@ -67,12 +67,24 @@ class EngineTuningStateTest {
     }
 
     @Test
-    fun pinnedThresholdMatchingComputedIsOmitted() {
-        // A pinned threshold numerically equal to the auto-computed one restores to the
-        // identical graph, so it is not persisted.
+    fun aChosenThresholdIsPersistedEvenWhereItMatchesTheComputedValue() {
+        // The engine holds a threshold rather than the auto sentinel, so it was chosen, and that
+        // survives being numerically equal to what the track would have computed on its own.
         val raw = TuningParamsCodec.buildSavedTuningParams(
             engineTuningState(
                 config = JukeboxConfig(currentThreshold = 31, justBackwards = true),
+                computedThreshold = 31
+            )
+        )
+
+        assertEquals("jb=1&thresh=31", raw)
+    }
+
+    @Test
+    fun theEngineAutoSentinelPersistsAsNoThresholdAtAll() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            engineTuningState(
+                config = JukeboxConfig(justBackwards = true),
                 computedThreshold = 31
             )
         )

@@ -354,7 +354,10 @@ internal fun playbackStateAfterAutocanonizerStart(playback: PlaybackState): Play
 }
 
 data class TuningState(
-    val threshold: Int = 2,
+    // The threshold the user chose, or null to let the track decide. Auto is the ground state: only
+    // loading saved params, moving the threshold control, or resetting ever writes this.
+    val threshold: Int? = null,
+    // What auto resolves to on this track. Display only — never compared, never persisted.
     val computedThreshold: Int? = null,
     val minProb: Int = 18,
     val maxProb: Int = 50,

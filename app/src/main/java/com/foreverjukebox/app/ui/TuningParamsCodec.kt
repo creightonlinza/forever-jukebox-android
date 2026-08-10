@@ -1,6 +1,9 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
+import com.foreverjukebox.app.engine.MAX_THRESHOLD
+import com.foreverjukebox.app.engine.MIN_THRESHOLD
+import com.foreverjukebox.app.engine.parsePinnedThreshold
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -25,10 +28,7 @@ data class ParsedTuningParams(
 object TuningParamsCodec {
     private val knownKeys = setOf("jb", "bl", "lg", "sq", "thresh", "bp", "d", "ab", "ah", "am", "ai")
 
-    /** Stands in for an unknown auto threshold; below every threshold a track can carry. */
-    private const val NO_COMPUTED_THRESHOLD = -1
-
-    fun parse(raw: String?, minThreshold: Int = 0): ParsedTuningParams? {
+    fun parse(raw: String?): ParsedTuningParams? {
         if (raw.isNullOrBlank()) {
             return null
         }
@@ -41,9 +41,8 @@ object TuningParamsCodec {
             return null
         }
         val audioModeIntensity = AudioModeIntensity.parse(params.firstValue("ai"), audioMode)
-        val threshold = params.firstValue("thresh")
-            ?.toIntOrNull()
-            ?.takeIf { it >= minThreshold }
+        // Null is auto, so a written threshold below the control range reads the same as none at all.
+        val threshold = parsePinnedThreshold(params.firstValue("thresh"))
 
         var minProbPercent: Int? = null
         var maxProbPercent: Int? = null
@@ -131,8 +130,7 @@ object TuningParamsCodec {
                 "sq" -> parseRemoveSequential(value)?.let {
                     sanitized[name] = if (it) "0" else "1"
                 }
-                "thresh" -> value.toIntOrNull()
-                    ?.takeIf { it >= 2 }
+                "thresh" -> parsePinnedThreshold(value)
                     ?.let { sanitized[name] = it.toString() }
                 "bp" -> sanitizeTriplet(value)?.let {
                     sanitized[name] = it
@@ -185,10 +183,8 @@ object TuningParamsCodec {
         if (tuning.removeSequential) {
             params.add("sq=0")
         }
-        val computedThreshold = tuning.computedThreshold
-        if (computedThreshold != null && tuning.threshold != computedThreshold) {
-            params.add("thresh=${tuning.threshold.coerceAtLeast(2)}")
-        }
+        // Omission is how auto travels, so only a chosen threshold is written.
+        tuning.threshold?.let { params.add("thresh=${it.coerceIn(MIN_THRESHOLD, MAX_THRESHOLD)}") }
         val branchProbabilityChanged = tuning.minProb != defaults.minProb ||
             tuning.maxProb != defaults.maxProb ||
             tuning.ramp != defaults.ramp
@@ -223,17 +219,9 @@ object TuningParamsCodec {
      *
      * Deleted branches (`d`) and the anchor branch (`ab`) are excluded, and `ah` never survives the
      * builder because persisted tuning does not carry it.
-     *
-     * [computedThreshold] is the track's auto threshold, which a built string leaves out; passing it
-     * lets a string that writes that same value explicitly read as the match it is.
      */
-    fun savedTuningParamsEquivalent(
-        left: String?,
-        right: String?,
-        computedThreshold: Int? = null
-    ): Boolean {
-        return canonicalSavedTuningParams(left, computedThreshold) ==
-            canonicalSavedTuningParams(right, computedThreshold)
+    fun savedTuningParamsEquivalent(left: String?, right: String?): Boolean {
+        return canonicalSavedTuningParams(left) == canonicalSavedTuningParams(right)
     }
 
     /**
@@ -241,16 +229,11 @@ object TuningParamsCodec {
      * spellings of the same tuning collapse to one string. Routing the comparison through [parse],
      * [mergeIntoState], and the builder is what keeps it complete: a tuning parameter is compared
      * as soon as it can be parsed and built, with no separate field list here to fall behind.
-     *
-     * The threshold rides on the builder's own rule, which emits nothing when the value matches the
-     * auto threshold. With no auto threshold to compare against, [NO_COMPUTED_THRESHOLD] stands in
-     * so a written threshold survives and an absent one stays absent.
      */
-    private fun canonicalSavedTuningParams(raw: String?, computedThreshold: Int?): String? {
+    private fun canonicalSavedTuningParams(raw: String?): String? {
         val parsed = parse(raw)
-        val autoThreshold = computedThreshold ?: NO_COMPUTED_THRESHOLD
         val tuning = mergeIntoState(
-            base = TuningState(threshold = autoThreshold, computedThreshold = autoThreshold),
+            base = TuningState(),
             parsed = parsed
         ).copy(
             // Dropped rather than compared: no on-device control touches them, they enter tuning

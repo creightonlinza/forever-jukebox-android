@@ -124,17 +124,29 @@ class FavoriteTuningDriftPolicyTest {
     }
 
     @Test
-    fun reportsNoDriftWhileCastingWhenTheSavedThresholdIsTheReceiverAutoValue() {
-        // The receiver owns the auto threshold and a favorite from the web spells it out, while a
-        // locally built string omits it — the same tuning written two ways.
+    fun reportsNoDriftWhileCastingWhenTheReceiverReportsTheSavedThreshold() {
         val state = stateFor(
             favorites = listOf(favorite(tuningParams = "thresh=31")),
             tuning = TuningState(threshold = 31, computedThreshold = 31),
             playback = castingPlayback(castTotalBeats = 400)
         )
 
-        assertNull(liveTuningParams(state))
+        assertEquals("thresh=31", liveTuningParams(state))
         assertFalse(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
+    }
+
+    @Test
+    fun reportsDriftWhileCastingWhenTheReceiverReportsAutoAgainstASavedThreshold() {
+        // The receiver reporting no threshold means it is choosing one per track, which is a
+        // different tuning from one that names a number — even the same number.
+        val state = stateFor(
+            favorites = listOf(favorite(tuningParams = "thresh=31")),
+            tuning = TuningState(threshold = null, computedThreshold = 31),
+            playback = castingPlayback(castTotalBeats = 400)
+        )
+
+        assertNull(liveTuningParams(state))
+        assertTrue(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
     }
 
     @Test
