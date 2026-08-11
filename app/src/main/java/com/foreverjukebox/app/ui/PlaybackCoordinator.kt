@@ -980,16 +980,16 @@ class PlaybackCoordinator(
         val config = engine.getConfig()
         val graph = engine.getGraphState()
         updateState { state ->
+            // The receiver owns tuning while casting and reports all of it with every status.
+            // The local engine is not the one playing, so none of its values may be written over
+            // the mirrored ones; the status reducer is the only writer for the duration.
+            if (state.playback.isCasting) {
+                return@updateState state
+            }
             state.copy(
                 tuning = state.tuning.copy(
                     threshold = config.currentThreshold.takeIf { it != 0 },
-                    // The local graph computes the auto threshold on device; while casting the
-                    // receiver owns it and reports it with every status.
-                    computedThreshold = if (state.playback.isCasting) {
-                        state.tuning.computedThreshold
-                    } else {
-                        graph?.computedThreshold
-                    },
+                    computedThreshold = graph?.computedThreshold,
                     minProb = (config.minRandomBranchChance * 100).toInt(),
                     maxProb = (config.maxRandomBranchChance * 100).toInt(),
                     ramp = (config.randomBranchChanceDelta * RANDOM_BRANCH_DELTA_PERCENT_SCALE).toInt(),
