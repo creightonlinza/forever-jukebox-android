@@ -301,6 +301,15 @@ class CastPlaybackCoordinator(
                 )
             }
             CastRelayClient.UploadResult.TooLarge -> postCastError(CAST_FILE_TOO_LARGE_MESSAGE)
+            is CastRelayClient.UploadResult.Rejected -> {
+                // The relay's duration cap fired at ingest — surface it through
+                // the same track-length dialog a receiver-side rejection uses,
+                // resetting the cast screen to its idle no-track content.
+                val message = result.message?.takeIf { it.isNotBlank() }
+                    ?: castTrackLengthLimitErrorMessage()
+                updateState { stateAfterCastTrackRejection(it, message) }
+                onSyncCastNotification()
+            }
             CastRelayClient.UploadResult.Guard -> postCastError(CAST_RELAY_GUARD_MESSAGE)
             CastRelayClient.UploadResult.Unreachable -> postCastError(CAST_RELAY_UNREACHABLE_MESSAGE)
         }
@@ -417,8 +426,9 @@ class CastPlaybackCoordinator(
             if (status.errorCode == CAST_TRACK_TOO_LONG_ERROR_CODE ||
                 status.errorCode == CAST_TRACK_DURATION_UNKNOWN_ERROR_CODE
             ) {
-                reduced.copy(
-                    trackLengthLimitErrorMessage = status.error
+                stateAfterCastTrackRejection(
+                    reduced,
+                    status.error
                         .takeIf { it.isNotBlank() }
                         ?: castTrackLengthLimitErrorMessage()
                 )

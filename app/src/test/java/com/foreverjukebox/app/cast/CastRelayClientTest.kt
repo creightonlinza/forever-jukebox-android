@@ -118,6 +118,33 @@ class CastRelayClientTest {
     }
 
     @Test
+    fun uploadForCastMapsDurationRejectionWithMessage() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204)) // audio
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(422)
+                .setBody("""{"error":"Too long for the Chromecast.","errorCode":"cast_track_too_long"}""")
+        )
+
+        val result = client.uploadForCast(baseUrl(), fingerprint, audioBody, analysisBody)
+
+        assertEquals(
+            CastRelayClient.UploadResult.Rejected("Too long for the Chromecast."),
+            result
+        )
+    }
+
+    @Test
+    fun uploadForCastMapsDurationRejectionWithUnparseableBody() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204)) // audio
+        server.enqueue(MockResponse().setResponseCode(422).setBody("nope"))
+
+        val result = client.uploadForCast(baseUrl(), fingerprint, audioBody, analysisBody)
+
+        assertEquals(CastRelayClient.UploadResult.Rejected(null), result)
+    }
+
+    @Test
     fun uploadForCastRejectsMalformedTrackIdWithoutRequests() = runTest {
         for (badId in listOf("UPPER0123456789A", "0123456789abcde", "not-hex-at-all!", "")) {
             assertEquals(

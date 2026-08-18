@@ -7,7 +7,11 @@ import java.io.InputStream
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -51,6 +55,13 @@ class CastRelayClient(
 
         /** Relay rejected a file as too large (413). Don't retry. */
         data object TooLarge : UploadResult
+
+        /**
+         * Relay rejected the analysis at ingest (422) — the track fails the
+         * Chromecast duration cap the relay enforces. Carries the relay's
+         * user-facing message. Don't retry.
+         */
+        data class Rejected(val message: String?) : UploadResult
 
         /** Relay memory / track-count capacity guard tripped (507). Retry later. */
         data object Guard : UploadResult
@@ -130,6 +141,8 @@ class CastRelayClient(
                 when {
                     response.isSuccessful -> PutStatus.Ok
                     response.code == 413 -> PutStatus.TooLarge
+                    response.code == 422 ->
+                        PutStatus.Rejected(parseRejectionMessage(response.body?.string()))
                     response.code == 507 -> PutStatus.Guard
                     else -> PutStatus.Failed
                 }
@@ -153,13 +166,31 @@ class CastRelayClient(
             ?: throw IllegalArgumentException("Invalid relay base URL: $baseUrl")
 
     /** Status of a single PUT, mapped from the relay's response codes. */
-    private enum class PutStatus { Ok, TooLarge, Guard, Failed }
+    private sealed interface PutStatus {
+        data object Ok : PutStatus
+        data object TooLarge : PutStatus
+        data object Guard : PutStatus
+        data object Failed : PutStatus
+        data class Rejected(val message: String?) : PutStatus
+    }
 
     private fun PutStatus.toUploadResult(): UploadResult = when (this) {
         PutStatus.Ok -> UploadResult.Ok
         PutStatus.TooLarge -> UploadResult.TooLarge
         PutStatus.Guard -> UploadResult.Guard
         PutStatus.Failed -> UploadResult.Unreachable
+        is PutStatus.Rejected -> UploadResult.Rejected(message)
+    }
+
+    /** The relay's error body is `{"error": "...", "errorCode": "..."}`. */
+    private fun parseRejectionMessage(body: String?): String? = try {
+        body?.let {
+            Json.parseToJsonElement(it).jsonObject["error"]?.jsonPrimitive?.content
+        }
+    } catch (_: SerializationException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
     companion object {

@@ -746,6 +746,28 @@ fun stateAfterCastAnalysisCancel(current: UiState): UiState {
     )
 }
 
+/**
+ * A duration-cap rejection (relay or receiver) surfaces only in the track-length dialog. The
+ * receiver discarded the track, so the cast screen resets to its idle no-track content instead of
+ * showing the same message a second time as a Failed status.
+ */
+fun stateAfterCastTrackRejection(current: UiState, message: String): UiState {
+    val cleared = stateAfterCastAnalysisCancel(current)
+    return cleared.copy(
+        playback = cleared.playback.copy(
+            lastJobId = null,
+            lastYouTubeId = null,
+            trackDurationSeconds = null,
+            castTotalBeats = null,
+            castTotalBranches = null,
+            castPlaybackState = null,
+            isCastLoading = false,
+            castTransfer = null
+        ),
+        trackLengthLimitErrorMessage = message
+    )
+}
+
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
 fun isValidBaseUrl(value: String): Boolean {

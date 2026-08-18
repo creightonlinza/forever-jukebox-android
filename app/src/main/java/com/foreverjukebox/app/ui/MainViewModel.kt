@@ -3298,9 +3298,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Fallback for a track-length cast rejection that arrived without a
+    // message. The relay/receiver own the duration cap and normally send the
+    // specific wording; the app deliberately carries no copy of the limit.
     private fun castTrackLengthLimitErrorMessage(): String {
-        return "Sorry, tracks longer than ${CAST_MAX_TRACK_DURATION_MINUTES.toInt()} minutes " +
-            "cannot be cast due to Chromecast memory limitations."
+        return "This track can't be cast due to Chromecast memory limitations."
     }
 
     private fun showServerTrackLengthLimitError() {
@@ -3314,6 +3316,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(trackLengthLimitErrorMessage = message) }
     }
 
+    // Server-owned track-length limit (max_track_length from app-config). The
+    // Chromecast duration cap is NOT checked here: the cast relay rejects
+    // over-cap tracks at ingest and the receiver reports the rejection back,
+    // so the app never carries its own copy of that limit.
     private fun showTrackLengthLimitIfExceeded(durationSeconds: Double?): Boolean {
         if (
             durationSeconds == null ||
@@ -3322,16 +3328,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             durationSeconds <= 0
         ) {
             return false
-        }
-        if (state.value.playback.isCasting &&
-            durationSeconds > CAST_MAX_TRACK_DURATION_MINUTES * 60
-        ) {
-            _state.update {
-                it.copy(
-                    trackLengthLimitErrorMessage = castTrackLengthLimitErrorMessage()
-                )
-            }
-            return true
         }
         val maxTrackLengthMinutes = state.value.maxTrackLengthMinutes
         if (maxTrackLengthMinutes != null &&
@@ -4069,7 +4065,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "MainViewModel"
-        private const val CAST_MAX_TRACK_DURATION_MINUTES = 7.0
         private const val GITHUB_REPO_OWNER = "creightonlinza"
         private const val GITHUB_REPO_NAME = "forever-jukebox-android"
         private const val LOADING_LOCK_MESSAGE = "Please wait for the current track to finish loading."
