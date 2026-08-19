@@ -154,15 +154,18 @@ class CastPlaybackCoordinator(
      * Cast a locally analyzed track: upload its audio + analysis to the relay under [cacheKey], then
      * LOAD by `{fingerprint}`. [cacheKey] is the fingerprint verbatim (see LocalAnalysisService).
      */
+    /** Returns whether the cast load was actually started; callers fall back to a device
+     * load on false, so a receiver that went away between the state check and the handoff
+     * cannot silently swallow a finished analysis. */
     fun castLocalTrack(
         cacheKey: String,
         sourceUri: String,
         title: String? = null,
         artist: String? = null,
         tuningParams: String? = null
-    ) {
+    ): Boolean {
         castRetryUsed = false
-        castLocalTrackInternal(cacheKey, sourceUri, title, artist, tuningParams)
+        return castLocalTrackInternal(cacheKey, sourceUri, title, artist, tuningParams)
     }
 
     private fun castLocalTrackInternal(
@@ -171,16 +174,16 @@ class CastPlaybackCoordinator(
         title: String?,
         artist: String?,
         tuningParams: String?
-    ) {
+    ): Boolean {
         if (!getState().castEnabled) {
             onCastUnavailable()
-            return
+            return false
         }
         val fingerprint = cacheKey.trim()
         if (fingerprint.isBlank() || sourceUri.isBlank()) {
-            return
+            return false
         }
-        val session = castController.getSession() ?: return
+        val session = castController.getSession() ?: return false
         ensureCastStatusListener(session)
         val currentState = getState()
         val displayTitle = if (artist.isNullOrBlank()) {
@@ -235,6 +238,7 @@ class CastPlaybackCoordinator(
         castLoadJob = scope.launch {
             performLocalUpload(session, fingerprint, sourceUri, title, artist, resolvedCastTuningParams, vizIndex)
         }
+        return true
     }
 
     private suspend fun performLocalUpload(

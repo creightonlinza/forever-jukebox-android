@@ -10,8 +10,10 @@ import com.foreverjukebox.app.engine.JukeboxPlayer
 import com.foreverjukebox.app.ui.AudioModeIntensity
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -37,7 +39,8 @@ class BufferedAudioPlayer : JukeboxPlayer {
         val decoded = withContext(Dispatchers.IO) {
             decodeToPcm(
                 onProgress = onProgress,
-                configureDataSource = { extractor -> extractor.setDataSource(file.absolutePath) }
+                configureDataSource = { extractor -> extractor.setDataSource(file.absolutePath) },
+                isAborted = { !isActive }
             )
         }
         sampleRate = decoded.sampleRate
@@ -59,7 +62,8 @@ class BufferedAudioPlayer : JukeboxPlayer {
                 onProgress = onProgress,
                 configureDataSource = { extractor ->
                     extractor.setDataSource(context, uri, emptyMap())
-                }
+                },
+                isAborted = { !isActive }
             )
         }
         sampleRate = decoded.sampleRate
@@ -332,7 +336,8 @@ class BufferedAudioPlayer : JukeboxPlayer {
 
     private fun decodeToPcm(
         onProgress: ((Int) -> Unit)?,
-        configureDataSource: (MediaExtractor) -> Unit
+        configureDataSource: (MediaExtractor) -> Unit,
+        isAborted: () -> Boolean = { false }
     ): DecodedAudio {
         val extractor = MediaExtractor()
         configureDataSource(extractor)
@@ -403,6 +408,12 @@ class BufferedAudioPlayer : JukeboxPlayer {
         onProgress?.invoke(0)
         try {
             while (!outputDone) {
+                // MediaCodec calls have no cancellation points of their own, so a decode whose
+                // coroutine died would otherwise run to completion — burning CPU and contending
+                // for the codec with whatever load replaced it. Bail between buffers instead.
+                if (isAborted()) {
+                    throw CancellationException("Audio decode abandoned")
+                }
                 if (!inputDone) {
                     val inputIndex = decoder.dequeueInputBuffer(10_000)
                     if (inputIndex >= 0) {

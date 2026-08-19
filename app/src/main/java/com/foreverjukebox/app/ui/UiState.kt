@@ -8,6 +8,7 @@ import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.canonicalTrackId
+import com.foreverjukebox.app.data.parseTrackId
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.net.CleartextPolicy
 import com.foreverjukebox.app.visualization.JumpLine
@@ -515,15 +516,47 @@ fun resolveLoadingTrackMetadata(
     )
 }
 
+/**
+ * The single track id this playback state resolves to: the job id when known, else
+ * the YouTube source id for tracks that have no job yet. Shared by retry and
+ * analytics so both always name the same track.
+ */
+fun PlaybackState.resolvedTrackIdOrNull(): String? {
+    shareTrackIdOrNull()?.let { return it }
+    return lastYouTubeId.takeIfNotBlank()
+}
+
+/**
+ * Track id a failed load can be retried with. Only ids the load pipeline can parse
+ * qualify: advertising a retry for an unloadable id would leave the failed
+ * notification's button a silent dead end, with no load ever starting to resync it.
+ */
+fun PlaybackState.retryTrackIdOrNull(): String? {
+    return resolvedTrackIdOrNull()?.takeIf { parseTrackId(it) != null }
+}
+
+/**
+ * Whether the transport button doubles as a retry surface: an error is showing and
+ * there is a track id to reload. This also decides failed-notification visibility —
+ * while true, the playback notification stays up so the button remains reachable.
+ * What a press actually does (resume from memory vs. reload) is decided at press
+ * time via [failedTrackStillPlayable].
+ */
 fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
     return BuildConfig.SERVER_MODE_AVAILABLE &&
         state.appMode == AppMode.Server &&
         !state.playback.analysisErrorMessage.isNullOrBlank() &&
         !state.playback.isTrackLoading() &&
-        !state.playback.shareTrackIdOrNull().isNullOrBlank()
+        !state.playback.retryTrackIdOrNull().isNullOrBlank()
 }
 
-fun canPlayLoadedTrackFromMemory(playback: PlaybackState): Boolean {
+/**
+ * A track with a surfaced error whose audio and analysis are still fully loaded —
+ * a transport press should resume playback from memory rather than reload from
+ * the server. Press behavior only; visibility of the failed notification is
+ * [shouldRetryFailedLoadFromTransport]'s call.
+ */
+fun failedTrackStillPlayable(playback: PlaybackState): Boolean {
     return !playback.analysisErrorMessage.isNullOrBlank() &&
         !playback.isCasting &&
         playback.audioLoaded &&
@@ -531,13 +564,25 @@ fun canPlayLoadedTrackFromMemory(playback: PlaybackState): Boolean {
         !playback.isTrackLoading()
 }
 
-fun shouldKeepFailedLoadNotificationVisible(state: UiState): Boolean {
-    return shouldRetryFailedLoadFromTransport(state) &&
-        !canPlayLoadedTrackFromMemory(state.playback)
+/** What a transport press does while a failed notification is showing. */
+enum class TransportRetryPressAction {
+    /** The failed track is still fully loaded; resume it from memory. */
+    ResumePlayback,
+
+    /** Reload the track from the server via the retry flow. */
+    RetryLoad
+}
+
+fun transportRetryPressAction(playback: PlaybackState): TransportRetryPressAction {
+    return if (failedTrackStillPlayable(playback)) {
+        TransportRetryPressAction.ResumePlayback
+    } else {
+        TransportRetryPressAction.RetryLoad
+    }
 }
 
 fun failedLoadRetryRequest(playback: PlaybackState): FailedLoadRetryRequest? {
-    val trackId = playback.shareTrackIdOrNull() ?: return null
+    val trackId = playback.retryTrackIdOrNull() ?: return null
     return FailedLoadRetryRequest(
         trackId = trackId,
         title = playback.trackTitle,

@@ -254,19 +254,6 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
-    fun failedServerLoadDoesNotRetryFromTransportWithYoutubeIdOnly() {
-        val state = UiState(
-            appMode = AppMode.Server,
-            playback = PlaybackState(
-                analysisErrorMessage = "Loading failed.",
-                lastYouTubeId = "dQw4w9WgXcQ"
-            )
-        )
-
-        assertFalse(shouldRetryFailedLoadFromTransport(state))
-    }
-
-    @Test
     fun failedLoadRetryRequestCarriesPlayAfterLoadedWhenEnabled() {
         val request = failedLoadRetryRequest(
             PlaybackState(
@@ -359,14 +346,81 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
-    fun loadedTrackWithErrorCanPlayFromMemory() {
+    fun youtubeIdRetriesFromTransportBeforeJobAssigned() {
+        val state = UiState(
+            appMode = AppMode.Server,
+            playback = PlaybackState(
+                analysisErrorMessage = "Network error.",
+                lastYouTubeId = "dQw4w9WgXcQ"
+            )
+        )
+
+        assertEquals(
+            BuildConfig.SERVER_MODE_AVAILABLE,
+            shouldRetryFailedLoadFromTransport(state)
+        )
+    }
+
+    @Test
+    fun retryTrackIdPrefersJobIdOverYoutubeId() {
+        val playback = PlaybackState(
+            lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2",
+            lastYouTubeId = "dQw4w9WgXcQ"
+        )
+
+        assertEquals("a3f3c0dc73c6476c9db95c227f9206f2", playback.retryTrackIdOrNull())
+        assertEquals("dQw4w9WgXcQ", playback.copy(lastJobId = null).retryTrackIdOrNull())
+        assertNull(playback.copy(lastJobId = null, lastYouTubeId = null).retryTrackIdOrNull())
+    }
+
+    @Test
+    fun retryTrackIdRejectsIdsTheLoadPipelineCannotParse() {
+        // Ids arrive from server responses and cast receiver status, so junk is
+        // possible; advertising a retry for an unloadable id would leave the failed
+        // notification's button a silent dead end.
+        assertNull(PlaybackState(lastYouTubeId = "not a parseable id").retryTrackIdOrNull())
+        assertNull(PlaybackState(lastJobId = "job_123").retryTrackIdOrNull())
+        assertNull(PlaybackState(lastJobId = "local-fingerprint").retryTrackIdOrNull())
+    }
+
+    @Test
+    fun resolvedTrackIdMatchesAnalyticsResolution() {
+        // Retry and analytics resolve the track id through the same helper so both
+        // always name the same track.
+        val playback = PlaybackState(
+            lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2",
+            lastYouTubeId = "dQw4w9WgXcQ"
+        )
+
+        assertEquals(playback.analyticsPlayTrackId(), playback.resolvedTrackIdOrNull())
+        assertEquals(
+            playback.copy(lastJobId = null).analyticsPlayTrackId(),
+            playback.copy(lastJobId = null).resolvedTrackIdOrNull()
+        )
+    }
+
+    @Test
+    fun failedLoadRetryRequestFallsBackToYoutubeId() {
+        val request = failedLoadRetryRequest(
+            PlaybackState(
+                lastYouTubeId = "dQw4w9WgXcQ",
+                playAfterLoaded = true
+            )
+        )
+
+        assertEquals("dQw4w9WgXcQ", request?.trackId)
+        assertTrue(request?.playAfterLoaded == true)
+    }
+
+    @Test
+    fun failedTrackWithLoadedAudioAndAnalysisIsStillPlayable() {
         val playback = PlaybackState(
             analysisErrorMessage = "Playback failed.",
             audioLoaded = true,
             analysisLoaded = true
         )
 
-        assertTrue(canPlayLoadedTrackFromMemory(playback))
+        assertTrue(failedTrackStillPlayable(playback))
     }
 
     @Test
@@ -377,14 +431,14 @@ class PlaybackUiPolicyTest {
             analysisLoaded = true
         )
 
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(audioLoaded = false)))
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisLoaded = false)))
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisErrorMessage = null)))
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisErrorMessage = "")))
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(isCasting = true)))
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(analysisInFlight = true)))
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(audioLoading = true)))
-        assertFalse(canPlayLoadedTrackFromMemory(playable.copy(isCastLoading = true)))
+        assertFalse(failedTrackStillPlayable(playable.copy(audioLoaded = false)))
+        assertFalse(failedTrackStillPlayable(playable.copy(analysisLoaded = false)))
+        assertFalse(failedTrackStillPlayable(playable.copy(analysisErrorMessage = null)))
+        assertFalse(failedTrackStillPlayable(playable.copy(analysisErrorMessage = "")))
+        assertFalse(failedTrackStillPlayable(playable.copy(isCasting = true)))
+        assertFalse(failedTrackStillPlayable(playable.copy(analysisInFlight = true)))
+        assertFalse(failedTrackStillPlayable(playable.copy(audioLoading = true)))
+        assertFalse(failedTrackStillPlayable(playable.copy(isCastLoading = true)))
     }
 
     @Test
@@ -399,12 +453,15 @@ class PlaybackUiPolicyTest {
 
         assertEquals(
             BuildConfig.SERVER_MODE_AVAILABLE,
-            shouldKeepFailedLoadNotificationVisible(state)
+            shouldRetryFailedLoadFromTransport(state)
         )
     }
 
     @Test
-    fun failedLoadNotificationHiddenWhenTrackPlayableFromMemory() {
+    fun failedNotificationStaysVisibleWhenTrackPlayableFromMemory() {
+        // Visibility and press behavior are separate: the failed notification stays
+        // up so the transport button remains reachable, and the press resumes the
+        // in-memory track instead of reloading.
         val state = UiState(
             appMode = AppMode.Server,
             playback = PlaybackState(
@@ -415,7 +472,11 @@ class PlaybackUiPolicyTest {
             )
         )
 
-        assertFalse(shouldKeepFailedLoadNotificationVisible(state))
+        assertEquals(
+            BuildConfig.SERVER_MODE_AVAILABLE,
+            shouldRetryFailedLoadFromTransport(state)
+        )
+        assertTrue(failedTrackStillPlayable(state.playback))
     }
 
     @Test

@@ -370,6 +370,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         showToast = ::showToast
     )
+    private val audioLoadWakeLock = AudioLoadWakeLock(getApplication())
     private val playbackCoordinator = PlaybackCoordinator(
         application = getApplication(),
         scope = viewModelScope,
@@ -382,12 +383,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab,
-        onStableTrackLoaded = ::handleStableTrackLoaded
+        onStableTrackLoaded = ::handleStableTrackLoaded,
+        audioLoadHold = audioLoadWakeLock
     )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
         scope = viewModelScope,
         playbackCoordinator = playbackCoordinator,
-        getState = { state.value }
+        getState = { state.value },
+        audioLoadHold = audioLoadWakeLock
     )
     private val localAnalysisCoordinator = LocalAnalysisCoordinator(
         scope = viewModelScope,
@@ -406,7 +409,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // lambda holds the real exception; the surfaced-message non-fatal from
         // PlaybackCoordinator.setAnalysisError has no stack trace.
         logError = { message, error -> AppLog.error(TAG, message, error) },
-        diagnostics = diagnostics
+        diagnostics = diagnostics,
+        audioLoadHold = audioLoadWakeLock
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
@@ -425,6 +429,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         castPlaybackCoordinator = castPlaybackCoordinator,
         playbackCoordinator = playbackCoordinator,
         cancelServerTrackLoad = remoteTrackLoadCoordinator::cancel,
+        castPendingSource = { pending ->
+            loadTrackBySource(
+                sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+                sourceId = pending.youtubeId,
+                title = pending.title,
+                artist = pending.artist,
+                tuningParams = pending.tuningParams,
+                ignoreLoadingLock = true
+            )
+        },
+        isLocalAnalysisRunning = { localAnalysisCoordinator.isAnalysisRunning() },
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         applyActiveTab = ::applyActiveTab,
@@ -468,10 +483,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     closeFullscreenVisualization()
                 }
                 ForegroundPlaybackService.ACTION_RETRY_FAILED_LOAD -> {
-                    if (canPlayLoadedTrackFromMemory(state.value.playback)) {
-                        togglePlayback()
-                    } else {
-                        retryFailedLoad()
+                    when (transportRetryPressAction(state.value.playback)) {
+                        TransportRetryPressAction.ResumePlayback -> togglePlayback()
+                        TransportRetryPressAction.RetryLoad -> retryFailedLoad()
                     }
                 }
             }
@@ -2728,10 +2742,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         continue
                     }
                     diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
-                    AppLog.warn(TAG, failureLogMessage, error)
                     if (isRetryableNetworkError(error)) {
-                        playbackCoordinator.setAnalysisError("Network error.", expected = true)
+                        playbackCoordinator.setAnalysisError(
+                            "Network error.",
+                            cause = error,
+                            expected = true
+                        )
                     } else {
+                        AppLog.warn(TAG, failureLogMessage, error)
                         playbackCoordinator.setAnalysisError("Loading failed.")
                     }
                     return@launch
@@ -2802,7 +2820,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (blockPlaybackChangeWhileLoading(showToast = false)) return
         if (
             shouldRetryFailedLoadFromTransport(state.value) &&
-            !canPlayLoadedTrackFromMemory(current)
+            transportRetryPressAction(current) == TransportRetryPressAction.RetryLoad
         ) {
             retryFailedLoad()
             return
@@ -2891,6 +2909,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playbackCoordinator.stopListenTimer()
                         syncPlaybackServiceSession()
                     }
+                    result == PlaybackStartResult.WaitingForFocus -> {
+                        // Playback auto-starts when the delayed focus grant arrives, and that
+                        // start's state broadcast syncs isRunning — not a failure, so no error
+                        // surface and no service teardown.
+                        syncPlaybackServiceSession()
+                    }
                     else -> handleJukeboxPlaybackFailure(reason = result.toString())
                 }
             } catch (cancel: CancellationException) {
@@ -2924,7 +2948,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleJukeboxPlaybackFailure(reason: String) {
         AppLog.error(TAG, "Jukebox playback failure surfaced to UI: $reason")
         playbackCoordinator.stopListenTimer()
-        hardStopPlaybackServiceSession()
+        // No service teardown here: setAnalysisError syncs the playback service
+        // session, which keeps a retryable failed notification up (or resolves to
+        // Hidden and stops the service when there is nothing to retry).
         playbackCoordinator.setAnalysisError("Playback failed.")
     }
 
@@ -3196,7 +3222,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         remoteTrackLoadCoordinator.cancel()
-        playbackCoordinator.resetForNewTrack()
+        // Keep the playback service alive across the reset: retries often arrive from
+        // the notification with the app backgrounded, where a stopped foreground
+        // service cannot be restarted — the notification would vanish on press. The
+        // load that follows rolls the same notification into its loading state.
+        playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         loadTrackById(
             trackId = retryRequest.trackId,
             title = retryRequest.title,
@@ -4036,11 +4066,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun syncPlaybackServiceSession() {
-        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-    }
-
-    private fun hardStopPlaybackServiceSession() {
-        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.HardStop)
+        playbackCoordinator.syncPlaybackServiceSession()
     }
 
     private fun blockPlaybackChangeWhileLoading(showToast: Boolean = true): Boolean {

@@ -18,6 +18,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,7 +33,8 @@ class LocalAnalysisCoordinator(
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
     private val logError: (String, Throwable) -> Unit,
-    private val diagnostics: DiagnosticsGateway
+    private val diagnostics: DiagnosticsGateway,
+    private val audioLoadHold: AudioLoadHold
 ) {
     private var localAnalysisJob: Job? = null
 
@@ -78,14 +80,18 @@ class LocalAnalysisCoordinator(
         playbackCoordinator.setAnalysisQueued(1, "Processing audio")
         localAnalysisJob = scope.launch {
             try {
-                localAnalysisService.analyze(uri.toString(), resolvedName).collect { update ->
-                    when (update) {
-                        is LocalAnalysisUpdate.Progress -> {
-                            playbackCoordinator.setAnalysisProgress(update.percent, update.status)
-                        }
-                        is LocalAnalysisUpdate.Completed -> {
-                            diagnostics.logAnalysisCompleted(source)
-                            applyLocalAnalysisArtifact(update.artifact)
+                // Native analysis plus the decode in applyLocalAnalysisArtifact run under
+                // the wakelock; both stall if the CPU suspends with the screen off.
+                audioLoadHold.hold {
+                    localAnalysisService.analyze(uri.toString(), resolvedName).collect { update ->
+                        when (update) {
+                            is LocalAnalysisUpdate.Progress -> {
+                                playbackCoordinator.setAnalysisProgress(update.percent, update.status)
+                            }
+                            is LocalAnalysisUpdate.Completed -> {
+                                diagnostics.logAnalysisCompleted(source)
+                                applyLocalAnalysisArtifact(update.artifact)
+                            }
                         }
                     }
                 }
@@ -224,32 +230,30 @@ class LocalAnalysisCoordinator(
                 localAnalysisJsonPath = artifact.analysisJsonFile.absolutePath
             )
         }
-        // When a Cast device is already connected in Local mode, hand the track off to the relay
-        // instead of loading it into the local player.
-        val current = getState()
-        if (current.appMode == AppMode.Local && current.playback.isCasting) {
-            val cacheKey = artifact.localId.removePrefix(LOCAL_TRACK_ID_PREFIX)
-            val savedTuning = localAnalysisService.readSavedTuning(artifact.localId)
-            castPlaybackCoordinator.castLocalTrack(
-                cacheKey = cacheKey,
-                sourceUri = artifact.sourceUri,
-                title = artifact.title,
-                artist = artifact.artist,
-                tuningParams = savedTuning
-            )
-            refreshLocalCachedTracks()
-            applyActiveTab(TabId.Play, true)
+        if (castLocalArtifact(artifact)) {
             return
         }
         playbackCoordinator.setAudioLoading(true)
         playbackCoordinator.setAnalysisProgress(0, "Loading audio")
+        // Progress posts ride the coordinator scope and the decoder has no cancellation
+        // points, so a cancelled analysis would keep reporting decode progress after its
+        // loading state was torn down. Dropping posts once this job dies keeps that decode
+        // from re-raising the loading overlay and the playback-change lock.
+        val analysisJob = currentCoroutineContext()[Job]
         withContext(Dispatchers.Default) {
             controller.player.loadUri(application, artifact.sourceUri.toUri()) { percent ->
                 scope.launch(Dispatchers.Main) {
-                    playbackCoordinator.setDecodeProgress(percent)
+                    if (analysisJob?.isActive == true) {
+                        playbackCoordinator.setDecodeProgress(percent)
+                    }
                 }
             }
             controller.engine.refreshAnchorJump()
+        }
+        // The decode runs long enough for a Cast session to start partway through it; the
+        // decoded track belongs to the device, so it is dropped in favor of the handoff.
+        if (castLocalArtifact(artifact)) {
+            return
         }
         updateState {
             it.copy(
@@ -276,6 +280,38 @@ class LocalAnalysisCoordinator(
         )
         refreshLocalCachedTracks()
         applyActiveTab(TabId.Play, true)
+    }
+
+    /**
+     * Sends a finished analysis to the relay instead of loading it into the device player when a
+     * Cast device is connected in Local mode. Returns true when the artifact was handed off.
+     */
+    private suspend fun castLocalArtifact(artifact: LocalAnalysisArtifact): Boolean {
+        val current = getState()
+        if (current.appMode != AppMode.Local || !current.playback.isCasting) {
+            return false
+        }
+        val cacheKey = artifact.localId.removePrefix(LOCAL_TRACK_ID_PREFIX)
+        val savedTuning = localAnalysisService.readSavedTuning(artifact.localId)
+        val handedOff = castPlaybackCoordinator.castLocalTrack(
+            cacheKey = cacheKey,
+            sourceUri = artifact.sourceUri,
+            title = artifact.title,
+            artist = artifact.artist,
+            tuningParams = savedTuning
+        )
+        if (!handedOff) {
+            // The session dropped (or casting became unavailable) between the state
+            // check and the handoff; the caller loads the track on the device instead
+            // of discarding the finished analysis.
+            return false
+        }
+        // The cast transfer state does not cover the device decode's loading flag, and the
+        // playback-change lock reads it.
+        playbackCoordinator.setAudioLoading(false)
+        refreshLocalCachedTracks()
+        applyActiveTab(TabId.Play, true)
+        return true
     }
 
     private suspend fun localAudioSourceExists(uriString: String): Boolean = withContext(Dispatchers.IO) {

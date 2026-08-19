@@ -265,15 +265,30 @@ class ApiClient(
                 throwHttpStatus(response)
             }
             val body = response.body ?: throw IOException("Empty response body")
-            target.outputStream().use { output ->
-                body.byteStream().use { input ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read <= 0) break
-                        output.write(buffer, 0, read)
+            // Download to a uniquely-named temp sibling and rename into place so an
+            // interrupted transfer can never leave a truncated file at the target path —
+            // callers treat an existing target as a complete cached copy. The unique name
+            // keeps concurrent fetches of the same track from writing through one shared
+            // temp file (a cancelled coroutine's blocking write can outlive its job, so
+            // overlapping fetches are reachable); each fetch renames only its own
+            // fully-written copy.
+            val partial = File.createTempFile("${target.name}.", ".part", target.parentFile)
+            try {
+                partial.outputStream().use { output ->
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            output.write(buffer, 0, read)
+                        }
                     }
                 }
+                if (!partial.renameTo(target)) {
+                    throw IOException("Failed to move downloaded audio into place")
+                }
+            } finally {
+                partial.delete()
             }
             target
         }

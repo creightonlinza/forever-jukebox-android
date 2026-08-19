@@ -204,11 +204,46 @@ private enum class NotificationMode {
     Cast
 }
 
-private enum class PlaybackAction {
+internal enum class PlaybackAction {
     Play,
     Pause,
     Stop,
     Toggle
+}
+
+internal enum class TransportActionRoute {
+    /** Drop the press: no meaningful transport target in this notification state. */
+    Ignore,
+
+    /** Ask the app to run the failed-load retry flow instead of touching playback. */
+    BroadcastRetry,
+
+    /** Normal transport handling (play/pause/stop/toggle the active playback). */
+    Handle
+}
+
+/**
+ * Routes a transport press by notification state. While a load is in flight every
+ * press is dropped; while a failed notification is showing, Play/Toggle become the
+ * retry trigger (Pause/Stop have nothing to act on); otherwise the press reaches
+ * normal playback handling.
+ */
+internal fun routeTransportAction(
+    isLoading: Boolean,
+    isLoadFailed: Boolean,
+    action: PlaybackAction
+): TransportActionRoute {
+    if (isLoading) {
+        return TransportActionRoute.Ignore
+    }
+    if (isLoadFailed) {
+        return if (action == PlaybackAction.Play || action == PlaybackAction.Toggle) {
+            TransportActionRoute.BroadcastRetry
+        } else {
+            TransportActionRoute.Ignore
+        }
+    }
+    return TransportActionRoute.Handle
 }
 
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
@@ -786,14 +821,19 @@ class ForegroundPlaybackService : Service() {
 
     private fun handlePlaybackAction(action: PlaybackAction) {
         val activeState = activeNotificationState
-        if (activeState?.isLoading == true) {
-            return
-        }
-        if (activeState?.isLoadFailed == true) {
-            if (action == PlaybackAction.Play || action == PlaybackAction.Toggle) {
+        when (
+            routeTransportAction(
+                isLoading = activeState?.isLoading == true,
+                isLoadFailed = activeState?.isLoadFailed == true,
+                action = action
+            )
+        ) {
+            TransportActionRoute.Ignore -> return
+            TransportActionRoute.BroadcastRetry -> {
                 broadcastRetryFailedLoadRequested()
+                return
             }
-            return
+            TransportActionRoute.Handle -> Unit
         }
         val targetPlayState = when (action) {
             PlaybackAction.Play -> true
