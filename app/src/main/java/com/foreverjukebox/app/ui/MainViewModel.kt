@@ -370,6 +370,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         showToast = ::showToast
     )
+    private val audioLoadWakeLock = AudioLoadWakeLock(getApplication())
     private val playbackCoordinator = PlaybackCoordinator(
         application = getApplication(),
         scope = viewModelScope,
@@ -382,12 +383,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab,
-        onStableTrackLoaded = ::handleStableTrackLoaded
+        onStableTrackLoaded = ::handleStableTrackLoaded,
+        audioLoadHold = audioLoadWakeLock
     )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
         scope = viewModelScope,
         playbackCoordinator = playbackCoordinator,
-        getState = { state.value }
+        getState = { state.value },
+        audioLoadHold = audioLoadWakeLock
     )
     private val localAnalysisCoordinator = LocalAnalysisCoordinator(
         scope = viewModelScope,
@@ -406,7 +409,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // lambda holds the real exception; the surfaced-message non-fatal from
         // PlaybackCoordinator.setAnalysisError has no stack trace.
         logError = { message, error -> AppLog.error(TAG, message, error) },
-        diagnostics = diagnostics
+        diagnostics = diagnostics,
+        audioLoadHold = audioLoadWakeLock
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,

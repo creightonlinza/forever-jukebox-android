@@ -33,7 +33,8 @@ class LocalAnalysisCoordinator(
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
     private val logError: (String, Throwable) -> Unit,
-    private val diagnostics: DiagnosticsGateway
+    private val diagnostics: DiagnosticsGateway,
+    private val audioLoadHold: AudioLoadHold
 ) {
     private var localAnalysisJob: Job? = null
 
@@ -79,14 +80,18 @@ class LocalAnalysisCoordinator(
         playbackCoordinator.setAnalysisQueued(1, "Processing audio")
         localAnalysisJob = scope.launch {
             try {
-                localAnalysisService.analyze(uri.toString(), resolvedName).collect { update ->
-                    when (update) {
-                        is LocalAnalysisUpdate.Progress -> {
-                            playbackCoordinator.setAnalysisProgress(update.percent, update.status)
-                        }
-                        is LocalAnalysisUpdate.Completed -> {
-                            diagnostics.logAnalysisCompleted(source)
-                            applyLocalAnalysisArtifact(update.artifact)
+                // Native analysis plus the decode in applyLocalAnalysisArtifact run under
+                // the wakelock; both stall if the CPU suspends with the screen off.
+                audioLoadHold.hold {
+                    localAnalysisService.analyze(uri.toString(), resolvedName).collect { update ->
+                        when (update) {
+                            is LocalAnalysisUpdate.Progress -> {
+                                playbackCoordinator.setAnalysisProgress(update.percent, update.status)
+                            }
+                            is LocalAnalysisUpdate.Completed -> {
+                                diagnostics.logAnalysisCompleted(source)
+                                applyLocalAnalysisArtifact(update.artifact)
+                            }
                         }
                     }
                 }

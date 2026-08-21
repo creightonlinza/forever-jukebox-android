@@ -6,6 +6,7 @@
         tools:ignore="ForegroundServicesPolicy" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- firebase-analytics pulls in advertising-ID and ad-attribution permissions by
          default. The app has no ads, purchases, or attribution needs, so they are

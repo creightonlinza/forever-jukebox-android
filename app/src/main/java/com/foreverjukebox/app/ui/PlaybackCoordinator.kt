@@ -152,7 +152,8 @@ class PlaybackCoordinator(
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
-    private val onStableTrackLoaded: () -> Unit = {}
+    private val onStableTrackLoaded: () -> Unit = {},
+    private val audioLoadHold: AudioLoadHold = AudioLoadWakeLock(application)
 ) {
     private var listenTimerJob: Job? = null
     private var pollJob: Job? = null
@@ -308,18 +309,23 @@ class PlaybackCoordinator(
         audioLoadInFlight = false
         pollJob = scope.launch {
             try {
-                pollAnalysis(jobId)
+                // Held across the whole poll loop (requests, inter-poll delays, and the
+                // final applyAnalysisResult); for a still-analyzing job this keeps the
+                // CPU up for the analysis duration, bounded by the acquire timeout.
+                audioLoadHold.hold {
+                    pollAnalysis(jobId)
+                }
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
                 AppLog.warn(TAG, "Polling failed for $jobId", error)
-                setAnalysisError("Loading failed.")
+                setAnalysisError("Loading failed.", cause = error)
             } catch (error: IllegalArgumentException) {
                 AppLog.warn(TAG, "Polling failed for $jobId", error)
-                setAnalysisError("Loading failed.")
+                setAnalysisError("Loading failed.", cause = error)
             } catch (error: IllegalStateException) {
                 AppLog.warn(TAG, "Polling failed for $jobId", error)
-                setAnalysisError("Loading failed.")
+                setAnalysisError("Loading failed.", cause = error)
             }
         }
     }
@@ -366,11 +372,15 @@ class PlaybackCoordinator(
         jobId == transientDecodeFailureJobId &&
             SystemClock.elapsedRealtime() - transientDecodeFailureAtMs < TRANSIENT_DECODE_MEMO_MS
 
+    suspend fun tryLoadCachedTrack(jobId: String): Boolean = audioLoadHold.hold {
+        tryLoadCachedTrackHeld(jobId)
+    }
+
     // Catches Throwable around audio decoding on purpose: an OutOfMemoryError (not an
     // Exception) must be treated as a transient/recoverable decode failure, not a corrupt
     // cache entry. See the catch block below.
     @Suppress("TooGenericExceptionCaught")
-    suspend fun tryLoadCachedTrack(jobId: String): Boolean {
+    private suspend fun tryLoadCachedTrackHeld(jobId: String): Boolean {
         if (!isActiveJobId(jobId)) {
             return false
         }
@@ -482,7 +492,9 @@ class PlaybackCoordinator(
         if (!isActiveJobId(jobId)) {
             return false
         }
-        return loadAudioFromActiveJob(jobId)
+        return audioLoadHold.hold {
+            loadAudioFromActiveJob(jobId)
+        }
     }
 
     private suspend fun loadAudioFromActiveJob(jobId: String): Boolean {
@@ -639,9 +651,10 @@ class PlaybackCoordinator(
         if (reclaimShaped) {
             noteTransientDecodeFailure(jobId, error)
         }
-        // When the app is backgrounded under doze the OS restricts the audio subsystem
-        // (audio hardening) and every codec attempt — hardware or software — fails the
-        // same way after stalling for tens of seconds. Retrying only delays the error
+        // In deep doze a codec attempt the system cannot service — audio hardening on
+        // a backgrounded app, or the CPU suspending mid-decode — fails the same way
+        // (hardware or software decoder) after stalling for tens of seconds, and the
+        // condition does not clear between retries. Retrying only delays the error
         // surfacing, so bail after the first such failure while the device is idle.
         if (attempt >= SERVER_AUDIO_DECODE_MAX_ATTEMPTS || (reclaimShaped && isDeviceIdle())) {
             clearFailedAudioLoad()
@@ -1006,11 +1019,15 @@ class PlaybackCoordinator(
         syncPlaybackServiceSession()
     }
 
+    suspend fun ensureAudioReady(): Boolean = audioLoadHold.hold {
+        ensureAudioReadyHeld()
+    }
+
     // Catches Throwable around audio decoding on purpose: an OutOfMemoryError (not an
     // Exception) must be treated as a transient/recoverable decode failure, not a corrupt
     // cache entry. See the catch block below.
     @Suppress("TooGenericExceptionCaught")
-    suspend fun ensureAudioReady(): Boolean {
+    private suspend fun ensureAudioReadyHeld(): Boolean {
         if (controller.player.hasAudio()) {
             return true
         }
