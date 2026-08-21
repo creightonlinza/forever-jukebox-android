@@ -84,6 +84,62 @@ internal fun resolveAutocanonizerTrackDuration(
     return autocanonizerTrackDuration ?: sourceDuration ?: 0.0
 }
 
+/**
+ * Playback state after the current track is cleared ahead of a new one.
+ *
+ * [keepLoadVisible] is set when a new load follows immediately: the reset state must
+ * then already resolve as loading ([PlaybackServiceSession.LocalLoading]). Otherwise
+ * there is a window — until the load coroutine posts its first loading event — where
+ * the state resolves to Hidden, and any racing service sync (e.g. the outgoing track's
+ * async stop callback) tears down the foreground service. A backgrounded app can only
+ * restart it inside a brief OS exemption, and Android restricts the audio subsystem
+ * (codec included) for non-foreground apps, so the load that follows would fail.
+ */
+internal fun PlaybackState.resetForNewTrack(keepLoadVisible: Boolean): PlaybackState {
+    return copy(
+        playMode = playMode,
+        jukeboxAudioMode = JukeboxAudioMode.Off,
+        jukeboxAudioModeIntensity = AudioModeIntensity.DEFAULT,
+        canonizerFinishOutSong = canonizerFinishOutSong,
+        audioLoaded = false,
+        analysisLoaded = false,
+        playAfterLoaded = false,
+        beatsPlayed = 0,
+        listenTime = "00:00:00",
+        trackDurationSeconds = null,
+        autocanonizer = autocanonizerUiStateForTrack(0.0),
+        castTotalBeats = null,
+        castTotalBranches = null,
+        trackTitle = null,
+        trackArtist = null,
+        isRunning = false,
+        isPaused = false,
+        vizData = null,
+        autocanonizerData = null,
+        currentBeatIndex = -1,
+        canonizerOtherIndex = null,
+        canonizerTileColorOverrides = emptyMap(),
+        jumpLine = null,
+        playTitle = "",
+        lastYouTubeId = null,
+        localSourceUri = null,
+        lastTrackCreatedAtEpochMs = null,
+        lastJobId = null,
+        castPlaybackState = null,
+        isCastLoading = false,
+        castTransfer = null,
+        deleteEligible = false,
+        analysisProgress = null,
+        analysisMessage = null,
+        analysisErrorMessage = null,
+        analysisInFlight = keepLoadVisible,
+        analysisCalculating = false,
+        audioLoading = false,
+        isCasting = isCasting,
+        castDeviceName = castDeviceName
+    )
+}
+
 class PlaybackCoordinator(
     private val application: Application,
     private val scope: CoroutineScope,
@@ -96,8 +152,7 @@ class PlaybackCoordinator(
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
-    private val onStableTrackLoaded: () -> Unit = {},
-    private val audioLoadHold: AudioLoadHold = AudioLoadWakeLock(application)
+    private val onStableTrackLoaded: () -> Unit = {}
 ) {
     private var listenTimerJob: Job? = null
     private var pollJob: Job? = null
@@ -110,6 +165,7 @@ class PlaybackCoordinator(
     private var lastPlayCountedJobId: String? = null
     private var transientDecodeFailureJobId: String? = null
     private var transientDecodeFailureAtMs = 0L
+    private var transientDecodeFailureError: Throwable? = null
     private var deleteEligibilityJobId: String? = null
     private var pendingTuningParams: String? = null
     private var lastNotificationUpdateMs = 0L
@@ -204,21 +260,18 @@ class PlaybackCoordinator(
         applyLoadingEvent(LoadingEvent.AnalysisIdle)
     }
 
-    fun setAnalysisError(message: String, cause: Throwable? = null, expected: Boolean = false) {
+    fun setAnalysisError(message: String, cause: Throwable? = null) {
         // Single chokepoint for every surfaced load/analysis error (server, cached,
         // local, playback, autocanonizer). Persisting the message here guarantees
         // the cause of any "Loading failed." is captured even on paths that have no
         // throwable to log at the call site (e.g. server-reported failures); call
         // sites that do hold one pass it so the record carries the real exception
-        // chain. Expected environmental failures (e.g. no network after retries) log
-        // as warn breadcrumbs so they don't pile up as Crashlytics non-fatals. The
-        // benign user-cancel sentinel is excluded as noise.
+        // chain. Every surfaced failure records a Crashlytics non-fatal — a failure
+        // the user saw but that never reaches the console is invisible to remote
+        // diagnostics, which is worse than issue noise. The benign user-cancel
+        // sentinel is excluded.
         if (message != LoadingAudioFeedbackController.LOCAL_ANALYSIS_CANCELLED_MESSAGE) {
-            if (expected) {
-                AppLog.warn(TAG, "Load/analysis error surfaced: $message", cause)
-            } else {
-                AppLog.error(TAG, "Load/analysis error surfaced: $message", cause)
-            }
+            AppLog.error(TAG, "Load/analysis error surfaced: $message", cause)
         }
         applyLoadingEvent(LoadingEvent.AnalysisError(message))
     }
@@ -255,12 +308,7 @@ class PlaybackCoordinator(
         audioLoadInFlight = false
         pollJob = scope.launch {
             try {
-                // Held across the whole poll loop (requests, inter-poll delays, and the
-                // final applyAnalysisResult); for a still-analyzing job this keeps the
-                // CPU up for the analysis duration, bounded by the acquire timeout.
-                audioLoadHold.hold {
-                    pollAnalysis(jobId)
-                }
+                pollAnalysis(jobId)
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: IOException) {
@@ -276,17 +324,35 @@ class PlaybackCoordinator(
         }
     }
 
-    suspend fun tryLoadCachedTrack(jobId: String): Boolean = audioLoadHold.hold {
-        tryLoadCachedTrackWithWakeLock(jobId)
-    }
-
     private fun isDeviceIdle(): Boolean =
         application.getSystemService(PowerManager::class.java)?.isDeviceIdleMode == true
 
-    private fun noteTransientDecodeFailure(jobId: String) {
+    // Breadcrumb stamping the power regime a load starts under, so a later failure
+    // report shows whether doze was already engaged before the first codec/network
+    // attempt rather than leaving that to be inferred from failure timing.
+    fun logLoadPowerState(stage: String) {
+        val powerManager = application.getSystemService(PowerManager::class.java)
+        AppLog.warn(
+            TAG,
+            "$stage: deviceIdle=${powerManager?.isDeviceIdleMode} " +
+                "powerSave=${powerManager?.isPowerSaveMode} " +
+                "batteryUnrestricted=" +
+                "${powerManager?.isIgnoringBatteryOptimizations(application.packageName)}"
+        )
+    }
+
+    private fun noteTransientDecodeFailure(jobId: String, error: Throwable) {
         transientDecodeFailureJobId = jobId
         transientDecodeFailureAtMs = SystemClock.elapsedRealtime()
+        transientDecodeFailureError = error
     }
+
+    // The decode error behind an active transient-failure memo, or null when none is
+    // memoed for this job. Lets outer load layers attribute a surfaced failure to the
+    // blocked codec instead of whatever secondary error (typically a network failure
+    // on the fallback fetch) happened to finish the flow.
+    fun recentTransientDecodeFailure(jobId: String): Throwable? =
+        if (hasRecentTransientDecodeFailure(jobId)) transientDecodeFailureError else null
 
     // Whether a decode for this job just failed on a transient/reclaim codec signature.
     // Load layers stack (cached try, loadOrPoll's cached try, fresh-file decode), and
@@ -304,7 +370,7 @@ class PlaybackCoordinator(
     // Exception) must be treated as a transient/recoverable decode failure, not a corrupt
     // cache entry. See the catch block below.
     @Suppress("TooGenericExceptionCaught")
-    private suspend fun tryLoadCachedTrackWithWakeLock(jobId: String): Boolean {
+    suspend fun tryLoadCachedTrack(jobId: String): Boolean {
         if (!isActiveJobId(jobId)) {
             return false
         }
@@ -416,12 +482,10 @@ class PlaybackCoordinator(
         if (!isActiveJobId(jobId)) {
             return false
         }
-        return audioLoadHold.hold {
-            loadAudioFromJobWithWakeLock(jobId)
-        }
+        return loadAudioFromActiveJob(jobId)
     }
 
-    private suspend fun loadAudioFromJobWithWakeLock(jobId: String): Boolean {
+    private suspend fun loadAudioFromActiveJob(jobId: String): Boolean {
         // A decode for this job just failed on a transient signature; skip the doomed
         // attempt. Callers that poll re-invoke this on their next tick, so the decode
         // happens for real once the memo window lapses.
@@ -546,6 +610,7 @@ class PlaybackCoordinator(
                     engine.refreshAnchorJump()
                 }
                 transientDecodeFailureJobId = null
+                transientDecodeFailureError = null
                 return true
             } catch (cancel: CancellationException) {
                 throw cancel
@@ -572,11 +637,12 @@ class PlaybackCoordinator(
         controller.player.clear()
         val reclaimShaped = isTransientDecodeError(error)
         if (reclaimShaped) {
-            noteTransientDecodeFailure(jobId)
+            noteTransientDecodeFailure(jobId, error)
         }
-        // In deep doze the media service refuses codec work until the device wakes,
-        // and each refused attempt stalls for tens of seconds — retrying only delays
-        // the error surfacing, so bail after the first reclaim-shaped failure.
+        // When the app is backgrounded under doze the OS restricts the audio subsystem
+        // (audio hardening) and every codec attempt — hardware or software — fails the
+        // same way after stalling for tens of seconds. Retrying only delays the error
+        // surfacing, so bail after the first such failure while the device is idle.
         if (attempt >= SERVER_AUDIO_DECODE_MAX_ATTEMPTS || (reclaimShaped && isDeviceIdle())) {
             clearFailedAudioLoad()
             throw error
@@ -811,6 +877,7 @@ class PlaybackCoordinator(
         audioLoadInFlight = false
         // Each load flow gets a fresh chance at the codec — see hasRecentTransientDecodeFailure.
         transientDecodeFailureJobId = null
+        transientDecodeFailureError = null
         controller.autocanonizer.reset()
         controller.stopExternalPlayback()
         controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
@@ -826,47 +893,8 @@ class PlaybackCoordinator(
         stopListenTimer()
         updateState {
             it.copy(
-                playback = it.playback.copy(
-                    playMode = it.playback.playMode,
-                    jukeboxAudioMode = JukeboxAudioMode.Off,
-                    jukeboxAudioModeIntensity = AudioModeIntensity.DEFAULT,
-                    canonizerFinishOutSong = it.playback.canonizerFinishOutSong,
-                    audioLoaded = false,
-                    analysisLoaded = false,
-                    playAfterLoaded = false,
-                    beatsPlayed = 0,
-                    listenTime = "00:00:00",
-                    trackDurationSeconds = null,
-                    autocanonizer = autocanonizerUiStateForTrack(0.0),
-                    castTotalBeats = null,
-                    castTotalBranches = null,
-                    trackTitle = null,
-                    trackArtist = null,
-                    isRunning = false,
-                    isPaused = false,
-                    vizData = null,
-                    autocanonizerData = null,
-                    currentBeatIndex = -1,
-                    canonizerOtherIndex = null,
-                    canonizerTileColorOverrides = emptyMap(),
-                    jumpLine = null,
-                    playTitle = "",
-                    lastYouTubeId = null,
-                    localSourceUri = null,
-                    lastTrackCreatedAtEpochMs = null,
-                    lastJobId = null,
-                    castPlaybackState = null,
-                    isCastLoading = false,
-                    castTransfer = null,
-                    deleteEligible = false,
-                    analysisProgress = null,
-                    analysisMessage = null,
-                    analysisErrorMessage = null,
-                    analysisInFlight = false,
-                    analysisCalculating = false,
-                    audioLoading = false,
-                    isCasting = it.playback.isCasting,
-                    castDeviceName = it.playback.castDeviceName
+                playback = it.playback.resetForNewTrack(
+                    keepLoadVisible = !stopPlaybackService
                 ),
                 // Note: pendingTrackName/pendingTrackArtist are intentionally NOT cleared
                 // here. They are search-context metadata describing the still-visible
@@ -978,15 +1006,11 @@ class PlaybackCoordinator(
         syncPlaybackServiceSession()
     }
 
-    suspend fun ensureAudioReady(): Boolean = audioLoadHold.hold {
-        ensureAudioReadyWithWakeLock()
-    }
-
     // Catches Throwable around audio decoding on purpose: an OutOfMemoryError (not an
     // Exception) must be treated as a transient/recoverable decode failure, not a corrupt
     // cache entry. See the catch block below.
     @Suppress("TooGenericExceptionCaught")
-    private suspend fun ensureAudioReadyWithWakeLock(): Boolean {
+    suspend fun ensureAudioReady(): Boolean {
         if (controller.player.hasAudio()) {
             return true
         }

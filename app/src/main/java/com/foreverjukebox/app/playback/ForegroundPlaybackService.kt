@@ -1,6 +1,5 @@
 package com.foreverjukebox.app.playback
 
-import android.app.ActivityManager
 import android.app.Application
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
@@ -1180,12 +1179,7 @@ class ForegroundPlaybackService : Service() {
                 putLoadingNotification(isLoading, loadingProgress)
                 putLoadFailedNotification(isLoadFailed)
             }
-            if (isRunning) {
-                playbackContext.startService(intent)
-            } else if (canStartForegroundService(playbackContext)) {
-                pendingForegroundStart = true
-                playbackContext.startForegroundService(intent)
-            }
+            startOrDeliver(playbackContext, intent)
         }
 
         fun update(
@@ -1203,12 +1197,7 @@ class ForegroundPlaybackService : Service() {
                 putLoadingNotification(isLoading, loadingProgress)
                 putLoadFailedNotification(isLoadFailed)
             }
-            if (isRunning) {
-                playbackContext.startService(intent)
-            } else if (canStartForegroundService(playbackContext)) {
-                pendingForegroundStart = true
-                playbackContext.startForegroundService(intent)
-            }
+            startOrDeliver(playbackContext, intent)
         }
 
         fun setSleepTimer(context: Context, durationMs: Long?) {
@@ -1242,12 +1231,7 @@ class ForegroundPlaybackService : Service() {
                 putExtra(PlaybackServiceConstants.EXTRA_CAST_DEVICE_NAME, deviceName)
                 putSkipAvailability(canSkipPrevious, canSkipNext)
             }
-            if (isRunning) {
-                playbackContext.startService(intent)
-            } else if (canStartForegroundService(playbackContext)) {
-                pendingForegroundStart = true
-                playbackContext.startForegroundService(intent)
-            }
+            startOrDeliver(playbackContext, intent)
         }
 
         private fun Intent.putSkipAvailability(
@@ -1309,13 +1293,29 @@ class ForegroundPlaybackService : Service() {
             return applicationContext.playbackAttributionContext()
         }
 
-        private fun canStartForegroundService(context: Context): Boolean {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-                return true
+        // Attempts the foreground start and catches denial rather than pre-checking
+        // process importance. The distinction matters when the app is backgrounded: a
+        // media-button press grants a short OS exemption during which the start
+        // succeeds even though an importance check would classify the app as
+        // background and skip the attempt. Keeping the foreground service alive is
+        // what keeps the audio subsystem (codec included) usable for the load that
+        // the button press kicked off.
+        private fun startOrDeliver(playbackContext: Context, intent: Intent) {
+            if (isRunning) {
+                playbackContext.startService(intent)
+                return
             }
-            val appState = ActivityManager.RunningAppProcessInfo()
-            ActivityManager.getMyMemoryState(appState)
-            return appState.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
+            pendingForegroundStart = true
+            try {
+                playbackContext.startForegroundService(intent)
+            } catch (error: IllegalStateException) {
+                pendingForegroundStart = false
+                AppLog.warn(
+                    TAG,
+                    "Foreground service start denied; continuing without notification.",
+                    error
+                )
+            }
         }
     }
 }

@@ -370,7 +370,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         showToast = ::showToast
     )
-    private val audioLoadWakeLock = AudioLoadWakeLock(getApplication())
     private val playbackCoordinator = PlaybackCoordinator(
         application = getApplication(),
         scope = viewModelScope,
@@ -383,14 +382,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab,
-        onStableTrackLoaded = ::handleStableTrackLoaded,
-        audioLoadHold = audioLoadWakeLock
+        onStableTrackLoaded = ::handleStableTrackLoaded
     )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
         scope = viewModelScope,
         playbackCoordinator = playbackCoordinator,
-        getState = { state.value },
-        audioLoadHold = audioLoadWakeLock
+        getState = { state.value }
     )
     private val localAnalysisCoordinator = LocalAnalysisCoordinator(
         scope = viewModelScope,
@@ -409,8 +406,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // lambda holds the real exception; the surfaced-message non-fatal from
         // PlaybackCoordinator.setAnalysisError has no stack trace.
         logError = { message, error -> AppLog.error(TAG, message, error) },
-        diagnostics = diagnostics,
-        audioLoadHold = audioLoadWakeLock
+        diagnostics = diagnostics
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
@@ -2696,6 +2692,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         request: suspend () -> Boolean
     ) {
         remoteTrackLoadCoordinator.launch {
+            playbackCoordinator.logLoadPowerState("Server track load start")
             if (cachedJobId != null && playbackCoordinator.tryLoadCachedTrack(cachedJobId)) {
                 return@launch
             }
@@ -2721,7 +2718,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                         AppLog.warn(TAG, failureLogMessage, error)
-                        playbackCoordinator.setAnalysisError("Loading failed.")
+                        playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
                     }
                     return@launch
                 } catch (error: IOException) {
@@ -2741,27 +2738,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
                         continue
                     }
-                    diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
-                    if (isRetryableNetworkError(error)) {
-                        playbackCoordinator.setAnalysisError(
-                            "Network error.",
-                            cause = error,
-                            expected = true
-                        )
-                    } else {
+                    val surface = resolveServerLoadFailureSurface(
+                        error = error,
+                        cachedJobId = cachedJobId,
+                        cachedDecodeFailure = cachedJobId?.let {
+                            playbackCoordinator.recentTransientDecodeFailure(it)
+                        }
+                    )
+                    diagnostics.logAnalysisFailed("server", surface.reason)
+                    if (!isRetryableNetworkError(error)) {
                         AppLog.warn(TAG, failureLogMessage, error)
-                        playbackCoordinator.setAnalysisError("Loading failed.")
                     }
+                    playbackCoordinator.setAnalysisError(surface.message, cause = surface.cause)
                     return@launch
                 } catch (error: IllegalArgumentException) {
                     diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                     AppLog.warn(TAG, failureLogMessage, error)
-                    playbackCoordinator.setAnalysisError("Loading failed.")
+                    playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
                     return@launch
                 } catch (error: IllegalStateException) {
                     diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                     AppLog.warn(TAG, failureLogMessage, error)
-                    playbackCoordinator.setAnalysisError("Loading failed.")
+                    playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
                     return@launch
                 }
             }
@@ -3224,8 +3222,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         remoteTrackLoadCoordinator.cancel()
         // Keep the playback service alive across the reset: retries often arrive from
         // the notification with the app backgrounded, where a stopped foreground
-        // service cannot be restarted — the notification would vanish on press. The
-        // load that follows rolls the same notification into its loading state.
+        // service can only be restarted inside a brief OS exemption — the notification
+        // would vanish on press. The load that follows rolls the same notification
+        // into its loading state.
         playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         loadTrackById(
             trackId = retryRequest.trackId,
@@ -4138,6 +4137,46 @@ private fun TrackAnalysisStartResult.toCastQueueResponse(): CastQueueResponse = 
 // server or connectivity outage, so they are worth retrying before surfacing.
 internal fun isRetryableNetworkError(error: IOException): Boolean =
     error is UnknownHostException || error is ConnectException
+
+/** What a final server-load failure surfaces: the user-facing message, the throwable
+ *  recorded with it, and the diagnostics reason. */
+internal data class ServerLoadFailureSurface(
+    val message: String,
+    val cause: Throwable,
+    val reason: String
+)
+
+/**
+ * Attributes a final server-load failure. A restricted device can take down both
+ * resources at once: the cached decode fails on the codec, then DNS fails on the
+ * fallback fetch. The network error finishes the flow, but the blocked codec is the
+ * root cause — blaming the network would send anyone debugging (or reading the
+ * on-screen message) down the wrong path — so a memoed decode failure for the cached
+ * job wins, carrying the network error as a suppressed exception.
+ */
+internal fun resolveServerLoadFailureSurface(
+    error: IOException,
+    cachedJobId: String?,
+    cachedDecodeFailure: Throwable?
+): ServerLoadFailureSurface {
+    val retryableNetwork = isRetryableNetworkError(error)
+    if (retryableNetwork && cachedDecodeFailure != null) {
+        val rootError = IOException(
+            "Cached decode blocked for $cachedJobId; network fallback also failed",
+            cachedDecodeFailure
+        ).apply { addSuppressed(error) }
+        return ServerLoadFailureSurface(
+            message = "Loading failed.",
+            cause = rootError,
+            reason = cachedDecodeFailure.javaClass.simpleName
+        )
+    }
+    return ServerLoadFailureSurface(
+        message = if (retryableNetwork) "Network error." else "Loading failed.",
+        cause = error,
+        reason = error.javaClass.simpleName
+    )
+}
 
 /**
  * Where a user-supplied track came from. The submit paths resolve the server's user-source policy
