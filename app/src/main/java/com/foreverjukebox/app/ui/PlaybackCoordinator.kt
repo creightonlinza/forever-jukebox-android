@@ -140,6 +140,17 @@ class PlaybackCoordinator(
     }
 
     fun buildTuningParamsString(): String? {
+        return buildTuningParamsString(
+            audioModeWireValue = getState().playback.jukeboxAudioMode.wireValue,
+            audioModeIntensity = getState().playback.jukeboxAudioModeIntensity
+        )
+    }
+
+    /** Engine tuning paired with an audio mode the caller knows better than playback state. */
+    fun buildTuningParamsString(
+        audioModeWireValue: String,
+        audioModeIntensity: Int
+    ): String? {
         return TuningParamsCodec.buildSavedTuningParams(
             tuning = engineTuningState(
                 config = engine.getConfig(),
@@ -147,8 +158,8 @@ class PlaybackCoordinator(
                 deletedEdgeIds = getDeletedEdgeIds(),
                 anchorBranchId = engine.getUserAnchorEdgeId()
             ),
-            audioModeWireValue = getState().playback.jukeboxAudioMode.wireValue,
-            audioModeIntensity = getState().playback.jukeboxAudioModeIntensity
+            audioModeWireValue = audioModeWireValue,
+            audioModeIntensity = audioModeIntensity
         )
     }
 
@@ -177,14 +188,30 @@ class PlaybackCoordinator(
         applyLoadingEvent(LoadingEvent.AnalysisCalculating)
     }
 
-    fun setAnalysisError(message: String) {
+    /**
+     * Drop the in-flight loading state for an attempt that ended without a loading screen to report
+     * into — a cast queue failure surfaces as a toast, and anything left in flight keeps the
+     * playback-change lock engaged. Clears every field that lock reads, so releasing it here does
+     * not depend on which of them the attempt happened to raise. Any error already on screen stays.
+     */
+    fun clearAnalysisLoading() {
+        applyLoadingEvent(LoadingEvent.AnalysisIdle)
+    }
+
+    fun setAnalysisError(message: String, expected: Boolean = false) {
         // Single chokepoint for every surfaced load/analysis error (server, cached,
         // local, playback, autocanonizer). Persisting the message here guarantees
         // the cause of any "Loading failed." is captured even on paths that have no
         // throwable to log at the call site (e.g. server-reported failures). The
-        // benign user-cancel sentinel is excluded as noise.
+        // benign user-cancel sentinel is excluded as noise. Expected environmental
+        // failures (e.g. no network after retries) log as warn breadcrumbs so they
+        // don't pile up as Crashlytics non-fatals.
         if (message != LoadingAudioFeedbackController.LOCAL_ANALYSIS_CANCELLED_MESSAGE) {
-            AppLog.error(TAG, "Load/analysis error surfaced: $message")
+            if (expected) {
+                AppLog.warn(TAG, "Load/analysis error surfaced: $message")
+            } else {
+                AppLog.error(TAG, "Load/analysis error surfaced: $message")
+            }
         }
         applyLoadingEvent(LoadingEvent.AnalysisError(message))
     }
@@ -482,7 +509,10 @@ class PlaybackCoordinator(
             throw error
         }
         setAnalysisProgress(0, "Loading audio")
-        delay(SERVER_AUDIO_DECODE_RETRY_DELAY_MS)
+        // Exponential backoff: codec reclaim under memory/background pressure can take
+        // several seconds to clear (screen off, app cached), so short fixed delays
+        // exhaust retries before the codec is grantable again.
+        delay(SERVER_AUDIO_DECODE_BASE_RETRY_DELAY_MS shl (attempt - 1))
         return isActiveJobId(jobId)
     }
 
@@ -958,7 +988,13 @@ class PlaybackCoordinator(
             state.copy(
                 tuning = state.tuning.copy(
                     threshold = thresholdValue,
-                    computedThreshold = null,
+                    // The local graph computes the auto threshold on device; while casting the
+                    // receiver owns it and reports it with every status.
+                    computedThreshold = if (state.playback.isCasting) {
+                        state.tuning.computedThreshold
+                    } else {
+                        graph?.computedThreshold
+                    },
                     minProb = (config.minRandomBranchChance * 100).toInt(),
                     maxProb = (config.maxRandomBranchChance * 100).toInt(),
                     ramp = (config.randomBranchChanceDelta * RANDOM_BRANCH_DELTA_PERCENT_SCALE).toInt(),
@@ -1003,6 +1039,7 @@ class PlaybackCoordinator(
         data object AnalysisCalculating : LoadingEvent()
         data class AnalysisError(val message: String) : LoadingEvent()
         data class AudioLoading(val loading: Boolean) : LoadingEvent()
+        object AnalysisIdle : LoadingEvent()
     }
 
     private fun applyLoadingEvent(event: LoadingEvent) {
@@ -1040,6 +1077,13 @@ class PlaybackCoordinator(
                         audioLoading = false
                     )
                     is LoadingEvent.AudioLoading -> playback.copy(audioLoading = event.loading)
+                    LoadingEvent.AnalysisIdle -> playback.copy(
+                        analysisProgress = null,
+                        analysisMessage = null,
+                        analysisInFlight = false,
+                        analysisCalculating = false,
+                        audioLoading = false
+                    )
                 }
             )
         }
@@ -1184,8 +1228,8 @@ class PlaybackCoordinator(
 
     private companion object {
         const val TAG = "PlaybackCoordinator"
-        const val SERVER_AUDIO_DECODE_MAX_ATTEMPTS = 3
-        const val SERVER_AUDIO_DECODE_RETRY_DELAY_MS = 500L
+        const val SERVER_AUDIO_DECODE_MAX_ATTEMPTS = 5
+        const val SERVER_AUDIO_DECODE_BASE_RETRY_DELAY_MS = 500L
         const val AUDIO_LOAD_WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L
         const val AUDIO_LOAD_WAKE_LOCK_TAG = "ForeverJukebox:AudioLoad"
     }

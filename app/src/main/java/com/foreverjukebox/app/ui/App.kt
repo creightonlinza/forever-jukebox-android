@@ -155,7 +155,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     state = state,
                     onClose = viewModel::closeFullscreenVisualization,
                     onTogglePlayback = viewModel::togglePlayback,
-                    onSetPlaybackMode = viewModel::setPlaybackMode,
+                    onSetPlaybackMode = viewModel::selectPlaybackMode,
                     onSetVisualization = viewModel::setActiveVisualization,
                     onSelectBeat = viewModel::selectBeat,
                     onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,

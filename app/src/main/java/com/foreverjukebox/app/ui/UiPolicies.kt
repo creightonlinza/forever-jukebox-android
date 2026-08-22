@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.engine.JukeboxState
 import com.foreverjukebox.app.visualization.JumpLine
 
@@ -43,6 +45,71 @@ internal fun tuningParamsForCurrentTrack(
         audioModeWireValue = playback.castAudioModeWireValue,
         audioModeIntensity = playback.castAudioModeIntensity
     )
+}
+
+internal fun favoriteForCurrentTrack(state: UiState): FavoriteTrack? {
+    val trackIds = state.playback.reusableTrackIdsForMatching()
+    if (trackIds.isEmpty()) {
+        return null
+    }
+    return state.favorites.firstOrNull { canonicalTrackId(it.uniqueSongId) in trackIds }
+}
+
+// Tuning as it stands right now, from whichever source is live. Unlike the capture path this
+// reads no engine state, so it can be recomputed on every frame; the engine's deleted branches
+// and anchor branch are left out, and the comparison ignores them to match.
+internal fun liveTuningParams(state: UiState): String? {
+    val playback = state.playback
+    if (playback.playMode != PlaybackMode.Jukebox) {
+        return null
+    }
+    return TuningParamsCodec.buildSavedTuningParams(
+        tuning = state.tuning,
+        audioModeWireValue = if (playback.isCasting) {
+            playback.castAudioModeWireValue
+        } else {
+            playback.jukeboxAudioMode.wireValue
+        },
+        audioModeIntensity = if (playback.isCasting) {
+            playback.castAudioModeIntensity
+        } else {
+            playback.jukeboxAudioModeIntensity
+        }
+    )
+}
+
+// A favorite stores the tuning and play mode captured when the star was set. The star carries a
+// drift marker while the live track no longer matches that snapshot: restoring the saved settings
+// clears it, and so does unfavoriting, which discards the stored tuning.
+internal fun hasFavoriteTuningDrift(state: UiState, favorite: FavoriteTrack?): Boolean {
+    if (favorite == null) {
+        return false
+    }
+    val playback = state.playback
+    // The receiver owns tuning while casting, and until it reports a status for the loaded track
+    // the mirrored tuning state is the engine reset's default, which reads as drift.
+    if (playback.isCasting && playback.castTotalBeats == null) {
+        return false
+    }
+    if (favorite.playMode.toPlaybackMode() != playback.playMode) {
+        return true
+    }
+    return !TuningParamsCodec.savedTuningParamsEquivalent(
+        liveTuningParams(state),
+        favorite.tuningParams,
+        computedThreshold = state.tuning.computedThreshold
+    )
+}
+
+internal fun favoriteActionContentDescription(
+    isFavorite: Boolean,
+    hasTuningDrift: Boolean
+): String {
+    return when {
+        !isFavorite -> "Add favorite"
+        hasTuningDrift -> "Remove favorite, tuning differs from the saved tuning"
+        else -> "Remove favorite"
+    }
 }
 
 internal fun playbackTransportContentDescription(playback: PlaybackState): String {

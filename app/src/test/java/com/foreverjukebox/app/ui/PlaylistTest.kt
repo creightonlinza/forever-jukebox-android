@@ -456,6 +456,171 @@ class PlaylistTest {
         assertEquals(FavoritePlayMode.Autocanonizer, restored?.playMode)
     }
 
+    @Test
+    fun withCurrentTrackSettingsWritesOnlyTheCurrentEntry() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("first"), track("second"), track("third")),
+            currentIndex = 1
+        )
+
+        val updated = playlist.withCurrentTrackSettings(
+            trackId = "second",
+            type = PlaylistTrackType.Server,
+            tuningParams = "jb=1&thresh=7",
+            playMode = FavoritePlayMode.Autocanonizer
+        )
+
+        assertEquals("jb=1&thresh=7", updated.tracks[1].tuningParams)
+        assertEquals(FavoritePlayMode.Autocanonizer, updated.tracks[1].playMode)
+        assertEquals(playlist.tracks[0], updated.tracks[0])
+        assertEquals(playlist.tracks[2], updated.tracks[2])
+        assertEquals(1, updated.currentIndex)
+    }
+
+    @Test
+    fun withCurrentTrackSettingsClearsTuning() {
+        // The metadata merge can only add tuning, so a reset back to defaults has to
+        // clear the entry through this path.
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two", tuningParams = "jb=1")),
+            currentIndex = 1
+        )
+
+        val updated = playlist.withCurrentTrackSettings(
+            trackId = "two",
+            type = PlaylistTrackType.Server,
+            tuningParams = null,
+            playMode = null
+        )
+
+        assertNull(updated.tracks[1].tuningParams)
+    }
+
+    @Test
+    fun withCurrentTrackSettingsDemotesAutocanonizerToJukebox() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(
+                track("one"),
+                track("two", playMode = FavoritePlayMode.Autocanonizer)
+            ),
+            currentIndex = 1
+        )
+
+        val updated = playlist.withCurrentTrackSettings(
+            trackId = "two",
+            type = PlaylistTrackType.Server,
+            tuningParams = null,
+            playMode = null
+        )
+
+        assertNull(updated.tracks[1].playMode)
+    }
+
+    @Test
+    fun withCurrentTrackSettingsIgnoresBlankTuningParams() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = 1
+        )
+
+        val updated = playlist.withCurrentTrackSettings(
+            trackId = "  two  ",
+            type = PlaylistTrackType.Server,
+            tuningParams = "   ",
+            playMode = null
+        )
+
+        assertEquals(playlist, updated)
+    }
+
+    @Test
+    fun withCurrentTrackSettingsSkipsMismatchedTrack() {
+        // The window during a playlist skip: the entry has already advanced while
+        // playback still reports the outgoing track.
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = 1
+        )
+
+        val otherTrack = playlist.withCurrentTrackSettings(
+            trackId = "one",
+            type = PlaylistTrackType.Server,
+            tuningParams = "jb=1",
+            playMode = null
+        )
+        val otherType = playlist.withCurrentTrackSettings(
+            trackId = "two",
+            type = PlaylistTrackType.LocalCached,
+            tuningParams = "jb=1",
+            playMode = null
+        )
+
+        assertEquals(playlist, otherTrack)
+        assertEquals(playlist, otherType)
+    }
+
+    @Test
+    fun withCurrentTrackSettingsSkipsInactivePlaylist() {
+        val saved = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = -1
+        )
+
+        val updated = saved.withCurrentTrackSettings(
+            trackId = "one",
+            type = PlaylistTrackType.Server,
+            tuningParams = "jb=1",
+            playMode = null
+        )
+
+        assertEquals(saved, updated)
+        assertEquals(
+            JukeboxPlaylistState(),
+            JukeboxPlaylistState().withCurrentTrackSettings(
+                trackId = "one",
+                type = PlaylistTrackType.Server,
+                tuningParams = "jb=1",
+                playMode = null
+            )
+        )
+    }
+
+    @Test
+    fun withCurrentTrackSettingsSurvivesTheNextStableLoad() {
+        // replaceCurrentTrackWith runs again on every load and must not revert the
+        // captured tuning when the incoming track carries none.
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = 1
+        ).withCurrentTrackSettings(
+            trackId = "two",
+            type = PlaylistTrackType.Server,
+            tuningParams = "jb=1",
+            playMode = null
+        )
+
+        val reloaded = playlist.replaceCurrentTrackWith(track("two", tuningParams = null))
+
+        assertEquals("jb=1", reloaded.tracks[1].tuningParams)
+    }
+
+    @Test
+    fun capturedSettingsRoundTripThroughSavedPlaylist() {
+        val captured = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = 1
+        ).withCurrentTrackSettings(
+            trackId = "two",
+            type = PlaylistTrackType.Server,
+            tuningParams = "am=nightcore&ai=60",
+            playMode = FavoritePlayMode.Autocanonizer
+        )
+
+        val restored = captured.tracks.map { it.toSavedPlaylistTrack().toPlaylistTrack() }
+
+        assertEquals(captured.tracks, restored)
+    }
+
     private fun track(
         id: String,
         type: PlaylistTrackType = PlaylistTrackType.Server,

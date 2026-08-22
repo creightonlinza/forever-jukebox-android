@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.ServerAppConfig
 import java.io.File
+import java.io.InputStream
 
 fun createServerGateway(): ServerGateway = PlayServerGateway
 
@@ -67,6 +68,26 @@ private object PlayServerGateway : ServerGateway {
         title: String?,
         artist: String?
     ): TrackAnalysisStartResult {
+        unsupported()
+    }
+
+    override suspend fun startUrlAnalysis(
+        baseUrl: String,
+        url: String,
+        title: String?,
+        artist: String?
+    ): TrackAnalysisResult {
+        unsupported()
+    }
+
+    override suspend fun uploadTrack(
+        baseUrl: String,
+        fileName: String,
+        sizeBytes: Long,
+        contentType: String?,
+        onBytesWritten: ((Long) -> Unit)?,
+        streamProvider: () -> InputStream
+    ): TrackAnalysisResult {
         unsupported()
     }
 

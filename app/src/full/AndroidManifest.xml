@@ -1,8 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
-      Server-mode deep link, full flavor only. Merged into the MainActivity
-      declared in the main manifest by activity name. The play flavor is
-      local-only (SERVER_MODE_AVAILABLE=false) and ships without App Links.
+      Server-mode deep link and share-sheet targets, full flavor only. Merged
+      into the MainActivity declared in the main manifest by activity name. The
+      play flavor is local-only (SERVER_MODE_AVAILABLE=false) and ships without
+      App Links or share targets.
     -->
     <application>
         <activity
@@ -16,6 +17,24 @@
                     android:scheme="https"
                     android:host="foreverjukebox.com"
                     android:pathPrefix="/listen" />
+            </intent-filter>
+            <!-- Links shared from YouTube, SoundCloud, and Bandcamp, which all
+                 send text/plain. The chooser row is labelled from the app name,
+                 so neither share filter carries its own label. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Audio files shared from a file manager or messaging app. The
+                 types match the upload picker's filter, which covers providers
+                 that expose .ogg and .webm under non-audio types. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="video/webm" />
             </intent-filter>
         </activity>
     </application>

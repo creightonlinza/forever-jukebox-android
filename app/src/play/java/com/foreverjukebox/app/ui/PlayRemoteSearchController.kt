@@ -13,7 +13,6 @@ fun createRemoteSearchController(
 
 private object PlayRemoteSearchController : RemoteSearchController {
     override fun resetRuntimeState() = Unit
-    override fun onTopTabActivated() = Unit
     override fun onTopSongsTabSelected(tab: TopSongsTab) = Unit
     override fun maybeRefreshForState(currentState: UiState) = Unit
     override fun refreshTopSongs() = Unit

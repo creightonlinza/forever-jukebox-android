@@ -71,9 +71,7 @@ import android.widget.Toast
 import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.ThemeMode
-import java.util.Locale
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -582,15 +580,4 @@ private fun ServerSettingsDialog(
     )
 }
 
-private fun formatCacheSize(bytes: Long): String {
-    if (bytes <= 0) {
-        return "0MB"
-    }
-    val mb = bytes / (1024.0 * 1024.0)
-    val rounded = (mb * 10).roundToInt() / 10.0
-    return if (rounded % 1.0 == 0.0) {
-        "${rounded.toInt()}MB"
-    } else {
-        String.format(Locale.US, "%.1fMB", rounded)
-    }
-}
+private fun formatCacheSize(bytes: Long): String = formatMegabytes(bytes, unitSeparator = "")

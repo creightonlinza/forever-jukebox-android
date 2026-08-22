@@ -6,6 +6,7 @@ import com.foreverjukebox.app.data.ServerAppConfig
 import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import java.io.File
+import java.io.InputStream
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -110,6 +111,22 @@ interface ServerGateway {
         title: String?,
         artist: String?
     ): TrackAnalysisStartResult
+
+    suspend fun startUrlAnalysis(
+        baseUrl: String,
+        url: String,
+        title: String?,
+        artist: String?
+    ): TrackAnalysisResult
+
+    suspend fun uploadTrack(
+        baseUrl: String,
+        fileName: String,
+        sizeBytes: Long,
+        contentType: String?,
+        onBytesWritten: ((Long) -> Unit)?,
+        streamProvider: () -> InputStream
+    ): TrackAnalysisResult
 
     suspend fun postPlay(baseUrl: String, jobId: String)
 

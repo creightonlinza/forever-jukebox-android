@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -71,6 +72,7 @@ private fun PlaybackHeaderRow(
     showTuningAndInfo: Boolean,
     showDeleteTrackAction: Boolean,
     isFavorite: Boolean,
+    hasTuningDrift: Boolean,
     favoriteToggleInFlight: Boolean,
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
@@ -149,23 +151,43 @@ private fun PlaybackHeaderRow(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    SquareIconButton(
-                        onClick = onToggleFavorite,
-                        enabled = !favoriteToggleInFlight,
-                        modifier = Modifier.size(SmallButtonHeight)
-                    ) {
-                        if (favoriteToggleInFlight) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = themeTokens.beatFill,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
-                                tint = themeTokens.beatFill,
-                                modifier = Modifier.size(20.dp)
+                    Box {
+                        SquareIconButton(
+                            onClick = onToggleFavorite,
+                            enabled = !favoriteToggleInFlight,
+                            modifier = Modifier.size(SmallButtonHeight)
+                        ) {
+                            if (favoriteToggleInFlight) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = themeTokens.beatFill,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isFavorite) {
+                                        Icons.Filled.Star
+                                    } else {
+                                        Icons.Outlined.StarBorder
+                                    },
+                                    contentDescription = favoriteActionContentDescription(
+                                        isFavorite = isFavorite,
+                                        hasTuningDrift = hasTuningDrift
+                                    ),
+                                    tint = themeTokens.beatFill,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        // Marks tuning that no longer matches what the favorite saved. Purely an
+                        // overlay: it takes no pointer input, so the star stays fully tappable.
+                        if (hasTuningDrift && !favoriteToggleInFlight) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 3.dp, end = 3.dp)
+                                    .size(7.dp)
+                                    .background(color = themeTokens.accent, shape = CircleShape)
                             )
                         }
                     }
@@ -182,6 +204,7 @@ internal fun ColumnScope.CastListenScreen(
     adminKey: String,
     vizLabels: List<String>,
     isFavorite: Boolean,
+    hasTuningDrift: Boolean,
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
@@ -225,6 +248,7 @@ internal fun ColumnScope.CastListenScreen(
                 showTuningAndInfo = canShowReceiverDetails,
                 showDeleteTrackAction = showDeleteTrackAction,
                 isFavorite = isFavorite,
+                hasTuningDrift = hasTuningDrift,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,
                 onOpenInfo = onOpenInfo,
@@ -406,6 +430,7 @@ internal fun ColumnScope.LocalListenScreen(
     vizLabels: List<String>,
     jumpLine: JumpLine?,
     isFavorite: Boolean,
+    hasTuningDrift: Boolean,
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
@@ -443,6 +468,7 @@ internal fun ColumnScope.LocalListenScreen(
                 showTuningAndInfo = true,
                 showDeleteTrackAction = showDeleteTrackAction,
                 isFavorite = isFavorite,
+                hasTuningDrift = hasTuningDrift,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onOpenTuning = onOpenTuning,
                 onOpenInfo = onOpenInfo,

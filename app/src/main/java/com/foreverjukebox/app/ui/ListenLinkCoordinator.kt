@@ -33,33 +33,38 @@ class ListenLinkCoordinator(
         }
     }
 
-    fun handleDeepLink(uriString: String?) {
-        if (uriString.isNullOrBlank()) return
-        val uri = runCatching { URI(uriString) }.getOrNull() ?: return
+    /** Returns true when the URI was a listen link and a track load was dispatched for it. */
+    fun handleDeepLink(uriString: String?): Boolean {
+        if (uriString.isNullOrBlank()) return false
+        val uri = runCatching { URI(uriString) }.getOrNull() ?: return false
         val base = getState().baseUrl.trim().trimEnd('/')
         val baseUri = runCatching { URI(base) }.getOrNull()
-        if (!matchesKnownListenHost(uri, baseUri)) return
+        if (!matchesKnownListenHost(uri, baseUri)) return false
         val segments = uri.path
             ?.trim('/')
             ?.split('/')
             ?.filter { it.isNotBlank() }
             ?: emptyList()
-        if (segments.size >= 2 && segments.firstOrNull() == "listen") {
-            val id = decodeUriComponent(segments[1])
-            val queryParams = parseQueryParams(uri.rawQuery)
-            val mode = if (queryParams["mode"]?.firstOrNull() == "autocanonizer") {
-                PlaybackMode.Autocanonizer
-            } else {
-                PlaybackMode.Jukebox
-            }
-            setPlaybackMode(mode)
-            val tuningParams = if (mode == PlaybackMode.Jukebox) {
-                buildQueryWithoutMode(queryParams)
-            } else {
-                null
-            }
-            loadTrackById(id, null, null, tuningParams)
+        if (segments.size < 2 || segments.firstOrNull() != "listen") {
+            return false
         }
+        val id = decodeUriComponent(segments[1])
+        val queryParams = parseQueryParams(uri.rawQuery)
+        val mode = if (queryParams["mode"]?.firstOrNull() == "autocanonizer") {
+            PlaybackMode.Autocanonizer
+        } else {
+            PlaybackMode.Jukebox
+        }
+        // The link's mode belongs to the track it opens, so this stays off the
+        // capture path that records a mode switch on the loaded track.
+        setPlaybackMode(mode)
+        val tuningParams = if (mode == PlaybackMode.Jukebox) {
+            buildQueryWithoutMode(queryParams)
+        } else {
+            null
+        }
+        loadTrackById(id, null, null, tuningParams)
+        return true
     }
 
     private fun matchesKnownListenHost(uri: URI, baseUri: URI?): Boolean {

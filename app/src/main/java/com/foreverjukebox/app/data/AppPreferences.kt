@@ -11,6 +11,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "fj_preferences")
@@ -125,10 +126,12 @@ class AppPreferences(private val context: Context) {
         prefs[KEY_LOCAL_ANALYSIS_SORT_DIRECTION]
     }
 
+    // Every write to any key re-emits the whole preference set, so the config is deduplicated here
+    // rather than making each collector tolerate replays of a value it has already applied.
     val appConfig: Flow<ServerAppConfig?> = context.dataStore.data.map { prefs ->
         val raw = prefs[KEY_APP_CONFIG] ?: return@map null
         runCatching { json.decodeFromString<ServerAppConfig>(raw) }.getOrNull()
-    }
+    }.distinctUntilChanged()
 
     val canonizerFinishOutSong: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_CANONIZER_FINISH] ?: false

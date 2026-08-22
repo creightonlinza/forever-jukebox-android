@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.cast
 
 import com.foreverjukebox.app.net.CleartextGuardInterceptor
+import com.foreverjukebox.app.net.streamingRequestBody
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
@@ -16,8 +17,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import okio.BufferedSink
-import okio.source
 
 /**
  * Sender-side client for the Cast relay (`fj-android-cast`). The relay is sessionless: one track id
@@ -181,36 +180,13 @@ class CastRelayClient(
 
         /**
          * A [RequestBody] that streams from [streamProvider] without buffering the whole file in
-         * memory. [streamProvider] must return a fresh stream each call (it may be re-invoked on a
-         * retry). [sizeBytes] is sent as the Content-Length. [onBytesWritten] receives the
-         * cumulative bytes written so far, on OkHttp's IO thread; the count restarts from zero if
-         * OkHttp re-invokes [writeTo] on a retry.
+         * memory; see [streamingRequestBody] for the contract.
          */
         fun streamingBody(
             contentType: MediaType?,
             sizeBytes: Long,
             onBytesWritten: ((Long) -> Unit)? = null,
             streamProvider: () -> InputStream
-        ): RequestBody = object : RequestBody() {
-            override fun contentType(): MediaType? = contentType
-
-            override fun contentLength(): Long = sizeBytes
-
-            override fun writeTo(sink: BufferedSink) {
-                streamProvider().use { input ->
-                    val source = input.source()
-                    var totalBytes = 0L
-                    while (true) {
-                        val read = source.read(sink.buffer, WRITE_SEGMENT_BYTES)
-                        if (read == -1L) break
-                        sink.emitCompleteSegments()
-                        totalBytes += read
-                        onBytesWritten?.invoke(totalBytes)
-                    }
-                }
-            }
-        }
-
-        private const val WRITE_SEGMENT_BYTES = 8L * 1024
+        ): RequestBody = streamingRequestBody(contentType, sizeBytes, onBytesWritten, streamProvider)
     }
 }

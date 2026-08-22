@@ -1,17 +1,21 @@
 package com.foreverjukebox.app.data
 import com.foreverjukebox.app.net.CleartextGuardInterceptor
+import com.foreverjukebox.app.net.streamingRequestBody
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
 class ApiClient(
@@ -53,6 +57,57 @@ class ApiClient(
         val body = AnalysisStartRequest(youtubeId, title, artist)
         val payload = json.encodeToString(body)
         return postJson(url, payload).let { json.decodeFromString(it) }
+    }
+
+    /**
+     * Start (or dedupe onto) an analysis job for a user-supplied YouTube/SoundCloud/Bandcamp URL.
+     * The server resolves the source metadata synchronously, so the call can block for tens of
+     * seconds; it runs on [slowCallClient]. A 200 can carry a completed job's full result — or a
+     * failed job — so callers must branch on the response's `status` field.
+     */
+    suspend fun startUrlAnalysis(
+        baseUrl: String,
+        url: String,
+        title: String? = null,
+        artist: String? = null
+    ): AnalysisResponse {
+        val requestUrl = buildUrl(baseUrl, ApiPaths.ANALYSIS_URL)
+        val payload = json.encodeToString(UrlAnalysisRequest(url, title, artist))
+        return postJson(requestUrl, payload, slowCallClient).let { json.decodeFromString(it) }
+    }
+
+    /**
+     * Upload an audio file for analysis. The part name must be exactly "file" and the filename is
+     * required — the server validates by filename extension only and uses the stem as the track
+     * title. Streams from [streamProvider] without buffering; [onBytesWritten] is invoked on
+     * OkHttp's IO thread with the cumulative byte count.
+     */
+    suspend fun uploadTrack(
+        baseUrl: String,
+        fileName: String,
+        sizeBytes: Long,
+        contentType: String?,
+        onBytesWritten: ((Long) -> Unit)? = null,
+        streamProvider: () -> InputStream
+    ): AnalysisResponse = withContext(Dispatchers.IO) {
+        val requestUrl = buildUrl(baseUrl, ApiPaths.UPLOAD)
+        val fileBody = streamingRequestBody(
+            contentType = contentType?.toMediaTypeOrNull(),
+            sizeBytes = sizeBytes,
+            onBytesWritten = onBytesWritten,
+            streamProvider = streamProvider
+        )
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", fileName, fileBody)
+            .build()
+        val request = Request.Builder().url(requestUrl).post(body).build()
+        slowCallClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throwHttpStatus(response)
+            }
+            json.decodeFromString(response.body?.string() ?: "")
+        }
     }
 
     suspend fun getAnalysis(baseUrl: String, jobId: String): AnalysisResponse {
@@ -224,10 +279,14 @@ class ApiClient(
         }
     }
 
-    private suspend fun postJson(url: String, payload: String): String = withContext(Dispatchers.IO) {
+    private suspend fun postJson(
+        url: String,
+        payload: String,
+        callClient: OkHttpClient = client
+    ): String = withContext(Dispatchers.IO) {
         val body = payload.toRequestBody("application/json".toMediaType())
         val request = Request.Builder().url(url).post(body).build()
-        client.newCall(request).execute().use { response ->
+        callClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throwHttpStatus(response)
             }
@@ -320,6 +379,8 @@ class ApiClient(
         val SEARCH_SPOTIFY = listOf("api", "search", "spotify")
         val SEARCH_YOUTUBE = listOf("api", "search", "youtube")
         val ANALYSIS_YOUTUBE = listOf("api", "analysis", "youtube")
+        val ANALYSIS_URL = listOf("api", "analysis", "url")
+        val UPLOAD = listOf("api", "upload")
         val JOB_BY_TRACK = listOf("api", "jobs", "by-track")
         val TOP = listOf("api", "top")
         val TRENDING = listOf("api", "trending")
@@ -345,6 +406,13 @@ class ApiClient(
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
             .addNetworkInterceptor(CleartextGuardInterceptor)
+            .build()
+
+        // URL analysis blocks on server-side source resolution (tens of seconds) and uploads are
+        // followed by a server-side duration probe, so those calls get a long read timeout. Shares
+        // the connection pool and dispatcher with sharedClient.
+        private val slowCallClient = sharedClient.newBuilder()
+            .readTimeout(90, TimeUnit.SECONDS)
             .build()
     }
 }

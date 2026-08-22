@@ -237,6 +237,7 @@ class AppModePolicyTest {
             loadingAudioFeedbackEnabled = true,
             activeTab = TabId.Play,
             topSongsTab = TopSongsTab.Recent,
+            searchPanelTab = SearchPanelTab.Upload,
             search = SearchState(query = "abc", topSongsLoading = true),
             playback = PlaybackState(
                 jukeboxAudioMode = JukeboxAudioMode.Nightcore,
@@ -261,6 +262,7 @@ class AppModePolicyTest {
         assertFalse(reset.showBaseUrlPrompt)
         assertEquals(TabId.Top, reset.activeTab)
         assertEquals(TopSongsTab.TopSongs, reset.topSongsTab)
+        assertEquals(SearchPanelTab.Search, reset.searchPanelTab)
         assertEquals("", reset.search.query)
         assertFalse(reset.playback.analysisInFlight)
         assertFalse(reset.playback.audioLoading)

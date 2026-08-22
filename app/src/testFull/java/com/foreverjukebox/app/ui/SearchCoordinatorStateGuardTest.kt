@@ -45,7 +45,7 @@ class SearchCoordinatorStateGuardTest {
             logError = { message, _ -> loggedErrors += message }
         )
 
-        coordinator.onTopTabActivated()
+        coordinator.onTopSongsTabSelected(TopSongsTab.TopSongs)
         currentState = currentState.copy(baseUrl = "https://new.example.com")
         coordinator.resetRuntimeState()
         advanceTimeBy(300)

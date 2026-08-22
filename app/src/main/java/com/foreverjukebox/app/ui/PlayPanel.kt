@@ -39,7 +39,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
-import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,9 +53,26 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         playback = playback,
         localSelectedFileName = state.localSelectedFileName.takeIf { state.appMode == AppMode.Local }
     )
-    val favoriteTargetIds = playback.reusableTrackIdsForMatching()
-    val isFavorite = favoriteTargetIds.isNotEmpty() && state.favorites.any { favorite ->
-        canonicalTrackId(favorite.uniqueSongId) in favoriteTargetIds
+    // Parses a track id per favorite, so it tracks the ids and the list rather than every frame.
+    val currentFavorite = remember(state.favorites, playback.lastJobId, playback.lastYouTubeId) {
+        favoriteForCurrentTrack(state)
+    }
+    val isFavorite = currentFavorite != null
+    // Drift builds a tuning query string and parses two more, while the beat tick republishes
+    // playback state throughout a track. Keyed on everything the check reads, so it recomputes
+    // when the tuning or the favorite moves and not once per frame.
+    val hasTuningDrift = remember(
+        currentFavorite,
+        tuning,
+        playback.playMode,
+        playback.isCasting,
+        playback.castTotalBeats,
+        playback.castAudioModeWireValue,
+        playback.castAudioModeIntensity,
+        playback.jukeboxAudioMode,
+        playback.jukeboxAudioModeIntensity
+    ) {
+        hasFavoriteTuningDrift(state, currentFavorite)
     }
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
     var showTuning by remember { mutableStateOf(false) }
@@ -163,6 +179,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 adminKey = state.adminKey,
                 vizLabels = vizLabels,
                 isFavorite = isFavorite,
+                hasTuningDrift = hasTuningDrift,
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
@@ -185,13 +202,14 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 vizLabels = vizLabels,
                 jumpLine = jumpLine,
                 isFavorite = isFavorite,
+                hasTuningDrift = hasTuningDrift,
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 favoriteToggleInFlight = favoriteToggleInFlight,
-                onSetPlaybackMode = viewModel::setPlaybackMode,
+                onSetPlaybackMode = viewModel::selectPlaybackMode,
                 onSetVisualization = viewModel::setActiveVisualization,
                 onSetCanonizerFinishOutSong = viewModel::setCanonizerFinishOutSong,
                 onSelectBeat = viewModel::selectBeat,

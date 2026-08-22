@@ -25,6 +25,9 @@ data class ParsedTuningParams(
 object TuningParamsCodec {
     private val knownKeys = setOf("jb", "bl", "lg", "sq", "thresh", "bp", "d", "ab", "ah", "am", "ai")
 
+    /** Stands in for an unknown auto threshold; below every threshold a track can carry. */
+    private const val NO_COMPUTED_THRESHOLD = -1
+
     fun parse(raw: String?, minThreshold: Int = 0): ParsedTuningParams? {
         if (raw.isNullOrBlank()) {
             return null
@@ -211,6 +214,56 @@ object TuningParamsCodec {
             )?.let { params.add(it) }
         }
         return if (params.isEmpty()) null else params.joinToString("&")
+    }
+
+    /**
+     * Whether two persisted tuning strings describe the same tuning. Favorites arrive from the web
+     * app as well as from here, so key order, legacy spellings (`lg`, `jb=true`, `am=off`), and
+     * explicitly written defaults all have to read as a match against a locally built string.
+     *
+     * Deleted branches (`d`) and the anchor branch (`ab`) are excluded, and `ah` never survives the
+     * builder because persisted tuning does not carry it.
+     *
+     * [computedThreshold] is the track's auto threshold, which a built string leaves out; passing it
+     * lets a string that writes that same value explicitly read as the match it is.
+     */
+    fun savedTuningParamsEquivalent(
+        left: String?,
+        right: String?,
+        computedThreshold: Int? = null
+    ): Boolean {
+        return canonicalSavedTuningParams(left, computedThreshold) ==
+            canonicalSavedTuningParams(right, computedThreshold)
+    }
+
+    /**
+     * A persisted tuning string rewritten in the exact form [buildSavedTuningParams] emits, so two
+     * spellings of the same tuning collapse to one string. Routing the comparison through [parse],
+     * [mergeIntoState], and the builder is what keeps it complete: a tuning parameter is compared
+     * as soon as it can be parsed and built, with no separate field list here to fall behind.
+     *
+     * The threshold rides on the builder's own rule, which emits nothing when the value matches the
+     * auto threshold. With no auto threshold to compare against, [NO_COMPUTED_THRESHOLD] stands in
+     * so a written threshold survives and an absent one stays absent.
+     */
+    private fun canonicalSavedTuningParams(raw: String?, computedThreshold: Int?): String? {
+        val parsed = parse(raw)
+        val autoThreshold = computedThreshold ?: NO_COMPUTED_THRESHOLD
+        val tuning = mergeIntoState(
+            base = TuningState(threshold = autoThreshold, computedThreshold = autoThreshold),
+            parsed = parsed
+        ).copy(
+            // Dropped rather than compared: no on-device control touches them, they enter tuning
+            // only when saved params are applied at load, and edge ids are positional in the
+            // rebuilt graph, so a restored list can differ numerically from the saved one.
+            deletedEdgeIds = emptyList(),
+            anchorBranchId = null
+        )
+        return buildSavedTuningParams(
+            tuning = tuning,
+            audioModeWireValue = parsed?.audioMode?.wireValue,
+            audioModeIntensity = parsed?.audioModeIntensity ?: AudioModeIntensity.DEFAULT
+        )
     }
 
     fun buildHighlightParam(enabled: Boolean): String {

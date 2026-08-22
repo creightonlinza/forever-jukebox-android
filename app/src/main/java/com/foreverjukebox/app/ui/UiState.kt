@@ -30,6 +30,16 @@ enum class TopSongsTab {
     Favorites
 }
 
+/**
+ * Sub-tabs of the Search panel. The Upload tab hosts the user-source paths (add by link, upload a
+ * file) and is offered only when the server allows at least one of them; otherwise the panel shows
+ * the Search content alone with no sub-tab row.
+ */
+enum class SearchPanelTab {
+    Search,
+    Upload
+}
+
 enum class PlaybackMode {
     Jukebox,
     Autocanonizer
@@ -144,6 +154,7 @@ data class UiState(
     val themeMode: ThemeMode = ThemeMode.System,
     val activeTab: TabId = TabId.Top,
     val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,
+    val searchPanelTab: SearchPanelTab = SearchPanelTab.Search,
     val cacheSizeBytes: Long = 0,
     val favorites: List<FavoriteTrack> = emptyList(),
     val favoritesSortKey: FavoriteSortKey = FavoriteSortKey.Title,
@@ -152,6 +163,10 @@ data class UiState(
     val allowFavoritesSync: Boolean = false,
     val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     val maxTrackLengthMinutes: Double? = null,
+    val allowUserUrl: Boolean = false,
+    val allowUserUpload: Boolean = false,
+    val maxUploadSizeBytes: Long? = null,
+    val allowedUploadExts: List<String> = emptyList(),
     val loadingAudioFeedbackEnabled: Boolean = false,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,
@@ -210,7 +225,8 @@ data class SearchState(
     val videoMatches: List<RemoteVideoSearchItem> = emptyList(),
     val youtubeLoading: Boolean = false,
     val pendingTrackName: String? = null,
-    val pendingTrackArtist: String? = null
+    val pendingTrackArtist: String? = null,
+    val urlErrorMessage: String? = null
 )
 
 data class AutocanonizerUiState(
@@ -395,6 +411,27 @@ fun coerceTabForMode(mode: AppMode?, tabId: TabId): TabId {
         tabId
     } else {
         defaultTabForMode(mode)
+    }
+}
+
+/** The Upload sub-tab exists only while the server allows a user source. */
+fun uploadTabAvailable(allowUserUrl: Boolean, allowUserUpload: Boolean): Boolean =
+    allowUserUrl || allowUserUpload
+
+/**
+ * Drop an Upload selection back to Search when no user source is allowed, so the selected tab is
+ * never one that nothing renders. Applied wherever the selection is written rather than only where
+ * the config lands, so a selection made in the frame a config revocation arrives cannot outlive it.
+ */
+fun coerceSearchPanelTab(
+    tab: SearchPanelTab,
+    allowUserUrl: Boolean,
+    allowUserUpload: Boolean
+): SearchPanelTab {
+    return if (tab == SearchPanelTab.Upload && !uploadTabAvailable(allowUserUrl, allowUserUpload)) {
+        SearchPanelTab.Search
+    } else {
+        tab
     }
 }
 
@@ -668,6 +705,7 @@ fun stateAfterModeChangeReset(
         localAnalysisJsonPath = null,
         activeTab = defaultTabForMode(resolvedTargetMode),
         topSongsTab = TopSongsTab.TopSongs,
+        searchPanelTab = SearchPanelTab.Search,
         search = SearchState(),
         playback = PlaybackState(),
         playlist = JukeboxPlaylistState(),

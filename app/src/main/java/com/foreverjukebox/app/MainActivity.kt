@@ -1,11 +1,13 @@
 package com.foreverjukebox.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Bundle
+import androidx.core.content.IntentCompat
 import androidx.activity.compose.setContent
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
@@ -16,6 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.ui.ForeverJukeboxApp
 import com.foreverjukebox.app.ui.MainViewModel
+import com.foreverjukebox.app.ui.sharedTextCarriesLink
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
@@ -44,6 +47,11 @@ class MainActivity : FragmentActivity() {
         viewModel.handleDeepLink(intent?.data)
         if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
             viewModel.openListenTab()
+        }
+        // A configuration change replays onCreate with the launching intent, so a share is only
+        // read on a genuinely new instance.
+        if (savedInstanceState == null) {
+            handleShareIntent(intent)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -80,6 +88,33 @@ class MainActivity : FragmentActivity() {
         if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
             viewModel.openListenTab()
         }
+        handleShareIntent(intent)
+    }
+
+    /**
+     * Hands share-sheet content to the view model. The ACTION_SEND filters ship only in the
+     * server-mode flavor; the build-config guard keeps a local-only build inert even against an
+     * explicit send aimed at it, which no manifest filter can prevent.
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (!BuildConfig.SERVER_MODE_AVAILABLE) return
+        if (intent?.action != Intent.ACTION_SEND) return
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val sharedSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
+        val audioUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+        // Text and a stream attachment arrive together in both directions: a link share attaches
+        // preview artwork, and a file share captions itself. The link decides which is the payload,
+        // and only a text-typed share can carry one.
+        val textShare = intent.type?.startsWith("text/") == true &&
+            sharedTextCarriesLink(sharedText, sharedSubject)
+        if (audioUri != null && !textShare) {
+            viewModel.handleSharedAudio(audioUri)
+            return
+        }
+        viewModel.handleSharedText(
+            sharedText = sharedText,
+            sharedSubject = sharedSubject
+        )
     }
 
     override fun onStart() {

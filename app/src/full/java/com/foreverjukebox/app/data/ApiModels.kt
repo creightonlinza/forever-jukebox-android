@@ -32,6 +32,13 @@ data class AnalysisStartRequest(
 )
 
 @Serializable
+data class UrlAnalysisRequest(
+    val url: String,
+    val title: String? = null,
+    val artist: String? = null
+)
+
+@Serializable
 data class AnalysisStartResponse(
     val id: String? = null,
     val status: String? = null,
@@ -65,7 +72,7 @@ data class AppConfigResponse(
     @SerialName("allow_user_url") val allowUserUrl: Boolean = false,
     @SerialName("allow_favorites_sync") val allowFavoritesSync: Boolean = false,
     @SerialName("max_favorites") val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
-    @SerialName("max_upload_size") val maxUploadSize: Int? = null,
+    @SerialName("max_upload_size") val maxUploadSize: Long? = null,
     @SerialName("allowed_upload_exts") val allowedUploadExts: List<String>? = null,
     @SerialName("max_track_length") val maxTrackLength: Double? = null
 )
