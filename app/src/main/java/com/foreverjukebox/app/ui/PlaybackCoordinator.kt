@@ -493,11 +493,11 @@ class PlaybackCoordinator(
             return false
         }
         return audioLoadHold.hold {
-            loadAudioFromActiveJob(jobId)
+            loadAudioFromJobHeld(jobId)
         }
     }
 
-    private suspend fun loadAudioFromActiveJob(jobId: String): Boolean {
+    private suspend fun loadAudioFromJobHeld(jobId: String): Boolean {
         // A decode for this job just failed on a transient signature; skip the doomed
         // attempt. Callers that poll re-invoke this on their next tick, so the decode
         // happens for real once the memo window lapses.

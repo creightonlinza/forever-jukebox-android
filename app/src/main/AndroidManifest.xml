@@ -59,10 +59,32 @@
                  manifest (src/full/AndroidManifest.xml). The `play` flavor is
                  local-only and intentionally has neither. -->
         </activity>
+        <!--
+          Hardware and Bluetooth media keys reach the app through this pair. Without
+          them the only route is winning the system's "media button session" slot,
+          which a session earns by actually playing — so a notification showing a
+          play button for something that has not played yet (a freshly loaded track,
+          a failed load offering Retry, a service restarted while paused) would get
+          no response from a headset. The receiver also gives MediaSessionCompat a
+          media button PendingIntent, which is what lets keys restart playback after
+          the service is gone.
+        -->
         <service
             android:name=".playback.ForegroundPlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"
-            android:stopWithTask="true" />
+            android:stopWithTask="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
+        <!-- Exported because the media key broadcast is sent by the system. -->
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

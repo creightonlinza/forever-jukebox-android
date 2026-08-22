@@ -412,8 +412,19 @@ class ForegroundPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Dispatches a hardware/Bluetooth key to the session callback, which runs the
+        // same transport handling as the notification's own buttons.
         MediaButtonReceiver.handleIntent(mediaSession, intent)
         when (intent?.action) {
+            Intent.ACTION_MEDIA_BUTTON -> {
+                // Media keys arrive via startForegroundService, so this start has to reach
+                // foreground even when the press posted no notification of its own — a
+                // press this state ignores, or one that only asks the app to retry a
+                // failed load.
+                if (!hasStartedForeground) {
+                    refreshNotificationForCurrentPlayback()
+                }
+            }
             PlaybackServiceConstants.ACTION_TOGGLE -> {
                 if (intent.getBooleanExtra(PlaybackServiceConstants.EXTRA_IS_CASTING, false)) {
                     handleCastToggle()
