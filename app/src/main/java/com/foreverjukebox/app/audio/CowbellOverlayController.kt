@@ -86,10 +86,8 @@ internal class NativeCowbellOverlayController(
     private var sectionStartBeatIndices = emptySet<Int>()
     private var enabled = false
     private var volume = 1.0
-    private var released = false
 
     override fun setEnabled(enabled: Boolean) {
-        if (released) return
         this.enabled = enabled
         if (enabled) {
             scheduler.preloadCowbellSamples()
@@ -113,7 +111,7 @@ internal class NativeCowbellOverlayController(
         playbackRate: Double
     ) {
         scheduler.cancelPendingCowbellHits()
-        if (!enabled || released) return
+        if (!enabled) return
         scheduler.preloadCowbellSamples()
         val hits = planner.planBeat(
             beatIndex = beatIndex,
@@ -132,9 +130,9 @@ internal class NativeCowbellOverlayController(
         scheduler.cancelCowbellHits()
     }
 
+    // Release is not terminal: the owning controller is a process singleton that can
+    // be handed to a new ViewModel, and a later setEnabled(true) must bring hits back.
     override fun release() {
-        if (released) return
-        released = true
         enabled = false
         scheduler.cancelCowbellHits()
     }

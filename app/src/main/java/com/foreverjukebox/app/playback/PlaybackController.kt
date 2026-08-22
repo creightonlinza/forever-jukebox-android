@@ -20,7 +20,6 @@ import com.foreverjukebox.app.ui.JukeboxAudioMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 
 sealed interface PlaybackStartResult {
     data object Started : PlaybackStartResult
@@ -357,13 +356,16 @@ class PlaybackController {
         return autocanonizer.syncAudioFromMain()
     }
 
-    fun release() {
+    // The controller outlives any single ViewModel (see PlaybackControllerHolder), so a
+    // ViewModel going away must only drop what that ViewModel owned: audio focus, any
+    // parked play, scheduled overlay hits, and the decoded audio. Everything released
+    // here is rebuilt lazily on the next load; nothing is latched shut.
+    fun detachOwner() {
         cancelPendingFocusPlay()
         audioFocusController.abandonAudioFocus()
-        cowbellOverlay.release()
+        cowbellOverlay.cancelScheduledHits()
         autocanonizer.release()
         player.release()
-        autocanonizerScope.cancel()
     }
 
     private companion object {

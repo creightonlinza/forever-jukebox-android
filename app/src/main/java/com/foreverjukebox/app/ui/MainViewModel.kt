@@ -708,10 +708,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val currentBeatIndex = engineState.currentBeatIndex
             if (
-                currentPlayback.jukeboxAudioMode == JukeboxAudioMode.Cowbell &&
-                !currentPlayback.isCasting &&
-                currentBeatIndex >= 0 &&
-                engineState.beatsPlayed != lastCowbellBeatsPlayed
+                shouldScheduleCowbellBeat(
+                    playMode = currentPlayback.playMode,
+                    audioMode = currentPlayback.jukeboxAudioMode,
+                    isCasting = currentPlayback.isCasting,
+                    currentBeatIndex = currentBeatIndex,
+                    beatsPlayed = engineState.beatsPlayed,
+                    lastScheduledBeatsPlayed = lastCowbellBeatsPlayed
+                )
             ) {
                 lastCowbellBeatsPlayed = engineState.beatsPlayed
                 val beats = currentPlayback.vizData?.beats
@@ -800,7 +804,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         loadingAudioFeedbackController.release()
         playbackCoordinator.onCleared()
-        controller.release()
+        controller.detachOwner()
     }
 
     private fun handleSleepTimerExpired() {
