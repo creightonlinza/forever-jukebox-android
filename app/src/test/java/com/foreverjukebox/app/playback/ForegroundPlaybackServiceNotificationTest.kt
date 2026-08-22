@@ -226,4 +226,75 @@ class ForegroundPlaybackServiceNotificationTest {
             )
         )
     }
+
+    @Test
+    fun playAndTogglePressesOnFailedNotificationBroadcastRetry() {
+        // While the failed notification is showing, the transport button (and any
+        // play/play-pause media key) must hand the press to the app's retry flow
+        // instead of touching local playback.
+        assertEquals(
+            TransportActionRoute.BroadcastRetry,
+            routeTransportAction(
+                isLoading = false,
+                isLoadFailed = true,
+                action = PlaybackAction.Play
+            )
+        )
+        assertEquals(
+            TransportActionRoute.BroadcastRetry,
+            routeTransportAction(
+                isLoading = false,
+                isLoadFailed = true,
+                action = PlaybackAction.Toggle
+            )
+        )
+    }
+
+    @Test
+    fun pauseAndStopPressesOnFailedNotificationAreIgnored() {
+        assertEquals(
+            TransportActionRoute.Ignore,
+            routeTransportAction(
+                isLoading = false,
+                isLoadFailed = true,
+                action = PlaybackAction.Pause
+            )
+        )
+        assertEquals(
+            TransportActionRoute.Ignore,
+            routeTransportAction(
+                isLoading = false,
+                isLoadFailed = true,
+                action = PlaybackAction.Stop
+            )
+        )
+    }
+
+    @Test
+    fun allPressesWhileLoadingAreIgnored() {
+        PlaybackAction.entries.forEach { action ->
+            assertEquals(
+                TransportActionRoute.Ignore,
+                routeTransportAction(
+                    isLoading = true,
+                    isLoadFailed = false,
+                    action = action
+                )
+            )
+        }
+    }
+
+    @Test
+    fun pressesOnNormalNotificationReachPlaybackHandling() {
+        PlaybackAction.entries.forEach { action ->
+            assertEquals(
+                TransportActionRoute.Handle,
+                routeTransportAction(
+                    isLoading = false,
+                    isLoadFailed = false,
+                    action = action
+                )
+            )
+        }
+    }
 }

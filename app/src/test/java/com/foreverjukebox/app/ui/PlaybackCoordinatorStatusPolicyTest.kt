@@ -115,6 +115,39 @@ class PlaybackCoordinatorStatusPolicyTest {
         )
     }
 
+    // A track-to-track reset (a new load follows immediately) must leave state that
+    // keeps the service alive: resolving to Hidden would let a racing sync stop the
+    // foreground service mid-transition, which a backgrounded app cannot reliably
+    // restart — and without it the OS restricts the codec the load needs.
+    @Test
+    fun resetIntoNewLoadKeepsPlaybackServiceSessionVisible() {
+        val playing = PlaybackState(
+            audioLoaded = true,
+            analysisLoaded = true,
+            isRunning = true,
+            trackTitle = "Outgoing"
+        )
+        val reset = playing.resetForNewTrack(keepLoadVisible = true)
+        assertEquals(
+            PlaybackServiceSession.LocalLoading(progress = null),
+            resolvePlaybackServiceSession(reset)
+        )
+        assertFalse(reset.audioLoaded)
+        assertFalse(reset.isRunning)
+        assertNull(reset.trackTitle)
+    }
+
+    // A reset that is not followed by a load (stop, cast handoff, lifecycle teardown)
+    // must not leave a phantom loading state behind.
+    @Test
+    fun resetWithoutNewLoadResolvesHidden() {
+        val playing = PlaybackState(audioLoaded = true, analysisLoaded = true, isRunning = true)
+        assertEquals(
+            PlaybackServiceSession.Hidden,
+            resolvePlaybackServiceSession(playing.resetForNewTrack(keepLoadVisible = false))
+        )
+    }
+
     @Test
     fun playbackServiceSessionMapsLoadedTrackToLocalReady() {
         assertEquals(

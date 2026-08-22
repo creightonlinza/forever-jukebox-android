@@ -52,8 +52,7 @@ fun analyticsSearchResultTitle(name: String?, artist: String?): String? {
     }
 }
 
-fun PlaybackState.analyticsPlayTrackId(): String? =
-    shareTrackIdOrNull() ?: lastYouTubeId?.trim()?.takeIf { it.isNotBlank() }
+fun PlaybackState.analyticsPlayTrackId(): String? = resolvedTrackIdOrNull()
 
 /**
  * Titles of tracks from the user's own library are personal content and never leave the

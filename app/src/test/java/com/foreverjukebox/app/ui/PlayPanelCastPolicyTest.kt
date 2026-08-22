@@ -181,6 +181,46 @@ class PlayPanelCastPolicyTest {
     }
 
     @Test
+    fun stateAfterCastTrackRejectionShowsDialogOnlyAndResetsCastScreenToIdle() {
+        val current = UiState(
+            activeTab = TabId.Play,
+            playback = PlaybackState(
+                isCasting = true,
+                castDeviceName = "Living Room TV",
+                lastJobId = "job_1",
+                lastYouTubeId = "abc123def45",
+                trackDurationSeconds = 393.0,
+                castTotalBeats = 625,
+                castTotalBranches = 40,
+                castPlaybackState = "error",
+                isCastLoading = true,
+                castTransfer = CastTransfer.WaitingForReceiver("job_1"),
+                analysisErrorMessage = "Sorry, tracks longer than 6 minutes cannot be cast.",
+                trackTitle = "Long Track",
+                trackArtist = "Artist"
+            )
+        )
+
+        val next = stateAfterCastTrackRejection(current, "Sorry, too long.")
+
+        // The message lives in the dialog alone.
+        assertEquals("Sorry, too long.", next.trackLengthLimitErrorMessage)
+        assertNull(next.playback.analysisErrorMessage)
+        // The cast screen renders its idle no-track content, not a Failed status.
+        assertNull(resolveCastScreenStatus(AppMode.Server, next.playback))
+        assertFalse(next.playback.hasCastTrack())
+        assertNull(next.playback.trackDurationSeconds)
+        assertNull(next.playback.castTotalBeats)
+        assertNull(next.playback.castTotalBranches)
+        assertNull(next.playback.castPlaybackState)
+        assertNull(next.playback.castTransfer)
+        assertFalse(next.playback.isCastLoading)
+        // The cast session itself survives.
+        assertTrue(next.playback.isCasting)
+        assertEquals("Living Room TV", next.playback.castDeviceName)
+    }
+
+    @Test
     fun shouldShowPlaybackTransportInLocalAndReadyCastStates() {
         val local = PlaybackState(isCasting = false)
         val castingLoading = PlaybackState(

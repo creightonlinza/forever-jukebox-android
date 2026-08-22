@@ -1,6 +1,5 @@
 package com.foreverjukebox.app.playback
 
-import android.app.ActivityManager
 import android.app.Application
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
@@ -204,11 +203,46 @@ private enum class NotificationMode {
     Cast
 }
 
-private enum class PlaybackAction {
+internal enum class PlaybackAction {
     Play,
     Pause,
     Stop,
     Toggle
+}
+
+internal enum class TransportActionRoute {
+    /** Drop the press: no meaningful transport target in this notification state. */
+    Ignore,
+
+    /** Ask the app to run the failed-load retry flow instead of touching playback. */
+    BroadcastRetry,
+
+    /** Normal transport handling (play/pause/stop/toggle the active playback). */
+    Handle
+}
+
+/**
+ * Routes a transport press by notification state. While a load is in flight every
+ * press is dropped; while a failed notification is showing, Play/Toggle become the
+ * retry trigger (Pause/Stop have nothing to act on); otherwise the press reaches
+ * normal playback handling.
+ */
+internal fun routeTransportAction(
+    isLoading: Boolean,
+    isLoadFailed: Boolean,
+    action: PlaybackAction
+): TransportActionRoute {
+    if (isLoading) {
+        return TransportActionRoute.Ignore
+    }
+    if (isLoadFailed) {
+        return if (action == PlaybackAction.Play || action == PlaybackAction.Toggle) {
+            TransportActionRoute.BroadcastRetry
+        } else {
+            TransportActionRoute.Ignore
+        }
+    }
+    return TransportActionRoute.Handle
 }
 
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
@@ -378,8 +412,19 @@ class ForegroundPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Dispatches a hardware/Bluetooth key to the session callback, which runs the
+        // same transport handling as the notification's own buttons.
         MediaButtonReceiver.handleIntent(mediaSession, intent)
         when (intent?.action) {
+            Intent.ACTION_MEDIA_BUTTON -> {
+                // Media keys arrive via startForegroundService, so this start has to reach
+                // foreground even when the press posted no notification of its own — a
+                // press this state ignores, or one that only asks the app to retry a
+                // failed load.
+                if (!hasStartedForeground) {
+                    refreshNotificationForCurrentPlayback()
+                }
+            }
             PlaybackServiceConstants.ACTION_TOGGLE -> {
                 if (intent.getBooleanExtra(PlaybackServiceConstants.EXTRA_IS_CASTING, false)) {
                     handleCastToggle()
@@ -786,14 +831,19 @@ class ForegroundPlaybackService : Service() {
 
     private fun handlePlaybackAction(action: PlaybackAction) {
         val activeState = activeNotificationState
-        if (activeState?.isLoading == true) {
-            return
-        }
-        if (activeState?.isLoadFailed == true) {
-            if (action == PlaybackAction.Play || action == PlaybackAction.Toggle) {
+        when (
+            routeTransportAction(
+                isLoading = activeState?.isLoading == true,
+                isLoadFailed = activeState?.isLoadFailed == true,
+                action = action
+            )
+        ) {
+            TransportActionRoute.Ignore -> return
+            TransportActionRoute.BroadcastRetry -> {
                 broadcastRetryFailedLoadRequested()
+                return
             }
-            return
+            TransportActionRoute.Handle -> Unit
         }
         val targetPlayState = when (action) {
             PlaybackAction.Play -> true
@@ -1140,12 +1190,7 @@ class ForegroundPlaybackService : Service() {
                 putLoadingNotification(isLoading, loadingProgress)
                 putLoadFailedNotification(isLoadFailed)
             }
-            if (isRunning) {
-                playbackContext.startService(intent)
-            } else if (canStartForegroundService(playbackContext)) {
-                pendingForegroundStart = true
-                playbackContext.startForegroundService(intent)
-            }
+            startOrDeliver(playbackContext, intent)
         }
 
         fun update(
@@ -1163,12 +1208,7 @@ class ForegroundPlaybackService : Service() {
                 putLoadingNotification(isLoading, loadingProgress)
                 putLoadFailedNotification(isLoadFailed)
             }
-            if (isRunning) {
-                playbackContext.startService(intent)
-            } else if (canStartForegroundService(playbackContext)) {
-                pendingForegroundStart = true
-                playbackContext.startForegroundService(intent)
-            }
+            startOrDeliver(playbackContext, intent)
         }
 
         fun setSleepTimer(context: Context, durationMs: Long?) {
@@ -1202,12 +1242,7 @@ class ForegroundPlaybackService : Service() {
                 putExtra(PlaybackServiceConstants.EXTRA_CAST_DEVICE_NAME, deviceName)
                 putSkipAvailability(canSkipPrevious, canSkipNext)
             }
-            if (isRunning) {
-                playbackContext.startService(intent)
-            } else if (canStartForegroundService(playbackContext)) {
-                pendingForegroundStart = true
-                playbackContext.startForegroundService(intent)
-            }
+            startOrDeliver(playbackContext, intent)
         }
 
         private fun Intent.putSkipAvailability(
@@ -1269,13 +1304,29 @@ class ForegroundPlaybackService : Service() {
             return applicationContext.playbackAttributionContext()
         }
 
-        private fun canStartForegroundService(context: Context): Boolean {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-                return true
+        // Attempts the foreground start and catches denial rather than pre-checking
+        // process importance. The distinction matters when the app is backgrounded: a
+        // media-button press grants a short OS exemption during which the start
+        // succeeds even though an importance check would classify the app as
+        // background and skip the attempt. Keeping the foreground service alive is
+        // what keeps the audio subsystem (codec included) usable for the load that
+        // the button press kicked off.
+        private fun startOrDeliver(playbackContext: Context, intent: Intent) {
+            if (isRunning) {
+                playbackContext.startService(intent)
+                return
             }
-            val appState = ActivityManager.RunningAppProcessInfo()
-            ActivityManager.getMyMemoryState(appState)
-            return appState.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
+            pendingForegroundStart = true
+            try {
+                playbackContext.startForegroundService(intent)
+            } catch (error: IllegalStateException) {
+                pendingForegroundStart = false
+                AppLog.warn(
+                    TAG,
+                    "Foreground service start denied; continuing without notification.",
+                    error
+                )
+            }
         }
     }
 }

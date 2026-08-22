@@ -370,6 +370,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         showToast = ::showToast
     )
+    private val audioLoadWakeLock = AudioLoadWakeLock(getApplication())
     private val playbackCoordinator = PlaybackCoordinator(
         application = getApplication(),
         scope = viewModelScope,
@@ -382,12 +383,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab,
-        onStableTrackLoaded = ::handleStableTrackLoaded
+        onStableTrackLoaded = ::handleStableTrackLoaded,
+        audioLoadHold = audioLoadWakeLock
     )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
         scope = viewModelScope,
         playbackCoordinator = playbackCoordinator,
-        getState = { state.value }
+        getState = { state.value },
+        audioLoadHold = audioLoadWakeLock
     )
     private val localAnalysisCoordinator = LocalAnalysisCoordinator(
         scope = viewModelScope,
@@ -406,7 +409,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // lambda holds the real exception; the surfaced-message non-fatal from
         // PlaybackCoordinator.setAnalysisError has no stack trace.
         logError = { message, error -> AppLog.error(TAG, message, error) },
-        diagnostics = diagnostics
+        diagnostics = diagnostics,
+        audioLoadHold = audioLoadWakeLock
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
@@ -425,6 +429,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         castPlaybackCoordinator = castPlaybackCoordinator,
         playbackCoordinator = playbackCoordinator,
         cancelServerTrackLoad = remoteTrackLoadCoordinator::cancel,
+        castPendingSource = { pending ->
+            loadTrackBySource(
+                sourceProvider = SOURCE_PROVIDER_YOUTUBE,
+                sourceId = pending.youtubeId,
+                title = pending.title,
+                artist = pending.artist,
+                tuningParams = pending.tuningParams,
+                ignoreLoadingLock = true
+            )
+        },
+        isLocalAnalysisRunning = { localAnalysisCoordinator.isAnalysisRunning() },
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         applyActiveTab = ::applyActiveTab,
@@ -468,10 +483,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     closeFullscreenVisualization()
                 }
                 ForegroundPlaybackService.ACTION_RETRY_FAILED_LOAD -> {
-                    if (canPlayLoadedTrackFromMemory(state.value.playback)) {
-                        togglePlayback()
-                    } else {
-                        retryFailedLoad()
+                    when (transportRetryPressAction(state.value.playback)) {
+                        TransportRetryPressAction.ResumePlayback -> togglePlayback()
+                        TransportRetryPressAction.RetryLoad -> retryFailedLoad()
                     }
                 }
             }
@@ -2682,6 +2696,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         request: suspend () -> Boolean
     ) {
         remoteTrackLoadCoordinator.launch {
+            playbackCoordinator.logLoadPowerState("Server track load start")
             if (cachedJobId != null && playbackCoordinator.tryLoadCachedTrack(cachedJobId)) {
                 return@launch
             }
@@ -2707,7 +2722,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                         AppLog.warn(TAG, failureLogMessage, error)
-                        playbackCoordinator.setAnalysisError("Loading failed.")
+                        playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
                     }
                     return@launch
                 } catch (error: IOException) {
@@ -2727,23 +2742,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playbackCoordinator.setAnalysisQueued(null, "Fetching audio...")
                         continue
                     }
-                    diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
-                    AppLog.warn(TAG, failureLogMessage, error)
-                    if (isRetryableNetworkError(error)) {
-                        playbackCoordinator.setAnalysisError("Network error.", expected = true)
-                    } else {
-                        playbackCoordinator.setAnalysisError("Loading failed.")
+                    val surface = resolveServerLoadFailureSurface(
+                        error = error,
+                        cachedJobId = cachedJobId,
+                        cachedDecodeFailure = cachedJobId?.let {
+                            playbackCoordinator.recentTransientDecodeFailure(it)
+                        }
+                    )
+                    diagnostics.logAnalysisFailed("server", surface.reason)
+                    if (!isRetryableNetworkError(error)) {
+                        AppLog.warn(TAG, failureLogMessage, error)
                     }
+                    playbackCoordinator.setAnalysisError(surface.message, cause = surface.cause)
                     return@launch
                 } catch (error: IllegalArgumentException) {
                     diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                     AppLog.warn(TAG, failureLogMessage, error)
-                    playbackCoordinator.setAnalysisError("Loading failed.")
+                    playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
                     return@launch
                 } catch (error: IllegalStateException) {
                     diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                     AppLog.warn(TAG, failureLogMessage, error)
-                    playbackCoordinator.setAnalysisError("Loading failed.")
+                    playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
                     return@launch
                 }
             }
@@ -2802,7 +2822,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (blockPlaybackChangeWhileLoading(showToast = false)) return
         if (
             shouldRetryFailedLoadFromTransport(state.value) &&
-            !canPlayLoadedTrackFromMemory(current)
+            transportRetryPressAction(current) == TransportRetryPressAction.RetryLoad
         ) {
             retryFailedLoad()
             return
@@ -2891,6 +2911,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playbackCoordinator.stopListenTimer()
                         syncPlaybackServiceSession()
                     }
+                    result == PlaybackStartResult.WaitingForFocus -> {
+                        // Playback auto-starts when the delayed focus grant arrives, and that
+                        // start's state broadcast syncs isRunning — not a failure, so no error
+                        // surface and no service teardown.
+                        syncPlaybackServiceSession()
+                    }
                     else -> handleJukeboxPlaybackFailure(reason = result.toString())
                 }
             } catch (cancel: CancellationException) {
@@ -2924,7 +2950,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleJukeboxPlaybackFailure(reason: String) {
         AppLog.error(TAG, "Jukebox playback failure surfaced to UI: $reason")
         playbackCoordinator.stopListenTimer()
-        hardStopPlaybackServiceSession()
+        // No service teardown here: setAnalysisError syncs the playback service
+        // session, which keeps a retryable failed notification up (or resolves to
+        // Hidden and stops the service when there is nothing to retry).
         playbackCoordinator.setAnalysisError("Playback failed.")
     }
 
@@ -3196,7 +3224,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         remoteTrackLoadCoordinator.cancel()
-        playbackCoordinator.resetForNewTrack()
+        // Keep the playback service alive across the reset: retries often arrive from
+        // the notification with the app backgrounded, where a stopped foreground
+        // service can only be restarted inside a brief OS exemption — the notification
+        // would vanish on press. The load that follows rolls the same notification
+        // into its loading state.
+        playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         loadTrackById(
             trackId = retryRequest.trackId,
             title = retryRequest.title,
@@ -3298,9 +3331,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Fallback for a track-length cast rejection that arrived without a
+    // message. The relay/receiver own the duration cap and normally send the
+    // specific wording; the app deliberately carries no copy of the limit.
     private fun castTrackLengthLimitErrorMessage(): String {
-        return "Sorry, tracks longer than ${CAST_MAX_TRACK_DURATION_MINUTES.toInt()} minutes " +
-            "cannot be cast due to Chromecast memory limitations."
+        return "This track can't be cast due to Chromecast memory limitations."
     }
 
     private fun showServerTrackLengthLimitError() {
@@ -3314,6 +3349,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(trackLengthLimitErrorMessage = message) }
     }
 
+    // Server-owned track-length limit (max_track_length from app-config). The
+    // Chromecast duration cap is NOT checked here: the cast relay rejects
+    // over-cap tracks at ingest and the receiver reports the rejection back,
+    // so the app never carries its own copy of that limit.
     private fun showTrackLengthLimitIfExceeded(durationSeconds: Double?): Boolean {
         if (
             durationSeconds == null ||
@@ -3322,16 +3361,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             durationSeconds <= 0
         ) {
             return false
-        }
-        if (state.value.playback.isCasting &&
-            durationSeconds > CAST_MAX_TRACK_DURATION_MINUTES * 60
-        ) {
-            _state.update {
-                it.copy(
-                    trackLengthLimitErrorMessage = castTrackLengthLimitErrorMessage()
-                )
-            }
-            return true
         }
         val maxTrackLengthMinutes = state.value.maxTrackLengthMinutes
         if (maxTrackLengthMinutes != null &&
@@ -4040,11 +4069,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun syncPlaybackServiceSession() {
-        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.StateChanged)
-    }
-
-    private fun hardStopPlaybackServiceSession() {
-        playbackCoordinator.syncPlaybackServiceSession(PlaybackServiceSyncReason.HardStop)
+        playbackCoordinator.syncPlaybackServiceSession()
     }
 
     private fun blockPlaybackChangeWhileLoading(showToast: Boolean = true): Boolean {
@@ -4069,7 +4094,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "MainViewModel"
-        private const val CAST_MAX_TRACK_DURATION_MINUTES = 7.0
         private const val GITHUB_REPO_OWNER = "creightonlinza"
         private const val GITHUB_REPO_NAME = "forever-jukebox-android"
         private const val LOADING_LOCK_MESSAGE = "Please wait for the current track to finish loading."
@@ -4117,6 +4141,46 @@ private fun TrackAnalysisStartResult.toCastQueueResponse(): CastQueueResponse = 
 // server or connectivity outage, so they are worth retrying before surfacing.
 internal fun isRetryableNetworkError(error: IOException): Boolean =
     error is UnknownHostException || error is ConnectException
+
+/** What a final server-load failure surfaces: the user-facing message, the throwable
+ *  recorded with it, and the diagnostics reason. */
+internal data class ServerLoadFailureSurface(
+    val message: String,
+    val cause: Throwable,
+    val reason: String
+)
+
+/**
+ * Attributes a final server-load failure. A restricted device can take down both
+ * resources at once: the cached decode fails on the codec, then DNS fails on the
+ * fallback fetch. The network error finishes the flow, but the blocked codec is the
+ * root cause — blaming the network would send anyone debugging (or reading the
+ * on-screen message) down the wrong path — so a memoed decode failure for the cached
+ * job wins, carrying the network error as a suppressed exception.
+ */
+internal fun resolveServerLoadFailureSurface(
+    error: IOException,
+    cachedJobId: String?,
+    cachedDecodeFailure: Throwable?
+): ServerLoadFailureSurface {
+    val retryableNetwork = isRetryableNetworkError(error)
+    if (retryableNetwork && cachedDecodeFailure != null) {
+        val rootError = IOException(
+            "Cached decode blocked for $cachedJobId; network fallback also failed",
+            cachedDecodeFailure
+        ).apply { addSuppressed(error) }
+        return ServerLoadFailureSurface(
+            message = "Loading failed.",
+            cause = rootError,
+            reason = cachedDecodeFailure.javaClass.simpleName
+        )
+    }
+    return ServerLoadFailureSurface(
+        message = if (retryableNetwork) "Network error." else "Loading failed.",
+        cause = error,
+        reason = error.javaClass.simpleName
+    )
+}
 
 /**
  * Where a user-supplied track came from. The submit paths resolve the server's user-source policy

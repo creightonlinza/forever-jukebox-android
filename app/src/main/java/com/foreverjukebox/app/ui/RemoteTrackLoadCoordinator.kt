@@ -8,7 +8,8 @@ import kotlinx.coroutines.launch
 class RemoteTrackLoadCoordinator(
     private val scope: CoroutineScope,
     private val playbackCoordinator: PlaybackCoordinator,
-    private val getState: () -> UiState
+    private val getState: () -> UiState,
+    private val audioLoadHold: AudioLoadHold
 ) {
     private var remoteTrackLoadJob: Job? = null
 
@@ -17,7 +18,11 @@ class RemoteTrackLoadCoordinator(
     fun launch(block: suspend () -> Unit) {
         cancel()
         remoteTrackLoadJob = scope.launch {
-            block()
+            // The whole load runs under the wakelock: analysis fetch, cached decode,
+            // and retry backoff delays all stall if the CPU suspends mid-load.
+            audioLoadHold.hold {
+                block()
+            }
         }
     }
 
