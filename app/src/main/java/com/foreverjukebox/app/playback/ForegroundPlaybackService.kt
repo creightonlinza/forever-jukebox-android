@@ -313,6 +313,7 @@ class ForegroundPlaybackService : Service() {
     private val castController by lazy { CastController(application as Application) }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var activeNotificationState: PlaybackNotificationState? = null
+    private var notificationArtwork: Bitmap? = null
     private var sleepTimerJob: Job? = null
     private var sleepTimerEndRealtimeMs: Long? = null
     private var hasStartedForeground = false
@@ -1144,6 +1145,7 @@ class ForegroundPlaybackService : Service() {
     }
 
     private fun loadNotificationArtwork(): Bitmap? {
+        notificationArtwork?.let { return it }
         val drawable = AppCompatResources.getDrawable(this, R.drawable.notification_background) ?: return null
         val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 512
         val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 512
@@ -1151,6 +1153,7 @@ class ForegroundPlaybackService : Service() {
         val canvas = Canvas(bitmap)
         drawable.setBounds(0, 0, canvas.width, canvas.height)
         drawable.draw(canvas)
+        notificationArtwork = bitmap
         return bitmap
     }
 

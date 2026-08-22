@@ -1,6 +1,9 @@
 package com.foreverjukebox.app.ui
 
-import android.content.Context
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
+import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -13,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.mediarouter.app.MediaRouteButton
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
@@ -76,22 +78,26 @@ fun CastRouteButton(
         }
     }
 
+    // MediaRouteButton owns its remote indicator drawable and exposes no getter
+    // for it, so the icon is recolored by compositing the whole view through a
+    // layer paint. SRC_IN keeps the drawable's alpha, which leaves the connected
+    // and connecting frame animations intact.
+    val tintPaint = remember(enabledTint) {
+        Paint().apply {
+            colorFilter = PorterDuffColorFilter(enabledTint.toArgb(), PorterDuff.Mode.SRC_IN)
+        }
+    }
+
     AndroidView(
         factory = { ctx ->
             MediaRouteButton(ctx).apply {
                 CastButtonFactory.setUpMediaRouteButton(ctx, this)
-                setRemoteIndicatorDrawable(tintedRemoteIndicator(ctx, enabledTint.toArgb()))
             }
         },
         modifier = modifier,
         update = { button ->
             button.isEnabled = enabled
-            button.setRemoteIndicatorDrawable(tintedRemoteIndicator(button.context, enabledTint.toArgb()))
+            button.setLayerType(View.LAYER_TYPE_HARDWARE, tintPaint)
         }
     )
 }
-
-private fun tintedRemoteIndicator(context: Context, tint: Int) =
-    AppCompatResources.getDrawable(context, androidx.mediarouter.R.drawable.mr_button_light)
-        ?.mutate()
-        ?.apply { setTint(tint) }
