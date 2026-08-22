@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.foreverjukebox.app.engine.MIN_THRESHOLD
 
 internal val MIN_JUMP_DISTANCE_OPTIONS = listOf(0, 5, 10, 20, 30)
 
@@ -64,7 +65,8 @@ private val TuningDialogContentHeight = 420.dp
 @Composable
 @Suppress("AssignedValueIsNeverRead")
 fun TuningDialog(
-    initialThreshold: Int,
+    initialThreshold: Int?,
+    computedThreshold: Int?,
     initialMinProb: Int,
     initialMaxProb: Int,
     initialRamp: Int,
@@ -80,7 +82,7 @@ fun TuningDialog(
     onResetBranchTuning: () -> Unit,
     onResetAudioMode: () -> Unit,
     onApply: (
-        threshold: Int,
+        threshold: Int?,
         minProb: Double,
         maxProb: Double,
         ramp: Double,
@@ -93,7 +95,12 @@ fun TuningDialog(
     ) -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(TuningDialogTab.Tuning) }
-    var threshold by remember(initialThreshold) { mutableFloatStateOf(initialThreshold.toFloat()) }
+    // The slider always shows a number, so an unset threshold displays what the track resolved to.
+    var threshold by remember(initialThreshold, computedThreshold) {
+        mutableFloatStateOf((initialThreshold ?: computedThreshold ?: MIN_THRESHOLD).toFloat())
+    }
+    // Moving the control is the choice; until then the threshold stays the track's own.
+    var thresholdChosen by remember(initialThreshold) { mutableStateOf(initialThreshold != null) }
     var probRange by remember(initialMinProb, initialMaxProb) {
         mutableStateOf(
             initialMinProb.toFloat().coerceAtMost(initialMaxProb.toFloat())..
@@ -151,7 +158,10 @@ fun TuningDialog(
                     when (selectedTab) {
                         TuningDialogTab.Tuning -> TuningTabContent(
                             threshold = threshold,
-                            onThresholdChange = { threshold = it },
+                            onThresholdChange = {
+                                threshold = it
+                                thresholdChosen = true
+                            },
                             minJumpIndex = minJumpIndex,
                             onMinJumpIndexChange = { minJumpIndex = it },
                             selectedMinJumpDistancePercent = selectedMinJumpDistancePercent,
@@ -231,7 +241,7 @@ fun TuningDialog(
                         Button(
                             onClick = {
                                 onApply(
-                                    threshold.toInt(),
+                                    threshold.toInt().takeIf { thresholdChosen },
                                     probRange.start / 100.0,
                                     probRange.endInclusive / 100.0,
                                     ramp / 500.0,

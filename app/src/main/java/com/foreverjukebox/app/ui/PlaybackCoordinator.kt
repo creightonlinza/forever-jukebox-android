@@ -980,21 +980,16 @@ class PlaybackCoordinator(
         val config = engine.getConfig()
         val graph = engine.getGraphState()
         updateState { state ->
-            val thresholdValue = when {
-                config.currentThreshold != 0 -> config.currentThreshold
-                graph != null -> graph.currentThreshold
-                else -> state.tuning.threshold
+            // The receiver owns tuning while casting and reports all of it with every status.
+            // The local engine is not the one playing, so none of its values may be written over
+            // the mirrored ones; the status reducer is the only writer for the duration.
+            if (state.playback.isCasting) {
+                return@updateState state
             }
             state.copy(
                 tuning = state.tuning.copy(
-                    threshold = thresholdValue,
-                    // The local graph computes the auto threshold on device; while casting the
-                    // receiver owns it and reports it with every status.
-                    computedThreshold = if (state.playback.isCasting) {
-                        state.tuning.computedThreshold
-                    } else {
-                        graph?.computedThreshold
-                    },
+                    threshold = config.currentThreshold.takeIf { it != 0 },
+                    computedThreshold = graph?.computedThreshold,
                     minProb = (config.minRandomBranchChance * 100).toInt(),
                     maxProb = (config.maxRandomBranchChance * 100).toInt(),
                     ramp = (config.randomBranchChanceDelta * RANDOM_BRANCH_DELTA_PERCENT_SCALE).toInt(),
@@ -1235,7 +1230,7 @@ class PlaybackCoordinator(
     }
 
     private fun parseTuningParams(raw: String?): ResolvedTuningParams? {
-        val parsed = TuningParamsCodec.parse(raw, minThreshold = 0) ?: return null
+        val parsed = TuningParamsCodec.parse(raw) ?: return null
         var config = defaultConfig
         parsed.justBackwards?.let { value ->
             config = config.copy(justBackwards = value)
@@ -1362,8 +1357,8 @@ private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 100.0 / MAX_RANDOM_BRANCH_
 /**
  * Snapshot of the engine's live tuning as a [TuningState], so on-device capture flows
  * through the same serializer ([TuningParamsCodec.buildSavedTuningParams]) as cast-time
- * capture. An auto threshold (currentThreshold == 0) maps to the graph's computed value
- * so the serializer omits `thresh`; the percent fields rely on [TuningState]'s defaults
+ * capture. The engine's auto sentinel (currentThreshold == 0) becomes a null threshold, which
+ * is what the serializer omits `thresh` for; the percent fields rely on [TuningState]'s defaults
  * matching [JukeboxConfig]'s defaults (18/50/10) — asserted by EngineTuningStateTest.
  */
 internal fun engineTuningState(
@@ -1373,11 +1368,7 @@ internal fun engineTuningState(
     anchorBranchId: Int? = null
 ): TuningState {
     return TuningState(
-        threshold = if (config.currentThreshold != 0) {
-            config.currentThreshold
-        } else {
-            computedThreshold ?: 0
-        },
+        threshold = config.currentThreshold.takeIf { it != 0 },
         computedThreshold = computedThreshold,
         minProb = valueToPercent(config.minRandomBranchChance, 1.0),
         maxProb = valueToPercent(config.maxRandomBranchChance, 1.0),

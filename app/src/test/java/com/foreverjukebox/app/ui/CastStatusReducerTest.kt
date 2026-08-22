@@ -102,6 +102,38 @@ class CastStatusReducerTest {
     }
 
     @Test
+    fun receiverThresholdIsMirroredAsIntentRatherThanResolved() {
+        fun statusWithTuning(tuningFields: String): CastStatusMessage? {
+            return parseCastStatusMessage(
+                """
+                {
+                  "type":"status",
+                  "tuning":{
+                    "branchProbability":{},
+                    $tuningFields
+                  }
+                }
+                """.trimIndent()
+            )
+        }
+
+        // The receiver reports no threshold when it is choosing one per track. That is the whole
+        // signal, so it is kept as-is rather than filled in from the value it resolved to.
+        val auto = statusWithTuning(""""threshold":null,"computedThreshold":45""")
+        val chosen = statusWithTuning(""""threshold":45,"computedThreshold":45""")
+        val absent = statusWithTuning(""""computedThreshold":45""")
+        val belowRange = statusWithTuning(""""threshold":1,"computedThreshold":45""")
+        val aboveRange = statusWithTuning(""""threshold":500,"computedThreshold":45""")
+
+        assertNull(auto?.tuning?.threshold)
+        assertEquals(45, auto?.tuning?.computedThreshold)
+        assertEquals(45, chosen?.tuning?.threshold)
+        assertNull(absent?.tuning?.threshold)
+        assertNull(belowRange?.tuning?.threshold)
+        assertEquals(80, aboveRange?.tuning?.threshold)
+    }
+
+    @Test
     fun parseCastStatusMessageParsesAudioModeIntensity() {
         fun statusWithTuning(tuningFields: String): CastStatusMessage? {
             return parseCastStatusMessage(

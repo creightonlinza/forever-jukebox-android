@@ -283,6 +283,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         }
         TuningDialog(
             initialThreshold = tuning.threshold,
+            computedThreshold = tuning.computedThreshold,
             initialMinProb = tuning.minProb,
             initialMaxProb = tuning.maxProb,
             initialRamp = tuning.ramp,

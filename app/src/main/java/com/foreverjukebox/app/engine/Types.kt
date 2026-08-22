@@ -2,6 +2,62 @@ package com.foreverjukebox.app.engine
 
 const val DEFAULT_MIN_LONG_BRANCH_PERCENT = 20
 
+/**
+ * The lowest threshold a control or a wire param can express. Anything below it is not a threshold,
+ * it is how "let the track decide" has always been spelled.
+ *
+ * Unrelated to the lowest value the engine's own sweep can land on, which is 10: a computed threshold
+ * is only ever 10, 15, ... 75, or [MAX_THRESHOLD]. The 2..9 range is reachable only by choosing it,
+ * and produces a sparse or branch-free graph.
+ */
+const val MIN_THRESHOLD = 2
+
+/** The highest threshold with any effect: edges are precalculated only this far out. */
+const val MAX_THRESHOLD = 80
+
+/**
+ * Reads a `thresh` wire value as a chosen threshold, or null for auto.
+ *
+ * Shared across the Forever Jukebox apps, so it matches `parsePinnedThreshold` in the web engine
+ * case for case: a leading integer is taken from whatever else the string holds, anything below
+ * [MIN_THRESHOLD] reads as auto rather than as an error, and anything above [MAX_THRESHOLD] is
+ * clamped so the value reported is the value acting.
+ */
+fun parsePinnedThreshold(raw: String?): Int? = pinnedThresholdOrNull(parseLeadingLong(raw))
+
+/** Reads an already-numeric threshold under the same rule, for payload fields typed as numbers. */
+fun parsePinnedThreshold(raw: Int?): Int? = pinnedThresholdOrNull(raw?.toLong())
+
+private fun pinnedThresholdOrNull(value: Long?): Int? {
+    return when {
+        value == null || value < MIN_THRESHOLD -> null
+        value > MAX_THRESHOLD -> MAX_THRESHOLD
+        else -> value.toInt()
+    }
+}
+
+/**
+ * The leading integer of a string, as the web app's `Number.parseInt` reads it: leading whitespace and
+ * a sign are allowed, digits are taken until the first non-digit, and a string starting with no digits
+ * has no value. Saturates rather than overflowing, since every caller clamps into a small range.
+ */
+private fun parseLeadingLong(raw: String?): Long? {
+    val trimmed = raw?.trimStart() ?: return null
+    val negative = trimmed.startsWith('-')
+    val signed = negative || trimmed.startsWith('+')
+    val digits = trimmed.drop(if (signed) 1 else 0).takeWhile { it in '0'..'9' }
+    if (digits.isEmpty()) {
+        return null
+    }
+    val significant = digits.trimStart('0')
+    val magnitude = when {
+        significant.isEmpty() -> 0L
+        significant.length > 18 -> Long.MAX_VALUE
+        else -> significant.toLong()
+    }
+    return if (negative) -magnitude else magnitude
+}
+
 data class TrackMeta(
     val title: String? = null,
     val artist: String? = null,
@@ -12,7 +68,7 @@ data class TrackMeta(
 
 data class JukeboxConfig(
     val maxBranches: Int = 4,
-    val maxBranchThreshold: Int = 80,
+    val maxBranchThreshold: Int = MAX_THRESHOLD,
     val currentThreshold: Int = 0,
     val justBackwards: Boolean = false,
     val justLongBranches: Boolean = false,

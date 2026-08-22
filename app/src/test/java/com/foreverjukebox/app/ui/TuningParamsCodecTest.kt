@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
+import com.foreverjukebox.app.engine.MAX_THRESHOLD
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -34,11 +35,16 @@ class TuningParamsCodecTest {
     }
 
     @Test
-    fun parseHonorsMinThreshold() {
-        val parsed = TuningParamsCodec.parse("thresh=0&jb=1", minThreshold = 2)
+    fun parseReadsABelowRangeThresholdAsNoThresholdChosen() {
+        val parsed = TuningParamsCodec.parse("thresh=0&jb=1")
         assertNotNull(parsed)
         assertNull(parsed?.threshold)
         assertTrue(parsed?.justBackwards == true)
+    }
+
+    @Test
+    fun parseClampsAThresholdAboveTheMaximum() {
+        assertEquals(MAX_THRESHOLD, TuningParamsCodec.parse("thresh=500")?.threshold)
     }
 
     @Test
@@ -416,16 +422,32 @@ class TuningParamsCodecTest {
     }
 
     @Test
-    fun buildSavedTuningParamsOmitsThresholdMatchingComputed() {
-        val autoThreshold = TuningParamsCodec.buildSavedTuningParams(
+    fun buildSavedTuningParamsWritesAChosenThresholdRegardlessOfTheComputedValue() {
+        val matchingComputed = TuningParamsCodec.buildSavedTuningParams(
             TuningState(threshold = 29, computedThreshold = 29, justBackwards = true)
         )
         val unknownComputed = TuningParamsCodec.buildSavedTuningParams(
             TuningState(threshold = 29, computedThreshold = null, justBackwards = true)
         )
 
-        assertEquals("jb=1", autoThreshold)
-        assertEquals("jb=1", unknownComputed)
+        assertEquals("jb=1&thresh=29", matchingComputed)
+        assertEquals("jb=1&thresh=29", unknownComputed)
+    }
+
+    @Test
+    fun buildSavedTuningParamsOmitsThresholdWhenNoneWasChosen() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(threshold = null, computedThreshold = 29, justBackwards = true)
+        )
+
+        assertEquals("jb=1", raw)
+    }
+
+    @Test
+    fun buildSavedTuningParamsNormalizesAThresholdAboveTheMaximum() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(TuningState(threshold = 500))
+
+        assertEquals("thresh=80", raw)
     }
 
     @Test
@@ -489,7 +511,7 @@ class TuningParamsCodecTest {
             audioModeWireValue = "vaporwave",
             audioModeIntensity = 65
         )
-        val parsed = TuningParamsCodec.parse(raw, minThreshold = 2)
+        val parsed = TuningParamsCodec.parse(raw)
 
         assertEquals(JukeboxAudioMode.Vaporwave, parsed?.audioMode)
         assertEquals(65, parsed?.audioModeIntensity)
@@ -519,7 +541,7 @@ class TuningParamsCodecTest {
             ),
             audioModeWireValue = "daycore"
         )
-        val parsed = TuningParamsCodec.parse(raw, minThreshold = 2)
+        val parsed = TuningParamsCodec.parse(raw)
 
         assertEquals(31, parsed?.threshold)
         assertEquals(12, parsed?.minProbPercent)
@@ -600,7 +622,7 @@ class TuningParamsCodecTest {
     fun parseAndMergePreserveExplicitAnyBranchLength() {
         // An explicit bl=0 on the wire (e.g. cast reset params) must override a
         // non-zero base rather than being treated as absent.
-        val parsed = TuningParamsCodec.parse("jb=0&bl=0&sq=1&thresh=31&bp=18,50,10", minThreshold = 2)
+        val parsed = TuningParamsCodec.parse("jb=0&bl=0&sq=1&thresh=31&bp=18,50,10")
         val merged = TuningParamsCodec.mergeIntoState(
             TuningState(minJumpDistancePercent = 30),
             parsed
@@ -676,29 +698,19 @@ class TuningParamsCodecTest {
     }
 
     @Test
-    fun savedTuningParamsEquivalentFoldsThresholdWrittenAsTheAutoValue() {
-        // A built string omits thresh at the auto value; a favorite from the web spells it out.
-        assertTrue(
-            TuningParamsCodec.savedTuningParamsEquivalent(
-                null,
-                "thresh=29",
-                computedThreshold = 29
-            )
-        )
-        assertTrue(
-            TuningParamsCodec.savedTuningParamsEquivalent(
-                "jb=1",
-                "jb=1&thresh=29",
-                computedThreshold = 29
-            )
-        )
-        // A threshold the user actually moved off the auto value is still a difference.
-        assertFalse(
-            TuningParamsCodec.savedTuningParamsEquivalent(
-                null,
-                "thresh=45",
-                computedThreshold = 29
-            )
-        )
+    fun savedTuningParamsEquivalentSeparatesAChosenThresholdFromNoneAtAnyValue() {
+        // A written threshold is a choice and an absent one is not, so the two never fold together —
+        // including at whatever value the track's own threshold happens to be. What the tuning does
+        // to this track is the same either way; what it means when reused is not.
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent(null, "thresh=29"))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("jb=1", "jb=1&thresh=29"))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent(null, "thresh=45"))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("thresh=29", "thresh=29"))
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentNormalizesAThresholdAboveTheMaximum() {
+        // A stored value past the ceiling already acted as the ceiling, so it compares as one.
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("thresh=500", "thresh=80"))
     }
 }

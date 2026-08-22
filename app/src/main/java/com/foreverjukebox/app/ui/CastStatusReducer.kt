@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
+import com.foreverjukebox.app.engine.parsePinnedThreshold
 import com.foreverjukebox.app.visualization.visualizationCount
 import java.time.OffsetDateTime
 import kotlinx.serialization.json.Json
@@ -149,8 +150,10 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
         justLongBranches = justLongBranches,
         minLongBranchPercent = minLongBranchPercent,
         removeSequentialBranches = json.booleanValue("removeSequentialBranches"),
-        threshold = json.intValue("threshold")?.takeIf { it >= 2 },
-        computedThreshold = json.intValue("computedThreshold")?.takeIf { it >= 2 },
+        // Null threshold is the receiver reporting auto; computedThreshold is the value it resolved
+        // to, always a real threshold whenever a graph exists.
+        threshold = parsePinnedThreshold(json.intValue("threshold")),
+        computedThreshold = json.intValue("computedThreshold"),
         branchProbability = CastBranchProbabilityStatus(
             minPercent = branchProbability.intValue("minPercent")?.coerceIn(0, 100) ?: TuningState().minProb,
             maxPercent = branchProbability.intValue("maxPercent")?.coerceIn(0, 100) ?: TuningState().maxProb,
@@ -339,7 +342,9 @@ private fun resolveCastTuningState(
 ): TuningState {
     if (tuning == null) return current
     return current.copy(
-        threshold = tuning.threshold ?: tuning.computedThreshold ?: current.threshold,
+        // The receiver owns the distinction while casting and reports it directly, so it is mirrored
+        // rather than re-derived: a null threshold is auto, not a missing value to fill in.
+        threshold = tuning.threshold,
         computedThreshold = tuning.computedThreshold,
         minProb = tuning.branchProbability.minPercent,
         maxProb = tuning.branchProbability.maxPercent,

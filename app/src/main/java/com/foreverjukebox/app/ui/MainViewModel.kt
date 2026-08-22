@@ -3573,7 +3573,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun applyTuning(
-        threshold: Int,
+        threshold: Int?,
         minProb: Double,
         maxProb: Double,
         ramp: Double,

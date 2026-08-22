@@ -5,6 +5,8 @@ import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
+import com.foreverjukebox.app.engine.MAX_THRESHOLD
+import com.foreverjukebox.app.engine.MIN_THRESHOLD
 import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -15,10 +17,15 @@ internal data class CastTuningUpdate(
     val castParams: String?
 )
 
+/**
+ * The `thresh` value that asks the receiver to let the track decide. Needed because omitting the key
+ * on a partial update means "leave it as it is" rather than "return to auto".
+ */
+internal const val AUTO_THRESHOLD_WIRE_VALUE = 0
+
 internal fun buildCastTuningResetParams(
     defaultConfig: JukeboxConfig,
     randomBranchDeltaPercentScale: Double,
-    resetThreshold: Int? = null,
     preservedAudioModeWireValue: String = JukeboxAudioMode.Off.wireValue,
     preservedAudioModeIntensity: Int = AudioModeIntensity.DEFAULT
 ): String {
@@ -27,12 +34,12 @@ internal fun buildCastTuningResetParams(
     val ramp = (defaultConfig.randomBranchChanceDelta * randomBranchDeltaPercentScale)
         .roundToInt()
         .coerceIn(0, 100)
-    val threshold = resetThreshold ?: defaultConfig.currentThreshold
     val params = mutableListOf(
         "jb=${if (defaultConfig.justBackwards) 1 else 0}",
         "bl=${if (defaultConfig.justLongBranches) defaultConfig.minLongBranchPercent else 0}",
         "sq=${if (defaultConfig.removeSequentialBranches) 0 else 1}",
-        "thresh=$threshold",
+        // Reset means auto, the same as it does on device.
+        "thresh=$AUTO_THRESHOLD_WIRE_VALUE",
         "bp=$minProb,$maxProb,$ramp",
         "d="
     )
@@ -61,7 +68,7 @@ internal fun buildCastAudioModeResetParams(currentAudioModeWireValue: String): S
  * the two can never disagree about whether a control actually changed.
  */
 internal fun TuningState.withAppliedTuning(
-    threshold: Int,
+    threshold: Int?,
     minProb: Double,
     maxProb: Double,
     ramp: Double,
@@ -71,7 +78,7 @@ internal fun TuningState.withAppliedTuning(
     removeSequentialBranches: Boolean,
     randomBranchDeltaPercentScale: Double
 ): TuningState = copy(
-    threshold = threshold.coerceAtLeast(2),
+    threshold = threshold?.coerceIn(MIN_THRESHOLD, MAX_THRESHOLD),
     minProb = (minProb * 100.0).roundToInt().coerceIn(0, 100),
     maxProb = (maxProb * 100.0).roundToInt().coerceIn(0, 100),
     ramp = (ramp * randomBranchDeltaPercentScale).roundToInt().coerceIn(0, 100),
@@ -86,7 +93,7 @@ internal fun buildCastTuningUpdate(
     currentAudioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
     currentAudioModeWireValue: String = currentAudioMode.wireValue,
     currentAudioModeIntensity: Int = AudioModeIntensity.DEFAULT,
-    threshold: Int,
+    threshold: Int?,
     minProb: Double,
     maxProb: Double,
     ramp: Double,
@@ -121,7 +128,9 @@ internal fun buildCastTuningUpdate(
         params.add("sq=${if (nextTuning.removeSequential) 0 else 1}")
     }
     if (currentTuning.threshold != nextTuning.threshold) {
-        params.add("thresh=${nextTuning.threshold}")
+        // Omission means "unchanged" on a partial update, so returning to auto needs a value the
+        // receiver reads as auto rather than no key at all.
+        params.add("thresh=${nextTuning.threshold ?: AUTO_THRESHOLD_WIRE_VALUE}")
     }
     if (currentTuning.branchProbabilityFields() != nextTuning.branchProbabilityFields()) {
         params.add("bp=${nextTuning.minProb},${nextTuning.maxProb},${nextTuning.ramp}")
@@ -208,7 +217,7 @@ class TuningCoordinator(
     }
 
     suspend fun applyTuning(
-        threshold: Int,
+        threshold: Int?,
         minProb: Double,
         maxProb: Double,
         ramp: Double,
@@ -272,7 +281,7 @@ class TuningCoordinator(
     }
 
     private suspend fun applyCastTuning(
-        threshold: Int,
+        threshold: Int?,
         minProb: Double,
         maxProb: Double,
         ramp: Double,
@@ -320,7 +329,7 @@ class TuningCoordinator(
     }
 
     private suspend fun applyLocalTuning(
-        threshold: Int,
+        threshold: Int?,
         minProb: Double,
         maxProb: Double,
         ramp: Double,
@@ -333,11 +342,8 @@ class TuningCoordinator(
     ) {
         val vizData = withContext(Dispatchers.Default) {
             val current = engine.getConfig()
-            val graph = engine.getGraphState()
-            val useAutoThreshold =
-                current.currentThreshold == 0 && graph != null && threshold == graph.currentThreshold
             val nextConfig = current.copy(
-                currentThreshold = if (useAutoThreshold) 0 else threshold,
+                currentThreshold = threshold ?: 0,
                 minRandomBranchChance = minProb,
                 maxRandomBranchChance = maxProb,
                 randomBranchChanceDelta = ramp,
@@ -372,7 +378,6 @@ class TuningCoordinator(
             buildCastTuningResetParams(
                 defaultConfig = defaultConfig,
                 randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
-                resetThreshold = currentState.tuning.computedThreshold,
                 preservedAudioModeWireValue = currentState.playback.castAudioModeWireValue,
                 preservedAudioModeIntensity = currentState.playback.castAudioModeIntensity
             )

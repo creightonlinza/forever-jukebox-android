@@ -12,11 +12,10 @@ class TuningCoordinatorCastPolicyTest {
     fun buildCastTuningResetParamsResetsGraphAndAudioButOmitsHighlight() {
         val params = buildCastTuningResetParams(
             defaultConfig = JukeboxConfig(),
-            randomBranchDeltaPercentScale = 500.0,
-            resetThreshold = 34
+            randomBranchDeltaPercentScale = 500.0
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=off", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=off", params)
     }
 
     @Test
@@ -24,12 +23,11 @@ class TuningCoordinatorCastPolicyTest {
         val params = buildCastTuningResetParams(
             defaultConfig = JukeboxConfig(),
             randomBranchDeltaPercentScale = 500.0,
-            resetThreshold = 34,
             preservedAudioModeWireValue = "nightcore",
             preservedAudioModeIntensity = 150
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=nightcore&ai=150", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=nightcore&ai=150", params)
     }
 
     @Test
@@ -37,12 +35,11 @@ class TuningCoordinatorCastPolicyTest {
         val params = buildCastTuningResetParams(
             defaultConfig = JukeboxConfig(),
             randomBranchDeltaPercentScale = 500.0,
-            resetThreshold = 34,
             preservedAudioModeWireValue = "lofi",
             preservedAudioModeIntensity = 100
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=lofi", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=lofi", params)
     }
 
     @Test
@@ -50,12 +47,11 @@ class TuningCoordinatorCastPolicyTest {
         val params = buildCastTuningResetParams(
             defaultConfig = JukeboxConfig(),
             randomBranchDeltaPercentScale = 500.0,
-            resetThreshold = 34,
             preservedAudioModeWireValue = "future_mode",
             preservedAudioModeIntensity = 100
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=future_mode", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=future_mode", params)
     }
 
     @Test
@@ -63,12 +59,11 @@ class TuningCoordinatorCastPolicyTest {
         val params = buildCastTuningResetParams(
             defaultConfig = JukeboxConfig(),
             randomBranchDeltaPercentScale = 500.0,
-            resetThreshold = 34,
             preservedAudioModeWireValue = " ",
             preservedAudioModeIntensity = 150
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=34&bp=18,50,10&d=&am=off", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=off", params)
     }
 
     @Test
@@ -380,10 +375,67 @@ class TuningCoordinatorCastPolicyTest {
     }
 
     @Test
+    fun changingAnUnrelatedControlLeavesTheThresholdAlone() {
+        val update = buildCastTuningUpdate(
+            currentTuning = TuningState(threshold = null, computedThreshold = 31),
+            threshold = null,
+            minProb = 0.18,
+            maxProb = 0.50,
+            ramp = 0.02,
+            highlightAnchorBranch = false,
+            justBackwards = true,
+            minJumpDistancePercent = 0,
+            removeSequentialBranches = false,
+            randomBranchDeltaPercentScale = 500.0
+        )
+
+        assertEquals("jb=1", update.castParams)
+        assertNull(update.nextTuning.threshold)
+    }
+
+    @Test
+    fun choosingTheComputedValuePinsItRatherThanReadingAsNoChange() {
+        val update = buildCastTuningUpdate(
+            currentTuning = TuningState(threshold = null, computedThreshold = 31),
+            threshold = 31,
+            minProb = 0.18,
+            maxProb = 0.50,
+            ramp = 0.02,
+            highlightAnchorBranch = false,
+            justBackwards = false,
+            minJumpDistancePercent = 0,
+            removeSequentialBranches = false,
+            randomBranchDeltaPercentScale = 500.0
+        )
+
+        assertEquals("thresh=31", update.castParams)
+        assertEquals(31, update.nextTuning.threshold)
+    }
+
+    @Test
+    fun returningToAutoSendsTheAutoTokenBecauseOmissionMeansUnchanged() {
+        val update = buildCastTuningUpdate(
+            currentTuning = TuningState(threshold = 45, computedThreshold = 31),
+            threshold = null,
+            minProb = 0.18,
+            maxProb = 0.50,
+            ramp = 0.02,
+            highlightAnchorBranch = false,
+            justBackwards = false,
+            minJumpDistancePercent = 0,
+            removeSequentialBranches = false,
+            randomBranchDeltaPercentScale = 500.0
+        )
+
+        assertEquals("thresh=0", update.castParams)
+        assertNull(update.nextTuning.threshold)
+    }
+
+    @Test
     fun buildCastTuningUpdateUsesBranchLengthAndExplicitDisableValues() {
         val enabled = buildCastTuningUpdate(
             currentTuning = TuningState(minJumpDistancePercent = 0),
-            threshold = 2,
+            threshold = null,
             minProb = 0.18,
             maxProb = 0.50,
             ramp = 0.02,
@@ -395,7 +447,7 @@ class TuningCoordinatorCastPolicyTest {
         )
         val disabled = buildCastTuningUpdate(
             currentTuning = enabled.nextTuning,
-            threshold = 2,
+            threshold = null,
             minProb = 0.18,
             maxProb = 0.50,
             ramp = 0.02,
