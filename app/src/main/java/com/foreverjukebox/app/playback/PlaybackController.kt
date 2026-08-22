@@ -192,7 +192,11 @@ class PlaybackController {
         if (startError != null) {
             AppLog.error(TAG, "Jukebox playback start failed: engine start threw", startError)
         } else {
-            AppLog.error(TAG, "Jukebox playback start failed: player not playing after engine start")
+            val reason = player.describeLastStartFailure() ?: "no stream failure recorded"
+            AppLog.error(
+                TAG,
+                "Jukebox playback start failed: player not playing after engine start ($reason)"
+            )
         }
         runCatching { engine.stopJukebox() }
         audioFocusController.abandonAudioFocus()

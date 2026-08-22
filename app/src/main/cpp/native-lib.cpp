@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -527,12 +528,33 @@ public:
         }
         auto result = mStream->requestStart();
         if (result != oboe::Result::OK) {
+            const std::string firstFailure =
+                describeStreamLocked("requestStart", result);
             closeLocked();
             if (ensureStreamLocked()) {
                 result = mStream->requestStart();
+                if (result != oboe::Result::OK) {
+                    setLastStartFailureLocked(
+                        firstFailure + "; retry " +
+                        describeStreamLocked("requestStart", result));
+                }
+            } else {
+                setLastStartFailureLocked(firstFailure + "; retry " + mLastStartFailure);
             }
         }
         mIsPlaying.store(result == oboe::Result::OK);
+        if (result == oboe::Result::OK) {
+            mLastStartFailure.clear();
+        }
+    }
+
+    // Human-readable reason for the most recent play() that left the player
+    // stopped, or empty when the last play() succeeded. Read from the Java
+    // side so the failure reason reaches crash reporting instead of only
+    // logcat.
+    std::string lastStartFailure() {
+        std::lock_guard<std::mutex> lock(mStreamMutex);
+        return mLastStartFailure;
     }
 
     void pause() {
@@ -855,10 +877,27 @@ public:
     }
 
 private:
-    bool openLocked() {
+    void setLastStartFailureLocked(std::string reason) {
+        __android_log_print(ANDROID_LOG_ERROR, kLogTag, "%s", reason.c_str());
+        mLastStartFailure = std::move(reason);
+    }
+
+    std::string describeStreamLocked(const char* step, oboe::Result result) const {
+        std::string text = std::string(step) + " failed: " + oboe::convertToText(result);
+        if (mStream) {
+            text += " (api=" + std::string(oboe::convertToText(mStream->getAudioApi())) +
+                    " rate=" + std::to_string(mStream->getSampleRate()) +
+                    " channels=" + std::to_string(mStream->getChannelCount()) +
+                    " perf=" + oboe::convertToText(mStream->getPerformanceMode()) +
+                    " state=" + oboe::convertToText(mStream->getState()) + ")";
+        }
+        return text;
+    }
+
+    oboe::Result tryOpenLocked(oboe::PerformanceMode performanceMode) {
         oboe::AudioStreamBuilder builder;
         builder.setDirection(oboe::Direction::Output)
-            ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+            ->setPerformanceMode(performanceMode)
             ->setSharingMode(oboe::SharingMode::Shared)
             ->setUsage(oboe::Usage::Media)
             ->setContentType(oboe::ContentType::Music)
@@ -867,12 +906,42 @@ private:
             ->setSampleRate(mSampleRate)
             ->setChannelCount(mChannelCount)
             ->setFormat(oboe::AudioFormat::I16)
+            // The callback always sees source-rate frames in the source
+            // channel layout; Oboe converts to whatever the device supports.
+            // Without these the open fails outright on devices whose AAudio
+            // path rejects a non-native rate or layout.
+            ->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium)
+            ->setFormatConversionAllowed(true)
+            ->setChannelConversionAllowed(true)
             ->setDataCallback(this)
             ->setErrorCallback(this);
+        return builder.openStream(mStream);
+    }
 
-        if (builder.openStream(mStream) != oboe::Result::OK) {
-            __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Failed to open Oboe stream");
+    bool openLocked() {
+        // Low-latency is preferred; fall back to a plain stream so a HAL that
+        // refuses the low-latency path still produces audio.
+        auto result = tryOpenLocked(oboe::PerformanceMode::LowLatency);
+        std::string failure;
+        if (result != oboe::Result::OK) {
+            failure = "open(LowLatency, rate=" + std::to_string(mSampleRate) +
+                      " channels=" + std::to_string(mChannelCount) +
+                      ") failed: " + oboe::convertToText(result);
+            mStream.reset();
+            result = tryOpenLocked(oboe::PerformanceMode::None);
+        }
+        if (result != oboe::Result::OK) {
+            mStream.reset();
+            setLastStartFailureLocked(
+                failure + "; open(None) failed: " +
+                oboe::convertToText(result));
             return false;
+        }
+        if (!failure.empty()) {
+            __android_log_print(ANDROID_LOG_WARN, kLogTag,
+                                "%s; opened fallback stream (rate=%d channels=%d)",
+                                failure.c_str(), mStream->getSampleRate(),
+                                mStream->getChannelCount());
         }
         const int32_t burst = mStream->getFramesPerBurst();
         if (burst > 0) {
@@ -1209,6 +1278,7 @@ private:
     int32_t mSampleRate = 44100;
     int32_t mChannelCount = 2;
     std::shared_ptr<oboe::AudioStream> mStream;
+    std::string mLastStartFailure;
     std::mutex mStreamMutex;
     std::vector<int16_t> mAudioData;
     std::vector<int16_t> mEightBitAudioData;
@@ -1286,6 +1356,14 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativePlay(
     JNIEnv*, jobject, jlong handle) {
     auto* player = toPlayer(handle);
     if (player) player->play();
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeGetLastStartFailure(
+    JNIEnv* env, jobject, jlong handle) {
+    auto* player = toPlayer(handle);
+    const std::string reason = player ? player->lastStartFailure() : std::string();
+    return env->NewStringUTF(reason.c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL
