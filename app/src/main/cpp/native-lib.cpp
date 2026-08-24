@@ -528,18 +528,19 @@ public:
         }
         auto result = mStream->requestStart();
         if (result != oboe::Result::OK) {
-            const std::string firstFailure =
-                describeStreamLocked("requestStart", result);
+            std::string failure = describeStreamLocked("requestStart", result);
             closeLocked();
-            if (ensureStreamLocked()) {
+            const std::string reopenFailure = openStreamLocked();
+            if (reopenFailure.empty()) {
                 result = mStream->requestStart();
                 if (result != oboe::Result::OK) {
-                    setLastStartFailureLocked(
-                        firstFailure + "; retry " +
-                        describeStreamLocked("requestStart", result));
+                    failure += "; retry " + describeStreamLocked("requestStart", result);
                 }
             } else {
-                setLastStartFailureLocked(firstFailure + "; retry " + mLastStartFailure);
+                failure += "; retry " + reopenFailure;
+            }
+            if (result != oboe::Result::OK) {
+                setLastStartFailureLocked(std::move(failure));
             }
         }
         mIsPlaying.store(result == oboe::Result::OK);
@@ -882,15 +883,19 @@ private:
         mLastStartFailure = std::move(reason);
     }
 
+    // The stream's own getters echo the requested configuration (Oboe's
+    // conversion wrapper hides the device-side values), so rate/channels are
+    // reported from the request and labelled as such.
     std::string describeStreamLocked(const char* step, oboe::Result result) const {
-        std::string text = std::string(step) + " failed: " + oboe::convertToText(result);
+        std::string text = std::string(step) + " failed: " + oboe::convertToText(result) +
+                           " (req rate=" + std::to_string(mSampleRate) +
+                           " req channels=" + std::to_string(mChannelCount);
         if (mStream) {
-            text += " (api=" + std::string(oboe::convertToText(mStream->getAudioApi())) +
-                    " rate=" + std::to_string(mStream->getSampleRate()) +
-                    " channels=" + std::to_string(mStream->getChannelCount()) +
+            text += " api=" + std::string(oboe::convertToText(mStream->getAudioApi())) +
                     " perf=" + oboe::convertToText(mStream->getPerformanceMode()) +
-                    " state=" + oboe::convertToText(mStream->getState()) + ")";
+                    " state=" + oboe::convertToText(mStream->getState());
         }
+        text += ")";
         return text;
     }
 
@@ -907,10 +912,10 @@ private:
             ->setChannelCount(mChannelCount)
             ->setFormat(oboe::AudioFormat::I16)
             // The callback always sees source-rate frames in the source
-            // channel layout; Oboe converts to whatever the device supports.
-            // Without these the open fails outright on devices whose AAudio
-            // path rejects a non-native rate or layout.
-            ->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium)
+            // channel layout and I16; Oboe converts to whatever the device
+            // supports (sample-rate conversion is on by default; format and
+            // channel conversion are opt-in and would otherwise fail the open
+            // on devices that reject the requested layout).
             ->setFormatConversionAllowed(true)
             ->setChannelConversionAllowed(true)
             ->setDataCallback(this)
@@ -918,34 +923,38 @@ private:
         return builder.openStream(mStream);
     }
 
-    bool openLocked() {
-        // Low-latency is preferred; fall back to a plain stream so a HAL that
-        // refuses the low-latency path still produces audio.
+    // Opens the stream, returning an empty string on success or the reason
+    // both attempts failed. Low-latency is preferred; the fallback is a plain
+    // stream so a HAL that refuses the low-latency path still produces audio.
+    std::string openStreamLocked() {
         auto result = tryOpenLocked(oboe::PerformanceMode::LowLatency);
         std::string failure;
         if (result != oboe::Result::OK) {
-            failure = "open(LowLatency, rate=" + std::to_string(mSampleRate) +
-                      " channels=" + std::to_string(mChannelCount) +
-                      ") failed: " + oboe::convertToText(result);
             mStream.reset();
+            failure = describeStreamLocked("open(LowLatency)", result);
             result = tryOpenLocked(oboe::PerformanceMode::None);
         }
         if (result != oboe::Result::OK) {
             mStream.reset();
-            setLastStartFailureLocked(
-                failure + "; open(None) failed: " +
-                oboe::convertToText(result));
-            return false;
+            return failure + "; " + describeStreamLocked("open(None)", result);
         }
         if (!failure.empty()) {
             __android_log_print(ANDROID_LOG_WARN, kLogTag,
-                                "%s; opened fallback stream (rate=%d channels=%d)",
-                                failure.c_str(), mStream->getSampleRate(),
-                                mStream->getChannelCount());
+                                "%s; opened fallback stream (PerformanceMode::None)",
+                                failure.c_str());
         }
         const int32_t burst = mStream->getFramesPerBurst();
         if (burst > 0) {
             mStream->setBufferSizeInFrames(burst * 2);
+        }
+        return std::string();
+    }
+
+    bool openLocked() {
+        const std::string failure = openStreamLocked();
+        if (!failure.empty()) {
+            setLastStartFailureLocked(failure);
+            return false;
         }
         return true;
     }
@@ -1363,6 +1372,7 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeGetLastStartFailure(
     JNIEnv* env, jobject, jlong handle) {
     auto* player = toPlayer(handle);
     const std::string reason = player ? player->lastStartFailure() : std::string();
+    if (reason.empty()) return nullptr;
     return env->NewStringUTF(reason.c_str());
 }
 

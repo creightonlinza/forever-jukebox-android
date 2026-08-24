@@ -203,7 +203,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     /** Reason the most recent [play] left the stream stopped, or null if it started. */
     fun describeLastStartFailure(): String? {
         if (nativeHandle == 0L) return null
-        return nativeGetLastStartFailure(nativeHandle).takeIf { it.isNotBlank() }
+        return nativeGetLastStartFailure(nativeHandle)?.takeIf { it.isNotBlank() }
     }
 
     fun hasAudio(): Boolean {
@@ -549,7 +549,7 @@ class BufferedAudioPlayer : JukeboxPlayer {
     private external fun nativeGetCurrentTime(handle: Long): Double
     private external fun nativeGetAudioTime(handle: Long): Double
     private external fun nativeIsPlaying(handle: Long): Boolean
-    private external fun nativeGetLastStartFailure(handle: Long): String
+    private external fun nativeGetLastStartFailure(handle: Long): String?
     private external fun nativeHasAudio(handle: Long): Boolean
     private external fun nativeSetGain(handle: Long, gain: Float)
     private external fun nativeSetDucking(handle: Long, active: Boolean)

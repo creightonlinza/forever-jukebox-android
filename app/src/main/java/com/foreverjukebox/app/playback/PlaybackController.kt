@@ -192,7 +192,9 @@ class PlaybackController {
         if (startError != null) {
             AppLog.error(TAG, "Jukebox playback start failed: engine start threw", startError)
         } else {
-            val reason = player.describeLastStartFailure() ?: "no stream failure recorded"
+            val reason = player.describeLastStartFailure()
+                ?: if (player.hasAudio()) "no stream failure recorded"
+                else "native player released or empty"
             AppLog.error(
                 TAG,
                 "Jukebox playback start failed: player not playing after engine start ($reason)"
