@@ -264,6 +264,12 @@ extensions.configure<ApplicationExtension>("android") {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // Only loaded by DataStore's multi-process coordinator, which this app
+            // never uses; Play flags it as built with a pre-r28 NDK on 16 KB devices.
+            // Remove this exclusion if multi-process DataStore is ever adopted.
+            excludes += "**/libdatastore_shared_counter.so"
+        }
     }
 
     // Android Studio can fail local non-debuggable APK deploys while installing
