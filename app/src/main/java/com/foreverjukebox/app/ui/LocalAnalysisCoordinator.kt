@@ -99,12 +99,13 @@ class LocalAnalysisCoordinator(
                 // No-op: user cancelled.
             } catch (_: UnsupportedAudioFormatException) {
                 diagnostics.logAnalysisFailed(source, "unsupported_format")
-                playbackCoordinator.setAnalysisError("Unsupported audio format")
+                playbackCoordinator.setAnalysisError("Unsupported audio format", expected = true)
                 applyActiveTab(TabId.Input, true)
             } catch (error: AudioTooLargeException) {
                 diagnostics.logAnalysisFailed(source, "too_large")
                 playbackCoordinator.setAnalysisError(
-                    ErrorDisplay.clean(error.message, "This track is too large to analyze on this device.")
+                    ErrorDisplay.clean(error.message, "This track is too large to analyze on this device."),
+                    expected = true
                 )
                 applyActiveTab(TabId.Input, true)
             } catch (error: NativeLocalAnalysisNotReadyException) {
