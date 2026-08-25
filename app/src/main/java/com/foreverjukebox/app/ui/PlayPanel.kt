@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -79,6 +80,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     var showInfo by remember { mutableStateOf(false) }
     var showPlaylist by remember { mutableStateOf(false) }
     var showDeleteTrackConfirm by remember { mutableStateOf(false) }
+    var showExport by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
@@ -138,6 +140,19 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         if (showPlaylist && !shouldShowPlaylistControls(state.playlist)) {
             showPlaylist = false
         }
+    }
+
+    LaunchedEffect(state.export.completedFileName) {
+        val fileName = state.export.completedFileName ?: return@LaunchedEffect
+        Toast.makeText(context, "Saved to Music as $fileName", Toast.LENGTH_LONG).show()
+        showExport = false
+        viewModel.consumeExportResult()
+    }
+
+    LaunchedEffect(state.export.errorMessage) {
+        val message = state.export.errorMessage ?: return@LaunchedEffect
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        viewModel.consumeExportResult()
     }
 
     Column(
@@ -208,6 +223,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
+                onOpenExport = { showExport = true },
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onSetPlaybackMode = viewModel::selectPlaybackMode,
                 onSetVisualization = viewModel::setActiveVisualization,
@@ -320,6 +336,18 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             onRemove = viewModel::removePlaylistTrack,
             onClear = viewModel::clearPlaylist,
             onClose = { showPlaylist = false }
+        )
+    }
+
+    if (showExport && shouldShowExportAction(state.appMode, playback, Build.VERSION.SDK_INT)) {
+        ExportDialog(
+            export = state.export,
+            trackDurationSeconds = playback.trackDurationSeconds,
+            audioMode = playback.jukeboxAudioMode,
+            audioModeIntensity = playback.jukeboxAudioModeIntensity,
+            onStart = viewModel::startExport,
+            onCancelExport = viewModel::cancelExport,
+            onDismiss = { showExport = false }
         )
     }
 
