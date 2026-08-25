@@ -540,6 +540,27 @@ public:
                 failure += "; retry " + reopenFailure;
             }
             if (result != oboe::Result::OK) {
+                // Some devices grant a fast-path (MMAP) stream that is already
+                // disconnected and stays that way across reopen, while the
+                // plain mixer path still works. Last resort: a plain stream,
+                // even though the preferred open succeeded.
+                closeLocked();
+                const auto fallbackOpen = tryOpenLocked(oboe::PerformanceMode::None);
+                if (fallbackOpen == oboe::Result::OK) {
+                    result = mStream->requestStart();
+                    if (result != oboe::Result::OK) {
+                        failure += "; fallback " + describeStreamLocked("requestStart", result);
+                    } else {
+                        __android_log_print(ANDROID_LOG_WARN, kLogTag,
+                                            "%s; started on fallback stream (PerformanceMode::None)",
+                                            failure.c_str());
+                    }
+                } else {
+                    mStream.reset();
+                    failure += "; fallback " + describeStreamLocked("open(None)", fallbackOpen);
+                }
+            }
+            if (result != oboe::Result::OK) {
                 setLastStartFailureLocked(std::move(failure));
             }
         }
@@ -893,7 +914,8 @@ private:
         if (mStream) {
             text += " api=" + std::string(oboe::convertToText(mStream->getAudioApi())) +
                     " perf=" + oboe::convertToText(mStream->getPerformanceMode()) +
-                    " state=" + oboe::convertToText(mStream->getState());
+                    " state=" + oboe::convertToText(mStream->getState()) +
+                    " device=" + std::to_string(mStream->getDeviceId());
         }
         text += ")";
         return text;

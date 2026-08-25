@@ -34,7 +34,11 @@ sealed interface PlaybackStartResult {
     data object FocusDenied : Failure
 
     /** [cause] is null when the engine started but the player never reported playing. */
-    data class StartFailed(val cause: Throwable?) : Failure
+    data class StartFailed(val cause: Throwable?, val reason: String? = null) : Failure {
+        /** True when the audio stream reported its output device gone or unusable. */
+        val outputDeviceUnavailable: Boolean
+            get() = reason?.contains("ErrorDisconnected") == true
+    }
 }
 
 class PlaybackController {
@@ -189,12 +193,14 @@ class PlaybackController {
             transportState = TransportState.Playing
             return PlaybackStartResult.Started
         }
+        var startFailureReason: String? = null
         if (startError != null) {
             AppLog.error(TAG, "Jukebox playback start failed: engine start threw", startError)
         } else {
             val reason = player.describeLastStartFailure()
                 ?: if (player.hasAudio()) "no stream failure recorded"
                 else "native player released or empty"
+            startFailureReason = reason
             AppLog.error(
                 TAG,
                 "Jukebox playback start failed: player not playing after engine start ($reason)"
@@ -203,7 +209,7 @@ class PlaybackController {
         runCatching { engine.stopJukebox() }
         audioFocusController.abandonAudioFocus()
         transportState = TransportState.Stopped
-        return PlaybackStartResult.StartFailed(startError)
+        return PlaybackStartResult.StartFailed(startError, startFailureReason)
     }
 
     fun playOrResumePlaybackResult(): PlaybackStartResult {
