@@ -2921,7 +2921,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         // surface and no service teardown.
                         syncPlaybackServiceSession()
                     }
-                    else -> handleJukeboxPlaybackFailure(reason = result.toString())
+                    else -> handleJukeboxPlaybackFailure(
+                        reason = result.toString(),
+                        userMessage = if ((result as? PlaybackStartResult.StartFailed)
+                                ?.outputDeviceUnavailable == true
+                        ) {
+                            OUTPUT_DEVICE_UNAVAILABLE_MESSAGE
+                        } else {
+                            null
+                        }
+                    )
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
@@ -2951,13 +2960,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         syncPlaybackServiceSession()
     }
 
-    private fun handleJukeboxPlaybackFailure(reason: String) {
+    private fun handleJukeboxPlaybackFailure(reason: String, userMessage: String? = null) {
         AppLog.error(TAG, "Jukebox playback failure surfaced to UI: $reason")
         playbackCoordinator.stopListenTimer()
         // No service teardown here: setAnalysisError syncs the playback service
         // session, which keeps a retryable failed notification up (or resolves to
         // Hidden and stops the service when there is nothing to retry).
-        playbackCoordinator.setAnalysisError("Playback failed.")
+        playbackCoordinator.setAnalysisError(userMessage ?: "Playback failed.")
     }
 
     private fun toggleAutocanonizerPlayback(current: PlaybackState) {
@@ -4101,6 +4110,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val GITHUB_REPO_OWNER = "creightonlinza"
         private const val GITHUB_REPO_NAME = "forever-jukebox-android"
         private const val LOADING_LOCK_MESSAGE = "Please wait for the current track to finish loading."
+        private const val OUTPUT_DEVICE_UNAVAILABLE_MESSAGE =
+            "Playback failed: the audio output isn't responding. If you're using a " +
+                "Bluetooth device, try reconnecting it or switching to another output."
         private const val SERVER_LOAD_NETWORK_MAX_ATTEMPTS = 3
         private const val SERVER_LOAD_NETWORK_BASE_RETRY_DELAY_MS = 2000L
         private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 500.0

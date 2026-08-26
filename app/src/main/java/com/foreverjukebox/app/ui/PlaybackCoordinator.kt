@@ -261,7 +261,7 @@ class PlaybackCoordinator(
         applyLoadingEvent(LoadingEvent.AnalysisIdle)
     }
 
-    fun setAnalysisError(message: String, cause: Throwable? = null) {
+    fun setAnalysisError(message: String, cause: Throwable? = null, expected: Boolean = false) {
         // Single chokepoint for every surfaced load/analysis error (server, cached,
         // local, playback, autocanonizer). Persisting the message here guarantees
         // the cause of any "Loading failed." is captured even on paths that have no
@@ -269,10 +269,17 @@ class PlaybackCoordinator(
         // sites that do hold one pass it so the record carries the real exception
         // chain. Every surfaced failure records a Crashlytics non-fatal — a failure
         // the user saw but that never reaches the console is invisible to remote
-        // diagnostics, which is worse than issue noise. The benign user-cancel
-        // sentinel is excluded.
+        // diagnostics, which is worse than issue noise. Exceptions: the benign
+        // user-cancel sentinel, and callers that mark the failure [expected] — an
+        // anticipated user-input condition (unsupported format, track too long)
+        // already surfaced with a clear message and counted in analytics — which
+        // leaves only a breadcrumb.
         if (message != LoadingAudioFeedbackController.LOCAL_ANALYSIS_CANCELLED_MESSAGE) {
-            AppLog.error(TAG, "Load/analysis error surfaced: $message", cause)
+            if (expected) {
+                AppLog.warn(TAG, "Load/analysis error surfaced: $message", cause)
+            } else {
+                AppLog.error(TAG, "Load/analysis error surfaced: $message", cause)
+            }
         }
         applyLoadingEvent(LoadingEvent.AnalysisError(message))
     }

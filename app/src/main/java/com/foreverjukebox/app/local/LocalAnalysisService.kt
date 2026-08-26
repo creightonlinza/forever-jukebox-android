@@ -306,10 +306,13 @@ class LocalAnalysisService(
             logInfo("Local analysis cancelled: localId=$localId")
             close(cancelledError)
         } catch (unsupported: UnsupportedAudioFormatException) {
-            logError("Local analysis unsupported format: ${unsupported.message}", unsupported)
+            // Expected user-input failures: surfaced to the user with a clear
+            // message and counted via the analysis_failed analytics event, so a
+            // breadcrumb suffices — no Crashlytics non-fatal.
+            logWarn("Local analysis unsupported format: ${unsupported.message}", unsupported)
             close(unsupported)
         } catch (tooLarge: AudioTooLargeException) {
-            logError("Local analysis track too large: ${tooLarge.message}", tooLarge)
+            logWarn("Local analysis track too large: ${tooLarge.message}", tooLarge)
             close(tooLarge)
         } catch (error: NativeLocalAnalysisNotReadyException) {
             logError("Local analysis failed: ${error.message}", error)
@@ -409,6 +412,10 @@ class LocalAnalysisService(
 
         private fun logInfo(message: String) {
             runCatching { Log.i(TAG, message) }
+        }
+
+        private fun logWarn(message: String, error: Throwable? = null) {
+            runCatching { AppLog.warn(TAG, message, error) }
         }
 
         private fun logError(message: String, error: Throwable? = null) {
