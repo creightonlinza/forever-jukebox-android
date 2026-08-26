@@ -200,6 +200,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
+                onOpenExport = { showExport = true },
+                isExporting = state.export.isExporting,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 playlist = state.playlist,
                 onOpenPlaylist = { showPlaylist = true },
@@ -224,6 +226,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 onOpenExport = { showExport = true },
+                isExporting = state.export.isExporting,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 onSetPlaybackMode = viewModel::selectPlaybackMode,
                 onSetVisualization = viewModel::setActiveVisualization,
@@ -339,7 +342,14 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    if (showExport && shouldShowExportAction(state.appMode, playback, Build.VERSION.SDK_INT)) {
+    if (showExport &&
+        shouldShowExportControls(
+            state.appMode,
+            playback,
+            state.export.isExporting,
+            Build.VERSION.SDK_INT
+        )
+    ) {
         ExportDialog(
             export = state.export,
             trackDurationSeconds = playback.trackDurationSeconds,

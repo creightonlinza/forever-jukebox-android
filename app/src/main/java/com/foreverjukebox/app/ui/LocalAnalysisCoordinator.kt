@@ -176,6 +176,15 @@ class LocalAnalysisCoordinator(
     fun deleteCachedLocalTrack(localId: String) {
         scope.launch {
             localAnalysisService.deleteCachedAnalysis(localId)
+            // The deleted track can be the one currently loaded; drop a path
+            // whose file is gone so actions that re-read it (audio export)
+            // report a specific error instead of failing generically.
+            val analysisPath = getState().localAnalysisJsonPath
+            val analysisFileDeleted = analysisPath != null &&
+                withContext(Dispatchers.IO) { !File(analysisPath).exists() }
+            if (analysisFileDeleted) {
+                updateState { it.copy(localAnalysisJsonPath = null) }
+            }
             refreshLocalCachedTracks()
             playbackCoordinator.refreshCacheSize()
         }

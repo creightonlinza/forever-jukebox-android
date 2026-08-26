@@ -68,6 +68,16 @@ class ExportUiPolicyTest {
     }
 
     @Test
+    fun exportControlsStayVisibleForRunningExport() {
+        val casting = exportablePlayback().copy(isCasting = true)
+        assertFalse(shouldShowExportControls(AppMode.Local, casting, isExporting = false, sdkInt = 29))
+        assertTrue(shouldShowExportControls(AppMode.Local, casting, isExporting = true, sdkInt = 29))
+        val autocanonizer = exportablePlayback().copy(playMode = PlaybackMode.Autocanonizer)
+        assertTrue(shouldShowExportControls(AppMode.Local, autocanonizer, isExporting = true, sdkInt = 29))
+        assertTrue(shouldShowExportControls(AppMode.Local, exportablePlayback(), isExporting = false, sdkInt = 29))
+    }
+
+    @Test
     fun clampsExportDurationToAllowedRange() {
         assertEquals(EXPORT_MIN_DURATION_SECONDS, clampExportDurationSeconds(0))
         assertEquals(EXPORT_MIN_DURATION_SECONDS, clampExportDurationSeconds(-10))

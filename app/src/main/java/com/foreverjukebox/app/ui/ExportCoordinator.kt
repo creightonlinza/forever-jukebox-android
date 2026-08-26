@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import android.os.Build
 import androidx.annotation.RequiresApi
+import com.foreverjukebox.app.audio.BufferedAudioPlayer
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.RandomMode
 import com.foreverjukebox.app.engine.createRng
@@ -15,6 +16,7 @@ import com.foreverjukebox.app.export.OfflineJukeboxRenderer
 import com.foreverjukebox.app.playback.PlaybackController
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +42,11 @@ class ExportCoordinator(
 ) {
     private var exportJob: Job? = null
 
+    // Bumped on every start and cancel; a job only writes export UI state
+    // while its own generation is current, so a cancelled job unwinding late
+    // cannot clobber the state of the export that replaced it.
+    private val exportGeneration = AtomicInteger(0)
+
     fun isExporting(): Boolean = exportJob?.isActive == true
 
     fun startExport(durationSeconds: Int) {
@@ -50,6 +57,10 @@ class ExportCoordinator(
         val jsonPath = state.localAnalysisJsonPath
         if (jsonPath.isNullOrBlank()) {
             setError("Track analysis is unavailable for export.")
+            return
+        }
+        if (!File(jsonPath).exists()) {
+            setError("Track analysis is no longer cached. Reload the track to export.")
             return
         }
         val player = controller.player
@@ -64,15 +75,17 @@ class ExportCoordinator(
             return
         }
         val request = buildRequest(state, jsonPath, clampExportDurationSeconds(durationSeconds))
+        val generation = exportGeneration.incrementAndGet()
         updateState { it.copy(export = ExportUiState(isExporting = true)) }
         exportJob = scope.launch(Dispatchers.Default) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                runExport(request)
+                runExport(request, generation)
             }
         }
     }
 
     fun cancelExport() {
+        exportGeneration.incrementAndGet()
         exportJob?.cancel()
         exportJob = null
         updateState { it.copy(export = ExportUiState()) }
@@ -86,40 +99,38 @@ class ExportCoordinator(
     // unaffected by tuning or edge edits made while it runs.
     private fun buildRequest(state: UiState, jsonPath: String, durationSeconds: Int): ExportRequest {
         val engine = controller.engine
-        val liveGraph = engine.getGraphState()
-        val deletedPairs = liveGraph?.allEdges
+        val deletedPairs = engine.getGraphState()?.allEdges
             ?.asSequence()
             ?.filter { it.deleted }
             ?.map { it.src.which to it.dest.which }
             ?.toSet()
             .orEmpty()
-        val anchorPair = engine.getUserAnchorEdgeId()
-            ?.let { anchorId -> liveGraph?.allEdges?.firstOrNull { it.id == anchorId } }
-            ?.let { it.src.which to it.dest.which }
-        val trackTitle = state.playback.trackTitle?.takeIf { it.isNotBlank() }
-            ?: state.localSelectedFileName
         return ExportRequest(
             jsonPath = jsonPath,
             durationSeconds = durationSeconds,
             config = engine.getConfig(),
             deletedEdgePairs = deletedPairs,
-            userAnchorPair = anchorPair,
+            userAnchorPair = engine.getUserAnchorEdgeEndpoints(),
             sectionStartBeatIndices = engine.getSectionStartBeatIndices(),
-            displayName = ExportedAudioStore.buildDisplayName(trackTitle),
-            title = trackTitle,
+            displayName = ExportedAudioStore.buildDisplayName(
+                state.playback.trackTitle?.takeIf { it.isNotBlank() }
+                    ?: state.localSelectedFileName
+            ),
+            title = state.playback.trackTitle?.takeIf { it.isNotBlank() }
+                ?: state.localSelectedFileName,
             artist = state.playback.trackArtist
         )
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
     @Suppress("TooGenericExceptionCaught")
-    private suspend fun runExport(request: ExportRequest) {
+    private suspend fun runExport(request: ExportRequest, generation: Int) {
         val resolver = application.contentResolver
         var pendingUri: Uri? = null
         val tempFile = createTempExportFile()
         try {
-            audioLoadHold.hold {
-                renderToFile(request, tempFile)
+            audioLoadHold.holdExtending { extendTimeout ->
+                renderToFile(request, tempFile, generation, extendTimeout)
                 val uri = ExportedAudioStore.insertPending(
                     resolver = resolver,
                     displayName = request.displayName,
@@ -129,31 +140,30 @@ class ExportCoordinator(
                 pendingUri = uri
                 ExportedAudioStore.publish(resolver, uri, tempFile)
             }
-            updateState {
-                it.copy(
-                    export = ExportUiState(
-                        isExporting = false,
-                        progressPercent = 100,
-                        completedFileName = request.displayName
-                    )
-                )
+            updateExportState(generation) {
+                ExportUiState(isExporting = false, completedFileName = request.displayName)
             }
         } catch (cancellation: CancellationException) {
             pendingUri?.let { ExportedAudioStore.deletePending(resolver, it) }
-            updateState { it.copy(export = ExportUiState()) }
+            updateExportState(generation) { ExportUiState() }
             throw cancellation
         } catch (error: Exception) {
             logError("Audio export failed", error)
             pendingUri?.let { ExportedAudioStore.deletePending(resolver, it) }
-            updateState { it.copy(export = ExportUiState(errorMessage = "Audio export failed.")) }
+            updateExportState(generation) { ExportUiState(errorMessage = "Audio export failed.") }
         } finally {
             tempFile.delete()
         }
     }
 
-    private suspend fun renderToFile(request: ExportRequest, tempFile: File) {
+    private suspend fun renderToFile(
+        request: ExportRequest,
+        tempFile: File,
+        generation: Int,
+        extendTimeout: () -> Unit
+    ) {
         val analysisElement = withContext(Dispatchers.IO) {
-            exportJson.parseToJsonElement(File(request.jsonPath).readText())
+            Json.parseToJsonElement(File(request.jsonPath).readText())
         }
         val analysis = normalizeAnalysis(analysisElement)
         check(analysis.beats.isNotEmpty()) { "Analysis contains no beats" }
@@ -167,39 +177,54 @@ class ExportCoordinator(
             userAnchorPair = request.userAnchorPair,
             rng = createRng(RandomMode.Seeded, kotlin.random.Random.nextInt())
         )
-        val player = controller.player
-        val encoder = M4aExportEncoder(
-            sampleRate = player.getSampleRate(),
-            channelCount = player.getChannelCount(),
-            outputFile = tempFile
-        )
+        val offline = BufferedAudioPlayer(offline = true)
         try {
-            val renderer = OfflineJukeboxRenderer(
-                context = application,
-                livePlayer = player,
-                pathGenerator = generator,
-                sectionStartBeatIndices = request.sectionStartBeatIndices
+            check(offline.cloneAudioFrom(controller.player)) { "No loaded audio to export" }
+            // The clone copies the live ducking flag; exports always run at
+            // full, un-ducked volume. The encoder is configured from the
+            // clone so its format always matches the PCM actually rendered.
+            offline.setDucking(false)
+            val encoder = M4aExportEncoder(
+                sampleRate = offline.getSampleRate(),
+                channelCount = offline.getChannelCount(),
+                outputFile = tempFile
             )
-            var lastPercent = -1
-            renderer.render(
-                targetDurationSeconds = request.durationSeconds.toDouble(),
-                onPcmChunk = { buffer, frames -> encoder.writePcm(buffer, frames) },
-                onProgress = { rendered, total ->
-                    val percent = if (total > 0) {
-                        (rendered * 100 / total).toInt().coerceIn(0, 99)
-                    } else {
-                        0
+            try {
+                val renderer = OfflineJukeboxRenderer(
+                    context = application,
+                    offlinePlayer = offline,
+                    pathGenerator = generator,
+                    sectionStartBeatIndices = request.sectionStartBeatIndices
+                )
+                var lastPercent = -1
+                renderer.render(
+                    targetDurationSeconds = request.durationSeconds.toDouble(),
+                    onPcmChunk = { buffer, frames -> encoder.writePcm(buffer, frames) },
+                    onProgress = { rendered, total ->
+                        val percent = if (total > 0) {
+                            (rendered * 100 / total).toInt().coerceIn(0, 99)
+                        } else {
+                            0
+                        }
+                        if (percent > lastPercent) {
+                            lastPercent = percent
+                            extendTimeout()
+                            updateExportState(generation) { it.copy(progressPercent = percent) }
+                        }
                     }
-                    if (percent > lastPercent) {
-                        lastPercent = percent
-                        updateState { it.copy(export = it.export.copy(progressPercent = percent)) }
-                    }
-                }
-            )
-            encoder.finish()
+                )
+                encoder.finish()
+            } finally {
+                encoder.release()
+            }
         } finally {
-            encoder.release()
+            offline.release()
         }
+    }
+
+    private fun updateExportState(generation: Int, transform: (ExportUiState) -> ExportUiState) {
+        if (exportGeneration.get() != generation) return
+        updateState { it.copy(export = transform(it.export)) }
     }
 
     private fun createTempExportFile(): File {
@@ -226,6 +251,5 @@ class ExportCoordinator(
 
     private companion object {
         const val TEMP_EXPORT_DIR = "export"
-        val exportJson = Json { ignoreUnknownKeys = true }
     }
 }

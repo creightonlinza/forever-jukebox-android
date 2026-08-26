@@ -42,18 +42,22 @@ class M4aExportEncoder(
             )
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_INPUT_BYTES)
         }
-        codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        var configured = false
+        val newCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+        var newMuxer: MediaMuxer? = null
+        var started = false
         try {
-            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            configured = true
+            newCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            newMuxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            newCodec.start()
+            started = true
         } finally {
-            if (!configured) {
-                codec.release()
+            if (!started) {
+                runCatching { newCodec.release() }
+                newMuxer?.let { runCatching { it.release() } }
             }
         }
-        codec.start()
+        codec = newCodec
+        muxer = checkNotNull(newMuxer)
     }
 
     /** Feeds [frames] frames of interleaved PCM from [buffer] into the encoder. */

@@ -25,6 +25,10 @@ import java.nio.ByteOrder
 class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer {
     private var sampleRate = 44100
     private var channelCount = 2
+    // Guards the native handle across release and clone: cloneAudioFrom reads
+    // another player's handle from a worker thread, so a concurrent
+    // load/clear/release must not delete that native player mid-copy.
+    private val nativeHandleLock = Any()
     private var nativeHandle: Long = 0
     private var durationSeconds: Double? = null
     private var jukeboxAudioMode = JukeboxAudioMode.Off
@@ -123,16 +127,21 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
     }
 
     fun cloneAudioFrom(other: BufferedAudioPlayer): Boolean {
-        if (!other.hasAudio()) return false
-        sampleRate = other.sampleRate
-        channelCount = other.channelCount
-        durationSeconds = other.durationSeconds
-        jukeboxAudioMode = other.jukeboxAudioMode
-        jukeboxAudioModeIntensity = other.jukeboxAudioModeIntensity
-        duckingActive = other.duckingActive
-        releaseNativePlayer()
-        ensureNativePlayer()
-        return nativeCloneAudioFrom(nativeHandle, other.nativeHandle)
+        // Holding the source's handle lock keeps its native player alive for
+        // the whole copy; a concurrent load/clear on the source blocks in
+        // releaseNativePlayer until the clone completes.
+        synchronized(other.nativeHandleLock) {
+            if (!other.hasAudio()) return false
+            sampleRate = other.sampleRate
+            channelCount = other.channelCount
+            durationSeconds = other.durationSeconds
+            jukeboxAudioMode = other.jukeboxAudioMode
+            jukeboxAudioModeIntensity = other.jukeboxAudioModeIntensity
+            duckingActive = other.duckingActive
+            releaseNativePlayer()
+            ensureNativePlayer()
+            return nativeCloneAudioFrom(nativeHandle, other.nativeHandle)
+        }
     }
 
     override fun play() {
@@ -306,10 +315,12 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
     }
 
     private fun releaseNativePlayer() {
-        if (nativeHandle == 0L) return
-        nativeRelease(nativeHandle)
-        nativeHandle = 0L
-        cowbellSamplesLoaded = false
+        synchronized(nativeHandleLock) {
+            if (nativeHandle == 0L) return
+            nativeRelease(nativeHandle)
+            nativeHandle = 0L
+            cowbellSamplesLoaded = false
+        }
     }
 
     private fun parsePcmWav(bytes: ByteArray): DecodedAudio {

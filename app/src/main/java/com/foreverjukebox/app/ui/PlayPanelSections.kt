@@ -227,6 +227,8 @@ internal fun ColumnScope.CastListenScreen(
     onDeleteCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenExport: () -> Unit,
+    isExporting: Boolean,
     favoriteToggleInFlight: Boolean,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
@@ -264,7 +266,9 @@ internal fun ColumnScope.CastListenScreen(
                 showControls = canShowTransport,
                 showTuningAndInfo = canShowReceiverDetails,
                 showDeleteTrackAction = showDeleteTrackAction,
-                showExportAction = false,
+                // While casting a new export cannot start, but one begun
+                // beforehand keeps its controls reachable here.
+                showExportAction = isExporting,
                 isFavorite = isFavorite,
                 hasTuningDrift = hasTuningDrift,
                 favoriteToggleInFlight = favoriteToggleInFlight,
@@ -273,7 +277,7 @@ internal fun ColumnScope.CastListenScreen(
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
-                onOpenExport = {}
+                onOpenExport = onOpenExport
             )
         }
         Box(
@@ -456,6 +460,7 @@ internal fun ColumnScope.LocalListenScreen(
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenExport: () -> Unit,
+    isExporting: Boolean,
     favoriteToggleInFlight: Boolean,
     onSetPlaybackMode: (PlaybackMode) -> Unit,
     onSetVisualization: (Int) -> Unit,
@@ -467,7 +472,8 @@ internal fun ColumnScope.LocalListenScreen(
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
-    val showExportAction = shouldShowExportAction(appMode, playback, Build.VERSION.SDK_INT)
+    val showExportAction =
+        shouldShowExportControls(appMode, playback, isExporting, Build.VERSION.SDK_INT)
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
     val showInlineTitleWithControls = shouldShowPlaybackTransport(playback)
 

@@ -48,6 +48,7 @@ private fun PlaybackFailedWithLoadedVizPreview() {
                 onShare = {},
                 onToggleFavorite = {},
                 onOpenExport = {},
+                isExporting = false,
                 favoriteToggleInFlight = false,
                 onSetPlaybackMode = {},
                 onSetVisualization = {},

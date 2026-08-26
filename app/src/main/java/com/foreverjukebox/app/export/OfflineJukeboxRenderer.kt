@@ -14,14 +14,14 @@ import kotlin.math.roundToLong
 
 /**
  * Renders a planned jukebox path through the native DSP pipeline faster than
- * real time. A second, streamless native player instance is cloned from the
- * live player (sharing mode, intensity, and the decoded PCM without a
- * re-decode), so exports are processed by the exact code path live playback
- * uses — jumps, filters, reverb, limiter, cowbell overlay, and rate included.
+ * real time. [offlinePlayer] is a streamless clone of the live player (sharing
+ * mode, intensity, and the decoded PCM), so exports are processed by the exact
+ * code path live playback uses — jumps, filters, reverb, limiter, cowbell
+ * overlay, and rate included. The caller owns the clone's lifecycle.
  */
 class OfflineJukeboxRenderer(
     private val context: Context,
-    private val livePlayer: BufferedAudioPlayer,
+    private val offlinePlayer: BufferedAudioPlayer,
     private val pathGenerator: JukeboxPathGenerator,
     private val sectionStartBeatIndices: Collection<Int>
 ) {
@@ -37,26 +37,20 @@ class OfflineJukeboxRenderer(
         onPcmChunk: (buffer: ShortArray, frames: Int) -> Unit,
         onProgress: (renderedFrames: Long, totalFrames: Long) -> Unit
     ) {
-        val offline = BufferedAudioPlayer(offline = true)
         var cowbell: CowbellOverlayController? = null
         try {
-            check(offline.cloneAudioFrom(livePlayer)) { "No loaded audio to export" }
-            // The clone copies the live ducking flag; exports always run at
-            // full, un-ducked volume.
-            offline.setDucking(false)
-            if (offline.getJukeboxAudioMode() == JukeboxAudioMode.Cowbell) {
+            if (offlinePlayer.getJukeboxAudioMode() == JukeboxAudioMode.Cowbell) {
                 cowbell = NativeCowbellOverlayController(
-                    BufferedAudioCowbellHitScheduler(context, offline)
+                    BufferedAudioCowbellHitScheduler(context, offlinePlayer)
                 ).apply {
                     setSectionStartBeatIndices(sectionStartBeatIndices)
                     setVolume(1.0)
                     setEnabled(true)
                 }
             }
-            renderPath(offline, cowbell, targetDurationSeconds, onPcmChunk, onProgress)
+            renderPath(offlinePlayer, cowbell, targetDurationSeconds, onPcmChunk, onProgress)
         } finally {
             cowbell?.release()
-            offline.release()
         }
     }
 
@@ -74,9 +68,14 @@ class OfflineJukeboxRenderer(
         val totalFrames = (targetDurationSeconds * sampleRate).roundToLong()
         val chunk = ShortArray(CHUNK_FRAMES * channelCount)
         var rendered = 0L
+        var stalledSteps = 0
 
         offline.seek(firstBeat.start)
         while (rendered < totalFrames) {
+            // Cancellation point for the whole loop: steps that render zero
+            // frames never reach the inner loop's yield, and a degenerate
+            // analysis (non-monotonic beat times) could produce many in a row.
+            yield()
             val step = pathGenerator.nextStep() ?: break
             var jumpScheduled = false
             step.jump?.let { jump ->
@@ -101,6 +100,12 @@ class OfflineJukeboxRenderer(
                 framesForBeat += 1
             }
             framesForBeat = min(framesForBeat, totalFrames - rendered)
+            if (framesForBeat <= 0L) {
+                stalledSteps += 1
+                check(stalledSteps < MAX_STALLED_STEPS) { "Export render made no progress" }
+            } else {
+                stalledSteps = 0
+            }
             var remaining = framesForBeat
             while (remaining > 0) {
                 val requested = min(CHUNK_FRAMES.toLong(), remaining).toInt()
@@ -124,5 +129,6 @@ class OfflineJukeboxRenderer(
 
     private companion object {
         const val CHUNK_FRAMES = 8192
+        const val MAX_STALLED_STEPS = 4096
     }
 }

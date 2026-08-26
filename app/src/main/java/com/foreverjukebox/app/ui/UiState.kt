@@ -626,6 +626,21 @@ fun shouldShowExportAction(
         !playback.isTrackLoading()
 }
 
+/**
+ * Whether the export button and dialog are reachable. A running export keeps
+ * its controls (progress, cancel) even when the start conditions no longer
+ * hold — casting, a mode switch, or a new load must not strand an in-flight
+ * export with no way to see or stop it.
+ */
+fun shouldShowExportControls(
+    mode: AppMode?,
+    playback: PlaybackState,
+    isExporting: Boolean,
+    sdkInt: Int
+): Boolean {
+    return isExporting || shouldShowExportAction(mode, playback, sdkInt)
+}
+
 fun clampExportDurationSeconds(value: Int): Int {
     return value.coerceIn(EXPORT_MIN_DURATION_SECONDS, EXPORT_MAX_DURATION_SECONDS)
 }

@@ -112,6 +112,21 @@ class JukeboxEngine(
 
     fun getUserAnchorEdgeId(): Int? = getUserAnchorEdge()?.id
 
+    /**
+     * The user anchor as (source, dest) beat indices, reading only
+     * structurally stable graph state — unlike [getUserAnchorEdgeId], it skips
+     * the playability check that iterates per-beat neighbor lists the tick
+     * loop mutates, so it is safe to call from any thread while the jukebox
+     * runs. Callers that rebuild a fresh graph re-validate playability there.
+     */
+    fun getUserAnchorEdgeEndpoints(): Pair<Int, Int>? {
+        val currentGraph = graph ?: return null
+        val anchorId = userAnchorEdgeId ?: return null
+        val edge = currentGraph.allEdges.firstOrNull { it.id == anchorId } ?: return null
+        if (edge.deleted) return null
+        return edge.src.which to edge.dest.which
+    }
+
     fun updateConfig(partial: JukeboxConfigUpdate) {
         config = config.applyUpdate(partial)
     }
