@@ -279,27 +279,6 @@ internal fun removeFavoritesForTrackIds(
     }
 }
 
-private fun buildPlaybackTitle(
-    title: String?,
-    artist: String?,
-    playMode: PlaybackMode,
-    audioMode: JukeboxAudioMode
-): String {
-    if (title.isNullOrBlank()) {
-        return ""
-    }
-    val resolvedTitle = when {
-        playMode == PlaybackMode.Autocanonizer -> "$title (autocanonized)"
-        audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
-        else -> title
-    }
-    return if (artist.isNullOrBlank()) {
-        resolvedTitle
-    } else {
-        "$resolvedTitle — $artist"
-    }
-}
-
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
 private data class CrashContextKeys(
@@ -1417,10 +1396,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             title = playback.trackTitle,
             artist = playback.trackArtist,
             tuningParams = if (isServerTrack) {
-                tuningParamsForCurrentTrack(
-                    currentState,
-                    playbackCoordinator::buildTuningParamsString
-                )
+                capturedTuningParams(currentState)
             } else {
                 null
             },
@@ -1440,6 +1416,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Local-cached entries are skipped: their tuning lives in the per-track file that
      * [LocalAnalysisService] writes and reads back on open.
      */
+    private fun capturedTuningParams(state: UiState): String? {
+        return tuningParamsForCurrentTrack(state, playbackCoordinator::buildTuningParamsString)
+    }
+
     private fun captureActivePlaylistTrackSettings(tuningParams: String?) {
         val currentState = state.value
         if (!currentState.playlist.isActive()) return
@@ -1557,10 +1537,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     artist = artist,
                     duration = playback.trackDurationSeconds,
                     sourceType = if (playback.lastYouTubeId.isNullOrBlank()) null else FavoriteSourceType.Youtube,
-                    tuningParams = tuningParamsForCurrentTrack(
-                        currentState,
-                        playbackCoordinator::buildTuningParamsString
-                    ),
+                    tuningParams = capturedTuningParams(currentState),
                     playMode = playback.playMode.toFavoritePlayModeOrNull()
                 )
                 favoritesController.updateFavorites(
@@ -3564,12 +3541,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun selectPlaybackMode(mode: PlaybackMode) {
         if (state.value.playback.playMode == mode) return
+        // The capture is null outside jukebox mode, and a null write clears the entry's
+        // saved tuning. Capturing on whichever side of the switch is in jukebox mode keeps
+        // the entry's tuning while its recorded play mode changes.
+        val tuningParamsBeforeSwitch = capturedTuningParams(state.value)
         setPlaybackMode(mode)
         captureActivePlaylistTrackSettings(
-            tuningParamsForCurrentTrack(
-                state.value,
-                playbackCoordinator::buildTuningParamsString
-            )
+            tuningParamsBeforeSwitch ?: capturedTuningParams(state.value)
         )
     }
 
@@ -3578,8 +3556,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (current.playMode == mode) {
             return
         }
+        // The autocanonizer plays through the shared jukebox audio player, so the audio-mode
+        // effect is silenced in the player while it owns playback and re-armed from the
+        // retained selection on the way back. PlaybackState.jukeboxAudioMode holds the
+        // user's jukebox setting throughout; autocanonizer-mode code ignores it.
         if (mode == PlaybackMode.Autocanonizer) {
             controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
+        } else if (current.jukeboxAudioMode != JukeboxAudioMode.Off) {
+            controller.setJukeboxAudioMode(
+                current.jukeboxAudioMode,
+                current.jukeboxAudioModeIntensity
+            )
         }
         if (!current.isCasting) {
             val transportPlan = stopTransportForModeChange(
@@ -3746,7 +3733,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playback = it.playback.copy(
                             jukeboxAudioMode = requestedAudioMode,
                             jukeboxAudioModeIntensity = requestedIntensity,
-                            playTitle = buildPlaybackTitle(
+                            playTitle = buildPlayTitle(
                                 title = it.playback.trackTitle,
                                 artist = it.playback.trackArtist,
                                 playMode = it.playback.playMode,
@@ -3824,7 +3811,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     playback = it.playback.copy(
                         jukeboxAudioMode = JukeboxAudioMode.Off,
                         jukeboxAudioModeIntensity = AudioModeIntensity.DEFAULT,
-                        playTitle = buildPlaybackTitle(
+                        playTitle = buildPlayTitle(
                             title = it.playback.trackTitle,
                             artist = it.playback.trackArtist,
                             playMode = it.playback.playMode,

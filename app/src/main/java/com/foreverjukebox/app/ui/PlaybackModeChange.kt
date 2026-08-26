@@ -55,6 +55,27 @@ internal fun stopTransportForModeChange(
     return plan
 }
 
+/**
+ * Playback state with the play mode applied. The audio mode fields are left untouched:
+ * they hold the user's jukebox setting, which autocanonizer mode ignores rather than
+ * clears — the play title stays correct because its autocanonizer form takes precedence
+ * over the audio-mode suffix.
+ */
+internal fun playbackStateAfterPlayModeApplied(
+    playback: PlaybackState,
+    mode: PlaybackMode
+): PlaybackState {
+    return playback.copy(
+        playMode = mode,
+        playTitle = buildPlayTitle(
+            title = playback.trackTitle,
+            artist = playback.trackArtist,
+            playMode = mode,
+            audioMode = playback.jukeboxAudioMode
+        )
+    )
+}
+
 internal fun playbackStateAfterModeChange(
     playback: PlaybackState,
     preserveTransportState: Boolean
