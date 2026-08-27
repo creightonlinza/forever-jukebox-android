@@ -126,6 +126,29 @@ internal fun jumpLineForEngineState(engineState: JukeboxState, startedAt: Long):
     return JumpLine(jumpFrom, jumpTo, startedAt)
 }
 
+// The autocanonized form takes precedence over the audio-mode suffix: the audio mode is
+// the user's retained jukebox setting, which autocanonizer playback ignores.
+internal fun buildPlayTitle(
+    title: String?,
+    artist: String?,
+    playMode: PlaybackMode,
+    audioMode: JukeboxAudioMode
+): String {
+    if (title.isNullOrBlank()) {
+        return ""
+    }
+    val resolvedTitle = when {
+        playMode == PlaybackMode.Autocanonizer -> "$title (autocanonized)"
+        audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
+        else -> title
+    }
+    return if (artist.isNullOrBlank()) {
+        resolvedTitle
+    } else {
+        "$resolvedTitle — $artist"
+    }
+}
+
 // Shared by the persistent playback bar and the fullscreen bottom controls so
 // both render identical now-playing data.
 internal fun nowPlayingLine(playback: PlaybackState): String {

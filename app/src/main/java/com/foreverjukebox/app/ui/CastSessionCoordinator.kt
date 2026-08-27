@@ -37,9 +37,12 @@ internal fun capturePreservedCastTrack(
     if (!shouldAutoCast) {
         return null
     }
-    // Engine tuning only applies to jukebox tracks; an autocanonizer track is handed off
-    // to the receiver as a jukebox track with default tuning.
+    // Engine tuning and the audio mode only apply to jukebox tracks; an autocanonizer track
+    // is handed off to the receiver as a jukebox track with default tuning. The state field
+    // holds the user's jukebox audio-mode selection even during autocanonizer, so it must
+    // not reach the receiver from a non-jukebox session.
     val tuningParams = engineTuningParams?.takeIf { playback.playMode == PlaybackMode.Jukebox }
+    val audioMode = castHandoffAudioMode(playback)
     val localSourceUri = playback.localSourceUri
     if (localSourceUri != null) {
         val cacheKey = playback.lastJobId
@@ -51,7 +54,7 @@ internal fun capturePreservedCastTrack(
             sourceUri = localSourceUri,
             title = playback.trackTitle,
             artist = playback.trackArtist,
-            audioMode = playback.jukeboxAudioMode,
+            audioMode = audioMode,
             tuningParams = tuningParams
         )
     }
@@ -61,9 +64,17 @@ internal fun capturePreservedCastTrack(
         youtubeId = playback.lastYouTubeId,
         title = playback.trackTitle,
         artist = playback.trackArtist,
-        audioMode = playback.jukeboxAudioMode,
+        audioMode = audioMode,
         tuningParams = tuningParams
     )
+}
+
+private fun castHandoffAudioMode(playback: PlaybackState): JukeboxAudioMode {
+    return if (playback.playMode == PlaybackMode.Jukebox) {
+        playback.jukeboxAudioMode
+    } else {
+        JukeboxAudioMode.Off
+    }
 }
 
 internal sealed interface PendingCastSelection {
@@ -102,7 +113,7 @@ internal fun capturePendingCastSelection(
                 youtubeId = youtubeId,
                 title = playback.trackTitle,
                 artist = playback.trackArtist,
-                audioMode = playback.jukeboxAudioMode,
+                audioMode = castHandoffAudioMode(playback),
                 tuningParams = pendingTuningParams
             )
         )

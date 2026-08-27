@@ -1127,26 +1127,7 @@ class PlaybackCoordinator(
     }
 
     fun applyPlaybackMode(mode: PlaybackMode) {
-        updatePlaybackState {
-            it.copy(
-                playMode = mode,
-                jukeboxAudioMode = if (mode == PlaybackMode.Autocanonizer) {
-                    JukeboxAudioMode.Off
-                } else {
-                    it.jukeboxAudioMode
-                },
-                playTitle = buildPlayTitle(
-                    it.trackTitle,
-                    it.trackArtist,
-                    mode,
-                    if (mode == PlaybackMode.Autocanonizer) {
-                        JukeboxAudioMode.Off
-                    } else {
-                        it.jukeboxAudioMode
-                    }
-                )
-            )
-        }
+        updatePlaybackState { playbackStateAfterPlayModeApplied(it, mode) }
     }
 
     private sealed class LoadingEvent {
@@ -1431,7 +1412,11 @@ class PlaybackCoordinator(
         }
         parsed.anchorBranchId?.let(::applyAnchorBranchFromParams)
         if (parsed.audioMode != null) {
-            controller.setJukeboxAudioMode(parsed.audioMode, parsed.audioModeIntensity)
+            // State records the selection either way, but the shared player is armed only
+            // while jukebox owns playback; a later switch to jukebox re-arms it from state.
+            if (getState().playback.playMode == PlaybackMode.Jukebox) {
+                controller.setJukeboxAudioMode(parsed.audioMode, parsed.audioModeIntensity)
+            }
             updatePlaybackState {
                 it.copy(
                     jukeboxAudioMode = parsed.audioMode,
@@ -1447,26 +1432,6 @@ class PlaybackCoordinator(
         }
     }
 
-    private fun buildPlayTitle(
-        title: String?,
-        artist: String?,
-        mode: PlaybackMode,
-        audioMode: JukeboxAudioMode = JukeboxAudioMode.Off
-    ): String {
-        if (title.isNullOrBlank()) {
-            return ""
-        }
-        val resolvedTitle = when {
-            mode == PlaybackMode.Autocanonizer -> "$title (autocanonized)"
-            audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
-            else -> title
-        }
-        return if (!artist.isNullOrBlank()) {
-            "$resolvedTitle — $artist"
-        } else {
-            resolvedTitle
-        }
-    }
 }
 
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }

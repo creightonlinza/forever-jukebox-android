@@ -71,4 +71,43 @@ class PlaybackModeChangeTest {
         assertEquals(before.jumpLine?.to, after.jumpLine?.to)
         assertEquals(before.jumpLine?.startedAt, after.jumpLine?.startedAt)
     }
+
+    @Test
+    fun playModeRoundTripKeepsJukeboxAudioModeSelection() {
+        val jukebox = PlaybackState(
+            playMode = PlaybackMode.Jukebox,
+            trackTitle = "Song",
+            trackArtist = "Artist",
+            jukeboxAudioMode = JukeboxAudioMode.Cowbell,
+            jukeboxAudioModeIntensity = 70
+        )
+
+        val autocanonizer =
+            playbackStateAfterPlayModeApplied(jukebox, PlaybackMode.Autocanonizer)
+        val backToJukebox =
+            playbackStateAfterPlayModeApplied(autocanonizer, PlaybackMode.Jukebox)
+
+        assertEquals(JukeboxAudioMode.Cowbell, autocanonizer.jukeboxAudioMode)
+        assertEquals(70, autocanonizer.jukeboxAudioModeIntensity)
+        assertEquals(JukeboxAudioMode.Cowbell, backToJukebox.jukeboxAudioMode)
+        assertEquals(70, backToJukebox.jukeboxAudioModeIntensity)
+    }
+
+    @Test
+    fun playTitleShowsAutocanonizedOverRetainedAudioMode() {
+        val jukebox = PlaybackState(
+            playMode = PlaybackMode.Jukebox,
+            trackTitle = "Song",
+            trackArtist = "Artist",
+            jukeboxAudioMode = JukeboxAudioMode.Cowbell
+        )
+
+        val autocanonizer =
+            playbackStateAfterPlayModeApplied(jukebox, PlaybackMode.Autocanonizer)
+        val backToJukebox =
+            playbackStateAfterPlayModeApplied(autocanonizer, PlaybackMode.Jukebox)
+
+        assertEquals("Song (autocanonized) — Artist", autocanonizer.playTitle)
+        assertEquals("Song (cowbell) — Artist", backToJukebox.playTitle)
+    }
 }

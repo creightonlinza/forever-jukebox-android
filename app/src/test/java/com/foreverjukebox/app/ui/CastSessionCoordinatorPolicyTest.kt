@@ -93,6 +93,36 @@ class CastSessionCoordinatorPolicyTest {
     }
 
     @Test
+    fun capturePreservedCastTrackDropsRetainedAudioModeForAutocanonizerTracks() {
+        val preserved = capturePreservedCastTrack(
+            playback = PlaybackState(
+                audioLoaded = true,
+                analysisLoaded = true,
+                lastJobId = "job123",
+                playMode = PlaybackMode.Autocanonizer,
+                jukeboxAudioMode = JukeboxAudioMode.Cowbell
+            )
+        )
+
+        assertEquals(JukeboxAudioMode.Off, preserved?.audioMode)
+    }
+
+    @Test
+    fun capturePendingCastSelectionDropsRetainedAudioModeForAutocanonizerTracks() {
+        val pending = capturePendingCastSelection(
+            playback = PlaybackState(
+                analysisInFlight = true,
+                lastJobId = "job123",
+                playMode = PlaybackMode.Autocanonizer,
+                jukeboxAudioMode = JukeboxAudioMode.Cowbell
+            )
+        )
+
+        val byJobId = pending as PendingCastSelection.ByJobId
+        assertEquals(JukeboxAudioMode.Off, byJobId.track.audioMode)
+    }
+
+    @Test
     fun capturePreservedCastTrackReturnsLocalWhenSourceUriPresent() {
         val preserved = capturePreservedCastTrack(
             PlaybackState(
