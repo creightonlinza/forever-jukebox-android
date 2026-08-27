@@ -19,19 +19,33 @@ import android.os.PowerManager
  */
 interface AudioLoadHold {
     suspend fun <T> hold(block: suspend () -> T): T
+
+    /**
+     * Variant that hands the block an action extending the hold's timeout.
+     * Work that can outlast the acquire window (an audio export, not a single
+     * load stage) calls it from its progress callbacks so the CPU stays awake
+     * for the whole run. Default implementation offers no extension.
+     */
+    suspend fun <T> holdExtending(block: suspend (extendTimeout: () -> Unit) -> T): T {
+        return hold { block {} }
+    }
 }
 
 class AudioLoadWakeLock(private val application: Application) : AudioLoadHold {
+    override suspend fun <T> hold(block: suspend () -> T): T = holdExtending { block() }
+
     // A fresh wakelock instance per hold: instances release independently and the CPU
     // stays awake while any is held, so overlapping/nested holds compose without
-    // reference counting. The acquire timeout bounds battery cost if release is missed.
-    override suspend fun <T> hold(block: suspend () -> T): T {
+    // reference counting. The acquire timeout bounds battery cost if release is missed;
+    // re-acquiring a non-reference-counted lock restarts that timeout, which is what
+    // the extend action does for work that legitimately runs longer.
+    override suspend fun <T> holdExtending(block: suspend (extendTimeout: () -> Unit) -> T): T {
         val powerManager = application.getSystemService(PowerManager::class.java)
         val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG)
         wakeLock.setReferenceCounted(false)
         return try {
             wakeLock.acquire(TIMEOUT_MS)
-            block()
+            block { wakeLock.acquire(TIMEOUT_MS) }
         } finally {
             if (wakeLock.isHeld) {
                 wakeLock.release()

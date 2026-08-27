@@ -17,9 +17,18 @@ import kotlin.coroutines.cancellation.CancellationException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class BufferedAudioPlayer : JukeboxPlayer {
+/**
+ * Offline instances never open an audio stream; they are pumped through
+ * [renderOffline] to produce PCM for export while sharing the same native
+ * DSP pipeline as live playback.
+ */
+class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer {
     private var sampleRate = 44100
     private var channelCount = 2
+    // Guards the native handle across release and clone: cloneAudioFrom reads
+    // another player's handle from a worker thread, so a concurrent
+    // load/clear/release must not delete that native player mid-copy.
+    private val nativeHandleLock = Any()
     private var nativeHandle: Long = 0
     private var durationSeconds: Double? = null
     private var jukeboxAudioMode = JukeboxAudioMode.Off
@@ -118,19 +127,25 @@ class BufferedAudioPlayer : JukeboxPlayer {
     }
 
     fun cloneAudioFrom(other: BufferedAudioPlayer): Boolean {
-        if (!other.hasAudio()) return false
-        sampleRate = other.sampleRate
-        channelCount = other.channelCount
-        durationSeconds = other.durationSeconds
-        jukeboxAudioMode = other.jukeboxAudioMode
-        jukeboxAudioModeIntensity = other.jukeboxAudioModeIntensity
-        duckingActive = other.duckingActive
-        releaseNativePlayer()
-        ensureNativePlayer()
-        return nativeCloneAudioFrom(nativeHandle, other.nativeHandle)
+        // Holding the source's handle lock keeps its native player alive for
+        // the whole copy; a concurrent load/clear on the source blocks in
+        // releaseNativePlayer until the clone completes.
+        synchronized(other.nativeHandleLock) {
+            if (!other.hasAudio()) return false
+            sampleRate = other.sampleRate
+            channelCount = other.channelCount
+            durationSeconds = other.durationSeconds
+            jukeboxAudioMode = other.jukeboxAudioMode
+            jukeboxAudioModeIntensity = other.jukeboxAudioModeIntensity
+            duckingActive = other.duckingActive
+            releaseNativePlayer()
+            ensureNativePlayer()
+            return nativeCloneAudioFrom(nativeHandle, other.nativeHandle)
+        }
     }
 
     override fun play() {
+        if (offline) return
         if (nativeHandle != 0L) {
             nativePlay(nativeHandle)
         }
@@ -210,6 +225,20 @@ class BufferedAudioPlayer : JukeboxPlayer {
         return nativeHandle != 0L && nativeHasAudio(nativeHandle) && durationSeconds != null
     }
 
+    fun getSampleRate(): Int = sampleRate
+
+    fun getChannelCount(): Int = channelCount
+
+    /**
+     * Renders up to [frames] frames of interleaved 16-bit PCM into [buffer],
+     * returning the frame count actually rendered. Offline instances only.
+     */
+    fun renderOffline(buffer: ShortArray, frames: Int): Int {
+        check(offline) { "renderOffline requires an offline player" }
+        if (nativeHandle == 0L) return 0
+        return nativeRenderOffline(nativeHandle, buffer, frames)
+    }
+
     fun getDurationSeconds(): Double? {
         return durationSeconds
     }
@@ -270,7 +299,11 @@ class BufferedAudioPlayer : JukeboxPlayer {
 
     private fun ensureNativePlayer() {
         if (nativeHandle != 0L) return
-        nativeHandle = nativeCreatePlayer(sampleRate, channelCount)
+        nativeHandle = if (offline) {
+            nativeCreateOfflinePlayer(sampleRate, channelCount)
+        } else {
+            nativeCreatePlayer(sampleRate, channelCount)
+        }
         if (nativeHandle != 0L) {
             nativeSetJukeboxAudioMode(
                 nativeHandle,
@@ -282,10 +315,12 @@ class BufferedAudioPlayer : JukeboxPlayer {
     }
 
     private fun releaseNativePlayer() {
-        if (nativeHandle == 0L) return
-        nativeRelease(nativeHandle)
-        nativeHandle = 0L
-        cowbellSamplesLoaded = false
+        synchronized(nativeHandleLock) {
+            if (nativeHandle == 0L) return
+            nativeRelease(nativeHandle)
+            nativeHandle = 0L
+            cowbellSamplesLoaded = false
+        }
     }
 
     private fun parsePcmWav(bytes: ByteArray): DecodedAudio {
@@ -536,6 +571,8 @@ class BufferedAudioPlayer : JukeboxPlayer {
     }
 
     private external fun nativeCreatePlayer(sampleRate: Int, channelCount: Int): Long
+    private external fun nativeCreateOfflinePlayer(sampleRate: Int, channelCount: Int): Long
+    private external fun nativeRenderOffline(handle: Long, buffer: ShortArray, frames: Int): Int
     private external fun nativeLoadPcm(handle: Long, data: ByteArray, length: Int)
     private external fun nativePlay(handle: Long)
     private external fun nativePause(handle: Long)

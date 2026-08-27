@@ -881,6 +881,16 @@ public:
         return oboe::DataCallbackResult::Continue;
     }
 
+    // Pull-driven render for offline export. Runs the same pipeline as the
+    // stream callback and advances the same read/audio clocks; only used on
+    // handles created without a stream.
+    void renderOffline(int16_t* output, int32_t frames) {
+        double currentFrame = mReadFrame.load();
+        currentFrame = renderFrames(output, currentFrame, frames);
+        mReadFrame.store(currentFrame);
+        mAudioFrame.store(mAudioFrame.load() + frames);
+    }
+
     void onErrorAfterClose(
         oboe::AudioStream*,
         oboe::Result error) override {
@@ -1364,6 +1374,32 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCreatePlayer(
         return 0;
     }
     return reinterpret_cast<jlong>(player);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCreateOfflinePlayer(
+    JNIEnv*, jobject, jint sampleRate, jint channelCount) {
+    // No stream is opened: offline handles are pumped through
+    // nativeRenderOffline and must never own an audio device.
+    return reinterpret_cast<jlong>(new OboePlayer(sampleRate, channelCount));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeRenderOffline(
+    JNIEnv* env, jobject, jlong handle, jshortArray buffer, jint frames) {
+    auto* player = toPlayer(handle);
+    if (!player || !buffer || frames <= 0) return 0;
+    const int32_t channels = player->getChannelCount();
+    if (channels <= 0) return 0;
+    const jsize capacity = env->GetArrayLength(buffer);
+    const int32_t maxFrames = static_cast<int32_t>(capacity / channels);
+    const int32_t toRender = std::min(frames, maxFrames);
+    if (toRender <= 0) return 0;
+    std::vector<int16_t> scratch(
+        static_cast<size_t>(toRender) * static_cast<size_t>(channels));
+    player->renderOffline(scratch.data(), toRender);
+    env->SetShortArrayRegion(buffer, 0, toRender * channels, scratch.data());
+    return toRender;
 }
 
 extern "C" JNIEXPORT void JNICALL

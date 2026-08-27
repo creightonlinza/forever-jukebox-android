@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.StarBorder
@@ -71,6 +73,7 @@ private fun PlaybackHeaderRow(
     showControls: Boolean,
     showTuningAndInfo: Boolean,
     showDeleteTrackAction: Boolean,
+    showExportAction: Boolean,
     isFavorite: Boolean,
     hasTuningDrift: Boolean,
     favoriteToggleInFlight: Boolean,
@@ -78,7 +81,8 @@ private fun PlaybackHeaderRow(
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
     onShare: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onOpenExport: () -> Unit
 ) {
     val themeTokens = LocalThemeTokens.current
     Row(
@@ -134,6 +138,19 @@ private fun PlaybackHeaderRow(
                         Icon(
                             Icons.Outlined.Info,
                             contentDescription = "Info",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                if (showExportAction) {
+                    SquareIconButton(
+                        onClick = onOpenExport,
+                        modifier = Modifier.size(SmallButtonHeight)
+                    ) {
+                        Icon(
+                            Icons.Outlined.FileDownload,
+                            contentDescription = "Export audio",
                             tint = MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.size(20.dp)
                         )
@@ -210,6 +227,8 @@ internal fun ColumnScope.CastListenScreen(
     onDeleteCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenExport: () -> Unit,
+    isExporting: Boolean,
     favoriteToggleInFlight: Boolean,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
@@ -247,6 +266,9 @@ internal fun ColumnScope.CastListenScreen(
                 showControls = canShowTransport,
                 showTuningAndInfo = canShowReceiverDetails,
                 showDeleteTrackAction = showDeleteTrackAction,
+                // While casting a new export cannot start, but one begun
+                // beforehand keeps its controls reachable here.
+                showExportAction = isExporting,
                 isFavorite = isFavorite,
                 hasTuningDrift = hasTuningDrift,
                 favoriteToggleInFlight = favoriteToggleInFlight,
@@ -254,7 +276,8 @@ internal fun ColumnScope.CastListenScreen(
                 onOpenInfo = onOpenInfo,
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
                 onShare = onShare,
-                onToggleFavorite = onToggleFavorite
+                onToggleFavorite = onToggleFavorite,
+                onOpenExport = onOpenExport
             )
         }
         Box(
@@ -436,6 +459,8 @@ internal fun ColumnScope.LocalListenScreen(
     onDeleteCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenExport: () -> Unit,
+    isExporting: Boolean,
     favoriteToggleInFlight: Boolean,
     onSetPlaybackMode: (PlaybackMode) -> Unit,
     onSetVisualization: (Int) -> Unit,
@@ -447,6 +472,8 @@ internal fun ColumnScope.LocalListenScreen(
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
+    val showExportAction =
+        shouldShowExportControls(appMode, playback, isExporting, Build.VERSION.SDK_INT)
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
     val showInlineTitleWithControls = shouldShowPlaybackTransport(playback)
 
@@ -467,6 +494,7 @@ internal fun ColumnScope.LocalListenScreen(
                 showControls = true,
                 showTuningAndInfo = true,
                 showDeleteTrackAction = showDeleteTrackAction,
+                showExportAction = showExportAction,
                 isFavorite = isFavorite,
                 hasTuningDrift = hasTuningDrift,
                 favoriteToggleInFlight = favoriteToggleInFlight,
@@ -474,7 +502,8 @@ internal fun ColumnScope.LocalListenScreen(
                 onOpenInfo = onOpenInfo,
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
                 onShare = onShare,
-                onToggleFavorite = onToggleFavorite
+                onToggleFavorite = onToggleFavorite,
+                onOpenExport = onOpenExport
             )
         }
         LocalVisualizationPanel(

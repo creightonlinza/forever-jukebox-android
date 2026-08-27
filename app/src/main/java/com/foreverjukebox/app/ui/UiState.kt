@@ -139,6 +139,13 @@ data class SleepTimerUiState(
     val isActive: Boolean = false
 )
 
+data class ExportUiState(
+    val isExporting: Boolean = false,
+    val progressPercent: Int = 0,
+    val completedFileName: String? = null,
+    val errorMessage: String? = null
+)
+
 data class UiState(
     val appMode: AppMode? = null,
     val baseUrl: String = "",
@@ -181,6 +188,7 @@ data class UiState(
     val playlist: JukeboxPlaylistState = JukeboxPlaylistState(),
     val tuning: TuningState = TuningState(),
     val sleepTimer: SleepTimerUiState = SleepTimerUiState(),
+    val export: ExportUiState = ExportUiState(),
     val fullscreenVisualizationVisible: Boolean = false
 )
 
@@ -594,6 +602,57 @@ fun failedLoadRetryRequest(playback: PlaybackState): FailedLoadRetryRequest? {
 internal fun shouldBlockPlaybackChangeWhileLoading(playback: PlaybackState): Boolean {
     return playback.isTrackLoading()
 }
+
+const val EXPORT_MIN_SDK = 29
+const val EXPORT_MIN_DURATION_SECONDS = 5
+const val EXPORT_MAX_DURATION_SECONDS = 2 * 60 * 60
+
+/**
+ * Whether the audio-export action is available: Local mode on a device with the
+ * scoped-storage pending-entry flow (API 29+), jukebox playback (autocanonizer
+ * export is unsupported), and a fully loaded, non-casting track.
+ */
+fun shouldShowExportAction(
+    mode: AppMode?,
+    playback: PlaybackState,
+    sdkInt: Int
+): Boolean {
+    return mode == AppMode.Local &&
+        sdkInt >= EXPORT_MIN_SDK &&
+        !playback.isCasting &&
+        playback.playMode == PlaybackMode.Jukebox &&
+        playback.audioLoaded &&
+        playback.analysisLoaded &&
+        !playback.isTrackLoading()
+}
+
+/**
+ * Whether the export button and dialog are reachable. A running export keeps
+ * its controls (progress, cancel) even when the start conditions no longer
+ * hold — casting, a mode switch, or a new load must not strand an in-flight
+ * export with no way to see or stop it.
+ */
+fun shouldShowExportControls(
+    mode: AppMode?,
+    playback: PlaybackState,
+    isExporting: Boolean,
+    sdkInt: Int
+): Boolean {
+    return isExporting || shouldShowExportAction(mode, playback, sdkInt)
+}
+
+fun clampExportDurationSeconds(value: Int): Int {
+    return value.coerceIn(EXPORT_MIN_DURATION_SECONDS, EXPORT_MAX_DURATION_SECONDS)
+}
+
+/** Export duration defaults to the loaded track's own length, like the web app. */
+fun defaultExportDurationSeconds(trackDurationSeconds: Double?): Int {
+    val rounded = trackDurationSeconds?.let { Math.round(it).toInt() }
+        ?: EXPORT_DEFAULT_DURATION_SECONDS
+    return clampExportDurationSeconds(rounded)
+}
+
+private const val EXPORT_DEFAULT_DURATION_SECONDS = 60
 
 fun shouldShowFullscreenVisualization(playback: PlaybackState): Boolean {
     return !playback.isCasting &&

@@ -412,6 +412,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         diagnostics = diagnostics,
         audioLoadHold = audioLoadWakeLock
     )
+    private val exportCoordinator = ExportCoordinator(
+        scope = viewModelScope,
+        application = getApplication(),
+        controller = controller,
+        getState = { state.value },
+        updateState = { updater -> _state.update(updater) },
+        audioLoadHold = audioLoadWakeLock,
+        logError = { message, error -> AppLog.error(TAG, message, error) }
+    )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
         defaultConfig = defaultConfig,
@@ -963,6 +972,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelLocalAnalysis() {
         localAnalysisCoordinator.cancelLocalAnalysis()
+    }
+
+    fun startExport(durationSeconds: Int) {
+        exportCoordinator.startExport(durationSeconds)
+    }
+
+    fun cancelExport() {
+        exportCoordinator.cancelExport()
+    }
+
+    fun consumeExportResult() {
+        exportCoordinator.consumeExportResult()
     }
 
     fun retryCastLoad() {
