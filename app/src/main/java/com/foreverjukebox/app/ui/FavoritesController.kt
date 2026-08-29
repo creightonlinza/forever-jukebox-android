@@ -264,37 +264,11 @@ class FavoritesController(
         }
     }
 
-    private fun computeFavoritesDelta(
-        previous: List<FavoriteTrack>,
-        next: List<FavoriteTrack>
-    ): FavoritesDelta {
-        val prevMap = previous.associateBy { canonicalTrackId(it.uniqueSongId) ?: it.uniqueSongId }
-        val nextMap = next.associateBy { canonicalTrackId(it.uniqueSongId) ?: it.uniqueSongId }
-        val added = next.filter { item ->
-            val key = canonicalTrackId(item.uniqueSongId) ?: item.uniqueSongId
-            !prevMap.containsKey(key)
-        }
-        val removedIds = prevMap.keys.filterNot { nextMap.containsKey(it) }.toSet()
-        return FavoritesDelta(added = added, removedIds = removedIds)
-    }
-
     private fun applyFavoritesDelta(
         serverFavorites: List<FavoriteTrack>,
         delta: FavoritesDelta
     ): List<FavoriteTrack> {
-        val filtered = serverFavorites.filter { favorite ->
-            val canonical = canonicalTrackId(favorite.uniqueSongId) ?: favorite.uniqueSongId
-            canonical !in delta.removedIds
-        }
-        val merged = filtered + delta.added.filter { added ->
-            val addedCanonical = canonicalTrackId(added.uniqueSongId) ?: added.uniqueSongId
-            filtered.none { existing ->
-                val existingCanonical =
-                    canonicalTrackId(existing.uniqueSongId) ?: existing.uniqueSongId
-                existingCanonical == addedCanonical
-            }
-        }
-        return normalizeFavorites(merged)
+        return normalizeFavorites(mergeFavoritesDelta(serverFavorites, delta))
     }
 
     fun normalizeFavorites(
@@ -379,11 +353,55 @@ class FavoritesController(
     )
 }
 
-private data class FavoritesDelta(
+internal data class FavoritesDelta(
     val added: List<FavoriteTrack>,
-    val removedIds: Set<String>
+    val removedIds: Set<String>,
+    // Entries the server already holds under the same id whose contents changed here, kept apart
+    // from [added] because the merge has to overwrite the server's copy rather than skip it.
+    val updated: List<FavoriteTrack> = emptyList()
 )
 
-private fun FavoritesDelta.isNoop(): Boolean {
-    return added.isEmpty() && removedIds.isEmpty()
+internal fun FavoritesDelta.isNoop(): Boolean {
+    return added.isEmpty() && removedIds.isEmpty() && updated.isEmpty()
+}
+
+private val FavoriteTrack.syncKey: String
+    get() = canonicalTrackId(uniqueSongId) ?: uniqueSongId
+
+/** What this device changed since [previous], expressed against the ids the server holds. */
+internal fun computeFavoritesDelta(
+    previous: List<FavoriteTrack>,
+    next: List<FavoriteTrack>
+): FavoritesDelta {
+    val prevMap = previous.associateBy { it.syncKey }
+    val nextMap = next.associateBy { it.syncKey }
+    val added = next.filter { !prevMap.containsKey(it.syncKey) }
+    val removedIds = prevMap.keys.filterNot { nextMap.containsKey(it) }.toSet()
+    val updated = next.filter { item ->
+        val previousItem = prevMap[item.syncKey]
+        previousItem != null && previousItem != item
+    }
+    return FavoritesDelta(added = added, removedIds = removedIds, updated = updated)
+}
+
+/**
+ * The server's list with this device's changes replayed onto it, so a sync carries what changed
+ * here without discarding what another device added in the meantime.
+ */
+internal fun mergeFavoritesDelta(
+    serverFavorites: List<FavoriteTrack>,
+    delta: FavoritesDelta
+): List<FavoriteTrack> {
+    val updatedByKey = delta.updated.associateBy { it.syncKey }
+    val kept = serverFavorites.mapNotNull { favorite ->
+        when (favorite.syncKey) {
+            in delta.removedIds -> null
+            else -> updatedByKey[favorite.syncKey] ?: favorite
+        }
+    }
+    val keptKeys = kept.map { it.syncKey }.toSet()
+    // An edit naming a favorite the server no longer holds still describes one this device has, so
+    // it is carried across rather than dropped, which would delete it here on the response.
+    val restored = delta.updated.filterNot { it.syncKey in keptKeys }
+    return kept + restored + delta.added.filterNot { it.syncKey in keptKeys }
 }

@@ -194,6 +194,30 @@ class FavoriteTuningDriftPolicyTest {
     }
 
     @Test
+    fun reportsNoDriftOnceTheThresholdIsBackOnAuto() {
+        // Returning the slider to the auto value un-pins it, so the tuning the favorite saved
+        // nothing for reads as nothing again.
+        val state = stateFor(
+            favorites = listOf(favorite(tuningParams = null)),
+            tuning = TuningState(threshold = null, computedThreshold = 30)
+        )
+
+        assertNull(liveTuningParams(state))
+        assertFalse(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
+    }
+
+    @Test
+    fun reportsDriftWhenAChosenThresholdDiffersFromTheAutoThreshold() {
+        val state = stateFor(
+            favorites = listOf(favorite(tuningParams = null)),
+            tuning = TuningState(threshold = 45, computedThreshold = 30)
+        )
+
+        assertEquals("thresh=45", liveTuningParams(state))
+        assertTrue(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
+    }
+
+    @Test
     fun namesTheDriftInTheFavoriteActionDescription() {
         assertEquals(
             "Add favorite",
@@ -204,7 +228,7 @@ class FavoriteTuningDriftPolicyTest {
             favoriteActionContentDescription(isFavorite = true, hasTuningDrift = false)
         )
         assertEquals(
-            "Remove favorite, tuning differs from the saved tuning",
+            "Update saved tuning",
             favoriteActionContentDescription(isFavorite = true, hasTuningDrift = true)
         )
     }

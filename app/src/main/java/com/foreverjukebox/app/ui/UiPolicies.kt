@@ -7,6 +7,7 @@ import com.foreverjukebox.app.visualization.JumpLine
 
 enum class FavoriteToggleResult {
     Added,
+    Updated,
     Removed,
     LimitReached,
     BlockedInFlight,
@@ -106,7 +107,7 @@ internal fun favoriteActionContentDescription(
 ): String {
     return when {
         !isFavorite -> "Add favorite"
-        hasTuningDrift -> "Remove favorite, tuning differs from the saved tuning"
+        hasTuningDrift -> "Update saved tuning"
         else -> "Remove favorite"
     }
 }

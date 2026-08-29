@@ -1514,10 +1514,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val favorites = currentState.favorites
         val syncFromListenToggle = hasRealFavoritesSyncPath(currentState)
         val currentTrackIds = playback.reusableTrackIdsForMatching()
-        val existing = favorites.any {
+        val existing = favorites.firstOrNull {
             canonicalTrackId(it.uniqueSongId) in currentTrackIds
         }
-        return if (existing) {
+        return if (existing != null) {
+            // Tapping a drifted star saves what the track sounds like now rather than dropping the
+            // favorite: removing it is how the stored tuning is discarded, and that stays available
+            // once the marker clears, or from the favorites list.
+            if (hasFavoriteTuningDrift(currentState, existing)) {
+                // The stored id is kept: a favorite held under a legacy source id stays under it,
+                // so the sync reconciles this as an edit rather than a remove and an add.
+                val capturedTuning = capturedTuningParams(currentState)
+                val capturedPlayMode = playback.playMode.toFavoritePlayModeOrNull()
+                favoritesController.updateFavorites(
+                    // Every entry the track matches, the way the removal below clears every one of
+                    // them: a track can match both a legacy source id and its job id, and leaving
+                    // the second behind would keep stale tuning under an id still in use.
+                    favorites.map { favorite ->
+                        if (canonicalTrackId(favorite.uniqueSongId) in currentTrackIds) {
+                            favorite.copy(
+                                tuningParams = capturedTuning,
+                                playMode = capturedPlayMode
+                            )
+                        } else {
+                            favorite
+                        }
+                    },
+                    fromListenToggle = syncFromListenToggle
+                )
+                return FavoriteToggleResult.Updated
+            }
             favoritesController.updateFavorites(
                 favorites.filterNot {
                     canonicalTrackId(it.uniqueSongId) in currentTrackIds

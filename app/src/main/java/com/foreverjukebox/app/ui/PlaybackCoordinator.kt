@@ -1107,20 +1107,23 @@ class PlaybackCoordinator(
             if (state.playback.isCasting) {
                 return@updateState state
             }
+            // Read through the same conversion the capture path uses, so a tuning string built
+            // from this state and one built from the engine describe the engine identically.
+            // Branch edits are left alone: they reach tuning only from applied params.
+            val engineTuning = engineTuningState(
+                config = config,
+                computedThreshold = graph?.computedThreshold
+            )
             state.copy(
                 tuning = state.tuning.copy(
-                    threshold = config.currentThreshold.takeIf { it != 0 },
-                    computedThreshold = graph?.computedThreshold,
-                    minProb = (config.minRandomBranchChance * 100).toInt(),
-                    maxProb = (config.maxRandomBranchChance * 100).toInt(),
-                    ramp = (config.randomBranchChanceDelta * RANDOM_BRANCH_DELTA_PERCENT_SCALE).toInt(),
-                    justBackwards = config.justBackwards,
-                    minJumpDistancePercent = if (config.justLongBranches) {
-                        config.minLongBranchPercent
-                    } else {
-                        0
-                    },
-                    removeSequential = config.removeSequentialBranches
+                    threshold = engineTuning.threshold,
+                    computedThreshold = engineTuning.computedThreshold,
+                    minProb = engineTuning.minProb,
+                    maxProb = engineTuning.maxProb,
+                    ramp = engineTuning.ramp,
+                    justBackwards = engineTuning.justBackwards,
+                    minJumpDistancePercent = engineTuning.minJumpDistancePercent,
+                    removeSequential = engineTuning.removeSequential
                 )
             )
         }
@@ -1437,7 +1440,6 @@ class PlaybackCoordinator(
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
 private const val MAX_RANDOM_BRANCH_DELTA = 0.2
-private const val RANDOM_BRANCH_DELTA_PERCENT_SCALE = 100.0 / MAX_RANDOM_BRANCH_DELTA
 
 /**
  * Snapshot of the engine's live tuning as a [TuningState], so on-device capture flows

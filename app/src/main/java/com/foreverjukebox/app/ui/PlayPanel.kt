@@ -113,6 +113,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             val message = when (result) {
                 FavoriteToggleResult.LimitReached -> "Maximum favorites reached (${state.maxFavorites})."
                 FavoriteToggleResult.Removed -> "Removed from Favorites"
+                FavoriteToggleResult.Updated -> "Favorite tuning updated"
                 FavoriteToggleResult.Added -> "Added to Favorites"
                 FavoriteToggleResult.BlockedInFlight,
                 FavoriteToggleResult.NoTrack -> null

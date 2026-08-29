@@ -62,6 +62,29 @@ private enum class TuningDialogTab(val title: String) {
 
 private val TuningDialogContentHeight = 420.dp
 
+/**
+ * The threshold to apply, or null for auto.
+ *
+ * The slider cannot show "auto" — it always displays the number the track resolved to — so moving
+ * it to that number is the same as never having moved it, and building the graph from either gives
+ * the same result. Returning the control there is how the user gets back to auto.
+ *
+ * [thresholdMoved] is what separates that from a threshold already pinned to the same number when
+ * the dialog opened: applying an unrelated change must leave such a pin exactly as it was found.
+ */
+internal fun chosenThresholdOrAuto(
+    threshold: Int,
+    thresholdChosen: Boolean,
+    thresholdMoved: Boolean,
+    computedThreshold: Int?
+): Int? {
+    return when {
+        !thresholdChosen -> null
+        thresholdMoved && threshold == computedThreshold -> null
+        else -> threshold
+    }
+}
+
 @Composable
 @Suppress("AssignedValueIsNeverRead")
 fun TuningDialog(
@@ -101,6 +124,7 @@ fun TuningDialog(
     }
     // Moving the control is the choice; until then the threshold stays the track's own.
     var thresholdChosen by remember(initialThreshold) { mutableStateOf(initialThreshold != null) }
+    var thresholdMoved by remember(initialThreshold, computedThreshold) { mutableStateOf(false) }
     var probRange by remember(initialMinProb, initialMaxProb) {
         mutableStateOf(
             initialMinProb.toFloat().coerceAtMost(initialMaxProb.toFloat())..
@@ -161,6 +185,7 @@ fun TuningDialog(
                             onThresholdChange = {
                                 threshold = it
                                 thresholdChosen = true
+                                thresholdMoved = true
                             },
                             minJumpIndex = minJumpIndex,
                             onMinJumpIndexChange = { minJumpIndex = it },
@@ -241,7 +266,12 @@ fun TuningDialog(
                         Button(
                             onClick = {
                                 onApply(
-                                    threshold.toInt().takeIf { thresholdChosen },
+                                    chosenThresholdOrAuto(
+                                        threshold = threshold.toInt(),
+                                        thresholdChosen = thresholdChosen,
+                                        thresholdMoved = thresholdMoved,
+                                        computedThreshold = computedThreshold
+                                    ),
                                     probRange.start / 100.0,
                                     probRange.endInclusive / 100.0,
                                     ramp / 500.0,
