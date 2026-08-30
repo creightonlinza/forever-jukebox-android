@@ -90,10 +90,11 @@ fun HeaderBar(
     onCastSessionStarted: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onOpenWhatsNew: () -> Unit,
-    onSubmitBugReport: (String) -> Unit
+    onSubmitFeedback: (String) -> Unit,
+    onSaveFeedbackDraft: (String) -> Unit
 ) {
     val context = LocalContext.current
-    // Saveable so the settings dialog (and the bug-report draft nested inside it)
+    // Saveable so the settings dialog (and the feedback draft nested inside it)
     // survives activity recreation.
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
@@ -160,7 +161,8 @@ fun HeaderBar(
             onEditBaseUrl = onEditBaseUrl,
             onEditAdminKey = onEditAdminKey,
             onClearCache = onClearCache,
-            onSubmitBugReport = onSubmitBugReport
+            onSubmitFeedback = onSubmitFeedback,
+            onSaveFeedbackDraft = onSaveFeedbackDraft
         )
     }
 }
@@ -357,13 +359,14 @@ private fun SettingsDialog(
     onEditBaseUrl: (String) -> Unit,
     onEditAdminKey: (String) -> Unit,
     onClearCache: () -> Unit,
-    onSubmitBugReport: (String) -> Unit
+    onSubmitFeedback: (String) -> Unit,
+    onSaveFeedbackDraft: (String) -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
     var adminKeyInput by remember(state.adminKey) { mutableStateOf(state.adminKey) }
     var selectedMode by remember(state.appMode) { mutableStateOf(state.appMode ?: defaultOnboardingMode) }
     var showServerSettings by remember { mutableStateOf(false) }
-    var showBugReport by rememberSaveable { mutableStateOf(false) }
+    var showFeedback by rememberSaveable { mutableStateOf(false) }
     val trimmedUrl = urlInput.trim()
     val trimmedAdminKey = adminKeyInput.trim()
     val requiresServerUrl = BuildConfig.SERVER_MODE_AVAILABLE && selectedMode == AppMode.Server
@@ -438,10 +441,10 @@ private fun SettingsDialog(
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
-                SquareIconButton(onClick = { showBugReport = true }) {
+                SquareIconButton(onClick = { showFeedback = true }) {
                     Icon(
                         imageVector = Icons.Outlined.BugReport,
-                        contentDescription = "Report a bug",
+                        contentDescription = "Send feedback or report a bug",
                         tint = LocalThemeTokens.current.danger
                     )
                 }
@@ -526,10 +529,12 @@ private fun SettingsDialog(
             onDone = { showServerSettings = false }
         )
     }
-    if (showBugReport) {
-        BugReportDialog(
-            onSubmit = onSubmitBugReport,
-            onDone = { showBugReport = false }
+    if (showFeedback) {
+        FeedbackDialog(
+            draft = state.feedbackDraft,
+            onSubmit = onSubmitFeedback,
+            onSaveDraft = onSaveFeedbackDraft,
+            onDone = { showFeedback = false }
         )
     }
 }
@@ -603,15 +608,23 @@ private fun ServerSettingsDialog(
 }
 
 @Composable
-private fun BugReportDialog(
+private fun FeedbackDialog(
+    draft: String,
     onSubmit: (String) -> Unit,
+    onSaveDraft: (String) -> Unit,
     onDone: () -> Unit
 ) {
-    // Saveable so a typed report survives activity recreation. Submission itself runs in
-    // the ViewModel, so closing the dialog immediately never abandons an in-flight send.
-    var feedback by rememberSaveable { mutableStateOf("") }
+    // Seeded from the stored draft so an unsent submission comes back, and saveable so
+    // typing survives activity recreation. Sending runs in the ViewModel, so closing the
+    // dialog immediately never abandons an in-flight send.
+    var feedback by rememberSaveable { mutableStateOf(draft) }
+    // Leaving without sending keeps the text for next time; clearing the field drops it.
+    val dismiss = {
+        onSaveDraft(feedback.trim())
+        onDone()
+    }
     AlertDialog(
-        onDismissRequest = onDone,
+        onDismissRequest = dismiss,
         confirmButton = {
             Button(
                 onClick = {
@@ -630,7 +643,7 @@ private fun BugReportDialog(
         },
         dismissButton = {
             OutlinedButton(
-                onClick = onDone,
+                onClick = dismiss,
                 colors = pillOutlinedButtonColors(),
                 border = pillButtonBorder(),
                 shape = PillShape,
@@ -640,19 +653,19 @@ private fun BugReportDialog(
                 Text("Cancel", style = MaterialTheme.typography.labelSmall)
             }
         },
-        title = { Text("Report a Bug") },
+        title = { Text("Feedback & Bug Reporting") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Describe what went wrong. Your app version and device model are " +
-                        "included automatically.",
+                    "Tell us what's broken, what's confusing, or what you'd like to see. " +
+                        "Your app version and device model are included automatically.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
                 OutlinedTextField(
                     value = feedback,
                     onValueChange = { feedback = it },
-                    label = { Text("What happened?") },
+                    label = { Text("What's on your mind?") },
                     textStyle = MaterialTheme.typography.bodySmall,
                     minLines = 4,
                     keyboardOptions = KeyboardOptions(

@@ -11,9 +11,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
- * Submits in-app bug reports to a Google Form via its public `formResponse` endpoint
- * (form-urlencoded POST, no auth). A report carries only the user's feedback text, the app
- * version, and a basic device summary — PRIVACY.md documents exactly this; keep them in sync.
+ * Submits in-app feedback and bug reports to a Google Form via its public `formResponse`
+ * endpoint (form-urlencoded POST, no auth). A submission carries only the user's feedback
+ * text, the app version, and a basic device summary — PRIVACY.md documents exactly this;
+ * keep them in sync.
  *
  * Google answers a successful submission with the confirmation page (following a redirect,
  * which OkHttp does by default) but also answers rejected submissions with HTTP 200 by
@@ -22,11 +23,14 @@ import okhttp3.Request
  * Version/device strings are passed in rather than read here so the network path stays
  * unit-testable on the JVM.
  */
-class BugReportClient(
+class FeedbackClient(
     private val formUrl: String = DEFAULT_FORM_URL,
     private val client: OkHttpClient = defaultClient
 ) {
-    /** Returns true when Google accepted the submission; false on any HTTP or network failure. */
+    /**
+     * Returns true when Google accepted the submission; false on any HTTP or network
+     * failure. Makes a single attempt — the caller keeps the text until this returns true.
+     */
     suspend fun submit(
         feedback: String,
         appVersion: String,

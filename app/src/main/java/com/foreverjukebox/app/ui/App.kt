@@ -57,7 +57,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         onCastSessionStarted = {},
                         onOpenSleepTimer = { showSleepTimer = true },
                         onOpenWhatsNew = viewModel::showWhatsNewFromSettings,
-                        onSubmitBugReport = viewModel::submitBugReport
+                        onSubmitFeedback = viewModel::submitFeedback,
+                        onSaveFeedbackDraft = viewModel::saveFeedbackDraft
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 

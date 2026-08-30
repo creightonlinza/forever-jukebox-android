@@ -48,18 +48,21 @@ If you don't cast, none of this applies and your audio never leaves your device.
 
 You are responsible for having the rights to any audio you cast through the app.
 
-## Bug reports
+## Feedback and bug reports
 
-The Settings screen has an optional bug-report form. Nothing is sent unless you
-tap Send. A report contains only:
+The Settings screen has an optional feedback and bug-report form. Nothing is
+sent unless you tap Send. A submission contains only:
 
 - the feedback text you type,
 - the app version, and
 - a basic device summary (manufacturer, model, Android version).
 
-Reports are submitted to a Google Form, so Google processes the submission on
-our behalf. No account, contact, or device identifiers are attached — a report
-is anonymous unless you include contact details in the text.
+Submissions go to a Google Form, so Google processes them on our behalf. No
+account, contact, or device identifiers are attached — a submission is anonymous
+unless you include contact details in the text.
+
+If a submission can't be sent, the text you wrote is kept on your device so you
+can try again; it stays there until it sends or you clear it.
 
 ## Diagnostics and usage data we collect (Firebase Crashlytics and Analytics)
 

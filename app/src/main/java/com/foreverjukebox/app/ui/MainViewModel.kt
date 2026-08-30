@@ -33,7 +33,7 @@ import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
-import com.foreverjukebox.app.net.BugReportClient
+import com.foreverjukebox.app.net.FeedbackClient
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.playback.PlaybackStartResult
@@ -322,7 +322,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castRelayClient = CastRelayClient()
-    private val bugReportClient = BugReportClient()
+    private val feedbackClient = FeedbackClient()
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
         castController = castController,
         getState = { state.value },
@@ -560,6 +560,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferences.adminKey.collect { key ->
                 _state.update { current ->
                     current.copy(adminKey = key.orEmpty())
+                }
+            }
+        }
+        viewModelScope.launch {
+            preferences.feedbackDraft.collect { draft ->
+                _state.update { current ->
+                    current.copy(feedbackDraft = draft.orEmpty())
                 }
             }
         }
@@ -4165,16 +4172,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Fire-and-forget: runs in [viewModelScope] so the submission and its result toast
-     * survive the bug-report dialog closing and activity recreation.
+     * survive the feedback dialog closing and activity recreation. The text is persisted
+     * before the attempt and cleared only once Google accepts it, so a failed send leaves
+     * a draft the dialog restores instead of losing what the user wrote.
      */
-    fun submitBugReport(feedback: String) {
+    fun submitFeedback(feedback: String) {
         viewModelScope.launch {
-            val sent = bugReportClient.submit(
+            preferences.setFeedbackDraft(feedback)
+            val sent = feedbackClient.submit(
                 feedback = feedback,
-                appVersion = BugReportClient.appVersionSummary(),
-                deviceInfo = BugReportClient.deviceSummary()
+                appVersion = FeedbackClient.appVersionSummary(),
+                deviceInfo = FeedbackClient.deviceSummary()
             )
-            showToast(if (sent) BUG_REPORT_SENT_MESSAGE else BUG_REPORT_FAILURE_MESSAGE)
+            if (sent) {
+                preferences.setFeedbackDraft("")
+            }
+            showToast(if (sent) FEEDBACK_SENT_MESSAGE else FEEDBACK_FAILURE_MESSAGE)
+        }
+    }
+
+    /** Keeps unsent feedback when the dialog is dismissed; a blank text drops the draft. */
+    fun saveFeedbackDraft(feedback: String) {
+        viewModelScope.launch {
+            preferences.setFeedbackDraft(feedback)
         }
     }
 
@@ -4203,9 +4223,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val SHARE_UNSUPPORTED_MESSAGE =
             "Share a YouTube, SoundCloud, or Bandcamp link."
         private const val CAST_QUEUE_FAILURE_MESSAGE = "Unable to queue this track for casting."
-        private const val BUG_REPORT_SENT_MESSAGE = "Bug report sent. Thank you!"
-        private const val BUG_REPORT_FAILURE_MESSAGE =
-            "Couldn't send report. Check your connection."
+        private const val FEEDBACK_SENT_MESSAGE = "Feedback sent. Thank you!"
+        private const val FEEDBACK_FAILURE_MESSAGE =
+            "Couldn't send feedback. Your draft was saved — try again later."
     }
 }
 

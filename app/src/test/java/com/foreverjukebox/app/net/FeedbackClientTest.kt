@@ -13,13 +13,13 @@ import org.junit.Test
 /**
  * Exercises the Google Forms submission contract against a MockWebServer: the form-urlencoded
  * entry mapping, the redirect-to-confirmation success path, and failure mapping. Version and
- * device strings are passed as literals — [BugReportClient.deviceSummary] reads
+ * device strings are passed as literals — [FeedbackClient.deviceSummary] reads
  * `android.os.Build` and can't run on the JVM.
  */
-class BugReportClientTest {
+class FeedbackClientTest {
 
     private lateinit var server: MockWebServer
-    private lateinit var client: BugReportClient
+    private lateinit var client: FeedbackClient
 
     private val feedback = "It broke"
     private val appVersion = "2026.08.1 (Build 42)"
@@ -29,7 +29,7 @@ class BugReportClientTest {
     fun setUp() {
         server = MockWebServer()
         server.start()
-        client = BugReportClient(formUrl = server.url("/formResponse").toString())
+        client = FeedbackClient(formUrl = server.url("/formResponse").toString())
     }
 
     @After
@@ -52,9 +52,9 @@ class BugReportClientTest {
             request.getHeader("Content-Type")?.substringBefore(';')
         )
         assertEquals(
-            "${BugReportClient.ENTRY_FEEDBACK}=It+broke" +
-                "&${BugReportClient.ENTRY_APP_VERSION}=2026.08.1+%28Build+42%29" +
-                "&${BugReportClient.ENTRY_DEVICE_INFO}=Acme+Phone%2C+Android+14+%28SDK+34%29",
+            "${FeedbackClient.ENTRY_FEEDBACK}=It+broke" +
+                "&${FeedbackClient.ENTRY_APP_VERSION}=2026.08.1+%28Build+42%29" +
+                "&${FeedbackClient.ENTRY_DEVICE_INFO}=Acme+Phone%2C+Android+14+%28SDK+34%29",
             request.body.readUtf8()
         )
     }
@@ -103,7 +103,7 @@ class BugReportClientTest {
     fun submitReturnsFalseOnConnectionFailure() = runTest {
         val deadUrl = server.url("/formResponse").toString()
         server.shutdown()
-        val deadClient = BugReportClient(formUrl = deadUrl)
+        val deadClient = FeedbackClient(formUrl = deadUrl)
 
         assertFalse(deadClient.submit(feedback, appVersion, deviceInfo))
     }
