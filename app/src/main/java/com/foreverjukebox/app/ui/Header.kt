@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -86,10 +89,13 @@ fun HeaderBar(
     onClearCache: () -> Unit,
     onCastSessionStarted: () -> Unit,
     onOpenSleepTimer: () -> Unit,
-    onOpenWhatsNew: () -> Unit
+    onOpenWhatsNew: () -> Unit,
+    onSubmitBugReport: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var showSettings by remember { mutableStateOf(false) }
+    // Saveable so the settings dialog (and the bug-report draft nested inside it)
+    // survives activity recreation.
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -153,7 +159,8 @@ fun HeaderBar(
             onAppModeChange = onAppModeChange,
             onEditBaseUrl = onEditBaseUrl,
             onEditAdminKey = onEditAdminKey,
-            onClearCache = onClearCache
+            onClearCache = onClearCache,
+            onSubmitBugReport = onSubmitBugReport
         )
     }
 }
@@ -349,12 +356,14 @@ private fun SettingsDialog(
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
     onEditAdminKey: (String) -> Unit,
-    onClearCache: () -> Unit
+    onClearCache: () -> Unit,
+    onSubmitBugReport: (String) -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
     var adminKeyInput by remember(state.adminKey) { mutableStateOf(state.adminKey) }
     var selectedMode by remember(state.appMode) { mutableStateOf(state.appMode ?: defaultOnboardingMode) }
     var showServerSettings by remember { mutableStateOf(false) }
+    var showBugReport by rememberSaveable { mutableStateOf(false) }
     val trimmedUrl = urlInput.trim()
     val trimmedAdminKey = adminKeyInput.trim()
     val requiresServerUrl = BuildConfig.SERVER_MODE_AVAILABLE && selectedMode == AppMode.Server
@@ -427,6 +436,13 @@ private fun SettingsDialog(
                         imageVector = Icons.Outlined.Timer,
                         contentDescription = "Sleep timer",
                         tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                SquareIconButton(onClick = { showBugReport = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.BugReport,
+                        contentDescription = "Report a bug",
+                        tint = LocalThemeTokens.current.danger
                     )
                 }
             }
@@ -510,6 +526,12 @@ private fun SettingsDialog(
             onDone = { showServerSettings = false }
         )
     }
+    if (showBugReport) {
+        BugReportDialog(
+            onSubmit = onSubmitBugReport,
+            onDone = { showBugReport = false }
+        )
+    }
 }
 
 @Composable
@@ -574,6 +596,71 @@ private fun ServerSettingsDialog(
                     ),
                     shape = SurfaceShape,
                     modifier = Modifier.heightIn(min = SmallFieldMinHeight)
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun BugReportDialog(
+    onSubmit: (String) -> Unit,
+    onDone: () -> Unit
+) {
+    // Saveable so a typed report survives activity recreation. Submission itself runs in
+    // the ViewModel, so closing the dialog immediately never abandons an in-flight send.
+    var feedback by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDone,
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSubmit(feedback.trim())
+                    onDone()
+                },
+                enabled = feedback.isNotBlank(),
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Send", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDone,
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text("Report a Bug") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Describe what went wrong. Your app version and device model are " +
+                        "included automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                OutlinedTextField(
+                    value = feedback,
+                    onValueChange = { feedback = it },
+                    label = { Text("What happened?") },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    minLines = 4,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        keyboardType = KeyboardType.Text
+                    ),
+                    shape = SurfaceShape,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }

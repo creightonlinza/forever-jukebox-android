@@ -33,6 +33,7 @@ import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
+import com.foreverjukebox.app.net.BugReportClient
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.playback.PlaybackStartResult
@@ -321,6 +322,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castRelayClient = CastRelayClient()
+    private val bugReportClient = BugReportClient()
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
         castController = castController,
         getState = { state.value },
@@ -4161,6 +4163,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         syncPlaybackServiceSession()
     }
 
+    /**
+     * Fire-and-forget: runs in [viewModelScope] so the submission and its result toast
+     * survive the bug-report dialog closing and activity recreation.
+     */
+    fun submitBugReport(feedback: String) {
+        viewModelScope.launch {
+            val sent = bugReportClient.submit(
+                feedback = feedback,
+                appVersion = BugReportClient.appVersionSummary(),
+                deviceInfo = BugReportClient.deviceSummary()
+            )
+            showToast(if (sent) BUG_REPORT_SENT_MESSAGE else BUG_REPORT_FAILURE_MESSAGE)
+        }
+    }
+
     private suspend fun showToast(message: String) {
         withContext(Dispatchers.Main) {
             android.widget.Toast.makeText(getApplication(), message, android.widget.Toast.LENGTH_SHORT).show()
@@ -4186,6 +4203,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val SHARE_UNSUPPORTED_MESSAGE =
             "Share a YouTube, SoundCloud, or Bandcamp link."
         private const val CAST_QUEUE_FAILURE_MESSAGE = "Unable to queue this track for casting."
+        private const val BUG_REPORT_SENT_MESSAGE = "Bug report sent. Thank you!"
+        private const val BUG_REPORT_FAILURE_MESSAGE =
+            "Couldn't send report. Check your connection."
     }
 }
 
