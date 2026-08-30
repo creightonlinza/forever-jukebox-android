@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.visualization.visualizationLabels
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -49,6 +50,25 @@ class AnalyticsEventMappingTest {
         assertEquals("Never Gonna Give You Up", analyticsPlayTrackTitle("dQw4w9WgXcQ", " Never Gonna Give You Up "))
         assertNull(analyticsPlayTrackTitle("dQw4w9WgXcQ", "  "))
         assertNull(analyticsPlayTrackTitle(null, "My Song.mp3"))
+    }
+
+    // duration_min carries whole minutes as strings, matching the web picker values;
+    // an enum rename or a new option with a non-web duration would split the dimension.
+    @Test
+    fun sleepTimerDurationMapsOptionsToWebMinuteStrings() {
+        assertEquals("off", analyticsSleepTimerDuration(SleepTimerOption.Off))
+        assertEquals("15", analyticsSleepTimerDuration(SleepTimerOption.Minutes15))
+        assertEquals("30", analyticsSleepTimerDuration(SleepTimerOption.Minutes30))
+        assertEquals("45", analyticsSleepTimerDuration(SleepTimerOption.Minutes45))
+        assertEquals("60", analyticsSleepTimerDuration(SleepTimerOption.Hour1))
+        assertEquals("120", analyticsSleepTimerDuration(SleepTimerOption.Hours2))
+    }
+
+    @Test
+    fun themeModeMapsToWebThemeValues() {
+        assertEquals("system", analyticsThemeValue(ThemeMode.System))
+        assertEquals("light", analyticsThemeValue(ThemeMode.Light))
+        assertEquals("dark", analyticsThemeValue(ThemeMode.Dark))
     }
 
     @Test

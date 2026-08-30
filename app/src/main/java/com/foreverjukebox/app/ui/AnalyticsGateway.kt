@@ -1,15 +1,17 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
+import com.foreverjukebox.app.data.ThemeMode
 
 /**
  * Usage analytics events shared with the web app's GA4 event dictionary: play,
- * search, select_track, favorite, share, upload, audio_mode, tune, select_viz. Event names,
+ * search, select_track, favorite, share, upload, audio_mode, tune, select_viz,
+ * playlist_add, playlist_navigate, sleep_timer, theme. Event names,
  * parameter names, and string values must stay identical to the web app so both
  * platforms aggregate under the same GA4 property. Parameter values are strings
- * with one exception — audio_intensity is numeric so GA4 aggregates it as a
- * metric — and null/blank parameters are omitted (e.g. Spotify search picks have
- * no track id yet).
+ * with two exceptions — audio_intensity and playlist_add's size are numeric so
+ * GA4 aggregates them as metrics — and null/blank parameters are omitted
+ * (e.g. Spotify search picks have no track id yet).
  *
  * cast_start has no web counterpart; the web app has no Cast support.
  */
@@ -27,6 +29,16 @@ interface AnalyticsGateway {
     // platform reordering its visualizations would silently remap index-based history.
     fun logSelectViz(viz: String)
     fun logCastStart(mode: String)
+
+    // Only successful inserts: duplicate and playlist-full rejections log nothing on
+    // either platform, so cap-hammering can't inflate the counts. `size` is the
+    // resulting playlist length.
+    fun logPlaylistAdd(source: String, trackId: String, size: Int)
+
+    // User-initiated next/prev/pick only — automatic end-of-track advancement never logs.
+    fun logPlaylistNavigate(method: String)
+    fun logSleepTimer(durationMin: String)
+    fun logTheme(theme: String)
 }
 
 fun analyticsPlayMode(mode: PlaybackMode): String = when (mode) {
@@ -75,6 +87,20 @@ fun analyticsAudioModeIntensity(audioModeWireValue: String, intensity: Int): Int
     intensity.takeIf {
         JukeboxAudioMode.fromWireValue(audioModeWireValue)?.supportsIntensity == true
     }
+
+// `duration_min` carries whole minutes as a string ("off"/"15"/"30"/"45"/"60"/"120"),
+// matching the web app's picker values — never the enum name or a millisecond count.
+fun analyticsSleepTimerDuration(option: SleepTimerOption): String {
+    val durationMs = option.durationMs ?: return "off"
+    return (durationMs / 60_000L).toString()
+}
+
+// `theme` carries the web app's values, never AppCompat night-mode constants.
+fun analyticsThemeValue(mode: ThemeMode): String = when (mode) {
+    ThemeMode.System -> "system"
+    ThemeMode.Light -> "light"
+    ThemeMode.Dark -> "dark"
+}
 
 /**
  * The `control` values for the `tune` event, one per changed control, in the order the

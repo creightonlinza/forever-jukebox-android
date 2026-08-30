@@ -58,6 +58,29 @@ private class FirebaseAnalyticsGateway(context: Context) : AnalyticsGateway {
         log("cast_start", "mode" to mode)
     }
 
+    // Built inline rather than through log(): size must be a Long so GA4 registers
+    // it as a metric, and the shared helper is string-only by design.
+    override fun logPlaylistAdd(source: String, trackId: String, size: Int) {
+        val analytics = firebase ?: return
+        val bundle = Bundle()
+        bundle.putString("source", source)
+        bundle.putString("track_id", trackId)
+        bundle.putLong("size", size.toLong())
+        analytics.logEvent("playlist_add", bundle)
+    }
+
+    override fun logPlaylistNavigate(method: String) {
+        log("playlist_navigate", "method" to method)
+    }
+
+    override fun logSleepTimer(durationMin: String) {
+        log("sleep_timer", "duration_min" to durationMin)
+    }
+
+    override fun logTheme(theme: String) {
+        log("theme", "theme" to theme)
+    }
+
     private fun log(event: String, vararg params: Pair<String, String?>) {
         val analytics = firebase ?: return
         val bundle = Bundle()

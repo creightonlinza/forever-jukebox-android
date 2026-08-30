@@ -908,6 +908,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setThemeMode(mode: ThemeMode) {
+        // Only user picks land here; preference hydration flows through the
+        // preferences.themeMode collector instead, so restoring a saved theme never logs.
+        analytics.logTheme(analyticsThemeValue(mode))
         viewModelScope.launch {
             preferences.setThemeMode(mode)
         }
@@ -1435,7 +1438,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun addTrackToPlaylistFromLongPress(track: PlaylistTrack) {
+    // playlist_add fires only from the successful-insert branches: duplicate, cap, and
+    // no-loaded-track rejections deliberately log nothing (matching web), so hammering a
+    // full playlist can't inflate the counts. A null analyticsSource logs nothing —
+    // on-device library adds stay unlogged, like their select_track counterpart.
+    private fun addTrackToPlaylistFromLongPress(track: PlaylistTrack, analyticsSource: String?) {
         val playlist = state.value.playlist
         if (playlist.isInactiveSavedPlaylist()) {
             viewModelScope.launch { showToast("Load a track before starting a playlist.") }
@@ -1452,6 +1459,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
             updatePlaylistState { initializePlaylist(current, track) }
+            logPlaylistAdd(analyticsSource, track)
             syncPlaybackServiceSession()
             viewModelScope.launch { showToast("Added to playlist.") }
             return
@@ -1465,8 +1473,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         updatePlaylistState { it.appendTrack(track) }
+        logPlaylistAdd(analyticsSource, track)
         syncPlaybackServiceSession()
         viewModelScope.launch { showToast("Added to playlist.") }
+    }
+
+    private fun logPlaylistAdd(source: String?, track: PlaylistTrack) {
+        if (source == null) return
+        analytics.logPlaylistAdd(source, track.id, state.value.playlist.tracks.size)
     }
 
     private fun maybeSelectPlaylistTrack(track: PlaylistTrack?) {
@@ -1658,7 +1672,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tuningParams: String? = null
     ) {
         val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams) ?: return
-        addTrackToPlaylistFromLongPress(track)
+        addTrackToPlaylistFromLongPress(track, analyticsSelectSource(state.value.topSongsTab))
     }
 
     fun addFavoriteTrackToPlaylist(
@@ -1671,7 +1685,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Carry the favorite's play mode into the playlist entry so playback honors
         // it when this track is reached during advancement (see loadPlaylistTrack).
         val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams, playMode) ?: return
-        addTrackToPlaylistFromLongPress(track)
+        addTrackToPlaylistFromLongPress(track, "favorites")
     }
 
     fun selectLocalCachedPlaylistTrack(localId: String) {
@@ -1686,7 +1700,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addLocalCachedTrackToPlaylist(localId: String) {
         val track = playlistTrackForLocalCached(localId) ?: return
-        addTrackToPlaylistFromLongPress(track)
+        addTrackToPlaylistFromLongPress(track, analyticsSource = null)
     }
 
     fun selectSpotifyTrack(item: RemoteMusicSearchItem) {
@@ -3354,6 +3368,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setSleepTimer(option: SleepTimerOption) {
+        // Reached only from the dialog's Set button, so this is the confirmed selection.
+        analytics.logSleepTimer(analyticsSleepTimerDuration(option))
         ForegroundPlaybackService.setSleepTimer(
             context = getApplication(),
             durationMs = option.durationMs
@@ -3420,13 +3436,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         appLifecycleCoordinator.prepareForExit()
     }
 
+    /**
+     * navigateMethod names the user gesture ("next"/"prev"/"pick") for the
+     * playlist_navigate event; automatic end-of-track advancement passes none, so it never
+     * logs. The event fires here — after the can-move and load-in-progress guards but
+     * before the track loads — matching when the web app fires it, so both platforms count
+     * failed loads the same way.
+     */
     fun selectPlaylistTrack(
         index: Int,
-        playAfterLoaded: Boolean = false
+        playAfterLoaded: Boolean = false,
+        navigateMethod: String? = null
     ) {
         val playlist = state.value.playlist
         if (!playlist.canSelectTrackAt(index)) return
         if (blockPlaybackChangeWhileLoading()) return
+        navigateMethod?.let(analytics::logPlaylistNavigate)
         val track = playlist.tracks[index]
         diagnostics.logPlaylistTrackSelected(index, track.id, track.title)
         _state.update {
@@ -3441,7 +3466,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectPlaylistDialogTrack(index: Int) {
         selectPlaylistTrack(
             index = index,
-            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(state.value)
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(state.value),
+            navigateMethod = "pick"
         )
     }
 
@@ -3452,7 +3478,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!playlist.canSkipPrevious()) return
         selectPlaylistTrack(
             index = playlist.currentIndex - 1,
-            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current)
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current),
+            navigateMethod = "prev"
         )
     }
 
@@ -3463,7 +3490,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!playlist.canSkipNext()) return
         selectPlaylistTrack(
             index = playlist.currentIndex + 1,
-            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current)
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(current),
+            navigateMethod = "next"
         )
     }
 
