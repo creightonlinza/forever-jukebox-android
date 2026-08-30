@@ -29,7 +29,7 @@ class FeedbackClient(
 ) {
     /**
      * Returns true when Google accepted the submission; false on any HTTP or network
-     * failure. Makes a single attempt — the caller keeps the text until this returns true.
+     * failure. Makes a single attempt; a failed submission is not retried or retained.
      */
     suspend fun submit(
         feedback: String,

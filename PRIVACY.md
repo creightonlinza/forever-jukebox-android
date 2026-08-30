@@ -61,9 +61,6 @@ Submissions go to a Google Form, so Google processes them on our behalf. No
 account, contact, or device identifiers are attached — a submission is anonymous
 unless you include contact details in the text.
 
-If a submission can't be sent, the text you wrote is kept on your device so you
-can try again; it stays there until it sends or you clear it.
-
 ## Diagnostics and usage data we collect (Firebase Crashlytics and Analytics)
 
 To keep the app stable and understand which features get used, we use

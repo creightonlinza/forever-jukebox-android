@@ -78,7 +78,6 @@ class AppPreferences(private val context: Context) {
         private val KEY_LOADING_AUDIO_FEEDBACK = booleanPreferencesKey("loading_audio_feedback")
         private val KEY_SAVED_PLAYLIST = stringPreferencesKey("saved_playlist")
         private val KEY_WHATS_NEW_VERSION_CODE = intPreferencesKey("whats_new_version_code")
-        private val KEY_FEEDBACK_DRAFT = stringPreferencesKey("feedback_draft")
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -109,11 +108,6 @@ class AppPreferences(private val context: Context) {
 
     val favoritesSyncCode: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_FAVORITES_SYNC_CODE]
-    }
-
-    /** Feedback text held only while a submission is unsent, so a failed send isn't lost. */
-    val feedbackDraft: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[KEY_FEEDBACK_DRAFT]
     }
 
     val favoritesSortKey: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -207,16 +201,6 @@ class AppPreferences(private val context: Context) {
                 prefs.remove(KEY_FAVORITES_SYNC_CODE)
             } else {
                 prefs[KEY_FAVORITES_SYNC_CODE] = code.trim().lowercase()
-            }
-        }
-    }
-
-    suspend fun setFeedbackDraft(text: String) {
-        context.dataStore.edit { prefs ->
-            if (text.isBlank()) {
-                prefs.remove(KEY_FEEDBACK_DRAFT)
-            } else {
-                prefs[KEY_FEEDBACK_DRAFT] = text
             }
         }
     }

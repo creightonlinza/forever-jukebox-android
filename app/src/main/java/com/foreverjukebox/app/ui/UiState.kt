@@ -150,8 +150,6 @@ data class UiState(
     val appMode: AppMode? = null,
     val baseUrl: String = "",
     val adminKey: String = "",
-    /** Unsent feedback text, restored into the feedback dialog after a failed send. */
-    val feedbackDraft: String = "",
     val castEnabled: Boolean = false,
     val showAppModeGate: Boolean = true,
     val showBaseUrlPrompt: Boolean = false,

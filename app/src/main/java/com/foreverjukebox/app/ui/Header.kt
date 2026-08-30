@@ -33,8 +33,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
@@ -60,7 +60,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -90,12 +89,10 @@ fun HeaderBar(
     onCastSessionStarted: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onOpenWhatsNew: () -> Unit,
-    onSubmitFeedback: (String) -> Unit,
-    onSaveFeedbackDraft: (String) -> Unit
+    onOpenFeedback: () -> Unit
 ) {
     val context = LocalContext.current
-    // Saveable so the settings dialog (and the feedback draft nested inside it)
-    // survives activity recreation.
+    // Saveable so the settings dialog survives activity recreation.
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
     Column(
@@ -135,7 +132,7 @@ fun HeaderBar(
                 modifier = Modifier.size(SmallButtonHeight)
             ) {
                 Icon(
-                    Icons.Outlined.Settings,
+                    Icons.Filled.Settings,
                     contentDescription = "Settings",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -155,14 +152,16 @@ fun HeaderBar(
                 showSettings = false
                 onOpenWhatsNew()
             },
+            onOpenFeedback = {
+                showSettings = false
+                onOpenFeedback()
+            },
             onThemeChange = onThemeChange,
             onLoadingAudioFeedbackChange = onLoadingAudioFeedbackChange,
             onAppModeChange = onAppModeChange,
             onEditBaseUrl = onEditBaseUrl,
             onEditAdminKey = onEditAdminKey,
-            onClearCache = onClearCache,
-            onSubmitFeedback = onSubmitFeedback,
-            onSaveFeedbackDraft = onSaveFeedbackDraft
+            onClearCache = onClearCache
         )
     }
 }
@@ -353,20 +352,18 @@ private fun SettingsDialog(
     onDismiss: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onOpenWhatsNew: () -> Unit,
+    onOpenFeedback: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onLoadingAudioFeedbackChange: (Boolean) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
     onEditAdminKey: (String) -> Unit,
-    onClearCache: () -> Unit,
-    onSubmitFeedback: (String) -> Unit,
-    onSaveFeedbackDraft: (String) -> Unit
+    onClearCache: () -> Unit
 ) {
     var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
     var adminKeyInput by remember(state.adminKey) { mutableStateOf(state.adminKey) }
     var selectedMode by remember(state.appMode) { mutableStateOf(state.appMode ?: defaultOnboardingMode) }
     var showServerSettings by remember { mutableStateOf(false) }
-    var showFeedback by rememberSaveable { mutableStateOf(false) }
     val trimmedUrl = urlInput.trim()
     val trimmedAdminKey = adminKeyInput.trim()
     val requiresServerUrl = BuildConfig.SERVER_MODE_AVAILABLE && selectedMode == AppMode.Server
@@ -441,11 +438,14 @@ private fun SettingsDialog(
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
-                SquareIconButton(onClick = { showFeedback = true }) {
+                SquareIconButton(onClick = onOpenFeedback) {
                     Icon(
-                        imageVector = Icons.Outlined.BugReport,
+                        imageVector = Icons.Filled.BugReport,
                         contentDescription = "Send feedback or report a bug",
-                        tint = LocalThemeTokens.current.danger
+                        tint = LocalThemeTokens.current.danger,
+                        // The bug glyph is drawn shorter inside its 24dp box than the
+                        // timer beside it, so it needs a nudge to look the same size.
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             }
@@ -529,14 +529,6 @@ private fun SettingsDialog(
             onDone = { showServerSettings = false }
         )
     }
-    if (showFeedback) {
-        FeedbackDialog(
-            draft = state.feedbackDraft,
-            onSubmit = onSubmitFeedback,
-            onSaveDraft = onSaveFeedbackDraft,
-            onDone = { showFeedback = false }
-        )
-    }
 }
 
 @Composable
@@ -601,79 +593,6 @@ private fun ServerSettingsDialog(
                     ),
                     shape = SurfaceShape,
                     modifier = Modifier.heightIn(min = SmallFieldMinHeight)
-                )
-            }
-        }
-    )
-}
-
-@Composable
-private fun FeedbackDialog(
-    draft: String,
-    onSubmit: (String) -> Unit,
-    onSaveDraft: (String) -> Unit,
-    onDone: () -> Unit
-) {
-    // Seeded from the stored draft so an unsent submission comes back, and saveable so
-    // typing survives activity recreation. Sending runs in the ViewModel, so closing the
-    // dialog immediately never abandons an in-flight send.
-    var feedback by rememberSaveable { mutableStateOf(draft) }
-    // Leaving without sending keeps the text for next time; clearing the field drops it.
-    val dismiss = {
-        onSaveDraft(feedback.trim())
-        onDone()
-    }
-    AlertDialog(
-        onDismissRequest = dismiss,
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSubmit(feedback.trim())
-                    onDone()
-                },
-                enabled = feedback.isNotBlank(),
-                colors = pillButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
-            ) {
-                Text("Send", style = MaterialTheme.typography.labelSmall)
-            }
-        },
-        dismissButton = {
-            OutlinedButton(
-                onClick = dismiss,
-                colors = pillOutlinedButtonColors(),
-                border = pillButtonBorder(),
-                shape = PillShape,
-                contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
-            ) {
-                Text("Cancel", style = MaterialTheme.typography.labelSmall)
-            }
-        },
-        title = { Text("Feedback & Bug Reporting") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Tell us what's broken, what's confusing, or what you'd like to see. " +
-                        "Your app version and device model are included automatically.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-                OutlinedTextField(
-                    value = feedback,
-                    onValueChange = { feedback = it },
-                    label = { Text("What's on your mind?") },
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    minLines = 4,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences,
-                        keyboardType = KeyboardType.Text
-                    ),
-                    shape = SurfaceShape,
-                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }

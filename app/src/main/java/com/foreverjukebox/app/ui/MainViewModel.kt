@@ -564,13 +564,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            preferences.feedbackDraft.collect { draft ->
-                _state.update { current ->
-                    current.copy(feedbackDraft = draft.orEmpty())
-                }
-            }
-        }
-        viewModelScope.launch {
             preferences.favorites.collect { favorites ->
                 val normalized = favoritesController.normalizeFavorites(favorites)
                 if (normalized != favorites) {
@@ -4172,29 +4165,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Fire-and-forget: runs in [viewModelScope] so the submission and its result toast
-     * survive the feedback dialog closing and activity recreation. The text is persisted
-     * before the attempt and cleared only once Google accepts it, so a failed send leaves
-     * a draft the dialog restores instead of losing what the user wrote.
+     * survive the feedback dialog closing and activity recreation. A failed send is
+     * reported by toast only; the text is not retained.
      */
     fun submitFeedback(feedback: String) {
         viewModelScope.launch {
-            preferences.setFeedbackDraft(feedback)
             val sent = feedbackClient.submit(
                 feedback = feedback,
                 appVersion = FeedbackClient.appVersionSummary(),
                 deviceInfo = FeedbackClient.deviceSummary()
             )
-            if (sent) {
-                preferences.setFeedbackDraft("")
-            }
             showToast(if (sent) FEEDBACK_SENT_MESSAGE else FEEDBACK_FAILURE_MESSAGE)
-        }
-    }
-
-    /** Keeps unsent feedback when the dialog is dismissed; a blank text drops the draft. */
-    fun saveFeedbackDraft(feedback: String) {
-        viewModelScope.launch {
-            preferences.setFeedbackDraft(feedback)
         }
     }
 
@@ -4225,7 +4206,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val CAST_QUEUE_FAILURE_MESSAGE = "Unable to queue this track for casting."
         private const val FEEDBACK_SENT_MESSAGE = "Feedback sent. Thank you!"
         private const val FEEDBACK_FAILURE_MESSAGE =
-            "Couldn't send feedback. Your draft was saved — try again later."
+            "Couldn't send feedback. Check your connection and try again."
     }
 }
 
