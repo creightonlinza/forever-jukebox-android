@@ -1576,7 +1576,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 FavoriteToggleResult.LimitReached
             } else {
                 val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
-                val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "Unknown"
+                val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: ""
                 val newFavorite = FavoriteTrack(
                     uniqueSongId = currentCanonicalId,
                     title = title,
