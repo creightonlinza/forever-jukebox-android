@@ -13,8 +13,15 @@ enum class FavoriteSourceType {
     @SerialName("bandcamp")
     Bandcamp,
     @SerialName("upload")
-    @Suppress("unused")
     Upload
+}
+
+fun favoriteSourceTypeFromProvider(raw: String?): FavoriteSourceType? = when (sourceProviderFromRaw(raw)) {
+    "upload" -> FavoriteSourceType.Upload
+    "youtube" -> FavoriteSourceType.Youtube
+    "soundcloud" -> FavoriteSourceType.SoundCloud
+    "bandcamp" -> FavoriteSourceType.Bandcamp
+    else -> null
 }
 
 @Serializable

@@ -309,6 +309,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var foregroundRecoveryInFlight = false
     private var castSelectionJob: Job? = null
     private var pendingExternalIntent: PendingExternalIntent? = null
+    // Job id of a user-supplied track (upload or URL submission) awaiting auto-favorite once
+    // its analysis is applied; cleared when a different server track load starts.
+    private var pendingAutoFavoriteJobId: String? = null
     private var baseUrlLoaded = false
 
     // Two independent halves of the same story, reset together by resetServerConfigTracking():
@@ -365,6 +368,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab,
         onStableTrackLoaded = ::handleStableTrackLoaded,
+        onAnalysisResultApplied = ::maybeAutoFavoriteUserSupplied,
         audioLoadHold = audioLoadWakeLock
     )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
@@ -1592,6 +1596,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Web parity: a user-supplied track (upload or URL submission) is silently favorited once
+    // its analysis is applied. One-shot — any applied analysis resolves the pending id, so a
+    // stale pending can't fire when the same job is later reloaded via search. No analytics
+    // event and no toast, matching web's auto path.
+    private fun maybeAutoFavoriteUserSupplied(response: TrackAnalysisResult) {
+        val pending = pendingAutoFavoriteJobId ?: return
+        pendingAutoFavoriteJobId = null
+        val favorite = autoFavoriteForUserSuppliedTrack(
+            state = state.value,
+            responseJobId = canonicalJobId(response.id),
+            pendingJobId = pending,
+            sourceProvider = response.sourceProvider,
+            sourceId = response.sourceId,
+            engineTuningParams = playbackCoordinator::buildTuningParamsString
+        ) ?: return
+        favoritesController.updateFavorites(state.value.favorites + favorite)
+    }
+
     fun removeFavorite(uniqueSongId: String) {
         val favorites = state.value.favorites
         val canonicalTarget = canonicalTrackId(uniqueSongId) ?: return
@@ -1996,6 +2018,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val existingJobId = canonicalJobId(existing?.id)
                 if (existing != null && existingJobId != null) {
+                    pendingAutoFavoriteJobId = existingJobId
                     return@launchServerTrackLoadWithCache remoteTrackLoadCoordinator.loadOrPoll(
                         existing,
                         fallbackJobId = existingJobId
@@ -2013,6 +2036,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playbackCoordinator.setAnalysisError(message)
                 return@launchServerTrackLoadWithCache true
             }
+            pendingAutoFavoriteJobId = canonicalJobId(response.id)
             remoteTrackLoadCoordinator.loadOrPoll(response)
         }
     }
@@ -2113,6 +2137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playbackCoordinator.setAnalysisError(message)
                 return@launchServerTrackLoadWithCache true
             }
+            pendingAutoFavoriteJobId = canonicalJobId(response.id)
             remoteTrackLoadCoordinator.loadOrPoll(response)
         }
     }
@@ -2727,6 +2752,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tuningParams: String?,
         stateUpdate: (UiState) -> UiState
     ) {
+        pendingAutoFavoriteJobId = null
         remoteTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         playbackCoordinator.setPendingTuningParams(tuningParams)
