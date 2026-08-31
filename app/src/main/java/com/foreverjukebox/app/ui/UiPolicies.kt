@@ -1,7 +1,10 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.canonicalTrackId
+import com.foreverjukebox.app.data.favoriteSourceTypeFromProvider
+import com.foreverjukebox.app.data.sanitizeMaxFavorites
 import com.foreverjukebox.app.engine.JukeboxState
 import com.foreverjukebox.app.visualization.JumpLine
 
@@ -54,6 +57,35 @@ internal fun favoriteForCurrentTrack(state: UiState): FavoriteTrack? {
         return null
     }
     return state.favorites.firstOrNull { canonicalTrackId(it.uniqueSongId) in trackIds }
+}
+
+// Web parity (favorites-actions.ts maybeAutoFavoriteUserSupplied): user-supplied tracks
+// (upload or URL submission) are silently favorited once analysis succeeds. Silent no-op on
+// duplicate or limit, artist falls back to "" (not "Unknown" — sync payloads are shared
+// cross-platform), no playMode, and the caller logs no analytics event.
+internal fun autoFavoriteForUserSuppliedTrack(
+    state: UiState,
+    responseJobId: String?,
+    pendingJobId: String?,
+    sourceProvider: String?,
+    sourceId: String?,
+    engineTuningParams: () -> String?
+): FavoriteTrack? {
+    val jobId = responseJobId ?: return null
+    if (pendingJobId == null || jobId != pendingJobId) return null
+    if (favoriteForCurrentTrack(state) != null) return null
+    if (state.favorites.size >= sanitizeMaxFavorites(state.maxFavorites)) return null
+    val playback = state.playback
+    return FavoriteTrack(
+        uniqueSongId = jobId,
+        title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled",
+        artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "",
+        duration = playback.trackDurationSeconds,
+        sourceType = favoriteSourceTypeFromProvider(sourceProvider)
+            ?: if (!sourceId.isNullOrBlank()) FavoriteSourceType.Youtube else FavoriteSourceType.Upload,
+        tuningParams = tuningParamsForCurrentTrack(state, engineTuningParams),
+        playMode = null
+    )
 }
 
 // Tuning as it stands right now, from whichever source is live. Unlike the capture path this

@@ -33,13 +33,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,10 +88,12 @@ fun HeaderBar(
     onClearCache: () -> Unit,
     onCastSessionStarted: () -> Unit,
     onOpenSleepTimer: () -> Unit,
-    onOpenWhatsNew: () -> Unit
+    onOpenWhatsNew: () -> Unit,
+    onOpenFeedback: () -> Unit
 ) {
     val context = LocalContext.current
-    var showSettings by remember { mutableStateOf(false) }
+    // Saveable so the settings dialog survives activity recreation.
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -128,7 +132,7 @@ fun HeaderBar(
                 modifier = Modifier.size(SmallButtonHeight)
             ) {
                 Icon(
-                    Icons.Outlined.Settings,
+                    Icons.Filled.Settings,
                     contentDescription = "Settings",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -147,6 +151,10 @@ fun HeaderBar(
             onOpenWhatsNew = {
                 showSettings = false
                 onOpenWhatsNew()
+            },
+            onOpenFeedback = {
+                showSettings = false
+                onOpenFeedback()
             },
             onThemeChange = onThemeChange,
             onLoadingAudioFeedbackChange = onLoadingAudioFeedbackChange,
@@ -344,6 +352,7 @@ private fun SettingsDialog(
     onDismiss: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onOpenWhatsNew: () -> Unit,
+    onOpenFeedback: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onLoadingAudioFeedbackChange: (Boolean) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
@@ -427,6 +436,16 @@ private fun SettingsDialog(
                         imageVector = Icons.Outlined.Timer,
                         contentDescription = "Sleep timer",
                         tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                SquareIconButton(onClick = onOpenFeedback) {
+                    Icon(
+                        imageVector = Icons.Filled.BugReport,
+                        contentDescription = "Send feedback or report a bug",
+                        tint = LocalThemeTokens.current.danger,
+                        // The bug glyph is drawn shorter inside its 24dp box than the
+                        // timer beside it, so it needs a nudge to look the same size.
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             }

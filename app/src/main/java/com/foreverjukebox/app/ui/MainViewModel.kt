@@ -33,6 +33,7 @@ import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.local.LocalAnalysisService
+import com.foreverjukebox.app.net.FeedbackClient
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
 import com.foreverjukebox.app.playback.PlaybackStartResult
@@ -308,6 +309,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var foregroundRecoveryInFlight = false
     private var castSelectionJob: Job? = null
     private var pendingExternalIntent: PendingExternalIntent? = null
+    // Job id of a user-supplied track (upload or URL submission) awaiting auto-favorite once
+    // its analysis is applied; cleared when a different server track load starts.
+    private var pendingAutoFavoriteJobId: String? = null
     private var baseUrlLoaded = false
 
     // Two independent halves of the same story, reset together by resetServerConfigTracking():
@@ -321,6 +325,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
     private val castRelayClient = CastRelayClient()
+    private val feedbackClient = FeedbackClient()
     private val castPlaybackCoordinator = CastPlaybackCoordinator(
         castController = castController,
         getState = { state.value },
@@ -363,6 +368,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updatePlaybackState = ::updatePlaybackState,
         applyActiveTab = ::applyActiveTab,
         onStableTrackLoaded = ::handleStableTrackLoaded,
+        onAnalysisResultApplied = ::maybeAutoFavoriteUserSupplied,
         audioLoadHold = audioLoadWakeLock
     )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
@@ -1570,7 +1576,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 FavoriteToggleResult.LimitReached
             } else {
                 val title = playback.trackTitle?.takeIf { it.isNotBlank() } ?: "Untitled"
-                val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: "Unknown"
+                val artist = playback.trackArtist?.takeIf { it.isNotBlank() } ?: ""
                 val newFavorite = FavoriteTrack(
                     uniqueSongId = currentCanonicalId,
                     title = title,
@@ -1588,6 +1594,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 FavoriteToggleResult.Added
             }
         }
+    }
+
+    // Web parity: a user-supplied track (upload or URL submission) is silently favorited once
+    // its analysis is applied. One-shot — any applied analysis resolves the pending id, so a
+    // stale pending can't fire when the same job is later reloaded via search. No analytics
+    // event and no toast, matching web's auto path.
+    private fun maybeAutoFavoriteUserSupplied(response: TrackAnalysisResult) {
+        val pending = pendingAutoFavoriteJobId ?: return
+        pendingAutoFavoriteJobId = null
+        val favorite = autoFavoriteForUserSuppliedTrack(
+            state = state.value,
+            responseJobId = canonicalJobId(response.id),
+            pendingJobId = pending,
+            sourceProvider = response.sourceProvider,
+            sourceId = response.sourceId,
+            engineTuningParams = playbackCoordinator::buildTuningParamsString
+        ) ?: return
+        favoritesController.updateFavorites(state.value.favorites + favorite)
     }
 
     fun removeFavorite(uniqueSongId: String) {
@@ -1994,6 +2018,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val existingJobId = canonicalJobId(existing?.id)
                 if (existing != null && existingJobId != null) {
+                    pendingAutoFavoriteJobId = existingJobId
                     return@launchServerTrackLoadWithCache remoteTrackLoadCoordinator.loadOrPoll(
                         existing,
                         fallbackJobId = existingJobId
@@ -2011,6 +2036,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playbackCoordinator.setAnalysisError(message)
                 return@launchServerTrackLoadWithCache true
             }
+            pendingAutoFavoriteJobId = canonicalJobId(response.id)
             remoteTrackLoadCoordinator.loadOrPoll(response)
         }
     }
@@ -2111,6 +2137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playbackCoordinator.setAnalysisError(message)
                 return@launchServerTrackLoadWithCache true
             }
+            pendingAutoFavoriteJobId = canonicalJobId(response.id)
             remoteTrackLoadCoordinator.loadOrPoll(response)
         }
     }
@@ -2725,6 +2752,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tuningParams: String?,
         stateUpdate: (UiState) -> UiState
     ) {
+        pendingAutoFavoriteJobId = null
         remoteTrackLoadCoordinator.cancel()
         playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
         playbackCoordinator.setPendingTuningParams(tuningParams)
@@ -4161,6 +4189,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         syncPlaybackServiceSession()
     }
 
+    /**
+     * Fire-and-forget: runs in [viewModelScope] so the submission and its result toast
+     * survive the feedback dialog closing and activity recreation. A failed send is
+     * reported by toast only; the text is not retained.
+     */
+    fun submitFeedback(feedback: String) {
+        viewModelScope.launch {
+            val sent = feedbackClient.submit(
+                feedback = feedback,
+                appVersion = FeedbackClient.appVersionSummary(),
+                deviceInfo = FeedbackClient.deviceSummary()
+            )
+            showToast(if (sent) FEEDBACK_SENT_MESSAGE else FEEDBACK_FAILURE_MESSAGE)
+        }
+    }
+
     private suspend fun showToast(message: String) {
         withContext(Dispatchers.Main) {
             android.widget.Toast.makeText(getApplication(), message, android.widget.Toast.LENGTH_SHORT).show()
@@ -4186,6 +4230,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val SHARE_UNSUPPORTED_MESSAGE =
             "Share a YouTube, SoundCloud, or Bandcamp link."
         private const val CAST_QUEUE_FAILURE_MESSAGE = "Unable to queue this track for casting."
+        private const val FEEDBACK_SENT_MESSAGE = "Feedback sent. Thank you!"
+        private const val FEEDBACK_FAILURE_MESSAGE =
+            "Couldn't send feedback. Check your connection and try again."
     }
 }
 

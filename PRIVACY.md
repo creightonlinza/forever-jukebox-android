@@ -1,6 +1,6 @@
 # Privacy Policy — Forever Jukebox
 
-**Last updated: 2026-07-15**
+**Last updated: 2026-08-29**
 
 Forever Jukebox ("the app") is a free, open-source music visualization and
 playback app developed by Creighton Linza ("we", "us"). This policy explains
@@ -47,6 +47,19 @@ app sends them through a relay we operate:
 If you don't cast, none of this applies and your audio never leaves your device.
 
 You are responsible for having the rights to any audio you cast through the app.
+
+## Feedback and bug reports
+
+The Settings screen has an optional feedback and bug-report form. Nothing is
+sent unless you tap Send. A submission contains only:
+
+- the feedback text you type,
+- the app version, and
+- a basic device summary (manufacturer, model, Android version).
+
+Submissions go to a Google Form, so Google processes them on our behalf. No
+account, contact, or device identifiers are attached — a submission is anonymous
+unless you include contact details in the text.
 
 ## Diagnostics and usage data we collect (Firebase Crashlytics and Analytics)
 

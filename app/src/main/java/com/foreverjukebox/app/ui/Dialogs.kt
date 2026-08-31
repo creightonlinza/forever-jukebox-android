@@ -25,14 +25,81 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
+
+@Composable
+fun FeedbackDialog(
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // Saveable so typing survives activity recreation. Sending runs in the ViewModel, so
+    // closing the dialog immediately never abandons an in-flight send.
+    var feedback by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSubmit(feedback.trim())
+                    onDismiss()
+                },
+                enabled = feedback.isNotBlank(),
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Send", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text("Feedback & Bug Reporting") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Tell us what's broken, what's confusing, or what you'd like to see. " +
+                        "Your app version and device model are included automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                OutlinedTextField(
+                    value = feedback,
+                    onValueChange = { feedback = it },
+                    label = { Text("What's on your mind?") },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    minLines = 4,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        keyboardType = KeyboardType.Text
+                    ),
+                    shape = SurfaceShape,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    )
+}
 
 internal data class SleepTimerDialogSelectionState(
     val appliedOption: SleepTimerOption,

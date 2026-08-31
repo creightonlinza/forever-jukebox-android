@@ -153,6 +153,7 @@ class PlaybackCoordinator(
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
     private val applyActiveTab: (TabId, Boolean) -> Unit,
     private val onStableTrackLoaded: () -> Unit = {},
+    private val onAnalysisResultApplied: (TrackAnalysisResult) -> Unit = {},
     private val audioLoadHold: AudioLoadHold = AudioLoadWakeLock(application)
 ) {
     private var listenTimerJob: Job? = null
@@ -774,6 +775,7 @@ class PlaybackCoordinator(
             cacheAnalysis(jobId, response)
         }
         syncPlaybackServiceSession()
+        onAnalysisResultApplied(response)
         onStableTrackLoaded()
         return true
     }

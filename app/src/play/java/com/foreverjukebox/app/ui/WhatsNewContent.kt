@@ -6,5 +6,5 @@ internal val currentWhatsNewBullets = listOf(
     "Tuning settings now auto-save per track",
     "Cast any track to a Chromecast",
     "Misc fixes and under the hood improvements",
-    "Please report any bugs to GitHub/Reddit/Discord"
+    "Send feedback or report bugs from the Settings menu"
 )

@@ -7,5 +7,5 @@ internal val currentWhatsNewBullets = listOf(
     "Improved headset and Bluetooth media key support",
     "Fixed loading issue when skipping tracks with the screen off",
     "Misc fixes and under the hood improvements",
-    "Please report any bugs to GitHub/Reddit/Discord"
+    "Send feedback or report bugs from the Settings menu"
 )

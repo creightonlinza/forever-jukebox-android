@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +30,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
     val context = LocalContext.current
     val fullscreenVisualizationAllowed = shouldShowFullscreenVisualization(state.playback)
     var showSleepTimer by remember { mutableStateOf(false) }
+    // Saveable so an open feedback dialog and its typed text survive activity recreation.
+    var showFeedback by rememberSaveable { mutableStateOf(false) }
     ForeverJukeboxTheme(mode = state.themeMode) {
         LaunchedEffect(state.fullscreenVisualizationVisible, fullscreenVisualizationAllowed) {
             if (state.fullscreenVisualizationVisible && !fullscreenVisualizationAllowed) {
@@ -56,7 +59,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         onClearCache = viewModel::clearCache,
                         onCastSessionStarted = {},
                         onOpenSleepTimer = { showSleepTimer = true },
-                        onOpenWhatsNew = viewModel::showWhatsNewFromSettings
+                        onOpenWhatsNew = viewModel::showWhatsNewFromSettings,
+                        onOpenFeedback = { showFeedback = true }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -143,6 +147,12 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                         remainingMs = state.sleepTimer.remainingMs,
                         onDismiss = { showSleepTimer = false },
                         onSelectOption = viewModel::setSleepTimer
+                    )
+                }
+                if (showFeedback) {
+                    FeedbackDialog(
+                        onSubmit = viewModel::submitFeedback,
+                        onDismiss = { showFeedback = false }
                     )
                 }
             }
