@@ -276,6 +276,10 @@ class LocalAnalysisService(
                 ensureNotCancelled()
 
                 emitProgress(95, "Wrapping up")
+                // The cache directory can disappear between the start of a long
+                // analysis and this write: the OS trims app caches under storage
+                // pressure, and Settings' "Clear cache" removes the whole tree.
+                analysisFile.parentFile?.mkdirs()
                 analysisFile.writeText(analysisJson.toString())
                 writeMetadata(
                     cacheKey = cacheKey,
