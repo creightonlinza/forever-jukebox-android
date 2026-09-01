@@ -390,10 +390,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             hydrateSavedPlaylistIfInactive()
         },
         applyActiveTab = ::applyActiveTab,
-        // error (not warn): local analysis failure is the core on-device path and this
-        // lambda holds the real exception; the surfaced-message non-fatal from
-        // PlaybackCoordinator.setAnalysisError has no stack trace.
-        logError = { message, error -> AppLog.error(TAG, message, error) },
+        // warn (not error): these failures also reach
+        // PlaybackCoordinator.setAnalysisError, which records the non-fatal.
+        logError = { message, error -> AppLog.warn(TAG, message, error) },
         diagnostics = diagnostics,
         audioLoadHold = audioLoadWakeLock
     )

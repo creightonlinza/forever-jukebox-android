@@ -319,25 +319,30 @@ class LocalAnalysisService(
             logWarn("Local analysis track too large: ${tooLarge.message}", tooLarge)
             close(tooLarge)
         } catch (error: NativeLocalAnalysisNotReadyException) {
-            logError("Local analysis failed: ${error.message}", error)
+            // Breadcrumb only, here and in the catches below: each closes with the
+            // real exception, and PlaybackCoordinator.setAnalysisError records the
+            // non-fatal for it.
+            logWarn("Local analysis failed: ${error.message}", error)
             close(error)
         } catch (error: IOException) {
-            logError("Local analysis failed: ${error.message}", error)
+            logWarn("Local analysis failed: ${error.message}", error)
             close(error)
         } catch (error: IllegalArgumentException) {
-            logError("Local analysis failed: ${error.message}", error)
+            logWarn("Local analysis failed: ${error.message}", error)
             close(error)
         } catch (error: IllegalStateException) {
-            logError("Local analysis failed: ${error.message}", error)
+            logWarn("Local analysis failed: ${error.message}", error)
             close(error)
         } catch (error: SecurityException) {
-            logError("Local analysis failed: ${error.message}", error)
+            logWarn("Local analysis failed: ${error.message}", error)
             close(error)
         } catch (oom: OutOfMemoryError) {
             // Backstop for any allocation that slips past the preemptive budget
             // check (e.g. a native analysis buffer, or an under-estimated duration).
             // Convert to a domain exception so it surfaces as a clean message
             // instead of escaping to the uncaught-exception handler and crashing.
+            // error (not warn): closing with AudioTooLargeException surfaces as an
+            // expected condition, so this is the only site that records the OOM.
             logError("Local analysis ran out of memory", oom)
             close(
                 AudioTooLargeException(

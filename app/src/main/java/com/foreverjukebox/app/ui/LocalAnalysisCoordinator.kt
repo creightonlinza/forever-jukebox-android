@@ -111,7 +111,8 @@ class LocalAnalysisCoordinator(
             } catch (error: NativeLocalAnalysisNotReadyException) {
                 diagnostics.logAnalysisFailed(source, "native_not_ready")
                 playbackCoordinator.setAnalysisError(
-                    ErrorDisplay.clean(error.message, "Native local analysis is unavailable.")
+                    ErrorDisplay.clean(error.message, "Native local analysis is unavailable."),
+                    cause = error
                 )
                 applyActiveTab(TabId.Input, true)
             } catch (error: IOException) {
@@ -132,7 +133,7 @@ class LocalAnalysisCoordinator(
         diagnostics.logAnalysisFailed(source, error.javaClass.simpleName)
         logError("Local analysis failed", error)
         val message = ErrorDisplay.clean(error.message, "Local analysis failed.")
-        playbackCoordinator.setAnalysisError(message)
+        playbackCoordinator.setAnalysisError(message, cause = error)
         applyActiveTab(TabId.Input, true)
     }
 
