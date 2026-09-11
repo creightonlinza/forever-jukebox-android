@@ -151,7 +151,6 @@ class PlaybackCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
-    private val applyActiveTab: (TabId, Boolean) -> Unit,
     private val onStableTrackLoaded: () -> Unit = {},
     private val onAnalysisResultApplied: (TrackAnalysisResult) -> Unit = {},
     private val audioLoadHold: AudioLoadHold = AudioLoadWakeLock(application)
@@ -765,7 +764,6 @@ class PlaybackCoordinator(
                 )
             )
         }
-        applyActiveTab(TabId.Play, true)
         syncPlaybackServiceSession()
         val jobId = responseJobId ?: canonicalJobId(lastJobId)
         if (jobId != null) {

@@ -366,7 +366,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
-        applyActiveTab = ::applyActiveTab,
         onStableTrackLoaded = ::handleStableTrackLoaded,
         onAnalysisResultApplied = ::maybeAutoFavoriteUserSupplied,
         audioLoadHold = audioLoadWakeLock
