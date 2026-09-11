@@ -22,7 +22,7 @@ import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
-import com.foreverjukebox.app.data.SavedPlaylistTrack
+import com.foreverjukebox.app.data.SavedPlaylist
 import com.foreverjukebox.app.data.ServerAppConfig
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.canonicalJobId
@@ -320,7 +320,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // still has to happen to catch a config the operator has since changed.
     private var appConfigFetchStarted = false
     private var serverConfigState = ServerConfigState.Pending
-    private var savedPlaylistTracks: List<SavedPlaylistTrack> = emptyList()
+    private var savedPlaylist: SavedPlaylist = SavedPlaylist()
     private var lastCowbellBeatsPlayed = -1
     private val tabHistory = ArrayDeque<TabId>()
     private val castController = CastController(getApplication())
@@ -442,7 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         engineTuningParams = playbackCoordinator::buildTuningParamsString,
         getState = { state.value },
         setPlaybackMode = ::setPlaybackMode,
-        loadTrackById = ::loadTrackById
+        loadTrackById = ::loadTrackByIdFromListenLink
     )
     private val appLifecycleCoordinator = AppLifecycleCoordinator(
         scope = viewModelScope,
@@ -583,8 +583,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            preferences.savedPlaylist.collect { tracks ->
-                savedPlaylistTracks = tracks
+            preferences.savedPlaylist.collect { saved ->
+                savedPlaylist = saved
                 hydrateSavedPlaylistIfInactive()
             }
         }
@@ -930,13 +930,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun startLocalAnalysis(uri: Uri, displayName: String?) {
         if (blockPlaybackChangeWhileLoading()) return
         analytics.logUpload("file")
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         localAnalysisCoordinator.startLocalAnalysis(uri, displayName)
     }
 
     fun openCachedLocalTrack(localId: String) {
         if (blockPlaybackChangeWhileLoading()) return
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         localAnalysisCoordinator.openCachedLocalTrack(localId)
     }
 
@@ -1234,25 +1234,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(playback = transform(it.playback)) }
     }
 
-    private fun persistSavedPlaylistTracks(tracks: List<PlaylistTrack>) {
-        val savedTracks = tracks.map { it.toSavedPlaylistTrack() }
-        savedPlaylistTracks = savedTracks
+    private fun persistSavedPlaylist(playlist: JukeboxPlaylistState) {
+        val saved = SavedPlaylist(
+            tracks = playlist.tracks.map { it.toSavedPlaylistTrack() },
+            lastIndex = playlist.persistedLastIndex()
+        )
+        savedPlaylist = saved
         viewModelScope.launch {
-            preferences.setSavedPlaylist(savedTracks)
+            preferences.setSavedPlaylist(saved)
         }
     }
 
     private fun savedPlaylistStateForCurrentMode(current: UiState): JukeboxPlaylistState {
-        val savedTracks = savedPlaylistTracks.mapNotNull { it.toPlaylistTrack() }
-        val playableTracks = playablePlaylistTracks(
-            tracks = savedTracks,
+        return restoredSavedPlaylistState(
+            saved = savedPlaylist,
             appMode = current.appMode,
             localCachedTracks = current.localCachedTracks
         )
-        if (playableTracks.size < 2) {
-            return JukeboxPlaylistState()
-        }
-        return JukeboxPlaylistState(tracks = playableTracks, currentIndex = -1)
     }
 
     private fun hydrateSavedPlaylistIfInactive() {
@@ -1280,26 +1278,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(playlist = after)
         }
-        if (after.tracks != before.tracks) {
-            persistSavedPlaylistTracks(after.tracks)
+        if (after.tracks != before.tracks || after.persistedLastIndex() != before.persistedLastIndex()) {
+            persistSavedPlaylist(after)
         }
     }
 
     private fun clearPlaylistState() {
         val current = state.value.playlist
-        if (current == JukeboxPlaylistState() && savedPlaylistTracks.isEmpty()) {
+        if (current == JukeboxPlaylistState() && savedPlaylist.tracks.isEmpty()) {
             return
         }
-        savedPlaylistTracks = emptyList()
+        savedPlaylist = SavedPlaylist()
         _state.update {
             it.copy(playlist = JukeboxPlaylistState())
         }
         viewModelScope.launch {
-            preferences.setSavedPlaylist(emptyList())
+            preferences.setSavedPlaylist(SavedPlaylist())
         }
     }
 
-    private fun clearInactiveSavedPlaylistBeforeOutsideSelection() {
+    /**
+     * Records a load picked outside the playlist. With the track identity in hand the
+     * playlist adopts it right away (swapping the active entry or becoming a one-track
+     * playlist). Without it, an inactive saved playlist is dropped now and the entry is
+     * created by [adoptLoadedTrackIntoPlaylist] once the identity resolves.
+     */
+    private fun beginOutsideSelection(track: PlaylistTrack? = null) {
+        if (track != null) {
+            updatePlaylistState { it.adoptOutsideTrack(track) }
+            return
+        }
         if (state.value.playlist.isInactiveSavedPlaylist()) {
             clearPlaylistState()
         }
@@ -1363,12 +1371,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun handleStableTrackLoaded() {
-        refreshActivePlaylistCurrentTrack()
+        adoptLoadedTrackIntoPlaylist(currentPlaylistTrackOrNull())
         maybeStartPlayAfterLoaded()
-    }
-
-    private fun refreshActivePlaylistCurrentTrack() {
-        maybeSelectPlaylistTrack(currentPlaylistTrackOrNull())
     }
 
     private fun playlistTrackForServerTrack(
@@ -1488,11 +1492,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         analytics.logPlaylistAdd(source, track.id, state.value.playlist.tracks.size)
     }
 
-    private fun maybeSelectPlaylistTrack(track: PlaylistTrack?) {
-        if (track == null || !state.value.playlist.isActive()) {
-            return
-        }
-        updatePlaylistState { it.replaceCurrentTrackWith(track) }
+    // Every resolved load lands in the playlist: as the active entry's replacement, or as a
+    // one-track playlist so the next launch can offer to continue it.
+    private fun adoptLoadedTrackIntoPlaylist(track: PlaylistTrack?) {
+        if (track == null) return
+        updatePlaylistState { it.adoptOutsideTrack(track) }
     }
 
     private fun loadPlaylistTrack(
@@ -1657,11 +1661,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tuningParams: String?,
         playMode: FavoritePlayMode?
     ) {
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
         val track = playlistTrackForServerTrack(trackId, title, artist, tuningParams, playMode)
-        if (track != null && state.value.playlist.isActive()) {
-            updatePlaylistState { it.replaceCurrentTrackWith(track) }
-        }
+        beginOutsideSelection(track)
         loadTrackById(
             track?.id ?: trackId,
             track?.title ?: title,
@@ -1713,11 +1714,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectLocalCachedPlaylistTrack(localId: String) {
         if (blockPlaybackChangeWhileLoading()) return
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
         val track = playlistTrackForLocalCached(localId) ?: return
-        if (state.value.playlist.isActive()) {
-            updatePlaylistState { it.replaceCurrentTrackWith(track) }
-        }
+        beginOutsideSelection(track)
         openCachedLocalTrack(track.id)
     }
 
@@ -1728,7 +1726,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectSpotifyTrack(item: RemoteMusicSearchItem) {
         if (blockPlaybackChangeWhileLoading()) return
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         val name = item.name ?: "Untitled"
@@ -1748,7 +1746,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val trackId = jobId
                         if (state.value.playback.isCasting) {
                             clearSearchSelectionState()
-                            maybeSelectPlaylistTrack(
+                            adoptLoadedTrackIntoPlaylist(
                                 playlistTrackForServerTrack(trackId, name, artist, null)
                             )
                             castPlaybackCoordinator.castTrackId(
@@ -1760,7 +1758,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             applyActiveTab(TabId.Play, recordHistory = true)
                             return@launch
                         }
-                        maybeSelectPlaylistTrack(
+                        adoptLoadedTrackIntoPlaylist(
                             playlistTrackForServerTrack(trackId, name, artist, null)
                         )
                         loadExistingJob(
@@ -1798,7 +1796,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectYoutubeTrack(item: RemoteVideoSearchItem) {
         if (blockPlaybackChangeWhileLoading()) return
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         val selection = resolveRemoteVideoSelection(item, state.value.search) ?: return
         val duration = item.duration
         if (showTrackLengthLimitIfExceeded(duration)) {
@@ -1818,7 +1816,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startYoutubeAnalysis(youtubeId: String, title: String? = null, artist: String? = null) {
         if (blockPlaybackChangeWhileLoading()) return
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         val baseUrl = state.value.baseUrl
         if (baseUrl.isBlank()) return
         val resolvedTitle = title.takeIfNotBlank()
@@ -1915,7 +1913,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val jobId = canonicalJobId(existing.id)
                     ?: return@launchServerTrackLoadWithCache false
                 migrateLegacyServerTrackId(trackId, jobId, resolvedTitle, resolvedArtist, null)
-                maybeSelectPlaylistTrack(
+                adoptLoadedTrackIntoPlaylist(
                     playlistTrackForServerTrack(jobId, resolvedTitle, resolvedArtist, null)
                 )
                 return@launchServerTrackLoadWithCache remoteTrackLoadCoordinator.loadOrPoll(
@@ -1942,7 +1940,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val responseId = canonicalJobId(response.id) ?: return@launchServerTrackLoadWithCache false
             migrateLegacyServerTrackId(trackId, responseId, resolvedTitle, resolvedArtist, null)
-            maybeSelectPlaylistTrack(
+            adoptLoadedTrackIntoPlaylist(
                 playlistTrackForServerTrack(responseId, resolvedTitle, resolvedArtist, null)
             )
             playbackCoordinator.setAnalysisQueued(response.progress?.roundToInt(), response.message)
@@ -1974,7 +1972,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         analytics.logUpload("url")
         if (state.value.playback.isCasting) {
             updateSearchState(::resetSearchStateAfterTrackSelection)
@@ -2103,7 +2101,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sizeBytes: Long?,
         mimeType: String?
     ) {
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         analytics.logUpload("file")
         val title = uploadTitleFromFileName(fileName)
         if (state.value.playback.isCasting) {
@@ -2312,13 +2310,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playAfterLoaded: Boolean = false
     ) {
         if (blockPlaybackChangeWhileLoading()) return
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         loadTrackByIdInternal(
             trackId,
             title,
             artist,
             tuningParams,
             playAfterLoaded = playAfterLoaded,
+            ignoreLoadingLock = true
+        )
+    }
+
+    // Listen links keep a multi-track playlist alive instead of replacing it, so a shared
+    // link opened mid-session joins the playlist rather than wiping it.
+    private fun loadTrackByIdFromListenLink(
+        trackId: String,
+        title: String?,
+        artist: String?,
+        tuningParams: String?
+    ) {
+        if (blockPlaybackChangeWhileLoading()) return
+        playlistTrackForServerTrack(trackId, title, artist, tuningParams)?.let { track ->
+            updatePlaylistState { it.adoptPreservedTrack(track) }
+        }
+        loadTrackByIdInternal(
+            trackId,
+            title,
+            artist,
+            tuningParams,
             ignoreLoadingLock = true
         )
     }
@@ -2386,7 +2405,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playAfterLoaded: Boolean = false
     ) {
         if (blockPlaybackChangeWhileLoading()) return
-        clearInactiveSavedPlaylistBeforeOutsideSelection()
+        beginOutsideSelection()
         loadTrackBySource(
             sourceProvider = SOURCE_PROVIDER_YOUTUBE,
             sourceId = youtubeId,
@@ -2567,7 +2586,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     resolvedArtist,
                     tuningParams
                 )
-                maybeSelectPlaylistTrack(
+                adoptLoadedTrackIntoPlaylist(
                     playlistTrackForServerTrack(jobId, resolvedTitle, resolvedArtist, tuningParams)
                 )
                 return@launchServerTrackLoadWithCache remoteTrackLoadCoordinator.loadOrPoll(
@@ -2603,7 +2622,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 resolvedArtist,
                 tuningParams
             )
-            maybeSelectPlaylistTrack(
+            adoptLoadedTrackIntoPlaylist(
                 playlistTrackForServerTrack(responseId, resolvedTitle, resolvedArtist, tuningParams)
             )
             playbackCoordinator.setAnalysisQueued(started.progress?.roundToInt(), started.message)
@@ -3481,9 +3500,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         navigateMethod?.let(analytics::logPlaylistNavigate)
         val track = playlist.tracks[index]
         diagnostics.logPlaylistTrackSelected(index, track.id, track.title)
-        _state.update {
-            it.copy(playlist = it.playlist.selectTrackAt(index))
-        }
+        updatePlaylistState { it.selectTrackAt(index) }
         loadPlaylistTrack(
             track = track,
             playAfterLoaded = playAfterLoaded
@@ -3527,9 +3544,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         syncPlaybackServiceSession()
     }
 
+    // Clearing while a track plays keeps it as the sole entry so it can still be resumed;
+    // clearing from the empty screen drops the saved playlist entirely.
     fun clearPlaylist() {
-        clearPlaylistState()
+        if (state.value.playlist.isActive()) {
+            updatePlaylistState { it.clearedKeepingCurrent() }
+        } else {
+            clearPlaylistState()
+        }
         syncPlaybackServiceSession()
+    }
+
+    // Resumes the saved position directly; like the web shortcut this logs no
+    // playlist_navigate event.
+    fun continueListening() {
+        val playlist = state.value.playlist
+        if (playlist.resumeTrack() == null) return
+        selectPlaylistTrack(
+            index = playlist.resumeIndex,
+            playAfterLoaded = shouldEnablePlayAfterLoadedForPlaylistSkip(state.value),
+            navigateMethod = null
+        )
     }
 
     fun selectBeat(index: Int) {

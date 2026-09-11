@@ -579,6 +579,40 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun continueListeningButtonShowsForAnyInactiveResumeTrackOnEmptyListenScreen() {
+        val single = JukeboxPlaylistState(
+            tracks = listOf(PlaylistTrack("one", PlaylistTrackType.Server, "One", null)),
+            currentIndex = -1,
+            resumeIndex = 0
+        )
+        val empty = UiState(playlist = single, playback = PlaybackState())
+
+        assertTrue(shouldShowContinueListeningButton(empty))
+        assertFalse(shouldShowSavedPlaylistButton(empty))
+        assertTrue(
+            shouldShowContinueListeningButton(
+                empty.copy(
+                    playlist = single.copy(
+                        tracks = single.tracks + PlaylistTrack("two", PlaylistTrackType.Server, "Two", null),
+                        resumeIndex = 1
+                    )
+                )
+            )
+        )
+        assertFalse(shouldShowContinueListeningButton(empty.copy(playlist = single.copy(currentIndex = 0))))
+        assertFalse(shouldShowContinueListeningButton(empty.copy(playlist = single.copy(resumeIndex = -1))))
+        assertFalse(
+            shouldShowContinueListeningButton(
+                empty.copy(playback = PlaybackState(audioLoaded = true, analysisLoaded = true))
+            )
+        )
+        assertFalse(shouldShowContinueListeningButton(empty.copy(playback = PlaybackState(audioLoading = true))))
+        assertFalse(
+            shouldShowContinueListeningButton(empty.copy(playback = PlaybackState(analysisErrorMessage = "failed")))
+        )
+    }
+
+    @Test
     fun activePlaylistControlsHideForInactiveSavedPlaylist() {
         val inactivePlaylist = JukeboxPlaylistState(
             tracks = listOf(

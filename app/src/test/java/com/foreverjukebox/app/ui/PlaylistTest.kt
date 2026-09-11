@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.FavoritePlayMode
+import com.foreverjukebox.app.data.SavedPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -293,13 +294,193 @@ class PlaylistTest {
     }
 
     @Test
-    fun removeTrackAtDropsPlaylistWhenOnlyActiveTrackRemains() {
-        val playlist = initializePlaylist(track("current"), track("next"))
+    fun removeTrackAtKeepsTheActiveTrackAsOneTrackPlaylist() {
+        val current = track("current")
+        val playlist = initializePlaylist(current, track("next"))
 
         val updated = playlist.removeTrackAt(1)
 
-        assertEquals(JukeboxPlaylistState(), updated)
+        assertEquals(singleTrackPlaylist(current), updated)
         assertFalse(shouldShowPlaylistControls(updated))
+        assertEquals(0, updated.persistedLastIndex())
+    }
+
+    @Test
+    fun removeTrackAtWhileInactiveShiftsResumeIndexPastTheRemovedTrack() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two"), track("three")),
+            currentIndex = -1,
+            resumeIndex = 2
+        )
+
+        val updated = playlist.removeTrackAt(0)
+
+        assertEquals(listOf(track("two"), track("three")), updated.tracks)
+        assertEquals(1, updated.resumeIndex)
+        assertEquals(track("three"), updated.resumeTrack())
+    }
+
+    @Test
+    fun removeTrackAtWhileInactiveClearsResumeIndexWhenRemovingTheResumeTrack() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = -1,
+            resumeIndex = 1
+        )
+
+        val updated = playlist.removeTrackAt(1)
+
+        assertEquals(listOf(track("one")), updated.tracks)
+        assertNull(updated.resumeTrack())
+        assertNull(updated.persistedLastIndex())
+    }
+
+    @Test
+    fun resumeTrackIsIgnoredWhileActive() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = 1,
+            resumeIndex = 0
+        )
+
+        assertNull(playlist.resumeTrack())
+        assertEquals(1, playlist.persistedLastIndex())
+        assertEquals(track("one"), playlist.deactivate().resumeTrack())
+    }
+
+    @Test
+    fun adoptOutsideTrackReplacesInactiveSavedPlaylistWithOneTrack() {
+        val saved = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = -1,
+            resumeIndex = 1
+        )
+        val picked = track("picked")
+
+        assertEquals(singleTrackPlaylist(picked), saved.adoptOutsideTrack(picked))
+        assertEquals(singleTrackPlaylist(picked), JukeboxPlaylistState().adoptOutsideTrack(picked))
+    }
+
+    @Test
+    fun adoptOutsideTrackReplacesTheActiveEntry() {
+        val playlist = initializePlaylist(track("current"), track("next"))
+        val picked = track("picked")
+
+        val updated = playlist.adoptOutsideTrack(picked)
+
+        assertEquals(listOf(picked, track("next")), updated.tracks)
+        assertEquals(0, updated.currentIndex)
+    }
+
+    @Test
+    fun adoptPreservedTrackBecomesOneTrackPlaylistBelowTwoTracks() {
+        val linked = track("linked")
+
+        assertEquals(singleTrackPlaylist(linked), JukeboxPlaylistState().adoptPreservedTrack(linked))
+        assertEquals(
+            singleTrackPlaylist(linked),
+            JukeboxPlaylistState(tracks = listOf(track("one")), currentIndex = -1, resumeIndex = 0)
+                .adoptPreservedTrack(linked)
+        )
+    }
+
+    @Test
+    fun adoptPreservedTrackActivatesAnExistingEntry() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two", title = null)),
+            currentIndex = -1,
+            resumeIndex = 0
+        )
+
+        val updated = playlist.adoptPreservedTrack(track("two", title = "Two"))
+
+        assertEquals(1, updated.currentIndex)
+        assertEquals("Two", updated.tracks[1].title)
+        assertEquals(2, updated.tracks.size)
+    }
+
+    @Test
+    fun adoptPreservedTrackAppendsAndActivatesANewEntry() {
+        val playlist = initializePlaylist(track("one"), track("two"))
+        val linked = track("linked")
+
+        val updated = playlist.adoptPreservedTrack(linked)
+
+        assertEquals(listOf(track("one"), track("two"), linked), updated.tracks)
+        assertEquals(2, updated.currentIndex)
+    }
+
+    @Test
+    fun adoptPreservedTrackOverwritesTheLastSlotWhenFull() {
+        val tracks = (1..MAX_PLAYLIST_TRACKS).map { track("t$it") }
+        val playlist = JukeboxPlaylistState(tracks = tracks, currentIndex = 0)
+        val linked = track("linked")
+
+        val updated = playlist.adoptPreservedTrack(linked)
+
+        assertEquals(MAX_PLAYLIST_TRACKS, updated.tracks.size)
+        assertEquals(linked, updated.tracks.last())
+        assertEquals(MAX_PLAYLIST_TRACKS - 1, updated.currentIndex)
+    }
+
+    @Test
+    fun clearedKeepingCurrentKeepsOnlyThePlayingTrack() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two"), track("three")),
+            currentIndex = 1
+        )
+
+        assertEquals(singleTrackPlaylist(track("two")), playlist.clearedKeepingCurrent())
+        assertEquals(JukeboxPlaylistState(), playlist.deactivate().clearedKeepingCurrent())
+    }
+
+    @Test
+    fun restoredSavedPlaylistStateMapsLastIndexOntoPlayableTracks() {
+        val saved = SavedPlaylist(
+            tracks = listOf(
+                track("local", type = PlaylistTrackType.LocalCached).toSavedPlaylistTrack(),
+                track("one").toSavedPlaylistTrack(),
+                track("two").toSavedPlaylistTrack()
+            ),
+            lastIndex = 2
+        )
+
+        val restored = restoredSavedPlaylistState(saved, AppMode.Server, emptyList())
+
+        assertEquals(listOf(track("one"), track("two")), restored.tracks)
+        assertEquals(-1, restored.currentIndex)
+        assertEquals(track("two"), restored.resumeTrack())
+    }
+
+    @Test
+    fun restoredSavedPlaylistStateDefaultsResumeToFirstTrack() {
+        val saved = SavedPlaylist(
+            tracks = listOf(track("one").toSavedPlaylistTrack(), track("two").toSavedPlaylistTrack())
+        )
+
+        assertEquals(track("one"), restoredSavedPlaylistState(saved, AppMode.Server, emptyList()).resumeTrack())
+        assertEquals(
+            track("one"),
+            restoredSavedPlaylistState(saved.copy(lastIndex = 7), AppMode.Server, emptyList()).resumeTrack()
+        )
+    }
+
+    @Test
+    fun restoredSavedPlaylistStateAcceptsASingleTrack() {
+        val saved = SavedPlaylist(tracks = listOf(track("only").toSavedPlaylistTrack()), lastIndex = 0)
+
+        val restored = restoredSavedPlaylistState(saved, AppMode.Server, emptyList())
+
+        assertEquals(track("only"), restored.resumeTrack())
+        assertFalse(shouldShowPlaylistControls(restored))
+    }
+
+    @Test
+    fun restoredSavedPlaylistStateIsEmptyWhenNothingIsPlayable() {
+        val saved = SavedPlaylist(tracks = listOf(track("one").toSavedPlaylistTrack()), lastIndex = 0)
+
+        assertEquals(JukeboxPlaylistState(), restoredSavedPlaylistState(saved, AppMode.Local, emptyList()))
+        assertEquals(JukeboxPlaylistState(), restoredSavedPlaylistState(saved, null, emptyList()))
     }
 
     @Test

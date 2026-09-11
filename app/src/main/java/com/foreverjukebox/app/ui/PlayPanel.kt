@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -251,22 +252,58 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         "No track selected.",
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                    if (shouldShowSavedPlaylistButton(state)) {
-                        Button(
-                            onClick = { showPlaylist = true },
-                            colors = pillButtonColors(),
-                            border = pillButtonBorder(),
-                            shape = PillShape,
-                            contentPadding = SmallButtonPadding,
-                            modifier = Modifier.height(SmallButtonHeight)
+                    val resumeTrack = state.playlist.resumeTrack()
+                    val showSavedPlaylist = shouldShowSavedPlaylistButton(state)
+                    val showContinue = shouldShowContinueListeningButton(state) && resumeTrack != null
+                    if (showSavedPlaylist || showContinue) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Saved Playlist", style = MaterialTheme.typography.labelSmall)
+                            if (showSavedPlaylist) {
+                                Button(
+                                    onClick = { showPlaylist = true },
+                                    colors = pillButtonColors(),
+                                    border = pillButtonBorder(),
+                                    shape = PillShape,
+                                    contentPadding = SmallButtonPadding,
+                                    modifier = Modifier.height(SmallButtonHeight)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Saved Playlist", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            if (showContinue) {
+                                val resumeTitle = resumeTrack?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
+                                Button(
+                                    onClick = viewModel::continueListening,
+                                    colors = pillButtonColors(),
+                                    border = pillButtonBorder(),
+                                    shape = PillShape,
+                                    contentPadding = SmallButtonPadding,
+                                    modifier = Modifier
+                                        .height(SmallButtonHeight)
+                                        .weight(1f, fill = false)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        "Continue listening: $resumeTitle",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
