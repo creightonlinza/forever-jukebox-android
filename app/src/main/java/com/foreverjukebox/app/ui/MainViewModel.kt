@@ -294,7 +294,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val serverGateway = createServerGateway()
     private val analytics = createAnalyticsGateway(application)
     private val diagnostics = createDiagnosticsGateway(application)
-    private val controller = PlaybackControllerHolder.get(application)
+    // A dedicated token, so the process-lived controller never references this ViewModel.
+    private val controllerOwnerToken = Any()
+    private val controller = PlaybackControllerHolder.get(application).also {
+        it.attachOwner(controllerOwnerToken)
+    }
     private val engine = controller.engine
     private val defaultConfig = engine.getConfig()
     private val json = Json { ignoreUnknownKeys = true }
@@ -796,7 +800,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         loadingAudioFeedbackController.release()
         playbackCoordinator.onCleared()
-        controller.detachOwner()
+        controller.detachOwner(controllerOwnerToken)
     }
 
     private fun handleSleepTimerExpired() {

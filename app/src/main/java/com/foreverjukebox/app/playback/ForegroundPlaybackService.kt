@@ -245,6 +245,24 @@ internal fun routeTransportAction(
     return TransportActionRoute.Handle
 }
 
+/**
+ * True when a local press asks to start playback but nothing is loaded to play. Media
+ * keys can start the service long after the UI released its audio (app exited, task
+ * removed, Bluetooth device auto-sending Play on connect), so this is an expected
+ * state rather than a playback failure.
+ */
+internal fun isPlayRequestWithoutAudio(
+    action: PlaybackAction,
+    hasAudio: Boolean,
+    isPlaying: Boolean,
+    autocanonizerActive: Boolean
+): Boolean {
+    if (action != PlaybackAction.Play && action != PlaybackAction.Toggle) {
+        return false
+    }
+    return !hasAudio && !isPlaying && !autocanonizerActive
+}
+
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
     return when (type) {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
@@ -876,6 +894,25 @@ class ForegroundPlaybackService : Service() {
         val autocanonizer = controller.autocanonizer
         val autocanonizerRunning = autocanonizer.isRunning()
         val autocanonizerPaused = autocanonizer.isPaused()
+        if (
+            isPlayRequestWithoutAudio(
+                action = action,
+                hasAudio = controller.player.hasAudio(),
+                isPlaying = controller.isPlaying(),
+                autocanonizerActive = autocanonizerRunning || autocanonizerPaused
+            )
+        ) {
+            AppLog.warn(TAG, "Ignoring $action press: no audio loaded")
+            if (controller.hasOwner()) {
+                // The owner may be mid-load and relying on this foreground service, and
+                // it tracks the session's visibility; let it re-sync the session rather
+                // than stopping underneath it.
+                broadcastLocalPlaybackStateChanged()
+            } else {
+                stopKeepingSleepTimer()
+            }
+            return
+        }
         when (action) {
             PlaybackAction.Play -> {
                 if (autocanonizerRunning) {
@@ -1029,10 +1066,28 @@ class ForegroundPlaybackService : Service() {
         mediaSession.isActive = false
     }
 
-    private fun stopAfterPendingForegroundStart() {
+    // In-service counterpart of the companion stop(): removes the session, keeping the
+    // service alive only for a running sleep timer.
+    private fun stopKeepingSleepTimer() {
+        when (resolveForegroundServiceStopCommand(_sleepTimerState.value.isActive)) {
+            ForegroundServiceStopCommand.ClearNotificationKeepTimer -> {
+                satisfyPendingForegroundStart()
+                clearPlaybackNotificationKeepTimer()
+            }
+            ForegroundServiceStopCommand.StopService -> stopAfterPendingForegroundStart()
+        }
+    }
+
+    // A start delivered via startForegroundService has to reach foreground once, even
+    // when the session is about to be removed.
+    private fun satisfyPendingForegroundStart() {
         if (!hasStartedForeground) {
             updateNotification(buildLocalNotificationState(isPlaying = false))
         }
+    }
+
+    private fun stopAfterPendingForegroundStart() {
+        satisfyPendingForegroundStart()
         activeNotificationState = null
         if (hasStartedForeground) {
             stopForeground(STOP_FOREGROUND_REMOVE)

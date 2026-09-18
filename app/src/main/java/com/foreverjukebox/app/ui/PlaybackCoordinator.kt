@@ -175,9 +175,9 @@ class PlaybackCoordinator(
         listenTimerJob?.cancel()
         pollJob?.cancel()
         backgroundAudioLoadJob?.cancel()
-        if (playbackServiceSessionVisible) {
-            hardStopPlaybackServiceSession()
-        }
+        // A media key can start the service without this coordinator ever marking the
+        // session visible, and the owner going away releases the audio it would control.
+        hardStopPlaybackServiceSession()
     }
 
     fun hasActiveServerLoadWork(): Boolean {

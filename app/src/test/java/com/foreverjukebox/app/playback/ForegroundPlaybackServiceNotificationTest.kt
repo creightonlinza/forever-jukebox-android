@@ -3,6 +3,7 @@ package com.foreverjukebox.app.playback
 import android.support.v4.media.session.PlaybackStateCompat
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -293,6 +294,64 @@ class ForegroundPlaybackServiceNotificationTest {
                     isLoading = false,
                     isLoadFailed = false,
                     action = action
+                )
+            )
+        }
+    }
+
+    @Test
+    fun playAndTogglePressesWithNothingLoadedAreRecognized() {
+        listOf(PlaybackAction.Play, PlaybackAction.Toggle).forEach { action ->
+            assertTrue(
+                isPlayRequestWithoutAudio(
+                    action = action,
+                    hasAudio = false,
+                    isPlaying = false,
+                    autocanonizerActive = false
+                )
+            )
+        }
+    }
+
+    @Test
+    fun pressesWithSomethingToControlAreNotTreatedAsEmpty() {
+        PlaybackAction.entries.forEach { action ->
+            assertFalse(
+                isPlayRequestWithoutAudio(
+                    action = action,
+                    hasAudio = true,
+                    isPlaying = false,
+                    autocanonizerActive = false
+                )
+            )
+            assertFalse(
+                isPlayRequestWithoutAudio(
+                    action = action,
+                    hasAudio = false,
+                    isPlaying = false,
+                    autocanonizerActive = true
+                )
+            )
+            assertFalse(
+                isPlayRequestWithoutAudio(
+                    action = action,
+                    hasAudio = false,
+                    isPlaying = true,
+                    autocanonizerActive = false
+                )
+            )
+        }
+    }
+
+    @Test
+    fun pauseAndStopPressesWithNothingLoadedKeepNormalHandling() {
+        listOf(PlaybackAction.Pause, PlaybackAction.Stop).forEach { action ->
+            assertFalse(
+                isPlayRequestWithoutAudio(
+                    action = action,
+                    hasAudio = false,
+                    isPlaying = false,
+                    autocanonizerActive = false
                 )
             )
         }
