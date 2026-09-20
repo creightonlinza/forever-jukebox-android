@@ -318,6 +318,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var pendingAutoFavoriteJobId: String? = null
     private var baseUrlLoaded = false
 
+    // A listen link merges into the saved playlist, so it waits until that playlist has
+    // been read and filtered for the stored app mode.
+    private var savedPlaylistLoaded = false
+    private var appModeLoaded = false
+
     // Two independent halves of the same story, reset together by resetServerConfigTracking():
     // whether this server has been asked yet, and what the answer is. They are not derivable from
     // each other — a cached config makes the state Loaded before any fetch goes out, and the fetch
@@ -541,6 +546,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         castEnabled = resolveCastEnabled(effectiveMode, relayConfigured)
                     )
                 }
+                appModeLoaded = true
                 hydrateSavedPlaylistIfInactive()
                 maybeRefreshServerDataForCurrentState()
                 maybeShowAutomaticWhatsNew()
@@ -588,7 +594,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             preferences.savedPlaylist.collect { saved ->
                 savedPlaylist = saved
+                savedPlaylistLoaded = true
                 hydrateSavedPlaylistIfInactive()
+                consumePendingExternalIntentIfReady()
             }
         }
         viewModelScope.launch {
@@ -1238,10 +1246,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun persistSavedPlaylist(playlist: JukeboxPlaylistState) {
-        val saved = SavedPlaylist(
-            tracks = playlist.tracks.map { it.toSavedPlaylistTrack() },
-            lastIndex = playlist.persistedLastIndex()
-        )
+        val saved = mergedSavedPlaylist(savedPlaylist, playlist, state.value.appMode)
         savedPlaylist = saved
         viewModelScope.launch {
             preferences.setSavedPlaylist(saved)
@@ -1287,16 +1292,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun clearPlaylistState() {
-        val current = state.value.playlist
-        if (current == JukeboxPlaylistState() && savedPlaylist.tracks.isEmpty()) {
+        val cleared = mergedSavedPlaylist(savedPlaylist, JukeboxPlaylistState(), state.value.appMode)
+        if (state.value.playlist == JukeboxPlaylistState() && cleared == savedPlaylist) {
             return
         }
-        savedPlaylist = SavedPlaylist()
+        savedPlaylist = cleared
         _state.update {
             it.copy(playlist = JukeboxPlaylistState())
         }
         viewModelScope.launch {
-            preferences.setSavedPlaylist(SavedPlaylist())
+            preferences.setSavedPlaylist(cleared)
         }
     }
 
@@ -4052,6 +4057,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun consumePendingExternalIntentIfReady(): Boolean {
         val pending = pendingExternalIntent ?: return false
+        if (!savedPlaylistLoaded || !appModeLoaded) return false
         val current = state.value
         val serverUrlReady = current.baseUrl.isNotBlank()
         val listenLinkReady = serverUrlReady && when (pending) {

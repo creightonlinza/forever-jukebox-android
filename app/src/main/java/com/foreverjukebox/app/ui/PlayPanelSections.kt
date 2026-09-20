@@ -9,26 +9,29 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Cast
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -232,6 +235,9 @@ internal fun ColumnScope.CastListenScreen(
     favoriteToggleInFlight: Boolean,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
+    showSavedPlaylist: Boolean,
+    resumeTitle: String?,
+    onContinueListening: () -> Unit,
     onSelectVisualization: (Int) -> Unit,
     onCancelAnalysis: () -> Unit,
     onRetryCastLoad: () -> Unit
@@ -337,9 +343,74 @@ internal fun ColumnScope.CastListenScreen(
                         onShowVizMenu = { showVizMenu = it },
                         playlist = playlist,
                         onOpenPlaylist = onOpenPlaylist,
+                        showSavedPlaylist = showSavedPlaylist,
+                        resumeTitle = resumeTitle,
+                        onContinueListening = onContinueListening,
                         onSelectVisualization = onSelectVisualization
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Shortcuts back into the last session, offered while nothing is loaded: the saved playlist
+ * picker and a direct resume of the last track. A null [resumeTitle] hides the resume pill.
+ */
+@Composable
+internal fun ResumeShortcutsRow(
+    showSavedPlaylist: Boolean,
+    resumeTitle: String?,
+    onOpenPlaylist: () -> Unit,
+    onContinueListening: () -> Unit
+) {
+    if (!showSavedPlaylist && resumeTitle == null) return
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (showSavedPlaylist) {
+            Button(
+                onClick = onOpenPlaylist,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Saved Playlist", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        if (resumeTitle != null) {
+            Button(
+                onClick = onContinueListening,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier
+                    .height(SmallButtonHeight)
+                    .weight(1f, fill = false)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Continue listening: $resumeTitle",
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -371,6 +442,9 @@ private fun CastIdleContent(
     onShowVizMenu: (Boolean) -> Unit,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
+    showSavedPlaylist: Boolean,
+    resumeTitle: String?,
+    onContinueListening: () -> Unit,
     onSelectVisualization: (Int) -> Unit
 ) {
     if (!hasCastTrack) {
@@ -378,6 +452,12 @@ private fun CastIdleContent(
             text = "Choose a track to start casting.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
+        )
+        ResumeShortcutsRow(
+            showSavedPlaylist = showSavedPlaylist,
+            resumeTitle = resumeTitle,
+            onOpenPlaylist = onOpenPlaylist,
+            onContinueListening = onContinueListening
         )
         return
     }

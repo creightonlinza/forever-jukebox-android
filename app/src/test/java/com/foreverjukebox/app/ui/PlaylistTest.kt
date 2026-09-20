@@ -345,7 +345,8 @@ class PlaylistTest {
 
         assertNull(playlist.resumeTrack())
         assertEquals(1, playlist.persistedLastIndex())
-        assertEquals(track("one"), playlist.deactivate().resumeTrack())
+        assertEquals(track("two"), playlist.deactivate().resumeTrack())
+        assertEquals(playlist.deactivate(), playlist.deactivate().deactivate())
     }
 
     @Test
@@ -463,6 +464,57 @@ class PlaylistTest {
             track("one"),
             restoredSavedPlaylistState(saved.copy(lastIndex = 7), AppMode.Server, emptyList()).resumeTrack()
         )
+    }
+
+    @Test
+    fun restoredSavedPlaylistStateHonorsAClearedResumePoint() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = -1,
+            resumeIndex = 1
+        ).removeTrackAt(1)
+
+        val saved = mergedSavedPlaylist(SavedPlaylist(), playlist, AppMode.Server)
+        val restored = restoredSavedPlaylistState(saved, AppMode.Server, emptyList())
+
+        assertEquals(SAVED_PLAYLIST_NO_RESUME, saved.lastIndex)
+        assertEquals(playlist, restored)
+        assertNull(restored.resumeTrack())
+    }
+
+    @Test
+    fun mergedSavedPlaylistKeepsTheOtherModesTracks() {
+        val local = track("local", type = PlaylistTrackType.LocalCached)
+        val previous = SavedPlaylist(
+            tracks = listOf(track("one").toSavedPlaylistTrack(), track("two").toSavedPlaylistTrack()),
+            lastIndex = 1
+        )
+
+        val saved = mergedSavedPlaylist(previous, singleTrackPlaylist(local), AppMode.Local)
+
+        assertEquals(
+            listOf(local.toSavedPlaylistTrack()) + previous.tracks,
+            saved.tracks
+        )
+        assertEquals(0, saved.lastIndex)
+        assertEquals(
+            listOf(track("one"), track("two")),
+            restoredSavedPlaylistState(saved, AppMode.Server, emptyList()).tracks
+        )
+    }
+
+    @Test
+    fun mergedSavedPlaylistReplacesTheCurrentModesTracks() {
+        val previous = SavedPlaylist(
+            tracks = listOf(track("one").toSavedPlaylistTrack(), track("two").toSavedPlaylistTrack()),
+            lastIndex = 1
+        )
+
+        val replaced = mergedSavedPlaylist(previous, singleTrackPlaylist(track("picked")), AppMode.Server)
+        val cleared = mergedSavedPlaylist(previous, JukeboxPlaylistState(), AppMode.Server)
+
+        assertEquals(SavedPlaylist(listOf(track("picked").toSavedPlaylistTrack()), lastIndex = 0), replaced)
+        assertEquals(SavedPlaylist(), cleared)
     }
 
     @Test

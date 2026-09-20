@@ -305,5 +305,6 @@ class CastSessionCoordinatorPolicyTest {
         assertNull(updated.playback.castDeviceName)
         assertEquals(playlist.tracks, updated.playlist.tracks)
         assertEquals(-1, updated.playlist.currentIndex)
+        assertEquals(playlist.tracks[1], updated.playlist.resumeTrack())
     }
 }

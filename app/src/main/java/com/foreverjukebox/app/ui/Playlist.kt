@@ -9,6 +9,9 @@ import com.foreverjukebox.app.data.canonicalTrackId
 
 internal const val MAX_PLAYLIST_TRACKS = 10
 
+// Stored lastIndex of a playlist whose resume point was removed.
+internal const val SAVED_PLAYLIST_NO_RESUME = -1
+
 enum class PlaylistTrackType {
     Server,
     LocalCached
@@ -224,11 +227,13 @@ internal fun JukeboxPlaylistState.selectTrackAt(index: Int): JukeboxPlaylistStat
     return copy(currentIndex = index)
 }
 
+// The playing position becomes the resume point, so "Continue listening" picks up where
+// the deactivated session stopped.
 internal fun JukeboxPlaylistState.deactivate(): JukeboxPlaylistState {
-    if (tracks.isEmpty()) {
+    if (!isActive()) {
         return this
     }
-    return copy(currentIndex = -1)
+    return copy(currentIndex = -1, resumeIndex = currentIndex)
 }
 
 internal fun JukeboxPlaylistState.canRemoveTrackAt(index: Int): Boolean {
@@ -276,15 +281,56 @@ internal fun shouldAdvancePlaylistOnAutocanonizerEnd(state: UiState): Boolean {
         state.playlist.canSkipNext()
 }
 
+/**
+ * True when the Listen screen has nothing loaded or loading, either on the device or on a
+ * connected cast session, so resume shortcuts can be offered.
+ */
+internal fun isListenScreenIdle(state: UiState): Boolean {
+    val playback = state.playback
+    return when (resolveListenContentMode(playback)) {
+        ListenContentMode.Empty -> true
+        ListenContentMode.Cast -> !playback.hasCastTrack() &&
+            resolveCastScreenStatus(state.appMode, playback) == null
+        ListenContentMode.LocalReady, ListenContentMode.None -> false
+    }
+}
+
 internal fun shouldShowSavedPlaylistButton(state: UiState): Boolean {
-    return resolveListenContentMode(state.playback) == ListenContentMode.Empty &&
+    return isListenScreenIdle(state) &&
         state.playlist.isInactiveSavedPlaylist() &&
         shouldShowPlaylistControls(state.playlist)
 }
 
 internal fun shouldShowContinueListeningButton(state: UiState): Boolean {
-    return resolveListenContentMode(state.playback) == ListenContentMode.Empty &&
-        state.playlist.resumeTrack() != null
+    return isListenScreenIdle(state) && state.playlist.resumeTrack() != null
+}
+
+/**
+ * Builds the stored form of [playlist], which only ever holds the current mode's tracks.
+ *
+ * Entries belonging to the other app mode are carried over from [previous] behind the
+ * current ones, so a session in one mode never erases the playlist saved in the other and
+ * lastIndex keeps addressing the current mode's list. A non-empty playlist with no resume
+ * point stores [SAVED_PLAYLIST_NO_RESUME], keeping a deliberately cleared resume point
+ * distinct from storage that predates lastIndex.
+ */
+internal fun mergedSavedPlaylist(
+    previous: SavedPlaylist,
+    playlist: JukeboxPlaylistState,
+    appMode: AppMode?
+): SavedPlaylist {
+    val currentTracks = playlist.tracks.map { it.toSavedPlaylistTrack() }
+    val currentModeType = when (appMode) {
+        AppMode.Server -> SavedPlaylistTrackType.Server
+        AppMode.Local -> SavedPlaylistTrackType.LocalCached
+        null -> null
+    }
+    val otherModeTracks = previous.tracks.filter { it.type != currentModeType }
+    val lastIndex = when {
+        currentTracks.isEmpty() -> null
+        else -> playlist.persistedLastIndex() ?: SAVED_PLAYLIST_NO_RESUME
+    }
+    return SavedPlaylist(tracks = currentTracks + otherModeTracks, lastIndex = lastIndex)
 }
 
 /**
@@ -306,11 +352,15 @@ internal fun restoredSavedPlaylistState(
         localCachedTracks = localCachedTracks
     )
     if (playableTracks.isEmpty()) return JukeboxPlaylistState()
-    val lastTrack = saved.lastIndex?.let { savedTracks.getOrNull(it) }
-    val resumeIndex = lastTrack
-        ?.let { track -> playableTracks.indexOfFirst { it.playlistKey == track.playlistKey } }
-        ?.takeIf { it >= 0 }
-        ?: 0
+    val resumeIndex = if (saved.lastIndex == SAVED_PLAYLIST_NO_RESUME) {
+        -1
+    } else {
+        saved.lastIndex
+            ?.let { savedTracks.getOrNull(it) }
+            ?.let { track -> playableTracks.indexOfFirst { it.playlistKey == track.playlistKey } }
+            ?.takeIf { it >= 0 }
+            ?: 0
+    }
     return JukeboxPlaylistState(tracks = playableTracks, currentIndex = -1, resumeIndex = resumeIndex)
 }
 
