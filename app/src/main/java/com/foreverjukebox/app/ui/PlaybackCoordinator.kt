@@ -151,7 +151,6 @@ class PlaybackCoordinator(
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
-    private val applyActiveTab: (TabId, Boolean) -> Unit,
     private val onStableTrackLoaded: () -> Unit = {},
     private val onAnalysisResultApplied: (TrackAnalysisResult) -> Unit = {},
     private val audioLoadHold: AudioLoadHold = AudioLoadWakeLock(application)
@@ -176,9 +175,9 @@ class PlaybackCoordinator(
         listenTimerJob?.cancel()
         pollJob?.cancel()
         backgroundAudioLoadJob?.cancel()
-        if (playbackServiceSessionVisible) {
-            hardStopPlaybackServiceSession()
-        }
+        // A media key can start the service without this coordinator ever marking the
+        // session visible, and the owner going away releases the audio it would control.
+        hardStopPlaybackServiceSession()
     }
 
     fun hasActiveServerLoadWork(): Boolean {
@@ -765,7 +764,6 @@ class PlaybackCoordinator(
                 )
             )
         }
-        applyActiveTab(TabId.Play, true)
         syncPlaybackServiceSession()
         val jobId = responseJobId ?: canonicalJobId(lastJobId)
         if (jobId != null) {

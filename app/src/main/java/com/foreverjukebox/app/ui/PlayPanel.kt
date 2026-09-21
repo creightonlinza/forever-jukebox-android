@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -187,6 +186,14 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             )
         }
 
+        val showSavedPlaylist = shouldShowSavedPlaylistButton(state)
+        val resumeTitle = if (shouldShowContinueListeningButton(state)) {
+            state.playlist.resumeTrack()?.let { track ->
+                track.title?.takeIf { it.isNotBlank() } ?: "Untitled"
+            }
+        } else {
+            null
+        }
         when (resolveListenContentMode(playback)) {
             ListenContentMode.Cast -> {
             CastListenScreen(
@@ -206,6 +213,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 playlist = state.playlist,
                 onOpenPlaylist = { showPlaylist = true },
+                showSavedPlaylist = showSavedPlaylist,
+                resumeTitle = resumeTitle,
+                onContinueListening = viewModel::continueListening,
                 onSelectVisualization = viewModel::setActiveVisualization,
                 onCancelAnalysis = viewModel::cancelLocalAnalysis,
                 onRetryCastLoad = viewModel::retryCastLoad
@@ -251,24 +261,12 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                         "No track selected.",
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                    if (shouldShowSavedPlaylistButton(state)) {
-                        Button(
-                            onClick = { showPlaylist = true },
-                            colors = pillButtonColors(),
-                            border = pillButtonBorder(),
-                            shape = PillShape,
-                            contentPadding = SmallButtonPadding,
-                            modifier = Modifier.height(SmallButtonHeight)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.QueueMusic,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Saved Playlist", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
+                    ResumeShortcutsRow(
+                        showSavedPlaylist = showSavedPlaylist,
+                        resumeTitle = resumeTitle,
+                        onOpenPlaylist = { showPlaylist = true },
+                        onContinueListening = viewModel::continueListening
+                    )
                 }
             }
             ListenContentMode.None -> Unit

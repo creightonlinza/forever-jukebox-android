@@ -2,11 +2,15 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.FavoritePlayMode
+import com.foreverjukebox.app.data.SavedPlaylist
 import com.foreverjukebox.app.data.SavedPlaylistTrack
 import com.foreverjukebox.app.data.SavedPlaylistTrackType
 import com.foreverjukebox.app.data.canonicalTrackId
 
 internal const val MAX_PLAYLIST_TRACKS = 10
+
+// Stored lastIndex of a playlist whose resume point was removed.
+internal const val SAVED_PLAYLIST_NO_RESUME = -1
 
 enum class PlaylistTrackType {
     Server,
@@ -25,7 +29,10 @@ data class PlaylistTrack(
 
 data class JukeboxPlaylistState(
     val tracks: List<PlaylistTrack> = emptyList(),
-    val currentIndex: Int = -1
+    val currentIndex: Int = -1,
+    // Position to resume from while the playlist is inactive after a restore; ignored
+    // once a track is active.
+    val resumeIndex: Int = -1
 )
 
 /** Identifies the loaded track as a playlist entry key. */
@@ -68,6 +75,64 @@ internal fun JukeboxPlaylistState.isInactiveSavedPlaylist(): Boolean {
 
 internal fun JukeboxPlaylistState.currentTrack(): PlaylistTrack? {
     return tracks.getOrNull(currentIndex)
+}
+
+/** The entry "Continue listening" would resume, or null when active or out of range. */
+internal fun JukeboxPlaylistState.resumeTrack(): PlaylistTrack? {
+    if (isActive()) return null
+    return tracks.getOrNull(resumeIndex)
+}
+
+/** The index worth persisting so the next launch can resume it, or null when there is none. */
+internal fun JukeboxPlaylistState.persistedLastIndex(): Int? {
+    if (isActive()) return currentIndex
+    return resumeIndex.takeIf { it in tracks.indices }
+}
+
+internal fun singleTrackPlaylist(track: PlaylistTrack): JukeboxPlaylistState {
+    return JukeboxPlaylistState(tracks = listOf(track), currentIndex = 0)
+}
+
+/**
+ * Applies a load picked outside the playlist (top list, search, favorites, library).
+ *
+ * An active playlist swaps its current entry; otherwise the loaded track becomes a
+ * one-track playlist, replacing any inactive saved playlist so the store always records
+ * what is playing.
+ */
+internal fun JukeboxPlaylistState.adoptOutsideTrack(track: PlaylistTrack): JukeboxPlaylistState {
+    if (isActive()) return replaceCurrentTrackWith(track)
+    return singleTrackPlaylist(track)
+}
+
+/**
+ * Applies a listen-link load, which keeps a multi-track playlist alive: a track already in
+ * the list is activated, a new one is appended (overwriting the last slot when full) and
+ * activated. Below two tracks the link simply becomes a one-track playlist.
+ */
+internal fun JukeboxPlaylistState.adoptPreservedTrack(track: PlaylistTrack): JukeboxPlaylistState {
+    if (tracks.size < 2) return singleTrackPlaylist(track)
+    val existingIndex = indexOfTrack(track)
+    if (existingIndex >= 0) {
+        val nextTracks = tracks.toMutableList()
+        nextTracks[existingIndex] = tracks[existingIndex].withMetadataFrom(track)
+        return copy(tracks = nextTracks, currentIndex = existingIndex)
+    }
+    val nextTracks = tracks.toMutableList()
+    val nextIndex = if (nextTracks.size >= MAX_PLAYLIST_TRACKS) {
+        nextTracks[MAX_PLAYLIST_TRACKS - 1] = track
+        MAX_PLAYLIST_TRACKS - 1
+    } else {
+        nextTracks.add(track)
+        nextTracks.lastIndex
+    }
+    return copy(tracks = nextTracks, currentIndex = nextIndex)
+}
+
+/** Clear keeps the playing track as the sole entry so it can still be resumed later. */
+internal fun JukeboxPlaylistState.clearedKeepingCurrent(): JukeboxPlaylistState {
+    val current = currentTrack() ?: return JukeboxPlaylistState()
+    return singleTrackPlaylist(current)
 }
 
 internal fun JukeboxPlaylistState.indexOfTrack(track: PlaylistTrack): Int {
@@ -162,11 +227,13 @@ internal fun JukeboxPlaylistState.selectTrackAt(index: Int): JukeboxPlaylistStat
     return copy(currentIndex = index)
 }
 
+// The playing position becomes the resume point, so "Continue listening" picks up where
+// the deactivated session stopped.
 internal fun JukeboxPlaylistState.deactivate(): JukeboxPlaylistState {
-    if (tracks.isEmpty()) {
+    if (!isActive()) {
         return this
     }
-    return copy(currentIndex = -1)
+    return copy(currentIndex = -1, resumeIndex = currentIndex)
 }
 
 internal fun JukeboxPlaylistState.canRemoveTrackAt(index: Int): Boolean {
@@ -182,15 +249,17 @@ internal fun JukeboxPlaylistState.removeTrackAt(index: Int): JukeboxPlaylistStat
         return this
     }
     val nextTracks = tracks.toMutableList().apply { removeAt(index) }
-    if (nextTracks.size <= 1) {
-        return JukeboxPlaylistState()
-    }
     val nextCurrentIndex = if (index < currentIndex) {
         currentIndex - 1
     } else {
         currentIndex
     }
-    return copy(tracks = nextTracks, currentIndex = nextCurrentIndex)
+    val nextResumeIndex = when {
+        index == resumeIndex -> -1
+        index < resumeIndex -> resumeIndex - 1
+        else -> resumeIndex
+    }
+    return copy(tracks = nextTracks, currentIndex = nextCurrentIndex, resumeIndex = nextResumeIndex)
 }
 
 internal fun JukeboxPlaylistState.canSkipPrevious(): Boolean = currentIndex > 0
@@ -212,10 +281,87 @@ internal fun shouldAdvancePlaylistOnAutocanonizerEnd(state: UiState): Boolean {
         state.playlist.canSkipNext()
 }
 
+/**
+ * True when the Listen screen has nothing loaded or loading, either on the device or on a
+ * connected cast session, so resume shortcuts can be offered.
+ */
+internal fun isListenScreenIdle(state: UiState): Boolean {
+    val playback = state.playback
+    return when (resolveListenContentMode(playback)) {
+        ListenContentMode.Empty -> true
+        ListenContentMode.Cast -> !playback.hasCastTrack() &&
+            resolveCastScreenStatus(state.appMode, playback) == null
+        ListenContentMode.LocalReady, ListenContentMode.None -> false
+    }
+}
+
 internal fun shouldShowSavedPlaylistButton(state: UiState): Boolean {
-    return resolveListenContentMode(state.playback) == ListenContentMode.Empty &&
+    return isListenScreenIdle(state) &&
         state.playlist.isInactiveSavedPlaylist() &&
         shouldShowPlaylistControls(state.playlist)
+}
+
+internal fun shouldShowContinueListeningButton(state: UiState): Boolean {
+    return isListenScreenIdle(state) && state.playlist.resumeTrack() != null
+}
+
+/**
+ * Builds the stored form of [playlist], which only ever holds the current mode's tracks.
+ *
+ * Entries belonging to the other app mode are carried over from [previous] behind the
+ * current ones, so a session in one mode never erases the playlist saved in the other and
+ * lastIndex keeps addressing the current mode's list. A non-empty playlist with no resume
+ * point stores [SAVED_PLAYLIST_NO_RESUME], keeping a deliberately cleared resume point
+ * distinct from storage that predates lastIndex.
+ */
+internal fun mergedSavedPlaylist(
+    previous: SavedPlaylist,
+    playlist: JukeboxPlaylistState,
+    appMode: AppMode?
+): SavedPlaylist {
+    val currentTracks = playlist.tracks.map { it.toSavedPlaylistTrack() }
+    val currentModeType = when (appMode) {
+        AppMode.Server -> SavedPlaylistTrackType.Server
+        AppMode.Local -> SavedPlaylistTrackType.LocalCached
+        null -> null
+    }
+    val otherModeTracks = previous.tracks.filter { it.type != currentModeType }
+    val lastIndex = when {
+        currentTracks.isEmpty() -> null
+        else -> playlist.persistedLastIndex() ?: SAVED_PLAYLIST_NO_RESUME
+    }
+    return SavedPlaylist(tracks = currentTracks + otherModeTracks, lastIndex = lastIndex)
+}
+
+/**
+ * Rebuilds the inactive playlist from storage for the current app mode.
+ *
+ * The saved lastIndex refers to the stored list; it is mapped onto the playable subset by
+ * identity and falls back to the first track when absent or unplayable, so playlists
+ * written before lastIndex existed still offer a resume point.
+ */
+internal fun restoredSavedPlaylistState(
+    saved: SavedPlaylist,
+    appMode: AppMode?,
+    localCachedTracks: List<LocalCachedTrack>
+): JukeboxPlaylistState {
+    val savedTracks = saved.tracks.mapNotNull { it.toPlaylistTrack() }
+    val playableTracks = playablePlaylistTracks(
+        tracks = savedTracks,
+        appMode = appMode,
+        localCachedTracks = localCachedTracks
+    )
+    if (playableTracks.isEmpty()) return JukeboxPlaylistState()
+    val resumeIndex = if (saved.lastIndex == SAVED_PLAYLIST_NO_RESUME) {
+        -1
+    } else {
+        saved.lastIndex
+            ?.let { savedTracks.getOrNull(it) }
+            ?.let { track -> playableTracks.indexOfFirst { it.playlistKey == track.playlistKey } }
+            ?.takeIf { it >= 0 }
+            ?: 0
+    }
+    return JukeboxPlaylistState(tracks = playableTracks, currentIndex = -1, resumeIndex = resumeIndex)
 }
 
 internal fun PlaylistTrack.toSavedPlaylistTrack(): SavedPlaylistTrack {

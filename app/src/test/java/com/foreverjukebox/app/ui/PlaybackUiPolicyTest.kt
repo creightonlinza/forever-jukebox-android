@@ -579,6 +579,75 @@ class PlaybackUiPolicyTest {
     }
 
     @Test
+    fun continueListeningButtonShowsForAnyInactiveResumeTrackOnEmptyListenScreen() {
+        val single = JukeboxPlaylistState(
+            tracks = listOf(PlaylistTrack("one", PlaylistTrackType.Server, "One", null)),
+            currentIndex = -1,
+            resumeIndex = 0
+        )
+        val empty = UiState(playlist = single, playback = PlaybackState())
+
+        assertTrue(shouldShowContinueListeningButton(empty))
+        assertFalse(shouldShowSavedPlaylistButton(empty))
+        assertTrue(
+            shouldShowContinueListeningButton(
+                empty.copy(
+                    playlist = single.copy(
+                        tracks = single.tracks + PlaylistTrack("two", PlaylistTrackType.Server, "Two", null),
+                        resumeIndex = 1
+                    )
+                )
+            )
+        )
+        assertFalse(shouldShowContinueListeningButton(empty.copy(playlist = single.copy(currentIndex = 0))))
+        assertFalse(shouldShowContinueListeningButton(empty.copy(playlist = single.copy(resumeIndex = -1))))
+        assertFalse(
+            shouldShowContinueListeningButton(
+                empty.copy(playback = PlaybackState(audioLoaded = true, analysisLoaded = true))
+            )
+        )
+        assertFalse(shouldShowContinueListeningButton(empty.copy(playback = PlaybackState(audioLoading = true))))
+        assertFalse(
+            shouldShowContinueListeningButton(empty.copy(playback = PlaybackState(analysisErrorMessage = "failed")))
+        )
+    }
+
+    @Test
+    fun resumeShortcutsShowOnIdleCastSessionOnly() {
+        val saved = JukeboxPlaylistState(
+            tracks = listOf(
+                PlaylistTrack("one", PlaylistTrackType.Server, "One", null),
+                PlaylistTrack("two", PlaylistTrackType.Server, "Two", null)
+            ),
+            currentIndex = -1,
+            resumeIndex = 1
+        )
+        val idleCast = UiState(
+            appMode = AppMode.Server,
+            playlist = saved,
+            playback = PlaybackState(isCasting = true)
+        )
+
+        assertTrue(isListenScreenIdle(idleCast))
+        assertTrue(shouldShowSavedPlaylistButton(idleCast))
+        assertTrue(shouldShowContinueListeningButton(idleCast))
+
+        val busyCastPlaybacks = listOf(
+            idleCast.playback.copy(lastJobId = "job"),
+            idleCast.playback.copy(analysisErrorMessage = "failed"),
+            idleCast.playback.copy(analysisInFlight = true),
+            idleCast.playback.copy(castTransfer = CastTransfer.Uploading("job", percent = 10)),
+            idleCast.playback.copy(castTransfer = CastTransfer.WaitingForReceiver("job"))
+        )
+        busyCastPlaybacks.forEach { playback ->
+            val busy = idleCast.copy(playback = playback)
+            assertFalse(isListenScreenIdle(busy))
+            assertFalse(shouldShowSavedPlaylistButton(busy))
+            assertFalse(shouldShowContinueListeningButton(busy))
+        }
+    }
+
+    @Test
     fun activePlaylistControlsHideForInactiveSavedPlaylist() {
         val inactivePlaylist = JukeboxPlaylistState(
             tracks = listOf(

@@ -38,22 +38,36 @@ data class SavedPlaylistTrack(
     val playMode: FavoritePlayMode? = null
 )
 
-internal fun encodeSavedPlaylistTracks(
-    items: List<SavedPlaylistTrack>,
+@Serializable
+data class SavedPlaylist(
+    val tracks: List<SavedPlaylistTrack> = emptyList(),
+    // Position to resume from on the next launch; absent in playlists written before it existed.
+    val lastIndex: Int? = null
+)
+
+internal fun encodeSavedPlaylist(
+    playlist: SavedPlaylist,
     json: Json = Json { ignoreUnknownKeys = true }
 ): String {
-    return json.encodeToString(ListSerializer(SavedPlaylistTrack.serializer()), items)
+    return json.encodeToString(SavedPlaylist.serializer(), playlist)
 }
 
-internal fun decodeSavedPlaylistTracks(
+/** Accepts the current object shape and the legacy bare track array; malformed input decodes as empty. */
+internal fun decodeSavedPlaylist(
     raw: String?,
     json: Json = Json { ignoreUnknownKeys = true }
-): List<SavedPlaylistTrack> {
-    if (raw.isNullOrBlank()) return emptyList()
+): SavedPlaylist {
+    if (raw.isNullOrBlank()) return SavedPlaylist()
     return try {
-        json.decodeFromString(ListSerializer(SavedPlaylistTrack.serializer()), raw)
+        if (raw.trimStart().startsWith("[")) {
+            SavedPlaylist(
+                tracks = json.decodeFromString(ListSerializer(SavedPlaylistTrack.serializer()), raw)
+            )
+        } else {
+            json.decodeFromString(SavedPlaylist.serializer(), raw)
+        }
     } catch (_: Exception) {
-        emptyList()
+        SavedPlaylist()
     }
 }
 
@@ -145,8 +159,8 @@ class AppPreferences(private val context: Context) {
         prefs[KEY_LOADING_AUDIO_FEEDBACK] ?: false
     }
 
-    val savedPlaylist: Flow<List<SavedPlaylistTrack>> = context.dataStore.data.map { prefs ->
-        decodeSavedPlaylistTracks(prefs[KEY_SAVED_PLAYLIST], json)
+    val savedPlaylist: Flow<SavedPlaylist> = context.dataStore.data.map { prefs ->
+        decodeSavedPlaylist(prefs[KEY_SAVED_PLAYLIST], json)
     }
 
     val whatsNewVersionCode: Flow<Int?> = context.dataStore.data.map { prefs ->
@@ -249,12 +263,12 @@ class AppPreferences(private val context: Context) {
         }
     }
 
-    suspend fun setSavedPlaylist(items: List<SavedPlaylistTrack>) {
+    suspend fun setSavedPlaylist(playlist: SavedPlaylist) {
         context.dataStore.edit { prefs ->
-            if (items.isEmpty()) {
+            if (playlist.tracks.isEmpty()) {
                 prefs.remove(KEY_SAVED_PLAYLIST)
             } else {
-                prefs[KEY_SAVED_PLAYLIST] = encodeSavedPlaylistTracks(items, json)
+                prefs[KEY_SAVED_PLAYLIST] = encodeSavedPlaylist(playlist, json)
             }
         }
     }

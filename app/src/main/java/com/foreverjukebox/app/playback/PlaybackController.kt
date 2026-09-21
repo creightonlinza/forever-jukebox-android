@@ -61,6 +61,7 @@ class PlaybackController {
     private var trackTitle: String? = null
     private var trackArtist: String? = null
     private var duckingActive = false
+    private var owner: Any? = null
 
     private enum class TransportState {
         Playing,
@@ -368,11 +369,22 @@ class PlaybackController {
         return autocanonizer.syncAudioFromMain()
     }
 
+    // Ownership is by identity: a replacement ViewModel can attach before the previous
+    // one is cleared, and that late detach must not release the replacement's audio.
+    fun attachOwner(token: Any) {
+        owner = token
+    }
+
+    /** True while a ViewModel owns the loaded audio and the playback service session. */
+    fun hasOwner(): Boolean = owner != null
+
     // The controller outlives any single ViewModel (see PlaybackControllerHolder), so a
     // ViewModel going away must only drop what that ViewModel owned: audio focus, any
     // parked play, scheduled overlay hits, and the decoded audio. Everything released
     // here is rebuilt lazily on the next load; nothing is latched shut.
-    fun detachOwner() {
+    fun detachOwner(token: Any) {
+        if (owner !== token) return
+        owner = null
         cancelPendingFocusPlay()
         audioFocusController.abandonAudioFocus()
         cowbellOverlay.cancelScheduledHits()

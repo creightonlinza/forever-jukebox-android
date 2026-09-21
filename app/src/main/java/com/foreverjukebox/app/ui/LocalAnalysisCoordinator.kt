@@ -290,7 +290,6 @@ class LocalAnalysisCoordinator(
             )
         )
         refreshLocalCachedTracks()
-        applyActiveTab(TabId.Play, true)
     }
 
     /**
@@ -321,7 +320,6 @@ class LocalAnalysisCoordinator(
         // playback-change lock reads it.
         playbackCoordinator.setAudioLoading(false)
         refreshLocalCachedTracks()
-        applyActiveTab(TabId.Play, true)
         return true
     }
 
