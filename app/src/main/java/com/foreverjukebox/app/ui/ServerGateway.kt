@@ -70,6 +70,15 @@ data class ReleaseInfo(
     val downloadUrl: String? = null
 )
 
+enum class TrackReportReason(val value: String, val label: String) {
+    WrongTrack(
+        "wrong_track",
+        "Wrong song, version, or title (live, remix, cover, mislabeled, etc.)"
+    ),
+    BadAudio("bad_audio", "Bad audio (poor quality, cut off, or incomplete)"),
+    Other("other", "Other")
+}
+
 interface ServerGateway {
     val isAvailable: Boolean
 
@@ -133,6 +142,8 @@ interface ServerGateway {
     suspend fun fetchAudioToFile(baseUrl: String, jobId: String, target: File): File
 
     suspend fun deleteJob(baseUrl: String, jobId: String, adminKey: String?)
+
+    suspend fun reportTrack(baseUrl: String, jobId: String, reason: TrackReportReason)
 
     suspend fun createFavoritesSync(
         baseUrl: String,

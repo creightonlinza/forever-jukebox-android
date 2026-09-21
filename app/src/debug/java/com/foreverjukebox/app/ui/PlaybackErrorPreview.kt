@@ -45,6 +45,7 @@ private fun PlaybackFailedWithLoadedVizPreview() {
                 onOpenTuning = {},
                 onOpenInfo = {},
                 onDeleteCurrentTrack = {},
+                onReportCurrentTrack = {},
                 onShare = {},
                 onToggleFavorite = {},
                 onOpenExport = {},

@@ -3417,6 +3417,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Reports [jobId] to the server and surfaces the outcome as a toast. Runs on the view model
+     * scope so the request and its toast survive the dialog leaving composition; [onFinished]
+     * fires once either way.
+     */
+    fun reportTrack(jobId: String, reason: TrackReportReason, onFinished: () -> Unit) {
+        val baseUrl = state.value.baseUrl
+        viewModelScope.launch {
+            val reported = try {
+                serverGateway.reportTrack(baseUrl, jobId, reason)
+                true
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: HttpStatusException) {
+                AppLog.warn(TAG, "Failed to report track", error)
+                false
+            } catch (error: IOException) {
+                AppLog.warn(TAG, "Failed to report track", error)
+                false
+            } catch (error: IllegalArgumentException) {
+                AppLog.warn(TAG, "Failed to report track", error)
+                false
+            }
+            onFinished()
+            showToast(if (reported) "Track reported" else "Unable to report track")
+        }
+    }
+
     fun dismissTrackLengthLimitErrorDialog() {
         _state.update { it.copy(trackLengthLimitErrorMessage = null) }
     }

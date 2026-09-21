@@ -119,6 +119,40 @@ class AppModePolicyTest {
     }
 
     @Test
+    fun reportTrackActionShowsOnlyWhenDeleteActionIsHidden() {
+        val playback = PlaybackState(lastJobId = "job_123", deleteEligible = false)
+
+        assertTrue(shouldShowReportTrackAction(AppMode.Server, playback, adminKey = ""))
+        assertFalse(
+            shouldShowReportTrackAction(
+                AppMode.Server,
+                playback.copy(deleteEligible = true),
+                adminKey = ""
+            )
+        )
+        assertFalse(shouldShowReportTrackAction(AppMode.Server, playback, adminKey = "admin-secret"))
+    }
+
+    @Test
+    fun reportTrackActionRequiresServerModeAndCurrentJob() {
+        val playback = PlaybackState(lastJobId = "job_123", deleteEligible = false)
+
+        assertFalse(shouldShowReportTrackAction(AppMode.Local, playback, adminKey = ""))
+        assertFalse(shouldShowReportTrackAction(null, playback, adminKey = ""))
+        assertFalse(
+            shouldShowReportTrackAction(AppMode.Server, playback.copy(lastJobId = null), adminKey = "")
+        )
+    }
+
+    @Test
+    fun trackReportReasonsKeepWireValuesAndOrder() {
+        assertEquals(
+            listOf("wrong_track", "bad_audio", "other"),
+            TrackReportReason.entries.map { it.value }
+        )
+    }
+
+    @Test
     fun deleteTrackActionAllowsAdminPastNormalEligibility() {
         val ineligiblePlayback = PlaybackState(
             lastJobId = "job_123",

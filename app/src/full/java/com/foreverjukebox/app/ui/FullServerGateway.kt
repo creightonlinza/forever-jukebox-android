@@ -107,6 +107,10 @@ private class FullServerGateway(
         api.deleteJob(baseUrl, jobId, adminKey)
     }
 
+    override suspend fun reportTrack(baseUrl: String, jobId: String, reason: TrackReportReason) {
+        api.reportTrack(baseUrl, jobId, reason.value)
+    }
+
     override suspend fun createFavoritesSync(
         baseUrl: String,
         favorites: List<FavoriteTrack>,

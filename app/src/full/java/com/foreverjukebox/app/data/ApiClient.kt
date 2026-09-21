@@ -224,6 +224,11 @@ class ApiClient(
         return deleteJson(url, adminKey).let { json.decodeFromString(it) }
     }
 
+    suspend fun reportTrack(baseUrl: String, jobId: String, reason: String) {
+        val url = buildUrl(baseUrl, ApiPaths.report(jobId))
+        postJson(url, json.encodeToString(TrackReportRequest(reason)))
+    }
+
     suspend fun fetchLatestGitHubRelease(
         owner: String,
         repo: String
@@ -409,6 +414,7 @@ class ApiClient(
         fun job(jobId: String) = listOf("api", "jobs", jobId)
         fun retryJob(jobId: String) = listOf("api", "jobs", jobId, "retry")
         fun play(jobId: String) = listOf("api", "plays", jobId)
+        fun report(jobId: String) = listOf("api", "reports", jobId)
         fun audio(jobId: String) = listOf("api", "audio", jobId)
         fun favoritesSync(code: String) = listOf("api", "favorites", "sync", code)
     }

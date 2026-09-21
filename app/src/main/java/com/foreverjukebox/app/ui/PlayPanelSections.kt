@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.StarBorder
@@ -76,6 +77,7 @@ private fun PlaybackHeaderRow(
     showControls: Boolean,
     showTuningAndInfo: Boolean,
     showDeleteTrackAction: Boolean,
+    showReportTrackAction: Boolean,
     showExportAction: Boolean,
     isFavorite: Boolean,
     hasTuningDrift: Boolean,
@@ -83,6 +85,7 @@ private fun PlaybackHeaderRow(
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
+    onReportCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenExport: () -> Unit
@@ -120,6 +123,18 @@ private fun PlaybackHeaderRow(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
+                    }
+                } else if (showReportTrackAction) {
+                    SquareIconButton(
+                        onClick = onReportCurrentTrack,
+                        modifier = Modifier.size(SmallButtonHeight)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Flag,
+                            contentDescription = "Report track",
+                            tint = themeTokens.danger,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
                 if (!inAutocanonizer && showTuningAndInfo) {
@@ -228,6 +243,7 @@ internal fun ColumnScope.CastListenScreen(
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
+    onReportCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenExport: () -> Unit,
@@ -251,6 +267,7 @@ internal fun ColumnScope.CastListenScreen(
     val showPlaylistControls = !inAutocanonizer
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
+    val showReportTrackAction = shouldShowReportTrackAction(appMode, playback, adminKey)
     val themeTokens = LocalThemeTokens.current
     var showVizMenu by remember(playback.activeVizIndex) { mutableStateOf(false) }
     val castLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to cast device"
@@ -272,6 +289,7 @@ internal fun ColumnScope.CastListenScreen(
                 showControls = canShowTransport,
                 showTuningAndInfo = canShowReceiverDetails,
                 showDeleteTrackAction = showDeleteTrackAction,
+                showReportTrackAction = showReportTrackAction,
                 // While casting a new export cannot start, but one begun
                 // beforehand keeps its controls reachable here.
                 showExportAction = isExporting,
@@ -281,6 +299,7 @@ internal fun ColumnScope.CastListenScreen(
                 onOpenTuning = onOpenTuning,
                 onOpenInfo = onOpenInfo,
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
+                onReportCurrentTrack = onReportCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 onOpenExport = onOpenExport
@@ -537,6 +556,7 @@ internal fun ColumnScope.LocalListenScreen(
     onOpenTuning: () -> Unit,
     onOpenInfo: () -> Unit,
     onDeleteCurrentTrack: () -> Unit,
+    onReportCurrentTrack: () -> Unit,
     onShare: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenExport: () -> Unit,
@@ -552,6 +572,7 @@ internal fun ColumnScope.LocalListenScreen(
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
+    val showReportTrackAction = shouldShowReportTrackAction(appMode, playback, adminKey)
     val showExportAction =
         shouldShowExportControls(appMode, playback, isExporting, Build.VERSION.SDK_INT)
     val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
@@ -574,6 +595,7 @@ internal fun ColumnScope.LocalListenScreen(
                 showControls = true,
                 showTuningAndInfo = true,
                 showDeleteTrackAction = showDeleteTrackAction,
+                showReportTrackAction = showReportTrackAction,
                 showExportAction = showExportAction,
                 isFavorite = isFavorite,
                 hasTuningDrift = hasTuningDrift,
@@ -581,6 +603,7 @@ internal fun ColumnScope.LocalListenScreen(
                 onOpenTuning = onOpenTuning,
                 onOpenInfo = onOpenInfo,
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
+                onReportCurrentTrack = onReportCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 onOpenExport = onOpenExport

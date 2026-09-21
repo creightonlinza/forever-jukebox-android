@@ -8,7 +8,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -20,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -380,6 +386,85 @@ fun DeleteTrackDialog(
             }
         },
         title = { Text("Delete track?") }
+    )
+}
+
+@Composable
+fun ReportTrackDialog(
+    sending: Boolean,
+    onDismiss: () -> Unit,
+    onReport: (TrackReportReason) -> Unit
+) {
+    val dangerColor = LocalThemeTokens.current.danger
+    var selectedReason by remember { mutableStateOf<TrackReportReason?>(null) }
+    val canReport = selectedReason != null && !sending
+    AlertDialog(
+        onDismissRequest = {
+            if (!sending) {
+                onDismiss()
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { selectedReason?.let(onReport) },
+                enabled = canReport,
+                colors = pillButtonColors(),
+                border = BorderStroke(1.dp, dangerColor.copy(alpha = if (canReport) 1f else 0.4f)),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text(
+                    "Report",
+                    color = dangerColor.copy(alpha = if (canReport) 1f else 0.4f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                enabled = !sending,
+                colors = pillButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier.height(SmallButtonHeight)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        title = { Text("Report track") },
+        text = {
+            Column(
+                modifier = Modifier.selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TrackReportReason.entries.forEach { reason ->
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = selectedReason == reason,
+                                enabled = !sending,
+                                role = Role.RadioButton,
+                                onClick = { selectedReason = reason }
+                            )
+                            .padding(vertical = 8.dp)
+                    ) {
+                        RadioButton(
+                            selected = selectedReason == reason,
+                            onClick = null,
+                            enabled = !sending,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(reason.label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
     )
 }
 

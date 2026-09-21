@@ -99,6 +99,8 @@ private object PlayServerGateway : ServerGateway {
 
     override suspend fun deleteJob(baseUrl: String, jobId: String, adminKey: String?) = Unit
 
+    override suspend fun reportTrack(baseUrl: String, jobId: String, reason: TrackReportReason) = Unit
+
     override suspend fun createFavoritesSync(
         baseUrl: String,
         favorites: List<FavoriteTrack>,
