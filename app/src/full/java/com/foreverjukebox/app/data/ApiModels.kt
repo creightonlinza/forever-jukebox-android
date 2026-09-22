@@ -112,6 +112,11 @@ data class FavoritesSyncPayload(
 )
 
 @Serializable
+data class TrackReportRequest(
+    val reason: String
+)
+
+@Serializable
 data class DeleteJobResponse(
     val status: String,
     val id: String

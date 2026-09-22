@@ -521,6 +521,36 @@ class ApiClientPublicApiTest {
     }
 
     @Test
+    fun reportTrackPostsReasonToExpectedPath() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"status":"ok"}""")
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        api.reportTrack(baseUrl = baseUrl, jobId = "job_123", reason = "wrong_track")
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/base/api/reports/job_123", request.path)
+        assertTrue(request.getHeader("Content-Type").orEmpty().startsWith("application/json"))
+        assertEquals("""{"reason":"wrong_track"}""", request.body.readUtf8())
+    }
+
+    @Test
+    fun reportTrackThrowsOnNonSuccessStatus() = runTest {
+        server.enqueue(MockResponse().setResponseCode(422))
+
+        val baseUrl = server.url("/base/").toString()
+        val result = runCatching {
+            api.reportTrack(baseUrl = baseUrl, jobId = "job_123", reason = "bogus")
+        }
+
+        assertTrue(result.exceptionOrNull() is HttpStatusException)
+    }
+
+    @Test
     fun fetchAudioToFileUsesExpectedPathAndWritesBytes() = runTest {
         val payload = "audio-bytes".toByteArray()
         server.enqueue(

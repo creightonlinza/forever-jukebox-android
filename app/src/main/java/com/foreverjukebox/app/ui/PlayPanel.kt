@@ -79,6 +79,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     var showInfo by remember { mutableStateOf(false) }
     var showPlaylist by remember { mutableStateOf(false) }
     var showDeleteTrackConfirm by remember { mutableStateOf(false) }
+    var reportJobId by remember { mutableStateOf<String?>(null) }
+    var reportSending by remember { mutableStateOf(false) }
     var showExport by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
@@ -95,6 +97,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     }
     val onDeleteCurrentTrack: () -> Unit = {
         showDeleteTrackConfirm = true
+    }
+    val onReportCurrentTrack: () -> Unit = {
+        reportJobId = playback.lastJobId
     }
     val onShare: () -> Unit = {
         val url = viewModel.buildShareUrl()
@@ -206,6 +211,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
+                onReportCurrentTrack = onReportCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 onOpenExport = { showExport = true },
@@ -234,6 +240,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onOpenTuning = { showTuning = true },
                 onOpenInfo = { showInfo = true },
                 onDeleteCurrentTrack = onDeleteCurrentTrack,
+                onReportCurrentTrack = onReportCurrentTrack,
                 onShare = onShare,
                 onToggleFavorite = onToggleFavorite,
                 onOpenExport = { showExport = true },
@@ -357,6 +364,20 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             onStart = viewModel::startExport,
             onCancelExport = viewModel::cancelExport,
             onDismiss = { showExport = false }
+        )
+    }
+
+    reportJobId?.let { jobId ->
+        ReportTrackDialog(
+            sending = reportSending,
+            onDismiss = { reportJobId = null },
+            onReport = { reason ->
+                reportSending = true
+                viewModel.reportTrack(jobId, reason) {
+                    reportSending = false
+                    reportJobId = null
+                }
+            }
         )
     }
 

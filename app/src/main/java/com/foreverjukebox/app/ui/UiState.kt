@@ -471,6 +471,17 @@ fun shouldShowDeleteTrackAction(
         (playback.deleteEligible || adminKey.isNotBlank())
 }
 
+fun shouldShowReportTrackAction(
+    mode: AppMode?,
+    playback: PlaybackState,
+    adminKey: String
+): Boolean {
+    return BuildConfig.SERVER_MODE_AVAILABLE &&
+        mode == AppMode.Server &&
+        !playback.lastJobId.isNullOrBlank() &&
+        !shouldShowDeleteTrackAction(mode, playback, adminKey)
+}
+
 fun shouldShowLocalLoadingCancel(mode: AppMode?, playback: PlaybackState): Boolean {
     return mode == AppMode.Local &&
         playback.analysisInFlight &&
