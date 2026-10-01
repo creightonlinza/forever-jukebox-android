@@ -1937,7 +1937,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             if (response.status == "failed") {
                 playbackCoordinator.setAnalysisError(
-                    ErrorDisplay.format(
+                    ErrorDisplay.describe(
                         raw = response.error,
                         errorCode = response.errorCode,
                         sourceProvider = response.sourceProvider ?: SOURCE_PROVIDER_YOUTUBE,
@@ -2033,12 +2033,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val response = try {
                 serverGateway.startUrlAnalysis(baseUrl, normalized.url, null, null)
             } catch (error: HttpStatusException) {
-                val message = urlAnalysisHttpErrorMessage(
+                val failure = urlAnalysisHttpFailure(
                     statusCode = error.statusCode,
                     responseBody = error.responseBody,
                     sourceProvider = normalized.provider
                 ) ?: throw error
-                playbackCoordinator.setAnalysisError(message)
+                playbackCoordinator.setAnalysisError(failure)
                 return@launchServerTrackLoadWithCache true
             }
             pendingAutoFavoriteJobId = canonicalJobId(response.id)
@@ -2137,9 +2137,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val response = try {
                 uploadTrackToServer(baseUrl, uri, fileName, sizeBytes, mimeType)
             } catch (error: HttpStatusException) {
-                val message = uploadHttpErrorMessage(error.statusCode, error.responseBody)
+                val failure = uploadHttpFailure(error.statusCode, error.responseBody)
                     ?: throw error
-                playbackCoordinator.setAnalysisError(message)
+                playbackCoordinator.setAnalysisError(failure)
                 return@launchServerTrackLoadWithCache true
             }
             pendingAutoFavoriteJobId = canonicalJobId(response.id)
@@ -2272,11 +2272,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         queueForCast(
             fallbackSourceProvider = normalized.provider,
             httpErrorMessage = { statusCode, responseBody ->
-                urlAnalysisHttpErrorMessage(
+                urlAnalysisHttpFailure(
                     statusCode = statusCode,
                     responseBody = responseBody,
                     sourceProvider = normalized.provider
-                )
+                )?.message
             }
         ) { baseUrl ->
             serverGateway.startUrlAnalysis(baseUrl, normalized.url, null, null).toCastQueueResponse()
@@ -2288,7 +2288,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sizeBytes: Long?,
         mimeType: String?
     ): String? =
-        queueForCast(httpErrorMessage = ::uploadHttpErrorMessage) { baseUrl ->
+        queueForCast(
+            httpErrorMessage = { statusCode, responseBody ->
+                uploadHttpFailure(statusCode, responseBody)?.message
+            }
+        ) { baseUrl ->
             uploadTrackToServer(baseUrl, uri, fileName, sizeBytes, mimeType).toCastQueueResponse()
         }
 
@@ -2613,7 +2617,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             if (started.status == "failed") {
                 playbackCoordinator.setAnalysisError(
-                    ErrorDisplay.format(
+                    ErrorDisplay.describe(
                         raw = started.error,
                         errorCode = started.errorCode,
                         sourceProvider = started.sourceProvider ?: provider,

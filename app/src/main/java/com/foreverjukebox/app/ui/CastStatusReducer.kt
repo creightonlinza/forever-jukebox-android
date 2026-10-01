@@ -319,6 +319,7 @@ fun reduceCastStatus(current: UiState, status: CastStatusMessage): UiState {
         } else {
             currentPlayback.analysisErrorMessage
         },
+        analysisErrorRetryBlocked = status.error.isBlank() && currentPlayback.analysisErrorRetryBlocked,
         // analysisInFlight is owned by the local analysis pipeline; receiver loading is tracked by
         // isCastLoading/castPlaybackState so old-track statuses can't hide analysis progress.
         isCastLoading = resolvedIsLoading,

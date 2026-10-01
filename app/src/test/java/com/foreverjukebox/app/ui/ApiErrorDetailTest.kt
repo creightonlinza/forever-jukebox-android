@@ -25,6 +25,21 @@ class ApiErrorDetailTest {
     }
 
     @Test
+    fun youtubeUnreachableDetailShowsBlockedMessage() {
+        val body =
+            """{"detail":{"message":"ERROR: Unable to reach YouTube","error_code":"youtube_unreachable"}}"""
+
+        assertEquals(
+            LoadFailure(ErrorDisplay.YOUTUBE_BLOCKED_MESSAGE, retryBlocked = true),
+            urlAnalysisHttpFailure(500, body, sourceProvider = "youtube")
+        )
+        assertEquals(
+            LoadFailure("SoundCloud fetch failed."),
+            urlAnalysisHttpFailure(500, body, sourceProvider = "soundcloud")
+        )
+    }
+
+    @Test
     fun pydanticListDetailUsesFirstMsg() {
         val detail = parseApiErrorDetail(
             """{"detail":[{"loc":["body","file"],"msg":"Field required","type":"missing"}]}"""

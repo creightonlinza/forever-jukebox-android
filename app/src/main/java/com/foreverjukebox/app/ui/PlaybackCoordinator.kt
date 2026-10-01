@@ -261,7 +261,12 @@ class PlaybackCoordinator(
         applyLoadingEvent(LoadingEvent.AnalysisIdle)
     }
 
-    fun setAnalysisError(message: String, cause: Throwable? = null, expected: Boolean = false) {
+    fun setAnalysisError(
+        message: String,
+        cause: Throwable? = null,
+        expected: Boolean = false,
+        retryBlocked: Boolean = false
+    ) {
         // Single chokepoint for every surfaced load/analysis error (server, cached,
         // local, playback, autocanonizer). Persisting the message here guarantees
         // the cause of any "Loading failed." is captured even on paths that have no
@@ -281,7 +286,11 @@ class PlaybackCoordinator(
                 AppLog.error(TAG, "Load/analysis error surfaced: $message", cause)
             }
         }
-        applyLoadingEvent(LoadingEvent.AnalysisError(message))
+        applyLoadingEvent(LoadingEvent.AnalysisError(message, retryBlocked))
+    }
+
+    fun setAnalysisError(failure: LoadFailure) {
+        setAnalysisError(failure.message, retryBlocked = failure.retryBlocked)
     }
 
     fun clearAnalysisErrorForPlaybackStart() {
@@ -1137,7 +1146,7 @@ class PlaybackCoordinator(
         data class AnalysisQueued(val progress: Int?, val message: String?) : LoadingEvent()
         data class AnalysisProgress(val progress: Int?, val message: String?) : LoadingEvent()
         data object AnalysisCalculating : LoadingEvent()
-        data class AnalysisError(val message: String) : LoadingEvent()
+        data class AnalysisError(val message: String, val retryBlocked: Boolean) : LoadingEvent()
         data class AudioLoading(val loading: Boolean) : LoadingEvent()
         object AnalysisIdle : LoadingEvent()
     }
@@ -1172,6 +1181,7 @@ class PlaybackCoordinator(
                         analysisProgress = null,
                         analysisMessage = null,
                         analysisErrorMessage = event.message,
+                        analysisErrorRetryBlocked = event.retryBlocked,
                         analysisInFlight = false,
                         analysisCalculating = false,
                         audioLoading = false
@@ -1213,7 +1223,7 @@ class PlaybackCoordinator(
             when {
                 response.status == "failed" -> {
                     setAnalysisError(
-                        ErrorDisplay.format(
+                        ErrorDisplay.describe(
                             raw = response.error,
                             errorCode = response.errorCode,
                             sourceProvider = response.sourceProvider,

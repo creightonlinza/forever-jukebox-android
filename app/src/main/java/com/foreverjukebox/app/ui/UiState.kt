@@ -268,6 +268,8 @@ data class PlaybackState(
     val analysisProgress: Int? = null,
     val analysisMessage: String? = null,
     val analysisErrorMessage: String? = null,
+    // Set with each surfaced error: the failure is one an immediate retry cannot fix.
+    val analysisErrorRetryBlocked: Boolean = false,
     val analysisInFlight: Boolean = false,
     val analysisCalculating: Boolean = false,
     val audioLoading: Boolean = false,
@@ -567,6 +569,17 @@ fun shouldRetryFailedLoadFromTransport(state: UiState): Boolean {
         !state.playback.analysisErrorMessage.isNullOrBlank() &&
         !state.playback.isTrackLoading() &&
         !state.playback.retryTrackIdOrNull().isNullOrBlank()
+}
+
+/**
+ * Whether the in-app failed-load status shows its retry icon. It is withheld for
+ * failures an immediate retry cannot fix, such as a YouTube bot-check block. Governs
+ * only that icon: failed-notification visibility and transport press behavior are
+ * [shouldRetryFailedLoadFromTransport]'s and [transportRetryPressAction]'s calls.
+ */
+fun shouldOfferInAppLoadRetry(state: UiState): Boolean {
+    return state.appMode == AppMode.Server &&
+        !state.playback.analysisErrorRetryBlocked
 }
 
 /**

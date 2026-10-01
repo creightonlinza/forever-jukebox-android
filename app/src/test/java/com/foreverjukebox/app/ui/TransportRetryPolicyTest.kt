@@ -210,6 +210,34 @@ class TransportRetryPolicyTest {
     }
 
     @Test
+    fun retryBlockedFailureHidesInAppRetryButKeepsFailedNotification() {
+        val state = serverState(
+            PlaybackState(
+                analysisErrorMessage = ErrorDisplay.YOUTUBE_BLOCKED_MESSAGE,
+                analysisErrorRetryBlocked = true,
+                lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+            )
+        )
+
+        assertEquals(false, shouldOfferInAppLoadRetry(state))
+        assertEquals(expectedRetryableFailure, resolvePlaybackServiceSession(state))
+    }
+
+    @Test
+    fun otherFailuresOfferInAppRetryInServerModeOnly() {
+        val playback = PlaybackState(
+            analysisErrorMessage = "YouTube fetch failed.",
+            lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+        )
+
+        assertEquals(true, shouldOfferInAppLoadRetry(serverState(playback)))
+        assertEquals(
+            false,
+            shouldOfferInAppLoadRetry(UiState(appMode = AppMode.Local, playback = playback))
+        )
+    }
+
+    @Test
     fun pressResumesOnlyWhenAudioAndAnalysisAreLoaded() {
         val playable = PlaybackState(
             analysisErrorMessage = "Playback failed.",

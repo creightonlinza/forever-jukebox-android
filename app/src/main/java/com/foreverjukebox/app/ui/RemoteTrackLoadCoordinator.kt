@@ -41,7 +41,7 @@ class RemoteTrackLoadCoordinator(
 
         if (response.status == "failed") {
             playbackCoordinator.setAnalysisError(
-                ErrorDisplay.format(
+                ErrorDisplay.describe(
                     raw = response.error,
                     errorCode = response.errorCode,
                     sourceProvider = response.sourceProvider,

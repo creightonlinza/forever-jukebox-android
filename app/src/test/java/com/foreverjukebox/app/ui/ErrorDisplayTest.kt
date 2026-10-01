@@ -1,7 +1,9 @@
 package com.foreverjukebox.app.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ErrorDisplayTest {
@@ -52,6 +54,80 @@ class ErrorDisplayTest {
         )
 
         assertEquals("Track is too long. Maximum supported length is 20 minutes.", message)
+    }
+
+    @Test
+    fun formatUsesBlockedMessageForYoutubeUnreachable() {
+        val failure = ErrorDisplay.describe(
+            raw = "ERROR: Unable to reach YouTube",
+            errorCode = "youtube_unreachable",
+            sourceProvider = "youtube"
+        )
+
+        assertEquals(ErrorDisplay.YOUTUBE_BLOCKED_MESSAGE, failure.message)
+        assertTrue(failure.retryBlocked)
+    }
+
+    @Test
+    fun formatUsesBlockedMessageForYoutubeUnreachableWithoutProvider() {
+        val failure = ErrorDisplay.describe(
+            raw = "ERROR: Unable to reach YouTube",
+            errorCode = "youtube_unreachable"
+        )
+
+        assertEquals(ErrorDisplay.YOUTUBE_BLOCKED_MESSAGE, failure.message)
+        assertTrue(failure.retryBlocked)
+    }
+
+    @Test
+    fun formatUsesSourceFetchFailureForYoutubeUnreachableOnOtherProvider() {
+        val failure = ErrorDisplay.describe(
+            raw = "ERROR: Unable to reach YouTube",
+            errorCode = "youtube_unreachable",
+            sourceProvider = "soundcloud"
+        )
+
+        assertEquals("SoundCloud fetch failed.", failure.message)
+        assertFalse(failure.retryBlocked)
+    }
+
+    @Test
+    fun formatUsesFallbackForYoutubeUnreachableOnUnlabelledProvider() {
+        val failure = ErrorDisplay.describe(
+            raw = "ERROR: Unable to reach YouTube",
+            errorCode = "youtube_unreachable",
+            sourceProvider = "upload"
+        )
+
+        assertEquals("Loading failed.", failure.message)
+        assertFalse(failure.retryBlocked)
+    }
+
+    @Test
+    fun formatKeepsYoutubeFetchFailureForYoutubeUnavailable() {
+        val message = ErrorDisplay.format(
+            raw = "ERROR: This video is not available on YouTube.",
+            errorCode = "youtube_unavailable",
+            sourceProvider = "youtube"
+        )
+
+        assertEquals("YouTube fetch failed.", message)
+    }
+
+    @Test
+    fun formatDoesNotInferBlockFromErrorTextAlone() {
+        val message = ErrorDisplay.format(
+            raw = "ERROR: Unable to reach YouTube",
+            sourceProvider = "youtube"
+        )
+
+        assertEquals("YouTube fetch failed.", message)
+        assertFalse(
+            ErrorDisplay.describe(
+                raw = ErrorDisplay.YOUTUBE_BLOCKED_MESSAGE,
+                sourceProvider = "youtube"
+            ).retryBlocked
+        )
     }
 
     @Test

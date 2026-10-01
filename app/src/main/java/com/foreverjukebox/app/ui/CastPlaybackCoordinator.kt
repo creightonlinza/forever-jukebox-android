@@ -327,7 +327,8 @@ class CastPlaybackCoordinator(
                     castTransfer = null,
                     analysisInFlight = false,
                     castPlaybackState = "error",
-                    analysisErrorMessage = message
+                    analysisErrorMessage = message,
+                    analysisErrorRetryBlocked = false
                 )
             )
         }

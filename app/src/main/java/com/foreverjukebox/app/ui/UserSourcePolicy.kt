@@ -146,18 +146,18 @@ fun unsupportedUploadTypeMessage(allowedExts: List<String>): String {
 }
 
 /**
- * User-facing message for an HTTP failure from the URL-analysis endpoint, or null when the
+ * User-facing failure for an HTTP error from the URL-analysis endpoint, or null when the
  * generic load-failure handling (including the 422 track-length dialog) should take over.
  */
-fun urlAnalysisHttpErrorMessage(
+fun urlAnalysisHttpFailure(
     statusCode: Int,
     responseBody: String?,
     sourceProvider: String?
-): String? = when (statusCode) {
-    403 -> "This server doesn't allow adding tracks by link."
+): LoadFailure? = when (statusCode) {
+    403 -> LoadFailure("This server doesn't allow adding tracks by link.")
     400, 500 -> {
         val detail = parseApiErrorDetail(responseBody)
-        ErrorDisplay.format(
+        ErrorDisplay.describe(
             raw = detail.message,
             errorCode = detail.errorCode,
             sourceProvider = sourceProvider,
@@ -168,15 +168,15 @@ fun urlAnalysisHttpErrorMessage(
 }
 
 /**
- * User-facing message for an HTTP failure from the upload endpoint, or null when the generic
+ * User-facing failure for an HTTP error from the upload endpoint, or null when the generic
  * load-failure handling (including the 422 track-length dialog) should take over.
  */
-fun uploadHttpErrorMessage(statusCode: Int, responseBody: String?): String? = when (statusCode) {
-    403 -> "This server doesn't allow uploads."
-    413 -> "This file is too large for this server."
+fun uploadHttpFailure(statusCode: Int, responseBody: String?): LoadFailure? = when (statusCode) {
+    403 -> LoadFailure("This server doesn't allow uploads.")
+    413 -> LoadFailure("This file is too large for this server.")
     400, 500 -> {
         val detail = parseApiErrorDetail(responseBody)
-        ErrorDisplay.format(
+        ErrorDisplay.describe(
             raw = detail.message,
             errorCode = detail.errorCode,
             fallback = "Loading failed."

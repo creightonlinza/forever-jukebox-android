@@ -167,7 +167,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         if (!playback.isCasting && !playback.analysisErrorMessage.isNullOrBlank()) {
             LoadingFailedStatus(
                 message = playback.analysisErrorMessage,
-                onRetry = if (state.appMode == AppMode.Server) {
+                onRetry = if (shouldOfferInAppLoadRetry(state)) {
                     { viewModel.retryFailedLoad() }
                 } else {
                     null
