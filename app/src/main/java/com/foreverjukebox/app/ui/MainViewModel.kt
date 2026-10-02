@@ -32,6 +32,7 @@ import com.foreverjukebox.app.data.sanitizeMaxFavorites
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
+import com.foreverjukebox.app.audio.SwingBeat
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.net.FeedbackClient
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
@@ -379,6 +380,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onAnalysisResultApplied = ::maybeAutoFavoriteUserSupplied,
         audioLoadHold = audioLoadWakeLock
     )
+    private val swingCoordinator = SwingCoordinator(
+        scope = viewModelScope,
+        renderer = object : SwingRenderer {
+            override fun hasSwingAudio(): Boolean = controller.player.hasSwingAudio()
+
+            override fun renderSwing(
+                beats: List<SwingBeat>,
+                onProgress: (completed: Int, total: Int) -> Boolean
+            ): Boolean = controller.player.renderSwing(beats, onProgress = onProgress)
+        },
+        getPlayback = { state.value.playback },
+        updatePlayback = ::updatePlaybackState,
+        setPlaybackBlocked = { blocked -> controller.audioModePreparing = blocked },
+        pausePlayback = ::pauseForSwingRender,
+        onReady = ::handleSwingReady,
+        onFailed = ::handleSwingFailed,
+        audioLoadHold = audioLoadWakeLock
+    )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
         scope = viewModelScope,
         playbackCoordinator = playbackCoordinator,
@@ -527,6 +546,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 diagnostics.setCrashKey("play_mode", keys.playMode)
                 diagnostics.setCrashKey("casting", keys.casting)
                 diagnostics.setCrashKey("viz", keys.viz)
+            }
+        }
+        // Swing renders follow state rather than individual call sites, so every
+        // way a track, mode or cast session can change is covered.
+        viewModelScope.launch {
+            state.map { it.playback.swingRenderKey() }.distinctUntilChanged().collect {
+                swingCoordinator.sync()
+                syncPlaybackServiceSession()
             }
         }
         viewModelScope.launch {
@@ -800,6 +827,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         remoteTrackLoadCoordinator.cancel()
+        // The playback controller outlives this view model, so its play block
+        // must not be left set by a render that dies with the scope.
+        swingCoordinator.close()
         cancelCastSelection()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         runCatching {
@@ -2940,7 +2970,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pauseJukeboxPlayback()
             return
         }
+        if (current.isPreparingSwing()) {
+            viewModelScope.launch { showToast("$PREPARING_SWING_LABEL...") }
+            return
+        }
         startOrResumeJukeboxPlayback(current)
+    }
+
+    private fun pauseForSwingRender() {
+        if (state.value.playback.isRunning) {
+            pauseJukeboxPlayback()
+        } else {
+            // Also withdraws a play request parked on a delayed audio focus grant.
+            controller.pausePlayback()
+        }
+    }
+
+    private fun handleSwingReady(resumePlayback: Boolean) {
+        val playback = state.value.playback
+        if (playback.isRunning || playback.isPaused) {
+            engine.syncToPlaybackPosition()
+        }
+        if (resumePlayback && !playback.isRunning) {
+            startOrResumeJukeboxPlayback(playback)
+        } else {
+            maybeStartPlayAfterLoaded()
+        }
+    }
+
+    private fun handleSwingFailed() {
+        viewModelScope.launch { showToast("Swing mode failed. Using Normal mode.") }
+        resetAudioModeDefaults()
     }
 
     private fun toggleCastPlayback(current: PlaybackState) {
@@ -2977,6 +3037,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!ensureJukeboxRuntimeReady(current)) {
                 return@launch
             }
+            // Re-decoded audio arrives without its swung copy; render it again
+            // and start once it is back.
+            swingCoordinator.revalidate()
+            if (state.value.playback.isPreparingSwing()) {
+                swingCoordinator.playWhenReady()
+                return@launch
+            }
             try {
                 if (controller.getTrackTitle().isNullOrBlank() && !current.trackTitle.isNullOrBlank()) {
                     controller.setTrackMeta(current.trackTitle, current.trackArtist)
@@ -3010,6 +3077,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     paused -> {
                         playbackCoordinator.stopListenTimer()
                         syncPlaybackServiceSession()
+                    }
+                    result == PlaybackStartResult.PreparingAudioMode -> {
+                        swingCoordinator.playWhenReady()
                     }
                     result == PlaybackStartResult.WaitingForFocus -> {
                         // Playback auto-starts when the delayed focus grant arrives, and that

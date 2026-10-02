@@ -144,8 +144,11 @@ internal fun favoriteActionContentDescription(
     }
 }
 
+internal const val PREPARING_SWING_LABEL = "Preparing Swing mode"
+
 internal fun playbackTransportContentDescription(playback: PlaybackState): String {
     return when {
+        playback.isPreparingSwing() -> PREPARING_SWING_LABEL
         playback.isRunning -> "Pause"
         playback.isPaused -> "Resume"
         else -> "Play"

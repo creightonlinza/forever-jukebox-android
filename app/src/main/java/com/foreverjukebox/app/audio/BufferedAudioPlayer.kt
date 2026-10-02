@@ -144,6 +144,63 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
         }
     }
 
+    /** True once a swung copy of the loaded audio is installed. */
+    fun hasSwingAudio(): Boolean {
+        return nativeHandle != 0L && nativeHasSwingBuffer(nativeHandle)
+    }
+
+    /**
+     * Renders a swung copy of the loaded audio and installs it for the Swing
+     * audio mode. Blocks for the whole render, so call it off the main thread.
+     * [onProgress] receives completed and total half-beats; returning false
+     * cancels. Returns false when cancelled, when the render fails, or when the
+     * player's audio was replaced or released before the render finished.
+     */
+    fun renderSwing(
+        beats: List<SwingBeat>,
+        swingAmount: Double = DEFAULT_SWING_AMOUNT,
+        onProgress: (completed: Int, total: Int) -> Boolean
+    ): Boolean {
+        // The job owns the samples it reads, so the handle lock is only held
+        // to start and to finish; a track load is never blocked on a render.
+        val job = synchronized(nativeHandleLock) {
+            if (nativeHandle == 0L) return false
+            val segments = swingFrameSegments(
+                beats = beats,
+                sampleRate = sampleRate,
+                sourceFrames = nativeGetFrameCount(nativeHandle),
+                swingAmount = swingAmount
+            )
+            val fields = IntArray(segments.size * SWING_SEGMENT_FIELD_COUNT)
+            segments.forEachIndexed { index, segment ->
+                val offset = index * SWING_SEGMENT_FIELD_COUNT
+                fields[offset] = segment.inputStartFrame
+                fields[offset + 1] = segment.inputFrameCount
+                fields[offset + 2] = segment.outputStartFrame
+                fields[offset + 3] = segment.outputFrameCount
+            }
+            nativeBeginSwingRender(nativeHandle, fields)
+        }
+        if (job == 0L) return false
+        var installed = false
+        try {
+            nativeRunSwingRender(
+                job,
+                object : SwingProgressCallback {
+                    override fun onSwingProgress(completed: Int, total: Int): Boolean {
+                        return onProgress(completed, total)
+                    }
+                }
+            )
+        } finally {
+            // Always finish: it frees the job even when nothing is installed.
+            installed = synchronized(nativeHandleLock) {
+                nativeFinishSwingRender(nativeHandle, job)
+            }
+        }
+        return installed
+    }
+
     override fun play() {
         if (offline) return
         if (nativeHandle != 0L) {
@@ -610,9 +667,20 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
     private external fun nativeCancelCowbellHits(handle: Long)
     private external fun nativeCancelPendingCowbellHits(handle: Long)
     private external fun nativeRelease(handle: Long)
+    private external fun nativeGetFrameCount(handle: Long): Int
+    private external fun nativeHasSwingBuffer(handle: Long): Boolean
+    private external fun nativeBeginSwingRender(handle: Long, segments: IntArray): Long
+    private external fun nativeRunSwingRender(job: Long, callback: SwingProgressCallback): Boolean
+    private external fun nativeFinishSwingRender(handle: Long, job: Long): Boolean
+
+    /** Called from native code by method name; returning false cancels the render. */
+    interface SwingProgressCallback {
+        fun onSwingProgress(completed: Int, total: Int): Boolean
+    }
 
     companion object {
         private const val JUMP_EVENT_FIELD_COUNT = 2
+        private const val SWING_SEGMENT_FIELD_COUNT = 4
         private const val WAV_HEADER_MIN_BYTES = 44
         private const val PCM_WAV_FORMAT = 1
         private const val PCM_WAV_BITS_PER_SAMPLE = 16

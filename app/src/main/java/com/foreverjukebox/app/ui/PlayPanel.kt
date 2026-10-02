@@ -189,6 +189,15 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 showCancel = shouldShowLocalLoadingCancel(state.appMode, playback),
                 onCancel = viewModel::cancelLocalAnalysis
             )
+        } else if (playback.isPreparingSwing()) {
+            LoadingStatus(
+                progress = playback.swingProgress,
+                label = "Adding swing to the track...",
+                trackTitle = loadingTrackMetadata?.title,
+                trackArtist = loadingTrackMetadata?.artist,
+                showCancel = true,
+                onCancel = viewModel::resetAudioModeDefaults
+            )
         }
 
         val showSavedPlaylist = shouldShowSavedPlaylistButton(state)

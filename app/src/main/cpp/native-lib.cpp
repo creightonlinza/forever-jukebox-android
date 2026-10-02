@@ -1,7 +1,10 @@
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <exception>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -10,6 +13,8 @@
 #include <android/log.h>
 #include <jni.h>
 #include <oboe/Oboe.h>
+
+#include "swing_renderer.h"
 
 namespace {
 
@@ -30,7 +35,7 @@ constexpr double kMinJumpScheduleLeadFrames = kMaxLateJumpFrames;
 constexpr float kNormalDuckingVolume = 1.0f;
 constexpr float kDuckedVolume = 0.2f;
 constexpr float kDuckingRampSpeed = 0.0002f;
-constexpr int32_t kMaxAudioModeCode = 9;
+constexpr int32_t kMaxAudioModeCode = 10;
 constexpr int32_t kMinIntensity = 50;
 constexpr int32_t kMaxIntensity = 150;
 constexpr int32_t kDefaultIntensity = 100;
@@ -54,7 +59,8 @@ enum class AudioMode {
     EightBit = 6,
     Underwater = 7,
     Cathedral = 8,
-    Cowbell = 9
+    Cowbell = 9,
+    Swing = 10
 };
 
 struct AudioModeSettings {
@@ -68,6 +74,7 @@ struct AudioModeSettings {
     float reverbMix = 0.0f;
     bool cathedralReverb = false;
     bool pan = false;
+    bool useSwingBuffer = false;
 };
 
 struct CowbellSample {
@@ -108,6 +115,8 @@ AudioModeSettings settingsForMode(int32_t mode) {
             return {1.0, 0.0f, 400.0f, false, false, false, 1.0f, 0.0f, false, false};
         case AudioMode::Cathedral:
             return {1.0, 150.0f, 5500.0f, false, false, false, 0.70f, 0.90f, true, false};
+        case AudioMode::Swing:
+            return {1.0, 0.0f, 0.0f, false, false, false, 1.0f, 0.0f, false, false, true};
         case AudioMode::Cowbell:
         case AudioMode::Off:
         default:
@@ -614,12 +623,13 @@ public:
     void loadPcm(std::vector<int16_t>&& data) {
         {
             std::lock_guard<std::mutex> lock(mDataMutex);
-            mAudioData = std::move(data);
+            mAudioData = std::make_shared<const std::vector<int16_t>>(std::move(data));
             mEightBitAudioData.clear();
             mEightBitAudioData.shrink_to_fit();
+            mSwingAudioData.reset();
             syncEightBitBufferLocked();
             mTotalFrames =
-                static_cast<int64_t>(mAudioData.size() / static_cast<size_t>(mChannelCount));
+                static_cast<int64_t>(mAudioData->size() / static_cast<size_t>(mChannelCount));
             mCowbellHits.clear();
         }
         mReadFrame.store(0.0);
@@ -646,15 +656,43 @@ public:
         syncEightBitBufferLocked();
     }
 
+    // The source PCM a swing render reads from. Holding the returned pointer
+    // keeps the samples alive without blocking the audio callback.
+    std::shared_ptr<const std::vector<int16_t>> audioSnapshot() {
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        return mAudioData;
+    }
+
+    // Installs a swung copy rendered from `renderedFrom`. Rejected when the
+    // player has since loaded different audio or the copy's length differs
+    // from the source: beat times and scheduled jumps are only valid against a
+    // buffer shaped exactly like the source. Unlike the 8-bit copy it is
+    // expensive to rebuild, so it stays until the audio is replaced.
+    bool installSwingBuffer(
+        const std::shared_ptr<const std::vector<int16_t>>& renderedFrom,
+        std::vector<int16_t>&& data) {
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        if (renderedFrom != mAudioData || data.size() != mAudioData->size()) {
+            return false;
+        }
+        mSwingAudioData = std::make_shared<const std::vector<int16_t>>(std::move(data));
+        return true;
+    }
+
+    bool hasSwingBuffer() {
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        return mSwingAudioData != nullptr;
+    }
+
     // Materializes or frees the 8-bit downsampled buffer to match the active
     // audio mode. The 8-bit buffer is a full second copy of the audio, so it is
     // only built while the EightBit mode is active and released otherwise.
     // Must be called with mDataMutex held.
     void syncEightBitBufferLocked() {
         if (settingsForMode(modeOfPacked(mAudioModeAndIntensity.load())).useEightBitBuffer) {
-            if (mEightBitAudioData.empty() && !mAudioData.empty()) {
+            if (mEightBitAudioData.empty() && !mAudioData->empty()) {
                 mEightBitAudioData =
-                    renderEightBitPcm(mAudioData, mSampleRate, mChannelCount);
+                    renderEightBitPcm(*mAudioData, mSampleRate, mChannelCount);
             }
         } else if (!mEightBitAudioData.empty()) {
             mEightBitAudioData.clear();
@@ -677,9 +715,10 @@ public:
             // Only carry the 8-bit copy if this player's mode actually needs it.
             if (settingsForMode(modeOfPacked(mAudioModeAndIntensity.load())).useEightBitBuffer) {
                 mEightBitAudioData = source.mEightBitAudioData.empty()
-                    ? renderEightBitPcm(mAudioData, mSampleRate, mChannelCount)
+                    ? renderEightBitPcm(*mAudioData, mSampleRate, mChannelCount)
                     : source.mEightBitAudioData;
             }
+            mSwingAudioData = source.mSwingAudioData;
             mTotalFrames = source.mTotalFrames;
         }
         mReadFrame.store(0.0);
@@ -769,7 +808,7 @@ public:
         const int64_t sourceFrame = static_cast<int64_t>(sourceFrameRaw);
         {
             std::lock_guard<std::mutex> lock(mDataMutex);
-            if (mAudioData.empty() || mTotalFrames <= 0) {
+            if (mAudioData->empty() || mTotalFrames <= 0) {
                 return false;
             }
             if (targetFrame < 0 || targetFrame >= mTotalFrames) {
@@ -806,7 +845,7 @@ public:
         const int64_t sourceFrame = static_cast<int64_t>(sourceFrameRaw);
         {
             std::lock_guard<std::mutex> lock(mDataMutex);
-            if (mAudioData.empty() || mTotalFrames <= 0) {
+            if (mAudioData->empty() || mTotalFrames <= 0) {
                 return false;
             }
             if (targetFrame < 0 || targetFrame >= mTotalFrames) {
@@ -858,7 +897,15 @@ public:
     }
 
     bool hasAudio() const {
-        return mTotalFrames > 0 && !mAudioData.empty();
+        return mTotalFrames > 0 && !mAudioData->empty();
+    }
+
+    int64_t getTotalFrames() const {
+        return mTotalFrames;
+    }
+
+    int32_t getSampleRate() const {
+        return mSampleRate;
     }
 
     int32_t getChannelCount() const {
@@ -1031,7 +1078,9 @@ private:
         const std::vector<int16_t>& audioData =
             settings.useEightBitBuffer && !mEightBitAudioData.empty()
                 ? mEightBitAudioData
-                : mAudioData;
+                : settings.useSwingBuffer && mSwingAudioData
+                    ? *mSwingAudioData
+                    : *mAudioData;
         const int64_t totalFrames =
             static_cast<int64_t>(audioData.size() / static_cast<size_t>(channels));
         for (int32_t frame = 0; frame < frames; frame += 1) {
@@ -1321,8 +1370,13 @@ private:
     std::shared_ptr<oboe::AudioStream> mStream;
     std::string mLastStartFailure;
     std::mutex mStreamMutex;
-    std::vector<int16_t> mAudioData;
+    // Immutable once loaded and never null, so players cloned from one
+    // another and in-flight swing renders share the samples without copying.
+    std::shared_ptr<const std::vector<int16_t>> mAudioData =
+        std::make_shared<const std::vector<int16_t>>();
     std::vector<int16_t> mEightBitAudioData;
+    // Swung copy of mAudioData, or null until one is installed.
+    std::shared_ptr<const std::vector<int16_t>> mSwingAudioData;
     std::vector<CowbellSample> mCowbellSamples =
         std::vector<CowbellSample>(static_cast<size_t>(kCowbellSampleCount));
     std::vector<CowbellHit> mCowbellHits;
@@ -1361,6 +1415,23 @@ private:
 
 OboePlayer* toPlayer(jlong handle) {
     return reinterpret_cast<OboePlayer*>(handle);
+}
+
+// A swing render in flight. It owns everything the render reads, so the
+// player it was started from may load other audio or be released meanwhile.
+struct SwingRenderJob {
+    std::shared_ptr<const std::vector<int16_t>> source;
+    int32_t sampleRate = 44100;
+    int32_t channelCount = 2;
+    std::vector<fj::SwingSegment> segments;
+    std::vector<int16_t> output;
+    bool rendered = false;
+};
+
+constexpr jsize kSwingSegmentFieldCount = 4;
+
+SwingRenderJob* toSwingJob(jlong handle) {
+    return reinterpret_cast<SwingRenderJob*>(handle);
 }
 
 }  // namespace
@@ -1564,6 +1635,96 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeCloneAudioFrom(
     if (!player || !source) return JNI_FALSE;
     player->cloneAudioFrom(*source);
     return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeGetFrameCount(
+    JNIEnv*, jobject, jlong handle) {
+    auto* player = toPlayer(handle);
+    return player ? static_cast<jint>(player->getTotalFrames()) : 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeHasSwingBuffer(
+    JNIEnv*, jobject, jlong handle) {
+    auto* player = toPlayer(handle);
+    return player && player->hasSwingBuffer();
+}
+
+// `segments` is a flat array of {inputStartFrame, inputFrameCount,
+// outputStartFrame, outputFrameCount} per half-beat. Returns a job handle that
+// must be passed to nativeFinishSwingRender exactly once, or 0 when the player
+// has no audio.
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeBeginSwingRender(
+    JNIEnv* env, jobject, jlong handle, jintArray segments) {
+    auto* player = toPlayer(handle);
+    if (!player || !segments || !player->hasAudio()) return 0;
+    const jsize length = env->GetArrayLength(segments);
+    if (length % kSwingSegmentFieldCount != 0) return 0;
+    std::vector<jint> fields(static_cast<size_t>(length));
+    env->GetIntArrayRegion(segments, 0, length, fields.data());
+
+    auto* job = new SwingRenderJob();
+    job->source = player->audioSnapshot();
+    job->sampleRate = player->getSampleRate();
+    job->channelCount = player->getChannelCount();
+    job->segments.reserve(fields.size() / kSwingSegmentFieldCount);
+    for (size_t index = 0; index + kSwingSegmentFieldCount <= fields.size();
+         index += kSwingSegmentFieldCount) {
+        job->segments.push_back(
+            {fields[index], fields[index + 1], fields[index + 2], fields[index + 3]});
+    }
+    return reinterpret_cast<jlong>(job);
+}
+
+// Runs the render on the calling thread without touching the player.
+// `listener.onSwingProgress(completed, total)` returning false cancels it.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeRunSwingRender(
+    JNIEnv* env, jobject, jlong jobHandle, jobject listener) {
+    auto* job = toSwingJob(jobHandle);
+    if (!job || !listener) return JNI_FALSE;
+    jclass listenerClass = env->GetObjectClass(listener);
+    const jmethodID onProgress =
+        env->GetMethodID(listenerClass, "onSwingProgress", "(II)Z");
+    if (!onProgress) return JNI_FALSE;
+    const fj::SwingProgress progress = [&](size_t completed, size_t total) {
+        const jboolean keepGoing = env->CallBooleanMethod(
+            listener, onProgress, static_cast<jint>(completed), static_cast<jint>(total));
+        return !env->ExceptionCheck() && keepGoing == JNI_TRUE;
+    };
+    const auto startedAt = std::chrono::steady_clock::now();
+    try {
+        job->rendered = fj::renderSwingPcm(
+            *job->source, job->sampleRate, job->channelCount, job->segments, progress,
+            &job->output);
+        const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startedAt).count();
+        __android_log_print(
+            ANDROID_LOG_INFO, kLogTag, "Swing render %s: %zu half-beats in %lld ms",
+            job->rendered ? "finished" : "stopped", job->segments.size(),
+            static_cast<long long>(elapsedMs));
+    } catch (const std::exception& error) {
+        __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Swing render failed: %s", error.what());
+        job->rendered = false;
+    } catch (...) {
+        // Nothing may unwind across the JNI boundary.
+        __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Swing render failed");
+        job->rendered = false;
+    }
+    return job->rendered ? JNI_TRUE : JNI_FALSE;
+}
+
+// Frees the job. With a live player `handle` and a completed render, installs
+// the swung copy; returns whether it was installed.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeFinishSwingRender(
+    JNIEnv*, jobject, jlong handle, jlong jobHandle) {
+    std::unique_ptr<SwingRenderJob> job(toSwingJob(jobHandle));
+    auto* player = toPlayer(handle);
+    if (!job || !player || !job->rendered) return JNI_FALSE;
+    return player->installSwingBuffer(job->source, std::move(job->output)) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
