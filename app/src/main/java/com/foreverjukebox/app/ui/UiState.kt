@@ -76,7 +76,8 @@ enum class JukeboxAudioMode(
     EightBit("eight_bit", "8-Bit", 1.0, 6),
     Underwater("underwater", "Underwater", 1.0, 7),
     Cathedral("cathedral", "Cathedral", 1.0, 8),
-    Cowbell("cowbell", "More Cowbell", 1.0, 9);
+    Cowbell("cowbell", "More Cowbell", 1.0, 9),
+    Swing("swing", "Swing", 1.0, 10);
 
     companion object {
         fun fromWireValue(value: String?): JukeboxAudioMode? {
@@ -276,6 +277,10 @@ data class PlaybackState(
     val playTitle: String = "",
     val audioLoaded: Boolean = false,
     val analysisLoaded: Boolean = false,
+    // True once the player holds a swung copy of the loaded track.
+    val swingReady: Boolean = false,
+    // Percent complete of the swing render in flight; null when none is running.
+    val swingProgress: Int? = null,
     val playAfterLoaded: Boolean = false,
     val isRunning: Boolean = false,
     val isPaused: Boolean = false,
@@ -504,6 +509,7 @@ fun shouldStartPlayAfterLoaded(playback: PlaybackState): Boolean {
         playback.analysisLoaded &&
         !playback.isLoading() &&
         playback.analysisErrorMessage.isNullOrBlank() &&
+        !playback.isPreparingSwing() &&
         !playback.isRunning
 }
 
@@ -513,6 +519,20 @@ fun shouldEnablePlayAfterLoadedForPlaylistSkip(state: UiState): Boolean {
 }
 
 fun PlaybackState.isLoading(): Boolean = analysisInFlight || analysisCalculating || audioLoading
+
+/**
+ * Swing plays a pre-rendered copy of the track. From the moment a loaded
+ * jukebox track has the mode selected until that copy exists, playback waits.
+ * Selecting the mode before the track has loaded defers the wait until it has.
+ */
+fun PlaybackState.isPreparingSwing(): Boolean {
+    return !isCasting &&
+        playMode == PlaybackMode.Jukebox &&
+        jukeboxAudioMode == JukeboxAudioMode.Swing &&
+        audioLoaded &&
+        analysisLoaded &&
+        !swingReady
+}
 
 fun PlaybackState.isTrackLoading(): Boolean {
     return isLoading() || isCastLoading || castTransfer != null || castPlaybackState == "loading"

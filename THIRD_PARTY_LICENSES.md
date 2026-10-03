@@ -65,6 +65,14 @@ This non-commercial nature is relevant to the madmom terms noted below.
   Inc., and the Commonwealth Scientific and Industrial Research Organisation
   (CSIRO).
 
+### Rubber Band Library — GPL v2 or later
+
+- **Use:** Time-stretching half-beats for the Swing audio mode (vendored
+  single-file build of Rubber Band 3.3.0).
+- **License text:** [`third_party/rubberband/LICENSES/RUBBERBAND-GPL.txt`](third_party/rubberband/LICENSES/RUBBERBAND-GPL.txt)
+- **Upstream:** <https://breakfastquay.com/rubberband/>
+- Copyright © 2007–2023 Particular Programs Ltd.
+
 ---
 
 ## Libraries (Maven dependencies)

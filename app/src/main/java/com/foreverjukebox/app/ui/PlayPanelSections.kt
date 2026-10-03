@@ -974,6 +974,8 @@ internal enum class ListenContentMode {
 internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMode {
     return when {
         playback.isCasting -> ListenContentMode.Cast
+        // The swing render's progress takes over the screen until it finishes.
+        playback.isPreparingSwing() -> ListenContentMode.None
         playback.audioLoaded && playback.analysisLoaded -> ListenContentMode.LocalReady
         !playback.analysisInFlight &&
             !playback.analysisCalculating &&

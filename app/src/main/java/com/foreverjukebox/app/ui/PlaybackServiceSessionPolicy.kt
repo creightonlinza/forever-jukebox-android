@@ -84,6 +84,9 @@ internal fun resolvePlaybackServiceSession(
     if (playback.isLoading()) {
         return PlaybackServiceSession.LocalLoading(playback.analysisProgress)
     }
+    if (playback.isPreparingSwing()) {
+        return PlaybackServiceSession.LocalLoading(playback.swingProgress)
+    }
     // While audio is audibly running the transport must keep controlling it — the
     // failed surface drops Pause/Stop presses, so an error surfaced without stopping
     // playback waits for playback to end before taking over as a retry surface.

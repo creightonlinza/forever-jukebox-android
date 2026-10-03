@@ -4,6 +4,7 @@ project(fj_oboe)
 
 add_library(fj_oboe SHARED
     native-lib.cpp
+    swing_renderer.cpp
 )
 
 add_library(local_analysis_jni SHARED
@@ -46,8 +47,17 @@ target_link_libraries(local_analysis_jni
     log
 )
 
-# Optional prebuilt links for native local-analysis dependencies.
 set(FJ_THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party")
+
+# Rubber Band's single-file build: built-in FFT and resampler, no external
+# dependencies. Swing mode stretches half-beats with it.
+set(FJ_RUBBERBAND_DIR "${FJ_THIRD_PARTY_DIR}/rubberband")
+add_library(fj_rubberband STATIC "${FJ_RUBBERBAND_DIR}/single/RubberBandSingle.cpp")
+target_include_directories(fj_rubberband PUBLIC "${FJ_RUBBERBAND_DIR}")
+target_compile_options(fj_rubberband PRIVATE -O3 -w)
+target_link_libraries(fj_oboe fj_rubberband)
+
+# Optional prebuilt links for native local-analysis dependencies.
 set(FJ_SPEEXDSP_DIR "${FJ_THIRD_PARTY_DIR}/speexdsp")
 set(FJ_ESSENTIA_PREBUILT_A "${FJ_THIRD_PARTY_DIR}/essentia/prebuilt/active/${ANDROID_ABI}/libessentia.a")
 set(FJ_ESSENTIA_PREBUILT_INCLUDE_DIR "${FJ_THIRD_PARTY_DIR}/essentia/prebuilt/active/include")

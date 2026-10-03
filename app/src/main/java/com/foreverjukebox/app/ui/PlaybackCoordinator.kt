@@ -103,6 +103,8 @@ internal fun PlaybackState.resetForNewTrack(keepLoadVisible: Boolean): PlaybackS
         canonizerFinishOutSong = canonizerFinishOutSong,
         audioLoaded = false,
         analysisLoaded = false,
+        swingReady = false,
+        swingProgress = null,
         playAfterLoaded = false,
         beatsPlayed = 0,
         listenTime = "00:00:00",
@@ -1006,6 +1008,7 @@ class PlaybackCoordinator(
                 playback = it.playback.copy(
                     audioLoaded = hasAudio,
                     analysisLoaded = hasAnalysis,
+                    swingReady = controller.player.hasSwingAudio(),
                     vizData = vizData,
                     autocanonizerData = autocanonizerData,
                     playTitle = playTitle,

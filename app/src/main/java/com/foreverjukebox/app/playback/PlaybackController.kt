@@ -27,6 +27,9 @@ sealed interface PlaybackStartResult {
     /** Delayed audio focus was accepted; playback auto-starts when the system grants focus. */
     data object WaitingForFocus : PlaybackStartResult
 
+    /** The audio mode's rendered copy of the track is still being prepared. */
+    data object PreparingAudioMode : PlaybackStartResult
+
     sealed interface Failure : PlaybackStartResult
 
     data object NoAudio : Failure
@@ -62,6 +65,11 @@ class PlaybackController {
     private var trackArtist: String? = null
     private var duckingActive = false
     private var owner: Any? = null
+
+    // Set while an audio mode's rendered copy of the track is being prepared.
+    // Play requests from every surface (UI, notification, media buttons) are
+    // refused meanwhile so the unrendered audio is never heard in its place.
+    var audioModePreparing = false
 
     private enum class TransportState {
         Playing,
@@ -214,6 +222,9 @@ class PlaybackController {
     }
 
     fun playOrResumePlaybackResult(): PlaybackStartResult {
+        if (audioModePreparing) {
+            return PlaybackStartResult.PreparingAudioMode
+        }
         if (pendingFocusPlayResetFromStart != null) {
             return PlaybackStartResult.WaitingForFocus
         }

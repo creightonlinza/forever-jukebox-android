@@ -8,6 +8,7 @@
 # JNI progress callbacks call interface methods by literal name via GetMethodID.
 -keep interface com.foreverjukebox.app.local.NativeAnalysisBridge$MadmomBeatsPortProgressCallback { *; }
 -keep interface com.foreverjukebox.app.local.NativeAnalysisBridge$EssentiaProgressCallback { *; }
+-keep interface com.foreverjukebox.app.audio.BufferedAudioPlayer$SwingProgressCallback { *; }
 
 # Keep serialization models and serializers stable for cached analysis JSON,
 # preferences payloads, and server responses in minified release builds.
