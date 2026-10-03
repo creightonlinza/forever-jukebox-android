@@ -110,4 +110,34 @@ class PlaybackModeChangeTest {
         assertEquals("Song (autocanonized) — Artist", autocanonizer.playTitle)
         assertEquals("Song (cowbell) — Artist", backToJukebox.playTitle)
     }
+
+    @Test
+    fun playTitleShowsWubMachineRemixOverRetainedAudioMode() {
+        val jukebox = PlaybackState(
+            playMode = PlaybackMode.Jukebox,
+            trackTitle = "Song",
+            trackArtist = "Artist",
+            jukeboxAudioMode = JukeboxAudioMode.Swing
+        )
+
+        val wub = playbackStateAfterPlayModeApplied(jukebox, PlaybackMode.WubMachine)
+        val backToJukebox = playbackStateAfterPlayModeApplied(wub, PlaybackMode.Jukebox)
+
+        assertEquals("Song (wub machine remix) — Artist", wub.playTitle)
+        assertEquals(JukeboxAudioMode.Swing, wub.jukeboxAudioMode)
+        assertEquals("Song (swing) — Artist", backToJukebox.playTitle)
+    }
+
+    @Test
+    fun modeChangeRewindsTheRemixPlayhead() {
+        val before = PlaybackState(
+            wubMachine = WubMachineUiState(durationSeconds = 90.0, positionSeconds = 42.0, loop = true)
+        )
+
+        val after = playbackStateAfterModeChange(before, preserveTransportState = false)
+
+        assertEquals(0.0, after.wubMachine.positionSeconds, 0.0)
+        assertEquals(90.0, after.wubMachine.durationSeconds, 0.0)
+        assertEquals(true, after.wubMachine.loop)
+    }
 }

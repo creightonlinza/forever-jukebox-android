@@ -386,6 +386,61 @@ class ApiClientPublicApiTest {
     }
 
     @Test
+    fun fetchFavoritesSyncKeepsFavoritesWithUnknownPlayMode() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "favorites": [
+                        {"uniqueSongId": "one", "title": "One", "artist": "A", "playMode": "futuremode"},
+                        {"uniqueSongId": "two", "title": "Two", "artist": "B", "playMode": "autocanonizer"},
+                        {"title": "no id"}
+                      ]
+                    }
+                    """.trimIndent()
+                )
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val result = api.fetchFavoritesSync(baseUrl = baseUrl, code = "ABCD")
+
+        assertEquals(listOf("one", "two"), result.map { it.uniqueSongId })
+        assertNull(result[0].playMode)
+        assertEquals(FavoritePlayMode.Autocanonizer, result[1].playMode)
+    }
+
+    @Test
+    fun createFavoritesSyncParsesResponseWithUnknownPlayMode() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "code": "ABCD",
+                      "count": 1,
+                      "favorites": [
+                        {"uniqueSongId": "one", "title": "One", "artist": "A", "playMode": "futuremode"}
+                      ]
+                    }
+                    """.trimIndent()
+                )
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val response = api.createFavoritesSync(
+            baseUrl = baseUrl,
+            favorites = listOf(FavoriteTrack(uniqueSongId = "one", title = "One", artist = "A"))
+        )
+
+        assertEquals("ABCD", response.code)
+        assertEquals(1, response.favorites.size)
+        assertNull(response.favorites.first().playMode)
+    }
+
+    @Test
     fun fetchFavoritesSyncUsesExpectedPathAndParsesFavorites() = runTest {
         server.enqueue(
             MockResponse()

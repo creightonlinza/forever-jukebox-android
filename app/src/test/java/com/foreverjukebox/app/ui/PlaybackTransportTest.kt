@@ -157,6 +157,7 @@ class PlaybackTransportTest {
 private class FakeStopControls : TransportStopControls {
     var stopJukeboxCalls = 0
     var stopAutocanonizerCalls = 0
+    var stopWubMachineCalls = 0
     var stopExternalCalls = 0
 
     override fun stopJukeboxPlayback() {
@@ -165,6 +166,10 @@ private class FakeStopControls : TransportStopControls {
 
     override fun stopAutocanonizerPlayback() {
         stopAutocanonizerCalls += 1
+    }
+
+    override fun stopWubMachinePlayback() {
+        stopWubMachineCalls += 1
     }
 
     override fun stopExternalPlayback() {

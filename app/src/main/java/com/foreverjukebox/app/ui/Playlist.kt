@@ -281,6 +281,11 @@ internal fun shouldAdvancePlaylistOnAutocanonizerEnd(state: UiState): Boolean {
         state.playlist.canSkipNext()
 }
 
+internal fun shouldAdvancePlaylistOnWubMachineEnd(state: UiState): Boolean {
+    return state.playback.playMode == PlaybackMode.WubMachine &&
+        state.playlist.canSkipNext()
+}
+
 /**
  * True when the Listen screen has nothing loaded or loading, either on the device or on a
  * connected cast session, so resume shortcuts can be offered.

@@ -58,4 +58,44 @@ class PlaybackModeChangePlanTest {
 
         assertFalse(plan.clearAutocanonizerAudio)
     }
+
+    @Test
+    fun idleWubMachinePlanStopsOnlyWubMachineTransport() {
+        val plan = resolveModeTransportPlan(
+            previousMode = PlaybackMode.WubMachine,
+            targetMode = PlaybackMode.Jukebox,
+            isRunning = false
+        )
+
+        assertFalse(plan.stopAllTransports)
+        assertFalse(plan.stopAutocanonizerWhileIdle)
+        assertTrue(plan.stopWubMachineWhileIdle)
+        assertFalse(plan.invokeOnStopped)
+        assertFalse(plan.clearAutocanonizerAudio)
+    }
+
+    @Test
+    fun runningWubMachinePlanStopsAllTransports() {
+        val plan = resolveModeTransportPlan(
+            previousMode = PlaybackMode.WubMachine,
+            targetMode = PlaybackMode.Autocanonizer,
+            isRunning = true
+        )
+
+        assertTrue(plan.stopAllTransports)
+        assertFalse(plan.stopWubMachineWhileIdle)
+        assertTrue(plan.invokeOnStopped)
+    }
+
+    @Test
+    fun autocanonizerToWubMachineClearsAutocanonizerAudio() {
+        val plan = resolveModeTransportPlan(
+            previousMode = PlaybackMode.Autocanonizer,
+            targetMode = PlaybackMode.WubMachine,
+            isRunning = false
+        )
+
+        assertTrue(plan.stopAutocanonizerWhileIdle)
+        assertTrue(plan.clearAutocanonizerAudio)
+    }
 }

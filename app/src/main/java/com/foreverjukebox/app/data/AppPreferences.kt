@@ -40,6 +40,7 @@ data class SavedPlaylistTrack(
 
 @Serializable
 data class SavedPlaylist(
+    @Serializable(with = LenientSavedPlaylistTrackListSerializer::class)
     val tracks: List<SavedPlaylistTrack> = emptyList(),
     // Position to resume from on the next launch; absent in playlists written before it existed.
     val lastIndex: Int? = null
@@ -47,27 +48,40 @@ data class SavedPlaylist(
 
 internal fun encodeSavedPlaylist(
     playlist: SavedPlaylist,
-    json: Json = Json { ignoreUnknownKeys = true }
+    json: Json = tolerantJson()
 ): String {
     return json.encodeToString(SavedPlaylist.serializer(), playlist)
 }
 
-/** Accepts the current object shape and the legacy bare track array; malformed input decodes as empty. */
+/**
+ * Accepts the current object shape and the legacy bare track array. Entries that cannot be decoded
+ * are dropped; wholly malformed input decodes as empty.
+ */
 internal fun decodeSavedPlaylist(
     raw: String?,
-    json: Json = Json { ignoreUnknownKeys = true }
+    json: Json = tolerantJson()
 ): SavedPlaylist {
     if (raw.isNullOrBlank()) return SavedPlaylist()
     return try {
         if (raw.trimStart().startsWith("[")) {
             SavedPlaylist(
-                tracks = json.decodeFromString(ListSerializer(SavedPlaylistTrack.serializer()), raw)
+                tracks = json.decodeFromString(LenientSavedPlaylistTrackListSerializer, raw)
             )
         } else {
             json.decodeFromString(SavedPlaylist.serializer(), raw)
         }
     } catch (_: Exception) {
         SavedPlaylist()
+    }
+}
+
+/** Entries that cannot be decoded are dropped; wholly malformed input decodes as empty. */
+internal fun decodeFavorites(raw: String?, json: Json = tolerantJson()): List<FavoriteTrack> {
+    if (raw.isNullOrBlank()) return emptyList()
+    return try {
+        json.decodeFromString(LenientFavoriteTrackListSerializer, raw)
+    } catch (_: Exception) {
+        emptyList()
     }
 }
 
@@ -88,13 +102,14 @@ class AppPreferences(private val context: Context) {
             stringPreferencesKey("local_analysis_sort_direction")
         private val KEY_APP_CONFIG = stringPreferencesKey("app_config")
         private val KEY_CANONIZER_FINISH = booleanPreferencesKey("canonizer_finish_out_song")
+        private val KEY_WUB_MACHINE_LOOP = booleanPreferencesKey("wub_machine_loop")
         private val KEY_HIGHLIGHT_ANCHOR_BRANCH = booleanPreferencesKey("highlight_anchor_branch")
         private val KEY_LOADING_AUDIO_FEEDBACK = booleanPreferencesKey("loading_audio_feedback")
         private val KEY_SAVED_PLAYLIST = stringPreferencesKey("saved_playlist")
         private val KEY_WHATS_NEW_VERSION_CODE = intPreferencesKey("whats_new_version_code")
     }
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = tolerantJson()
 
     val baseUrl: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_BASE_URL]
@@ -117,7 +132,7 @@ class AppPreferences(private val context: Context) {
     }
 
     val favorites: Flow<List<FavoriteTrack>> = context.dataStore.data.map { prefs ->
-        decodeFavorites(prefs[KEY_FAVORITES])
+        decodeFavorites(prefs[KEY_FAVORITES], json)
     }
 
     val favoritesSyncCode: Flow<String?> = context.dataStore.data.map { prefs ->
@@ -149,6 +164,10 @@ class AppPreferences(private val context: Context) {
 
     val canonizerFinishOutSong: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_CANONIZER_FINISH] ?: false
+    }
+
+    val wubMachineLoop: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_WUB_MACHINE_LOOP] ?: false
     }
 
     val highlightAnchorBranch: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -251,6 +270,12 @@ class AppPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setWubMachineLoop(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_WUB_MACHINE_LOOP] = enabled
+        }
+    }
+
     suspend fun setHighlightAnchorBranch(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_HIGHLIGHT_ANCHOR_BRANCH] = enabled
@@ -276,15 +301,6 @@ class AppPreferences(private val context: Context) {
     suspend fun setWhatsNewVersionCode(versionCode: Int) {
         context.dataStore.edit { prefs ->
             prefs[KEY_WHATS_NEW_VERSION_CODE] = versionCode
-        }
-    }
-
-    private fun decodeFavorites(raw: String?): List<FavoriteTrack> {
-        if (raw.isNullOrBlank()) return emptyList()
-        return try {
-            json.decodeFromString(ListSerializer(FavoriteTrack.serializer()), raw)
-        } catch (_: Exception) {
-            emptyList()
         }
     }
 

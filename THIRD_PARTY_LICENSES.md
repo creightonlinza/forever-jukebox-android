@@ -67,11 +67,22 @@ This non-commercial nature is relevant to the madmom terms noted below.
 
 ### Rubber Band Library — GPL v2 or later
 
-- **Use:** Time-stretching half-beats for the Swing audio mode (vendored
-  single-file build of Rubber Band 3.3.0).
+- **Use:** Time-stretching half-beats for the Swing audio mode and slices for
+  the Wub Machine play mode (vendored single-file build of Rubber Band 3.3.0).
 - **License text:** [`third_party/rubberband/LICENSES/RUBBERBAND-GPL.txt`](third_party/rubberband/LICENSES/RUBBERBAND-GPL.txt)
 - **Upstream:** <https://breakfastquay.com/rubberband/>
 - Copyright © 2007–2023 Particular Programs Ltd.
+
+### Wub Machine samples — MIT
+
+- **Use:** The dubstep sample beds behind the Wub Machine play mode
+  (`app/src/main/assets/wubmachine/dubstep/`), decoded on device and mixed
+  under the time-stretched track. The arrangement is a port of the Wub Machine
+  remixer.
+- **License:** MIT. License text:
+  [`app/src/main/assets/wubmachine/LICENSE`](app/src/main/assets/wubmachine/LICENSE)
+- **Upstream:** <https://github.com/psobot/wub-machine>
+- Copyright © 2009-2015 Peter Sobot.
 
 ---
 

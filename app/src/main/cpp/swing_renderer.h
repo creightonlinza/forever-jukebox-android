@@ -34,4 +34,15 @@ bool renderSwingPcm(
     const SwingProgress& onProgress,
     std::vector<int16_t>* output);
 
+// Time-stretches planar float `input` (one vector per channel, equal lengths)
+// to exactly `targetFrames` frames per channel with the same Rubber Band
+// options the swing render uses: truncated when Rubber Band overshoots, padded
+// with the last sample when it falls short. Empty input or a zero target
+// leaves `output` holding empty channels.
+void stretchPlanarToFrames(
+    const std::vector<std::vector<float>>& input,
+    int32_t sampleRate,
+    size_t targetFrames,
+    std::vector<std::vector<float>>* output);
+
 }  // namespace fj

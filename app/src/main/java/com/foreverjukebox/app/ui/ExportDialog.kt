@@ -26,7 +26,8 @@ import androidx.compose.ui.unit.dp
 /**
  * Configures and tracks an audio export. Mirrors the web app's export dialog:
  * output duration in seconds (5 s to 2 h) defaulting to the track's length,
- * with the current tuning, deleted branches, and audio mode baked in.
+ * with the current tuning, deleted branches, and audio mode baked in. A Wub
+ * Machine remix exports whole, so its dialog has no duration to set.
  */
 @Composable
 fun ExportDialog(
@@ -36,18 +37,22 @@ fun ExportDialog(
     audioModeIntensity: Int,
     onStart: (Int) -> Unit,
     onCancelExport: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    playMode: PlaybackMode = PlaybackMode.Jukebox
 ) {
+    val isRemix = playMode == PlaybackMode.WubMachine
     var durationText by remember {
         mutableStateOf(defaultExportDurationSeconds(trackDurationSeconds).toString())
     }
     val parsedSeconds = durationText.trim().toIntOrNull()
-    val isDurationValid = parsedSeconds != null &&
-        parsedSeconds in EXPORT_MIN_DURATION_SECONDS..EXPORT_MAX_DURATION_SECONDS
+    val isDurationValid = isRemix || (
+        parsedSeconds != null &&
+            parsedSeconds in EXPORT_MIN_DURATION_SECONDS..EXPORT_MAX_DURATION_SECONDS
+        )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Export Jukebox Audio") },
+        title = { Text(if (isRemix) "Export Wub Machine Remix" else "Export Jukebox Audio") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (export.isExporting) {
@@ -66,6 +71,17 @@ fun ExportDialog(
                     }
                     Text(
                         "The export keeps running if you close this dialog.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (isRemix) {
+                    Text(
+                        "Exports the whole remix as it plays.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Saves an M4A file to your Music folder.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -116,7 +132,13 @@ fun ExportDialog(
                 }
             } else {
                 Button(
-                    onClick = { parsedSeconds?.let(onStart) },
+                    onClick = {
+                        if (isRemix) {
+                            onStart(defaultExportDurationSeconds(trackDurationSeconds))
+                        } else {
+                            parsedSeconds?.let(onStart)
+                        }
+                    },
                     enabled = isDurationValid,
                     colors = pillButtonColors(),
                     border = pillButtonBorder(),

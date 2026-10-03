@@ -24,6 +24,7 @@ class ListenLinkCoordinator(
         val encodedId = encodeUriComponent(trackId)
         val query = when (playback.playMode) {
             PlaybackMode.Autocanonizer -> "mode=autocanonizer"
+            PlaybackMode.WubMachine -> "mode=wubmachine"
             PlaybackMode.Jukebox -> tuningParamsForCurrentTrack(getState(), engineTuningParams)
         }
         return if (query.isNullOrBlank()) {
@@ -50,10 +51,10 @@ class ListenLinkCoordinator(
         }
         val id = decodeUriComponent(segments[1])
         val queryParams = parseQueryParams(uri.rawQuery)
-        val mode = if (queryParams["mode"]?.firstOrNull() == "autocanonizer") {
-            PlaybackMode.Autocanonizer
-        } else {
-            PlaybackMode.Jukebox
+        val mode = when (queryParams["mode"]?.firstOrNull()) {
+            "autocanonizer" -> PlaybackMode.Autocanonizer
+            "wubmachine" -> PlaybackMode.WubMachine
+            else -> PlaybackMode.Jukebox
         }
         // The link's mode belongs to the track it opens, so this stays off the
         // capture path that records a mode switch on the loaded track.

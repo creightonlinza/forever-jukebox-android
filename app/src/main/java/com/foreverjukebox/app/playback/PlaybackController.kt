@@ -9,6 +9,8 @@ import com.foreverjukebox.app.audio.CowbellOverlayController
 import com.foreverjukebox.app.audio.NativeCowbellOverlayController
 import com.foreverjukebox.app.audio.NoOpCowbellOverlayController
 import com.foreverjukebox.app.autocanonizer.AutocanonizerController
+import com.foreverjukebox.app.wubmachine.WubMachineController
+import com.foreverjukebox.app.wubmachine.WubMachinePlayer
 import com.foreverjukebox.app.autocanonizer.BufferedAutocanonizerPlayer
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.JukeboxEngineOptions
@@ -50,6 +52,8 @@ class PlaybackController {
     private val autocanonizerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val autocanonizerPlayer = BufferedAutocanonizerPlayer(player)
     val autocanonizer = AutocanonizerController(autocanonizerPlayer, autocanonizerScope)
+    // The remix plays on its own player so the jukebox player's audio modes never touch it.
+    val wubMachine = WubMachineController(WubMachinePlayer(), autocanonizerScope)
     private var audioFocusController: PlaybackAudioFocusController =
         NoOpPlaybackAudioFocusController
     private var cowbellOverlay: CowbellOverlayController = NoOpCowbellOverlayController
@@ -113,6 +117,7 @@ class PlaybackController {
         duckingActive = active
         player.setDucking(active)
         autocanonizer.setDucking(active)
+        wubMachine.setDucking(active)
         cowbellOverlay.setVolume(if (active) DUCKED_VOLUME else NORMAL_VOLUME)
     }
 
@@ -400,6 +405,7 @@ class PlaybackController {
         audioFocusController.abandonAudioFocus()
         cowbellOverlay.cancelScheduledHits()
         autocanonizer.release()
+        wubMachine.release()
         player.release()
     }
 

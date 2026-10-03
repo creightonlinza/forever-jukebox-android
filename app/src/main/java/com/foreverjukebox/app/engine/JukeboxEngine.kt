@@ -68,6 +68,9 @@ class JukeboxEngine(
         listeners.add(callback)
     }
 
+    /** The loaded track's analysis, or null before one is loaded. */
+    fun getAnalysis(): TrackAnalysis? = analysis
+
     fun loadAnalysis(data: JsonElement) {
         deletedEdgeKeys.clear()
         userAnchorEdgeId = null

@@ -198,6 +198,16 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 showCancel = true,
                 onCancel = viewModel::resetAudioModeDefaults
             )
+        } else if (playback.isPreparingWubMachine()) {
+            // Cancelling the render leaves the mode, as the web app does when the remix is abandoned.
+            LoadingStatus(
+                progress = playback.wubProgress,
+                label = "$PREPARING_WUB_MACHINE_LABEL...",
+                trackTitle = loadingTrackMetadata?.title,
+                trackArtist = loadingTrackMetadata?.artist,
+                showCancel = true,
+                onCancel = { viewModel.selectPlaybackMode(PlaybackMode.Jukebox) }
+            )
         }
 
         val showSavedPlaylist = shouldShowSavedPlaylistButton(state)
@@ -258,7 +268,9 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onSetPlaybackMode = viewModel::selectPlaybackMode,
                 onSetVisualization = viewModel::setActiveVisualization,
                 onSetCanonizerFinishOutSong = viewModel::setCanonizerFinishOutSong,
+                onSetWubMachineLoop = viewModel::setWubMachineLoop,
                 onSelectBeat = viewModel::selectBeat,
+                onSelectWubMachinePosition = viewModel::selectWubMachinePosition,
                 playlist = state.playlist,
                 onOpenPlaylist = { showPlaylist = true },
                 onOpenFullscreen = viewModel::openFullscreenVisualization
@@ -290,7 +302,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     }
 
     val canOpenCastReceiverDetails = playback.castReceiverDetailsReady()
-    if (showInfo && playback.playMode != PlaybackMode.Autocanonizer && canOpenCastReceiverDetails) {
+    if (showInfo && playback.playMode == PlaybackMode.Jukebox && canOpenCastReceiverDetails) {
         val totalBeats = if (playback.isCasting) {
             playback.castTotalBeats ?: 0
         } else {
@@ -309,7 +321,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    if (showTuning && playback.playMode != PlaybackMode.Autocanonizer && canOpenCastReceiverDetails) {
+    if (showTuning && playback.playMode == PlaybackMode.Jukebox && canOpenCastReceiverDetails) {
         val audioModeOptions = if (playback.isCasting) {
             playback.castSupportedAudioModes
         } else {
@@ -367,12 +379,17 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     ) {
         ExportDialog(
             export = state.export,
-            trackDurationSeconds = playback.trackDurationSeconds,
+            trackDurationSeconds = if (playback.playMode == PlaybackMode.WubMachine) {
+                playback.wubMachine.durationSeconds
+            } else {
+                playback.trackDurationSeconds
+            },
             audioMode = playback.jukeboxAudioMode,
             audioModeIntensity = playback.jukeboxAudioModeIntensity,
             onStart = viewModel::startExport,
             onCancelExport = viewModel::cancelExport,
-            onDismiss = { showExport = false }
+            onDismiss = { showExport = false },
+            playMode = playback.playMode
         )
     }
 

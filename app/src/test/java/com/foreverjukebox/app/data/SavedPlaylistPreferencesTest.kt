@@ -60,4 +60,37 @@ class SavedPlaylistPreferencesTest {
         assertTrue(decodeSavedPlaylist("[not-json").tracks.isEmpty())
         assertTrue(decodeSavedPlaylist(null).tracks.isEmpty())
     }
+
+    @Test
+    fun decodeSavedPlaylistTreatsUnknownPlayModeAsAbsent() {
+        val raw = """{"tracks":[{"id":"yt:one","type":"Server","title":"One","playMode":"futuremode"}],"lastIndex":0}"""
+
+        val decoded = decodeSavedPlaylist(raw)
+
+        assertEquals(1, decoded.tracks.size)
+        assertNull(decoded.tracks.first().playMode)
+        assertEquals(0, decoded.lastIndex)
+    }
+
+    @Test
+    fun decodeSavedPlaylistDropsOnlyTheMalformedEntry() {
+        val raw = """{"tracks":[{"id":"yt:one","type":"Server","title":"One"},""" +
+            """{"id":"bad","type":"Stream"},""" +
+            """{"type":"Server"},""" +
+            """{"id":"local-two","type":"LocalCached"}],"lastIndex":2}"""
+
+        val decoded = decodeSavedPlaylist(raw)
+
+        assertEquals(listOf("yt:one", "local-two"), decoded.tracks.map { it.id })
+        assertEquals(2, decoded.lastIndex)
+    }
+
+    @Test
+    fun decodeSavedPlaylistLegacyArrayDropsOnlyTheMalformedEntry() {
+        val legacy = """[{"id":"yt:one","type":"Server"},{"id":"bad","type":"Stream"}]"""
+
+        val decoded = decodeSavedPlaylist(legacy)
+
+        assertEquals(listOf("yt:one"), decoded.tracks.map { it.id })
+    }
 }

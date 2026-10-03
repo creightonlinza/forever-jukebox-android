@@ -29,7 +29,9 @@ enum class FavoritePlayMode {
     @SerialName("jukebox")
     Jukebox,
     @SerialName("autocanonizer")
-    Autocanonizer
+    Autocanonizer,
+    @SerialName("wubmachine")
+    WubMachine
 }
 
 @Serializable

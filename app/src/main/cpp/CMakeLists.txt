@@ -5,6 +5,7 @@ project(fj_oboe)
 add_library(fj_oboe SHARED
     native-lib.cpp
     swing_renderer.cpp
+    wub_renderer.cpp
 )
 
 add_library(local_analysis_jni SHARED
@@ -90,6 +91,9 @@ if (EXISTS "${FJ_SPEEXDSP_RESAMPLE_C}")
     )
     target_link_libraries(local_analysis_jni fj_speexdsp_resampler)
     target_compile_definitions(local_analysis_jni PRIVATE FJ_HAS_SPEEXDSP=1)
+    # The Wub Machine renderer resamples its decoded samples to the track rate.
+    target_link_libraries(fj_oboe fj_speexdsp_resampler)
+    target_compile_definitions(fj_oboe PRIVATE FJ_HAS_SPEEXDSP=1)
 endif()
 
 if (EXISTS "${FJ_ESSENTIA_PREBUILT_A}")

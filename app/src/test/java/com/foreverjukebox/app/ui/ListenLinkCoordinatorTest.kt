@@ -193,6 +193,43 @@ class ListenLinkCoordinatorTest {
     }
 
     @Test
+    fun buildShareUrlUsesWubMachineModeParam() {
+        val coordinator = createCoordinator(
+            state = UiState(
+                baseUrl = "https://example.com",
+                playback = PlaybackState(
+                    playMode = PlaybackMode.WubMachine,
+                    lastJobId = "0123456789abcdef0123456789abcdef"
+                )
+            ),
+            tuningParams = "thresh=9"
+        )
+
+        assertEquals(
+            "https://example.com/listen/0123456789abcdef0123456789abcdef?mode=wubmachine",
+            coordinator.buildShareUrl()
+        )
+    }
+
+    @Test
+    fun handleDeepLinkSelectsWubMachineModeWithoutTuning() {
+        val playbackModes = mutableListOf<PlaybackMode>()
+        val loads = mutableListOf<LoadRequest>()
+        val coordinator = createCoordinator(
+            state = UiState(baseUrl = "https://example.com"),
+            setPlaybackMode = { playbackModes += it },
+            loadTrackById = { trackId, title, artist, tuningParams ->
+                loads += LoadRequest(trackId, title, artist, tuningParams)
+            }
+        )
+
+        coordinator.handleDeepLink("https://example.com/listen/dQw4w9WgXcQ?mode=wubmachine&thresh=9")
+
+        assertEquals(listOf(PlaybackMode.WubMachine), playbackModes)
+        assertEquals(listOf(LoadRequest("dQw4w9WgXcQ", null, null, null)), loads)
+    }
+
+    @Test
     fun handleDeepLinkLoadsTrackAndTuningForMatchingBase() {
         val playbackModes = mutableListOf<PlaybackMode>()
         val loads = mutableListOf<LoadRequest>()

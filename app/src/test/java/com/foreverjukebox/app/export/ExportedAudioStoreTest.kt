@@ -27,4 +27,12 @@ class ExportedAudioStoreTest {
         assertEquals("jukebox_forever.m4a", ExportedAudioStore.buildDisplayName("   "))
         assertEquals("jukebox_forever.m4a", ExportedAudioStore.buildDisplayName("///"))
     }
+
+    @Test
+    fun wubMachineExportsUseTheirOwnSuffix() {
+        assertEquals(
+            "Blinding Lights_wub.m4a",
+            ExportedAudioStore.buildDisplayName("Blinding Lights", ExportedAudioStore.WUB_MACHINE_SUFFIX)
+        )
+    }
 }

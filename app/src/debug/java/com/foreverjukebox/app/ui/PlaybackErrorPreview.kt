@@ -54,7 +54,9 @@ private fun PlaybackFailedWithLoadedVizPreview() {
                 onSetPlaybackMode = {},
                 onSetVisualization = {},
                 onSetCanonizerFinishOutSong = {},
+                onSetWubMachineLoop = {},
                 onSelectBeat = {},
+                onSelectWubMachinePosition = {},
                 playlist = JukeboxPlaylistState(),
                 onOpenPlaylist = {},
                 onOpenFullscreen = {}

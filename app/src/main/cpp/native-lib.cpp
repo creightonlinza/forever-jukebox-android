@@ -15,6 +15,7 @@
 #include <oboe/Oboe.h>
 
 #include "swing_renderer.h"
+#include "wub_renderer.h"
 
 namespace {
 
@@ -632,12 +633,45 @@ public:
                 static_cast<int64_t>(mAudioData->size() / static_cast<size_t>(mChannelCount));
             mCowbellHits.clear();
         }
+        mLoopEnabled.store(false);
         mReadFrame.store(0.0);
         mAudioFrame.store(0);
         mHasJump.store(false);
         clearPromotedJumpEvent();
         clearAnchorJump();
         resetDspState();
+    }
+
+    // Peak magnitude of the first channel per bin across the loaded audio, for
+    // drawing a waveform of a linear buffer.
+    std::vector<float> computePeaks(size_t bins) {
+        std::vector<float> peaks(bins, 0.0f);
+        if (bins == 0) return peaks;
+        std::lock_guard<std::mutex> lock(mDataMutex);
+        const std::vector<int16_t>& data = *mAudioData;
+        const size_t channels = static_cast<size_t>(std::max(1, mChannelCount));
+        const size_t frames = data.size() / channels;
+        if (frames == 0) return peaks;
+        const size_t binSize = std::max<size_t>(1, frames / bins);
+        for (size_t bin = 0; bin < bins; bin += 1) {
+            const size_t stop = std::min(frames, (bin + 1) * binSize);
+            float peak = 0.0f;
+            for (size_t frame = bin * binSize; frame < stop; frame += 1) {
+                peak = std::max(peak, std::fabs(static_cast<float>(data[frame * channels]) / 32768.0f));
+            }
+            peaks[bin] = peak;
+        }
+        return peaks;
+    }
+
+    // Wraps playback from `endFrame` back to `startFrame` while enabled, for
+    // linear buffers whose body repeats (the Wub Machine remix loops between
+    // its intro and ending). Cleared whenever new audio is loaded.
+    void setLoopRegion(double startSeconds, double endSeconds, bool enabled) {
+        const double rate = static_cast<double>(mSampleRate);
+        mLoopStartFrame.store(std::max(0.0, startSeconds * rate));
+        mLoopEndFrame.store(std::max(0.0, endSeconds * rate));
+        mLoopEnabled.store(enabled);
     }
 
     void setGain(float gain) {
@@ -1083,8 +1117,15 @@ private:
                     : *mAudioData;
         const int64_t totalFrames =
             static_cast<int64_t>(audioData.size() / static_cast<size_t>(channels));
+        const double loopStart = mLoopStartFrame.load();
+        const double loopEnd = mLoopEndFrame.load();
+        const double loopSpan = loopEnd - loopStart;
+        const bool loopActive = mLoopEnabled.load() && loopSpan > 0.0;
         for (int32_t frame = 0; frame < frames; frame += 1) {
             sourceFrame = applyScheduledJump(sourceFrame);
+            if (loopActive && sourceFrame >= loopEnd) {
+                sourceFrame = loopStart + std::fmod(sourceFrame - loopStart, loopSpan);
+            }
             const float outputGain = mGain.load() * nextDuckingVolume();
             if (sourceFrame >= static_cast<double>(totalFrames) || audioData.empty()) {
                 std::fill(output, output + channels, 0);
@@ -1394,6 +1435,9 @@ private:
     std::atomic<double> mPromotedJumpToFrame{0.0};
     std::atomic<bool> mHasPromotedJump{false};
     std::atomic<bool> mIsPlaying{false};
+    std::atomic<bool> mLoopEnabled{false};
+    std::atomic<double> mLoopStartFrame{0.0};
+    std::atomic<double> mLoopEndFrame{0.0};
     std::atomic<float> mGain{1.0f};
     std::atomic<float> mDuckingTargetVolume{kNormalDuckingVolume};
     float mCurrentDuckingVolume = kNormalDuckingVolume;
@@ -1432,6 +1476,42 @@ constexpr jsize kSwingSegmentFieldCount = 4;
 
 SwingRenderJob* toSwingJob(jlong handle) {
     return reinterpret_cast<SwingRenderJob*>(handle);
+}
+
+// A Wub Machine render in flight. Like a swing job it owns the source it
+// reads; its output is a new buffer that a different player loads.
+struct WubRenderJob {
+    std::shared_ptr<const std::vector<int16_t>> source;
+    int32_t sampleRate = 44100;
+    int32_t channelCount = 2;
+    fj::WubRenderRequest request;
+    std::vector<fj::WubSample> samples;
+    std::vector<int16_t> output;
+    bool rendered = false;
+};
+
+constexpr jsize kWubSliceFieldCount = 3;
+
+WubRenderJob* toWubJob(jlong handle) {
+    return reinterpret_cast<WubRenderJob*>(handle);
+}
+
+std::vector<jint> readIntArray(JNIEnv* env, jintArray array) {
+    std::vector<jint> values;
+    if (!array) return values;
+    const jsize length = env->GetArrayLength(array);
+    values.resize(static_cast<size_t>(std::max<jsize>(0, length)));
+    if (length > 0) env->GetIntArrayRegion(array, 0, length, values.data());
+    return values;
+}
+
+std::vector<jfloat> readFloatArray(JNIEnv* env, jfloatArray array) {
+    std::vector<jfloat> values;
+    if (!array) return values;
+    const jsize length = env->GetArrayLength(array);
+    values.resize(static_cast<size_t>(std::max<jsize>(0, length)));
+    if (length > 0) env->GetFloatArrayRegion(array, 0, length, values.data());
+    return values;
 }
 
 }  // namespace
@@ -1725,6 +1805,163 @@ Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeFinishSwingRender(
     auto* player = toPlayer(handle);
     if (!job || !player || !job->rendered) return JNI_FALSE;
     return player->installSwingBuffer(job->source, std::move(job->output)) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeComputePeaks(
+    JNIEnv* env, jobject, jlong handle, jint bins) {
+    auto* player = toPlayer(handle);
+    if (!player || bins <= 0) return nullptr;
+    const std::vector<float> peaks = player->computePeaks(static_cast<size_t>(bins));
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(peaks.size()));
+    if (!result) return nullptr;
+    env->SetFloatArrayRegion(result, 0, static_cast<jsize>(peaks.size()), peaks.data());
+    return result;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeSetLoopRegion(
+    JNIEnv*, jobject, jlong handle, jdouble startSeconds, jdouble endSeconds, jboolean enabled) {
+    auto* player = toPlayer(handle);
+    if (player) player->setLoopRegion(startSeconds, endSeconds, enabled == JNI_TRUE);
+}
+
+// Snapshots the player's audio and the flattened arrangement: per part its
+// slice count, slice group, mix and sample count; `partSamples` holds every
+// part's sample indices in order and `slices` holds {startFrame, stopFrame,
+// targetFrames} per slice in part order. Returns a job handle that must reach
+// nativeFinishWubRender exactly once, or 0 when the input is malformed or the
+// player has no audio.
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeBeginWubRender(
+    JNIEnv* env, jobject, jlong handle, jint partFrames, jint sampleCount,
+    jintArray partSliceCounts, jintArray partSliceGroups, jfloatArray partMix,
+    jintArray partSampleCounts, jintArray partSamples, jintArray slices) {
+    auto* player = toPlayer(handle);
+    if (!player || !player->hasAudio() || partFrames < 0 || sampleCount < 0) return 0;
+    const std::vector<jint> sliceCounts = readIntArray(env, partSliceCounts);
+    const std::vector<jint> sliceGroups = readIntArray(env, partSliceGroups);
+    const std::vector<jfloat> mixes = readFloatArray(env, partMix);
+    const std::vector<jint> sampleCounts = readIntArray(env, partSampleCounts);
+    const std::vector<jint> sampleIndices = readIntArray(env, partSamples);
+    const std::vector<jint> sliceFields = readIntArray(env, slices);
+    const size_t partCount = sliceCounts.size();
+    if (sliceGroups.size() != partCount || mixes.size() != partCount ||
+        sampleCounts.size() != partCount ||
+        sliceFields.size() % static_cast<size_t>(kWubSliceFieldCount) != 0) {
+        return 0;
+    }
+    auto job = std::make_unique<WubRenderJob>();
+    job->source = player->audioSnapshot();
+    job->sampleRate = player->getSampleRate();
+    job->channelCount = player->getChannelCount();
+    job->request.partFrames = partFrames;
+    job->samples.resize(static_cast<size_t>(sampleCount));
+    size_t sampleOffset = 0;
+    size_t sliceOffset = 0;
+    for (size_t index = 0; index < partCount; index += 1) {
+        fj::WubPart part;
+        part.sliceGroup = sliceGroups[index];
+        part.mix = mixes[index];
+        const size_t partSampleCount = static_cast<size_t>(std::max<jint>(0, sampleCounts[index]));
+        const size_t partSliceCount = static_cast<size_t>(std::max<jint>(0, sliceCounts[index]));
+        if (sampleOffset + partSampleCount > sampleIndices.size() ||
+            (sliceOffset + partSliceCount) * kWubSliceFieldCount > sliceFields.size()) {
+            return 0;
+        }
+        for (size_t s = 0; s < partSampleCount; s += 1) {
+            const jint sampleIndex = sampleIndices[sampleOffset + s];
+            if (sampleIndex < 0 || sampleIndex >= sampleCount) return 0;
+            part.samples.push_back(sampleIndex);
+        }
+        sampleOffset += partSampleCount;
+        for (size_t s = 0; s < partSliceCount; s += 1) {
+            const size_t base = (sliceOffset + s) * static_cast<size_t>(kWubSliceFieldCount);
+            part.slices.push_back({sliceFields[base], sliceFields[base + 1], sliceFields[base + 2]});
+        }
+        sliceOffset += partSliceCount;
+        job->request.parts.push_back(std::move(part));
+    }
+    return reinterpret_cast<jlong>(job.release());
+}
+
+// Hands the job one decoded sample: interleaved 16-bit PCM at its own rate.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeAddWubSample(
+    JNIEnv* env, jobject, jlong jobHandle, jint index, jbyteArray data, jint length,
+    jint sampleRate, jint channelCount) {
+    auto* job = toWubJob(jobHandle);
+    if (!job || !data || index < 0 || static_cast<size_t>(index) >= job->samples.size() ||
+        sampleRate <= 0 || channelCount <= 0) {
+        return JNI_FALSE;
+    }
+    const jsize available = std::min<jsize>(length, env->GetArrayLength(data));
+    const jsize evenLength = available & ~static_cast<jsize>(1);
+    if (evenLength <= 0) return JNI_FALSE;
+    fj::WubSample& sample = job->samples[static_cast<size_t>(index)];
+    sample.pcm.resize(static_cast<size_t>(evenLength / 2));
+    env->GetByteArrayRegion(data, 0, evenLength, reinterpret_cast<jbyte*>(sample.pcm.data()));
+    sample.sampleRate = sampleRate;
+    sample.channelCount = channelCount;
+    return JNI_TRUE;
+}
+
+// Runs the render on the calling thread without touching any player.
+// `listener.onWubProgress(completed, total)` returning false cancels it.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeRunWubRender(
+    JNIEnv* env, jobject, jlong jobHandle, jobject listener) {
+    auto* job = toWubJob(jobHandle);
+    if (!job || !listener) return JNI_FALSE;
+    jclass listenerClass = env->GetObjectClass(listener);
+    const jmethodID onProgress = env->GetMethodID(listenerClass, "onWubProgress", "(II)Z");
+    if (!onProgress) return JNI_FALSE;
+    const fj::WubProgress progress = [&](size_t completed, size_t total) {
+        const jboolean keepGoing = env->CallBooleanMethod(
+            listener, onProgress, static_cast<jint>(completed), static_cast<jint>(total));
+        return !env->ExceptionCheck() && keepGoing == JNI_TRUE;
+    };
+    const auto startedAt = std::chrono::steady_clock::now();
+    try {
+        job->rendered = fj::renderWubPcm(
+            *job->source, job->sampleRate, job->channelCount, job->request, job->samples,
+            progress, &job->output);
+        const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startedAt).count();
+        __android_log_print(
+            ANDROID_LOG_INFO, kLogTag, "Wub Machine render %s: %zu parts in %lld ms",
+            job->rendered ? "finished" : "stopped", job->request.parts.size(),
+            static_cast<long long>(elapsedMs));
+    } catch (const std::exception& error) {
+        __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Wub Machine render failed: %s", error.what());
+        job->rendered = false;
+    } catch (...) {
+        // Nothing may unwind across the JNI boundary.
+        __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Wub Machine render failed");
+        job->rendered = false;
+    }
+    if (!job->rendered) {
+        job->output.clear();
+        job->output.shrink_to_fit();
+    }
+    job->samples.clear();
+    job->samples.shrink_to_fit();
+    return job->rendered ? JNI_TRUE : JNI_FALSE;
+}
+
+// Frees the job. With a live stereo player `handle` at the job's sample rate
+// and a completed render, loads the remix into it; returns whether it did.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_foreverjukebox_app_audio_BufferedAudioPlayer_nativeFinishWubRender(
+    JNIEnv*, jobject, jlong handle, jlong jobHandle) {
+    std::unique_ptr<WubRenderJob> job(toWubJob(jobHandle));
+    auto* player = toPlayer(handle);
+    if (!job || !player || !job->rendered || job->output.empty()) return JNI_FALSE;
+    if (player->getChannelCount() != 2 || player->getSampleRate() != job->sampleRate) {
+        return JNI_FALSE;
+    }
+    player->loadPcm(std::move(job->output));
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT void JNICALL

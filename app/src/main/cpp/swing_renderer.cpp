@@ -219,6 +219,20 @@ void applyBeatBoundaryFades(
 
 }  // namespace
 
+void stretchPlanarToFrames(
+    const std::vector<std::vector<float>>& input,
+    int32_t sampleRate,
+    size_t targetFrames,
+    std::vector<std::vector<float>>* output) {
+    if (!output) return;
+    output->assign(input.size(), {});
+    if (input.empty() || input[0].empty() || targetFrames == 0) return;
+    StretchScratch scratch(static_cast<int32_t>(input.size()));
+    scratch.input = input;
+    stretchToFrameCount(scratch, sampleRate, input[0].size(), targetFrames);
+    *output = std::move(scratch.stretched);
+}
+
 bool renderSwingPcm(
     const std::vector<int16_t>& source,
     int32_t sampleRate,

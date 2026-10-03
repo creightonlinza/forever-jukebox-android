@@ -175,8 +175,9 @@ internal class CastSessionCoordinator(
     private fun handleCastingConnected(deviceName: String?) {
         val state = getState()
         val playback = state.playback
-        if (playback.playMode == PlaybackMode.Autocanonizer) {
+        if (playback.playMode != PlaybackMode.Jukebox) {
             controller.autocanonizer.stop()
+            controller.wubMachine.stop()
             controller.stopExternalPlayback()
             playbackCoordinator.stopListenTimer()
             playbackCoordinator.applyPlaybackMode(PlaybackMode.Jukebox)

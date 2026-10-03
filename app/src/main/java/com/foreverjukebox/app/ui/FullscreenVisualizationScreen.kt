@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.foreverjukebox.app.visualization.AutocanonizerVisualization
 import com.foreverjukebox.app.visualization.EdgeRouting
 import com.foreverjukebox.app.visualization.JukeboxVisualization
+import com.foreverjukebox.app.visualization.WubMachineVisualization
 import com.foreverjukebox.app.visualization.edgeRoutingForVisualization
 import com.foreverjukebox.app.visualization.positioners
 import com.foreverjukebox.app.visualization.prefersWideAspectForVisualization
@@ -71,6 +72,8 @@ internal fun FullscreenVisualizationScreen(
     onSetPlaybackMode: (PlaybackMode) -> Unit,
     onSetVisualization: (Int) -> Unit,
     onSelectBeat: (Int) -> Unit,
+    onSelectWubMachinePosition: (Double) -> Unit,
+    onSetWubMachineLoop: (Boolean) -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit
 ) {
@@ -79,7 +82,7 @@ internal fun FullscreenVisualizationScreen(
 
     val playback = state.playback
     val tuning = state.tuning
-    val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
+    val inJukebox = playback.playMode == PlaybackMode.Jukebox
     val vizLabels = visualizationLabels
     var showVizMenu by remember(playback.activeVizIndex) { mutableStateOf(false) }
     var showModeMenu by remember(playback.playMode) { mutableStateOf(false) }
@@ -92,7 +95,7 @@ internal fun FullscreenVisualizationScreen(
         val squareSize = minOf(maxWidth, maxHeight)
         val edgeRouting = edgeRoutingForVisualization(playback.activeVizIndex)
         val useWideLayout =
-            !inAutocanonizer &&
+            inJukebox &&
                 maxWidth > maxHeight &&
                 prefersWideAspectForVisualization(playback.activeVizIndex)
         val jukeboxModifier = if (useWideLayout) {
@@ -110,21 +113,33 @@ internal fun FullscreenVisualizationScreen(
         FullscreenVisualizationContent(
             playback = playback,
             tuning = tuning,
-            inAutocanonizer = inAutocanonizer,
             edgeRouting = edgeRouting,
             modifier = Modifier.size(squareSize),
             jukeboxModifier = jukeboxModifier,
-            onSelectBeat = onSelectBeat
+            onSelectBeat = onSelectBeat,
+            onSelectWubMachinePosition = onSelectWubMachinePosition
         )
 
         FullscreenModeMenu(
-            inAutocanonizer = inAutocanonizer,
+            playMode = playback.playMode,
             expanded = showModeMenu,
             onExpandedChange = { showModeMenu = it },
             onSetPlaybackMode = onSetPlaybackMode
         )
 
-        if (!inAutocanonizer) {
+        if (playback.playMode == PlaybackMode.WubMachine) {
+            VisualizationCheckboxControl(
+                checked = playback.wubMachine.loop,
+                label = WUB_MACHINE_LOOP_LABEL,
+                onToggle = { onSetWubMachineLoop(!playback.wubMachine.loop) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(18.dp)
+            )
+        }
+
+        if (inJukebox) {
             FullscreenVisualizationMenu(
                 activeVizIndex = playback.activeVizIndex,
                 vizLabels = vizLabels,
@@ -202,18 +217,18 @@ private tailrec fun Context.findActivity(): Activity? {
 private fun FullscreenVisualizationContent(
     playback: PlaybackState,
     tuning: TuningState,
-    inAutocanonizer: Boolean,
     edgeRouting: EdgeRouting,
     modifier: Modifier,
     jukeboxModifier: Modifier,
-    onSelectBeat: (Int) -> Unit
+    onSelectBeat: (Int) -> Unit,
+    onSelectWubMachinePosition: (Double) -> Unit
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        if (inAutocanonizer) {
-            AutocanonizerVisualization(
+        when (playback.playMode) {
+            PlaybackMode.Autocanonizer -> AutocanonizerVisualization(
                 data = playback.autocanonizerData,
                 currentIndex = playback.currentBeatIndex,
                 forcedOtherIndex = playback.canonizerOtherIndex,
@@ -221,8 +236,12 @@ private fun FullscreenVisualizationContent(
                 onSelectBeat = onSelectBeat,
                 modifier = modifier
             )
-        } else {
-            JukeboxVisualization(
+            PlaybackMode.WubMachine -> WubMachineVisualization(
+                state = playback.wubMachine,
+                onSelectPosition = onSelectWubMachinePosition,
+                modifier = Modifier.fillMaxSize()
+            )
+            PlaybackMode.Jukebox -> JukeboxVisualization(
                 data = playback.vizData,
                 currentIndex = playback.currentBeatIndex,
                 jumpLine = playback.jumpLine,
@@ -238,7 +257,7 @@ private fun FullscreenVisualizationContent(
 
 @Composable
 private fun BoxWithConstraintsScope.FullscreenModeMenu(
-    inAutocanonizer: Boolean,
+    playMode: PlaybackMode,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onSetPlaybackMode: (PlaybackMode) -> Unit
@@ -258,7 +277,7 @@ private fun BoxWithConstraintsScope.FullscreenModeMenu(
                 shape = PillShape,
                 modifier = Modifier.height(36.dp)
             ) {
-                Text(if (inAutocanonizer) "Autocanonizer" else "Jukebox")
+                Text(playMode.label)
                 Icon(
                     imageVector = Icons.Filled.ArrowDropDown,
                     contentDescription = null,
@@ -269,20 +288,15 @@ private fun BoxWithConstraintsScope.FullscreenModeMenu(
                 expanded = expanded,
                 onDismissRequest = { onExpandedChange(false) }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Autocanonizer") },
-                    onClick = {
-                        onSetPlaybackMode(PlaybackMode.Autocanonizer)
-                        onExpandedChange(false)
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Jukebox") },
-                    onClick = {
-                        onSetPlaybackMode(PlaybackMode.Jukebox)
-                        onExpandedChange(false)
-                    }
-                )
+                playModeMenuOrder.forEach { mode ->
+                    DropdownMenuItem(
+                        text = { Text(mode.label) },
+                        onClick = {
+                            onSetPlaybackMode(mode)
+                            onExpandedChange(false)
+                        }
+                    )
+                }
             }
         }
     }

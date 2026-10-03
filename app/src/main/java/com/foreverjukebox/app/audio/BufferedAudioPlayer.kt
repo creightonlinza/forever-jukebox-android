@@ -1,19 +1,16 @@
 package com.foreverjukebox.app.audio
 
 import android.content.Context
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import android.net.Uri
 import com.foreverjukebox.app.engine.JumpEvent
 import com.foreverjukebox.app.engine.JukeboxPlayer
 import com.foreverjukebox.app.ui.AudioModeIntensity
 import com.foreverjukebox.app.ui.JukeboxAudioMode
+import com.foreverjukebox.app.wubmachine.WubRenderRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.coroutines.cancellation.CancellationException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -46,7 +43,7 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
         durationSeconds = null
         releaseNativePlayer()
         val decoded = withContext(Dispatchers.IO) {
-            decodeToPcm(
+            decodePcm(
                 onProgress = onProgress,
                 configureDataSource = { extractor -> extractor.setDataSource(file.absolutePath) },
                 isAborted = { !isActive }
@@ -67,7 +64,7 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
         durationSeconds = null
         releaseNativePlayer()
         val decoded = withContext(Dispatchers.IO) {
-            decodeToPcm(
+            decodePcm(
                 onProgress = onProgress,
                 configureDataSource = { extractor ->
                     extractor.setDataSource(context, uri, emptyMap())
@@ -141,6 +138,125 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
             releaseNativePlayer()
             ensureNativePlayer()
             return nativeCloneAudioFrom(nativeHandle, other.nativeHandle)
+        }
+    }
+
+    /** Frames of loaded audio, or 0 without a native player. */
+    fun getFrameCount(): Int {
+        if (nativeHandle == 0L) return 0
+        return nativeGetFrameCount(nativeHandle)
+    }
+
+    /** Peak magnitude of the first channel per bin across the loaded audio; empty without audio. */
+    fun computePeaks(bins: Int): FloatArray {
+        if (nativeHandle == 0L || bins <= 0) return FloatArray(0)
+        return nativeComputePeaks(nativeHandle, bins) ?: FloatArray(0)
+    }
+
+    /**
+     * Wraps playback from [endSeconds] back to [startSeconds] while [enabled]. Cleared by every
+     * audio load, so set it after the buffer it applies to is in place.
+     */
+    fun setLoopRegion(startSeconds: Double, endSeconds: Double, enabled: Boolean) {
+        if (nativeHandle == 0L) return
+        nativeSetLoopRegion(nativeHandle, startSeconds, endSeconds, enabled)
+    }
+
+    /**
+     * Starts a Wub Machine render over a snapshot of this player's audio. The job keeps the
+     * samples alive, so this player may load other audio meanwhile. Null when nothing is loaded
+     * or the request is malformed.
+     */
+    fun beginWubRender(request: WubRenderRequest): WubRenderJob? {
+        val handle = synchronized(nativeHandleLock) {
+            if (nativeHandle == 0L || request.sampleRate != sampleRate) return null
+            val parts = request.parts
+            val sliceFields = IntArray(parts.sumOf { it.slices.size } * WUB_SLICE_FIELD_COUNT)
+            var offset = 0
+            parts.forEach { part ->
+                part.slices.forEach { slice ->
+                    sliceFields[offset] = slice.startFrame
+                    sliceFields[offset + 1] = slice.stopFrame
+                    sliceFields[offset + 2] = slice.targetFrames
+                    offset += WUB_SLICE_FIELD_COUNT
+                }
+            }
+            nativeBeginWubRender(
+                nativeHandle,
+                request.partFrames,
+                request.sampleNames.size,
+                IntArray(parts.size) { parts[it].slices.size },
+                IntArray(parts.size) { parts[it].sliceGroup },
+                FloatArray(parts.size) { parts[it].mix.toFloat() },
+                IntArray(parts.size) { parts[it].sampleIndices.size },
+                parts.flatMap { it.sampleIndices }.toIntArray(),
+                sliceFields
+            )
+        }
+        if (handle == 0L) return null
+        return WubRenderJob(handle, request.sampleRate)
+    }
+
+    /**
+     * A Wub Machine render in flight. Feed every sample the request names with [addSample],
+     * [run] it off the main thread, then [installInto] a player or [discard] it; one of the two
+     * must be called exactly once.
+     */
+    inner class WubRenderJob internal constructor(
+        private var handle: Long,
+        val sampleRate: Int
+    ) {
+        fun addSample(index: Int, pcm: ByteArray, length: Int, sampleRate: Int, channelCount: Int): Boolean {
+            if (handle == 0L) return false
+            return nativeAddWubSample(handle, index, pcm, length, sampleRate, channelCount)
+        }
+
+        /** Blocks for the whole render; [onProgress] returning false cancels it. */
+        fun run(onProgress: (completed: Int, total: Int) -> Boolean): Boolean {
+            if (handle == 0L) return false
+            return nativeRunWubRender(
+                handle,
+                object : WubProgressCallback {
+                    override fun onWubProgress(completed: Int, total: Int): Boolean {
+                        return onProgress(completed, total)
+                    }
+                }
+            )
+        }
+
+        /**
+         * Replaces [target]'s audio with the rendered stereo remix at the source sample rate.
+         * False, with the target left empty, when the render did not finish.
+         */
+        fun installInto(target: BufferedAudioPlayer): Boolean {
+            val job = handle
+            if (job == 0L) return false
+            handle = 0L
+            synchronized(target.nativeHandleLock) {
+                target.releaseNativePlayer()
+                target.durationSeconds = null
+                target.sampleRate = sampleRate
+                target.channelCount = WUB_CHANNEL_COUNT
+                target.ensureNativePlayer()
+                val installed = target.nativeHandle != 0L &&
+                    nativeFinishWubRender(target.nativeHandle, job)
+                if (!installed) {
+                    if (target.nativeHandle == 0L) nativeFinishWubRender(0L, job)
+                    target.releaseNativePlayer()
+                    return false
+                }
+                target.durationSeconds =
+                    nativeGetFrameCount(target.nativeHandle).toDouble() / sampleRate
+                return true
+            }
+        }
+
+        /** Frees the job without installing anything. */
+        fun discard() {
+            val job = handle
+            if (job == 0L) return
+            handle = 0L
+            nativeFinishWubRender(0L, job)
         }
     }
 
@@ -380,7 +496,7 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
         }
     }
 
-    private fun parsePcmWav(bytes: ByteArray): DecodedAudio {
+    private fun parsePcmWav(bytes: ByteArray): DecodedPcm {
         require(bytes.size >= WAV_HEADER_MIN_BYTES) { "Invalid WAV" }
         require(String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF") { "Invalid WAV RIFF header" }
         require(String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE") { "Invalid WAV WAVE header" }
@@ -411,7 +527,7 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
             offset = chunkDataOffset + chunkSize + (chunkSize % 2)
         }
         val resolvedData = requireNotNull(data) { "Missing WAV data" }
-        return DecodedAudio(
+        return DecodedPcm(
             data = resolvedData,
             dataLength = resolvedData.size,
             sampleRate = requireNotNull(sampleRate) { "Missing WAV format" },
@@ -430,201 +546,6 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
         return ByteBuffer.wrap(bytes, offset, Short.SIZE_BYTES)
             .order(ByteOrder.LITTLE_ENDIAN)
             .short
-    }
-
-    private fun decodeToPcm(
-        onProgress: ((Int) -> Unit)?,
-        configureDataSource: (MediaExtractor) -> Unit,
-        isAborted: () -> Boolean = { false }
-    ): DecodedAudio {
-        val extractor = MediaExtractor()
-        configureDataSource(extractor)
-        var audioTrackIndex = -1
-        var format: MediaFormat? = null
-        for (i in 0 until extractor.trackCount) {
-            val trackFormat = extractor.getTrackFormat(i)
-            val mime = trackFormat.getString(MediaFormat.KEY_MIME) ?: continue
-            if (mime.startsWith("audio/")) {
-                audioTrackIndex = i
-                format = trackFormat
-                break
-            }
-        }
-        if (audioTrackIndex < 0 || format == null) {
-            extractor.release()
-            throw IllegalStateException("No audio track found")
-        }
-        extractor.selectTrack(audioTrackIndex)
-        val mime = format.getString(MediaFormat.KEY_MIME) ?: throw IllegalStateException("Missing MIME")
-        val decoder = MediaCodec.createDecoderByType(mime)
-        decoder.configure(format, null, null, 0)
-        decoder.start()
-
-        val info = MediaCodec.BufferInfo()
-        var inputDone = false
-        var outputDone = false
-        var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
-            format.getLong(MediaFormat.KEY_DURATION)
-        } else {
-            -1L
-        }
-        // Pre-size to the duration estimate so the buffer rarely has to grow,
-        // keeping a single PCM copy on the heap instead of the buffer + an
-        // extra toByteArray() snapshot.
-        val output = if (durationUs > 0) {
-            val expectedBytes = (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
-            PcmBuffer(expectedBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-        } else {
-            PcmBuffer()
-        }
-        var expectedPcmBytes = if (durationUs > 0) {
-            (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
-        } else {
-            -1L
-        }
-        var outputBytesWritten = 0L
-        var lastProgress = -1
-        var chunkBuffer = ByteArray(8192)
-
-        fun reportProgress(sampleTimeUs: Long) {
-            val ratio = if (expectedPcmBytes > 0) {
-                outputBytesWritten.toDouble() / expectedPcmBytes.toDouble()
-            } else if (durationUs > 0) {
-                sampleTimeUs.toDouble() / durationUs.toDouble()
-            } else {
-                return
-            }
-            val percent = (ratio * 100.0).toInt().coerceIn(0, 99)
-            if (percent > lastProgress) {
-                lastProgress = percent
-                onProgress?.invoke(percent)
-            }
-        }
-
-        onProgress?.invoke(0)
-        try {
-            while (!outputDone) {
-                // MediaCodec calls have no cancellation points of their own, so a decode whose
-                // coroutine died would otherwise run to completion — burning CPU and contending
-                // for the codec with whatever load replaced it. Bail between buffers instead.
-                if (isAborted()) {
-                    throw CancellationException("Audio decode abandoned")
-                }
-                if (!inputDone) {
-                    val inputIndex = decoder.dequeueInputBuffer(10_000)
-                    if (inputIndex >= 0) {
-                        val inputBuffer = decoder.getInputBuffer(inputIndex) ?: ByteBuffer.allocate(0)
-                        val sampleSize = extractor.readSampleData(inputBuffer, 0)
-                        if (sampleSize < 0) {
-                            decoder.queueInputBuffer(
-                                inputIndex,
-                                0,
-                                0,
-                                0L,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                            )
-                            inputDone = true
-                        } else {
-                            val presentationTimeUs = extractor.sampleTime
-                            decoder.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
-                            reportProgress(presentationTimeUs)
-                            extractor.advance()
-                        }
-                    }
-                }
-
-                val outputIndex = decoder.dequeueOutputBuffer(info, 10_000)
-                when {
-                    outputIndex >= 0 -> {
-                        val outBuffer = decoder.getOutputBuffer(outputIndex)
-                        if (outBuffer != null && info.size > 0) {
-                            if (info.size > chunkBuffer.size) {
-                                var nextSize = chunkBuffer.size
-                                while (nextSize < info.size) {
-                                    nextSize *= 2
-                                }
-                                chunkBuffer = ByteArray(nextSize)
-                            }
-                            outBuffer.get(chunkBuffer, 0, info.size)
-                            outBuffer.clear()
-                            output.append(chunkBuffer, 0, info.size)
-                            outputBytesWritten += info.size.toLong().coerceAtLeast(0L)
-                            reportProgress(info.presentationTimeUs)
-                        }
-                        decoder.releaseOutputBuffer(outputIndex, false)
-                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                            outputDone = true
-                        }
-                    }
-                    outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        val newFormat = decoder.outputFormat
-                        sampleRate = newFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                        channels = newFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                        if (durationUs > 0) {
-                            expectedPcmBytes = (durationUs * sampleRate.toLong() * channels.toLong() * 2L) / 1_000_000L
-                        }
-                    }
-                }
-            }
-        } finally {
-            runCatching { decoder.stop() }
-            decoder.release()
-            extractor.release()
-        }
-        onProgress?.invoke(100)
-        val totalBytes = output.size
-        val bytesPerFrame = channels * 2
-        val totalFrames = if (bytesPerFrame > 0) totalBytes / bytesPerFrame else 0
-        val durationSeconds = if (sampleRate > 0) {
-            totalFrames.toDouble() / sampleRate.toDouble()
-        } else {
-            0.0
-        }
-        return DecodedAudio(output.backingArray, totalBytes, sampleRate, channels, durationSeconds)
-    }
-
-    private data class DecodedAudio(
-        val data: ByteArray,
-        val dataLength: Int,
-        val sampleRate: Int,
-        val channelCount: Int,
-        val durationSeconds: Double
-    )
-
-    // Growable PCM sink that exposes its backing array directly, so the decoded
-    // audio is handed to native code without an intermediate full-size copy.
-    // Pre-size to the expected byte count to avoid reallocation in the common
-    // case where the track duration is known.
-    private class PcmBuffer(initialCapacity: Int = DEFAULT_CAPACITY) {
-        var backingArray: ByteArray = ByteArray(initialCapacity.coerceAtLeast(DEFAULT_CAPACITY))
-            private set
-        var size: Int = 0
-            private set
-
-        fun append(source: ByteArray, offset: Int, length: Int) {
-            if (length <= 0) return
-            ensureCapacity(size + length)
-            System.arraycopy(source, offset, backingArray, size, length)
-            size += length
-        }
-
-        private fun ensureCapacity(required: Int) {
-            if (required <= backingArray.size) return
-            var newCapacity = backingArray.size
-            while (newCapacity in 1 until required) {
-                newCapacity = newCapacity shl 1
-            }
-            if (newCapacity < required) {
-                newCapacity = required
-            }
-            backingArray = backingArray.copyOf(newCapacity)
-        }
-
-        private companion object {
-            const val DEFAULT_CAPACITY = 64 * 1024
-        }
     }
 
     private external fun nativeCreatePlayer(sampleRate: Int, channelCount: Int): Long
@@ -672,15 +593,50 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
     private external fun nativeBeginSwingRender(handle: Long, segments: IntArray): Long
     private external fun nativeRunSwingRender(job: Long, callback: SwingProgressCallback): Boolean
     private external fun nativeFinishSwingRender(handle: Long, job: Long): Boolean
+    private external fun nativeComputePeaks(handle: Long, bins: Int): FloatArray?
+    private external fun nativeSetLoopRegion(
+        handle: Long,
+        startSeconds: Double,
+        endSeconds: Double,
+        enabled: Boolean
+    )
+    private external fun nativeBeginWubRender(
+        handle: Long,
+        partFrames: Int,
+        sampleCount: Int,
+        partSliceCounts: IntArray,
+        partSliceGroups: IntArray,
+        partMix: FloatArray,
+        partSampleCounts: IntArray,
+        partSamples: IntArray,
+        slices: IntArray
+    ): Long
+    private external fun nativeAddWubSample(
+        job: Long,
+        index: Int,
+        data: ByteArray,
+        length: Int,
+        sampleRate: Int,
+        channelCount: Int
+    ): Boolean
+    private external fun nativeRunWubRender(job: Long, callback: WubProgressCallback): Boolean
+    private external fun nativeFinishWubRender(handle: Long, job: Long): Boolean
 
     /** Called from native code by method name; returning false cancels the render. */
     interface SwingProgressCallback {
         fun onSwingProgress(completed: Int, total: Int): Boolean
     }
 
+    /** Called from native code by method name; returning false cancels the render. */
+    interface WubProgressCallback {
+        fun onWubProgress(completed: Int, total: Int): Boolean
+    }
+
     companion object {
         private const val JUMP_EVENT_FIELD_COUNT = 2
         private const val SWING_SEGMENT_FIELD_COUNT = 4
+        private const val WUB_SLICE_FIELD_COUNT = 3
+        private const val WUB_CHANNEL_COUNT = 2
         private const val WAV_HEADER_MIN_BYTES = 44
         private const val PCM_WAV_FORMAT = 1
         private const val PCM_WAV_BITS_PER_SAMPLE = 16
