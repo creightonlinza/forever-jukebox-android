@@ -24,12 +24,18 @@ class SwingCoordinatorTest {
 
         override fun hasSwingAudio(): Boolean = installed
 
+        // Runs between the two progress reports, standing in for state changes
+        // that land while a half-beat is being stretched.
+        var midRender: () -> Unit = {}
+
         override fun renderSwing(
             beats: List<SwingBeat>,
             onProgress: (completed: Int, total: Int) -> Boolean
         ): Boolean {
             renders += beats
-            if (!onProgress(1, 2) || !onProgress(2, 2)) return false
+            val keepGoing = onProgress(1, 2)
+            midRender()
+            if (!keepGoing || !onProgress(2, 2)) return false
             installed = result
             return result
         }
@@ -42,6 +48,8 @@ class SwingCoordinatorTest {
     private class Harness(scope: TestScope) {
         val renderer = FakeRenderer()
         var playback = PlaybackState()
+            private set
+        val progressHistory = mutableListOf<Int?>()
         val blocked = mutableListOf<Boolean>()
         val ready = mutableListOf<Boolean>()
         var failures = 0
@@ -50,12 +58,12 @@ class SwingCoordinatorTest {
             scope = scope,
             renderer = renderer,
             getPlayback = { playback },
-            updatePlayback = { transform -> playback = transform(playback) },
+            updatePlayback = { transform -> update(transform) },
             setPlaybackBlocked = { blocked += it },
             pausePlayback = {
                 pauses += 1
                 if (playback.isRunning) {
-                    playback = playback.copy(isRunning = false, isPaused = true)
+                    update { it.copy(isRunning = false, isPaused = true) }
                 }
             },
             onReady = { ready += it },
@@ -63,6 +71,14 @@ class SwingCoordinatorTest {
             audioLoadHold = PassThroughHold,
             renderDispatcher = StandardTestDispatcher(scope.testScheduler)
         )
+
+        fun update(transform: (PlaybackState) -> PlaybackState) {
+            val next = transform(playback)
+            if (next.swingProgress != playback.swingProgress) {
+                progressHistory += next.swingProgress
+            }
+            playback = next
+        }
     }
 
     private fun swingTrack(jobId: String = "job-a", beatCount: Int = 2): PlaybackState {
@@ -81,7 +97,7 @@ class SwingCoordinatorTest {
     @Test
     fun rendersLoadedSwingTrackAndMarksItReady() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack()
+        harness.update { swingTrack() }
 
         harness.coordinator.sync()
 
@@ -106,7 +122,7 @@ class SwingCoordinatorTest {
     @Test
     fun pausesRunningPlaybackAndResumesItWhenReady() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack().copy(isRunning = true)
+        harness.update { swingTrack().copy(isRunning = true) }
 
         harness.coordinator.sync()
 
@@ -121,7 +137,7 @@ class SwingCoordinatorTest {
     @Test
     fun playRequestedWhilePreparingStartsWhenReady() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack()
+        harness.update { swingTrack() }
 
         harness.coordinator.sync()
         harness.coordinator.playWhenReady()
@@ -133,7 +149,7 @@ class SwingCoordinatorTest {
     @Test
     fun doesNothingUntilTrackHasLoaded() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack().copy(audioLoaded = false)
+        harness.update { swingTrack().copy(audioLoaded = false) }
 
         harness.coordinator.sync()
         advanceUntilIdle()
@@ -145,10 +161,10 @@ class SwingCoordinatorTest {
     @Test
     fun leavingSwingCancelsRenderInFlight() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack().copy(isRunning = true)
+        harness.update { swingTrack().copy(isRunning = true) }
 
         harness.coordinator.sync()
-        harness.playback = harness.playback.copy(jukeboxAudioMode = JukeboxAudioMode.Off)
+        harness.update { harness.playback.copy(jukeboxAudioMode = JukeboxAudioMode.Off) }
         harness.coordinator.sync()
         advanceUntilIdle()
 
@@ -163,7 +179,7 @@ class SwingCoordinatorTest {
     @Test
     fun closeCancelsRenderAndLiftsPlaybackBlock() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack()
+        harness.update { swingTrack() }
 
         harness.coordinator.sync()
         harness.coordinator.close()
@@ -178,10 +194,10 @@ class SwingCoordinatorTest {
     @Test
     fun trackChangeRestartsRenderForNewTrack() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack(jobId = "job-a", beatCount = 2)
+        harness.update { swingTrack(jobId = "job-a", beatCount = 2) }
 
         harness.coordinator.sync()
-        harness.playback = swingTrack(jobId = "job-b", beatCount = 3)
+        harness.update { swingTrack(jobId = "job-b", beatCount = 3) }
         harness.coordinator.sync()
         advanceUntilIdle()
 
@@ -191,9 +207,30 @@ class SwingCoordinatorTest {
     }
 
     @Test
+    fun cancelledRenderDoesNotReportProgressOverItsReplacement() = runTest {
+        val harness = Harness(this)
+        harness.update { swingTrack(jobId = "job-a") }
+        harness.renderer.midRender = {
+            // Track B takes over while A is still stretching a half-beat.
+            harness.renderer.midRender = {}
+            harness.update { swingTrack(jobId = "job-b") }
+            harness.coordinator.sync()
+            assertEquals(0, harness.playback.swingProgress)
+        }
+
+        harness.coordinator.sync()
+        advanceUntilIdle()
+
+        assertEquals(2, harness.renderer.renders.size)
+        assertTrue(harness.playback.swingReady)
+        // A's report of its second half-beat lands after B started and is dropped.
+        assertEquals(listOf(0, 50, null, 0, 50, 100, null), harness.progressHistory)
+    }
+
+    @Test
     fun repeatedSyncDoesNotRestartSameRender() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack()
+        harness.update { swingTrack() }
 
         harness.coordinator.sync()
         harness.coordinator.sync()
@@ -206,7 +243,7 @@ class SwingCoordinatorTest {
     fun failedRenderReportsFailureAndLeavesTrackUnswung() = runTest {
         val harness = Harness(this)
         harness.renderer.result = false
-        harness.playback = swingTrack()
+        harness.update { swingTrack() }
 
         harness.coordinator.sync()
         advanceUntilIdle()
@@ -222,7 +259,7 @@ class SwingCoordinatorTest {
     fun adoptsSwungCopyThePlayerAlreadyHolds() = runTest {
         val harness = Harness(this)
         harness.renderer.installed = true
-        harness.playback = swingTrack()
+        harness.update { swingTrack() }
 
         harness.coordinator.sync()
         advanceUntilIdle()
@@ -235,7 +272,7 @@ class SwingCoordinatorTest {
     @Test
     fun revalidateRendersAgainWhenPlayerLostItsSwungCopy() = runTest {
         val harness = Harness(this)
-        harness.playback = swingTrack().copy(swingReady = true)
+        harness.update { swingTrack().copy(swingReady = true) }
 
         harness.coordinator.revalidate()
 

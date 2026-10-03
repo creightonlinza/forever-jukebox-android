@@ -55,6 +55,11 @@ internal class SwingCoordinator(
     private var renderJob: Job? = null
     private var renderKey: SwingRenderKey? = null
     private var resumeWhenReady = false
+    // Identifies the render whose progress may reach state: a cancelled render
+    // keeps running until its next half-beat and must not report over its
+    // replacement. Read from the render thread.
+    @Volatile
+    private var renderGeneration = 0
 
     fun sync() {
         val playback = getPlayback()
@@ -105,13 +110,15 @@ internal class SwingCoordinator(
         pausePlayback()
         updatePlayback { it.copy(swingProgress = 0) }
         renderKey = key
+        renderGeneration += 1
+        val generation = renderGeneration
         renderJob = scope.launch {
             // Holds the CPU awake: a playlist skip can land on a Swing track
             // with the screen off.
             val installed = audioLoadHold.hold {
                 withContext(renderDispatcher) {
                     renderer.renderSwing(beats) { completed, total ->
-                        reportProgress(completed, total)
+                        reportProgress(generation, completed, total)
                         isActive
                     }
                 }
@@ -120,8 +127,8 @@ internal class SwingCoordinator(
         }
     }
 
-    private fun reportProgress(completed: Int, total: Int) {
-        if (total <= 0) return
+    private fun reportProgress(generation: Int, completed: Int, total: Int) {
+        if (total <= 0 || generation != renderGeneration) return
         val percent = (completed * PERCENT_MAX / total).coerceIn(0, PERCENT_MAX)
         updatePlayback {
             if (it.swingProgress == null || it.swingProgress == percent) it
@@ -149,6 +156,7 @@ internal class SwingCoordinator(
         renderJob = null
         renderKey = null
         resumeWhenReady = false
+        renderGeneration += 1
         job.cancel()
         setPlaybackBlocked(false)
         updatePlayback { it.copy(swingProgress = null) }
