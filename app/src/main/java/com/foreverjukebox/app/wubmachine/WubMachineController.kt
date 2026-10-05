@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.wubmachine
 
 import com.foreverjukebox.app.audio.BufferedAudioPlayer
+import com.foreverjukebox.app.playback.ExternalTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -15,8 +16,20 @@ class WubMachineController(
     val player: WubMachinePlayer,
     private val scope: CoroutineScope,
     private val tickMillis: Long = DEFAULT_TICK_MILLIS
-) {
+) : ExternalTransport {
+    // Serializes transport calls (main thread) with the tick coroutine, which reads the
+    // player's native handle: a clear or release must not free that handle mid-read, and an
+    // end-of-remix restart must not race a pause.
+    private val lock = Any()
     private var tickJob: Job? = null
+    @Volatile
+    private var running = false
+    @Volatile
+    private var paused = false
+    // Bumped whenever the remix is dropped, so a render that started against an earlier track
+    // cannot install its result over the player afterwards.
+    @Volatile
+    private var remixGeneration = 0
     private var onTick: ((seconds: Double) -> Unit)? = null
     private var onEnded: (() -> Unit)? = null
 
@@ -30,18 +43,36 @@ class WubMachineController(
 
     fun isReady(): Boolean = player.hasRemix()
 
+    override fun isRunning(): Boolean = running
+
+    override fun isPaused(): Boolean = paused
+
+    /** Identifies the remix slot a render targets; see [install]. */
+    fun remixGeneration(): Int = remixGeneration
+
+    /**
+     * Installs a finished render, unless the remix was dropped (see [clear]) since [generation]
+     * was read: a render for a track that is no longer loaded leaves the player untouched.
+     */
     fun install(
         job: BufferedAudioPlayer.WubRenderJob,
+        generation: Int,
         partsFor: (durationSeconds: Double) -> List<WubRenderedPart>
     ): Boolean {
-        stop()
-        return player.install(job, partsFor)
+        val installed = synchronized(lock) {
+            if (generation != remixGeneration) return false
+            haltLocked()
+            player.stop()
+            player.install(job, partsFor)
+        }
+        onTick?.invoke(0.0)
+        return installed
     }
 
     fun remix(): WubRemix? = player.remix()
 
     fun setLoop(enabled: Boolean) {
-        player.setLoop(enabled)
+        synchronized(lock) { player.setLoop(enabled) }
     }
 
     fun setVolume(volume: Double) {
@@ -52,73 +83,116 @@ class WubMachineController(
         player.setDucking(active)
     }
 
-    fun position(): Double = player.position()
+    fun position(): Double = synchronized(lock) { player.position() }
 
-    fun durationSeconds(): Double = player.durationSeconds()
+    fun durationSeconds(): Double = synchronized(lock) { player.durationSeconds() }
 
     /** Starts at [from] seconds, or resumes from the paused position. True once audio is running. */
     fun play(from: Double? = null): Boolean {
-        if (!isReady()) return false
-        player.play(from)
-        if (!player.isPlaying()) return false
-        startTicking()
+        synchronized(lock) {
+            if (!isReady()) return false
+            player.play(from)
+            if (!player.isPlaying()) return false
+            running = true
+            paused = false
+            startTickingLocked()
+        }
         return true
     }
 
-    fun pause() {
-        player.pause()
-        stopTicking()
-        onTick?.invoke(player.position())
+    override fun resume(): Boolean {
+        if (!paused) return false
+        return play(null)
     }
 
-    fun stop() {
-        player.stop()
-        stopTicking()
+    override fun pause() {
+        val position = synchronized(lock) {
+            stopTickingLocked()
+            player.pause()
+            if (running) {
+                running = false
+                paused = true
+            }
+            player.position()
+        }
+        onTick?.invoke(position)
+    }
+
+    override fun stop() {
+        synchronized(lock) {
+            haltLocked()
+            player.stop()
+        }
         onTick?.invoke(0.0)
     }
 
     /** Drops the remix; the next track renders its own. */
     fun clear() {
-        stopTicking()
-        player.clear()
+        synchronized(lock) {
+            remixGeneration += 1
+            haltLocked()
+            player.clear()
+        }
     }
 
     fun release() {
-        stopTicking()
-        player.release()
+        synchronized(lock) {
+            remixGeneration += 1
+            haltLocked()
+            player.release()
+        }
     }
 
-    private fun startTicking() {
-        if (tickJob != null) return
+    private fun haltLocked() {
+        stopTickingLocked()
+        running = false
+        paused = false
+    }
+
+    private fun startTickingLocked() {
+        if (tickJob?.isActive == true) return
         tickJob = scope.launch {
             while (isActive) {
-                val seconds = player.position()
-                val duration = player.durationSeconds()
-                if (duration > 0 && seconds >= duration) {
-                    tickJob = null
-                    handleEnded()
-                    return@launch
+                when (val step = synchronized(lock) { stepLocked() }) {
+                    is TickStep.Playing -> onTick?.invoke(step.seconds)
+                    TickStep.Ended -> {
+                        onTick?.invoke(0.0)
+                        onEnded?.invoke()
+                        return@launch
+                    }
+                    TickStep.Halted -> return@launch
                 }
-                onTick?.invoke(seconds)
                 delay(tickMillis)
             }
         }
     }
 
-    private fun stopTicking() {
+    private fun stopTickingLocked() {
         tickJob?.cancel()
         tickJob = null
     }
 
-    // The remix played to its end: loop back into the body, or report the end.
-    private fun handleEnded() {
+    // One tick of the playhead. At the end of the remix the body loops back around when looping
+    // is on; otherwise, or when the restart does not produce audio, the end is reported.
+    private fun stepLocked(): TickStep {
+        if (!running) return TickStep.Halted
+        val seconds = player.position()
+        val duration = player.durationSeconds()
+        if (duration <= 0 || seconds < duration) return TickStep.Playing(seconds)
         player.stop()
         if (player.loop) {
-            play(player.loopRegion.start)
-            return
+            player.play(player.loopRegion.start)
+            if (player.isPlaying()) return TickStep.Playing(player.loopRegion.start)
         }
-        onTick?.invoke(0.0)
-        onEnded?.invoke()
+        running = false
+        paused = false
+        return TickStep.Ended
+    }
+
+    private sealed interface TickStep {
+        data class Playing(val seconds: Double) : TickStep
+        data object Ended : TickStep
+        data object Halted : TickStep
     }
 
     private companion object {

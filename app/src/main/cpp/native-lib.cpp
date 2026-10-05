@@ -644,19 +644,27 @@ public:
 
     // Peak magnitude of the first channel per bin across the loaded audio, for
     // drawing a waveform of a linear buffer.
+    // Scans a snapshot of the buffer so the audio callback, which takes the same
+    // mutex, is never held up for the whole pass. Bin edges are proportional so
+    // every frame lands in a bin.
     std::vector<float> computePeaks(size_t bins) {
         std::vector<float> peaks(bins, 0.0f);
         if (bins == 0) return peaks;
-        std::lock_guard<std::mutex> lock(mDataMutex);
-        const std::vector<int16_t>& data = *mAudioData;
-        const size_t channels = static_cast<size_t>(std::max(1, mChannelCount));
+        std::shared_ptr<const std::vector<int16_t>> snapshot;
+        size_t channels = 1;
+        {
+            std::lock_guard<std::mutex> lock(mDataMutex);
+            snapshot = mAudioData;
+            channels = static_cast<size_t>(std::max(1, mChannelCount));
+        }
+        const std::vector<int16_t>& data = *snapshot;
         const size_t frames = data.size() / channels;
         if (frames == 0) return peaks;
-        const size_t binSize = std::max<size_t>(1, frames / bins);
         for (size_t bin = 0; bin < bins; bin += 1) {
-            const size_t stop = std::min(frames, (bin + 1) * binSize);
+            const size_t start = bin * frames / bins;
+            const size_t stop = (bin + 1) * frames / bins;
             float peak = 0.0f;
-            for (size_t frame = bin * binSize; frame < stop; frame += 1) {
+            for (size_t frame = start; frame < stop; frame += 1) {
                 peak = std::max(peak, std::fabs(static_cast<float>(data[frame * channels]) / 32768.0f));
             }
             peaks[bin] = peak;

@@ -8,24 +8,25 @@ import org.junit.Test
 class FavoritesPreferencesTest {
 
     @Test
-    fun decodeFavoritesTreatsUnknownPlayModeAsAbsent() {
+    fun decodeFavoritesKeepsUnknownPlayModeVerbatim() {
         val raw = """[{"uniqueSongId":"a","title":"A","artist":"X","playMode":"futuremode"}]"""
 
         val decoded = decodeFavorites(raw)
 
         assertEquals(1, decoded.size)
         assertEquals("a", decoded.first().uniqueSongId)
-        assertNull(decoded.first().playMode)
+        assertEquals(FavoritePlayMode("futuremode"), decoded.first().playMode)
+        assertTrue(tolerantJson().encodeToString(FavoriteTrack.serializer(), decoded.first()).contains("\"futuremode\""))
     }
 
     @Test
-    fun decodeFavoritesTreatsUnknownSourceTypeAsAbsent() {
+    fun decodeFavoritesKeepsUnknownSourceTypeVerbatim() {
         val raw = """[{"uniqueSongId":"a","title":"A","artist":"X","sourceType":"mixcloud"}]"""
 
         val decoded = decodeFavorites(raw)
 
         assertEquals(1, decoded.size)
-        assertNull(decoded.first().sourceType)
+        assertEquals(FavoriteSourceType("mixcloud"), decoded.first().sourceType)
     }
 
     @Test

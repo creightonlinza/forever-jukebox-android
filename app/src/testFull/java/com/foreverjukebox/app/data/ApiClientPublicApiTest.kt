@@ -407,7 +407,7 @@ class ApiClientPublicApiTest {
         val result = api.fetchFavoritesSync(baseUrl = baseUrl, code = "ABCD")
 
         assertEquals(listOf("one", "two"), result.map { it.uniqueSongId })
-        assertNull(result[0].playMode)
+        assertEquals(FavoritePlayMode("futuremode"), result[0].playMode)
         assertEquals(FavoritePlayMode.Autocanonizer, result[1].playMode)
     }
 
@@ -437,7 +437,7 @@ class ApiClientPublicApiTest {
 
         assertEquals("ABCD", response.code)
         assertEquals(1, response.favorites.size)
-        assertNull(response.favorites.first().playMode)
+        assertEquals(FavoritePlayMode("futuremode"), response.favorites.first().playMode)
     }
 
     @Test

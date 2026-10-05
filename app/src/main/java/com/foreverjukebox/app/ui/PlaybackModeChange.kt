@@ -89,9 +89,12 @@ internal fun playbackStateAfterModeChange(
     playback: PlaybackState,
     preserveTransportState: Boolean
 ): PlaybackState {
+    // A failed render is retried on the way back into Wub Machine rather than leaving the
+    // mode with nothing to show.
     if (preserveTransportState) {
         return playback.copy(
             autocanonizer = playback.autocanonizer.withResetCursorTimes(),
+            wubRenderFailed = false,
             wubMachine = playback.wubMachine.copy(positionSeconds = 0.0)
         )
     }
@@ -104,6 +107,7 @@ internal fun playbackStateAfterModeChange(
         lastJumpFromIndex = null,
         jumpLine = null,
         autocanonizer = playback.autocanonizer.withResetCursorTimes(),
+        wubRenderFailed = false,
         wubMachine = playback.wubMachine.copy(positionSeconds = 0.0)
     )
 }

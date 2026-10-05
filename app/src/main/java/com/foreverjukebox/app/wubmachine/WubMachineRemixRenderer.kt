@@ -19,21 +19,22 @@ class WubMachineRemixRenderer(
     fun currentRemix(): WubRemix? = controller.remix()
 
     /**
-     * Null when the render was cancelled, failed, or the track's audio was replaced meanwhile.
-     * [onProgress] receives completed and total slices; returning false cancels.
+     * Null when the render was cancelled, failed, or the remix player dropped its track meanwhile
+     * (the result then stays uninstalled). [onProgress] receives completed and total slices;
+     * returning false cancels.
      */
     @Suppress("TooGenericExceptionCaught")
     fun render(
         analysis: DubstepAnalysis,
         onProgress: (completed: Int, total: Int) -> Boolean
     ): WubRemix? {
+        val generation = controller.remixGeneration()
         val plan = planDubstepRemix(analysis, options)
-        val request = buildWubRenderRequest(
-            plan = plan,
-            sampleRate = sourcePlayer.getSampleRate(),
-            sourceFrames = sourcePlayer.getFrameCount()
-        )
-        val job = sourcePlayer.beginWubRender(request) ?: return null
+        lateinit var request: WubRenderRequest
+        val job = sourcePlayer.beginWubRender { sampleRate, sourceFrames ->
+            buildWubRenderRequest(plan = plan, sampleRate = sampleRate, sourceFrames = sourceFrames)
+                .also { request = it }
+        } ?: return null
         try {
             request.sampleNames.forEachIndexed { index, name ->
                 val pcm = samples.load(name)
@@ -42,7 +43,7 @@ class WubMachineRemixRenderer(
             }
             samples.retainOnly(request.sampleNames)
             if (!job.run(onProgress)) return null
-            val installed = controller.install(job) { durationSeconds ->
+            val installed = controller.install(job, generation) { durationSeconds ->
                 layoutWubParts(
                     plan = plan,
                     sampleRate = request.sampleRate,

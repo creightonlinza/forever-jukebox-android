@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.data
 
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -38,16 +37,41 @@ open class LenientListSerializer<T>(private val element: KSerializer<T>) : KSeri
     override fun deserialize(decoder: Decoder): List<T> {
         val jsonDecoder = decoder as? JsonDecoder ?: return delegate.deserialize(decoder)
         val array = jsonDecoder.decodeJsonElement() as? JsonArray ?: return emptyList()
-        return array.mapNotNull { item ->
-            try {
-                jsonDecoder.json.decodeFromJsonElement(element, item)
-            } catch (_: SerializationException) {
-                null
-            } catch (_: IllegalArgumentException) {
-                null
-            }
-        }
+        return decodeLenientList(jsonDecoder.json, element, array).items
     }
+}
+
+/** The elements of a leniently decoded array and, for each, its index in the original array. */
+class LenientListResult<T>(val items: List<T>, val keptIndices: List<Int>) {
+    /**
+     * Where an index into the original array points after the drops: the same entry when it
+     * survived, otherwise the surviving entry that followed it. Negative indices (sentinels)
+     * pass through; null when nothing survived.
+     */
+    fun remapIndex(index: Int): Int? {
+        if (index < 0) return index
+        if (items.isEmpty()) return null
+        val kept = keptIndices.indexOf(index)
+        if (kept >= 0) return kept
+        return keptIndices.count { it < index }.coerceAtMost(items.lastIndex)
+    }
+}
+
+/** Decodes each element of [array] as [element], dropping the ones that fail. */
+fun <T> decodeLenientList(json: Json, element: KSerializer<T>, array: JsonArray): LenientListResult<T> {
+    val items = mutableListOf<T>()
+    val keptIndices = mutableListOf<Int>()
+    array.forEachIndexed { index, item ->
+        val decoded = try {
+            json.decodeFromJsonElement(element, item)
+        } catch (_: IllegalArgumentException) {
+            // SerializationException is an IllegalArgumentException; both mean the entry is unusable.
+            return@forEachIndexed
+        }
+        items += decoded
+        keptIndices += index
+    }
+    return LenientListResult(items, keptIndices)
 }
 
 object LenientFavoriteTrackListSerializer : LenientListSerializer<FavoriteTrack>(FavoriteTrack.serializer())

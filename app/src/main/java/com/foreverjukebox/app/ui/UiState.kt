@@ -62,12 +62,12 @@ fun PlaybackMode.toFavoritePlayModeOrNull(): FavoritePlayMode? = when (this) {
     PlaybackMode.Jukebox -> null
 }
 
-// Legacy favorites predate autocanonizer favorites and decode to a null
-// playMode; treat them as jukebox.
+// Legacy favorites predate autocanonizer favorites and decode to a null playMode; they and
+// modes this build does not know play as jukebox.
 fun FavoritePlayMode?.toPlaybackMode(): PlaybackMode = when (this) {
     FavoritePlayMode.Autocanonizer -> PlaybackMode.Autocanonizer
     FavoritePlayMode.WubMachine -> PlaybackMode.WubMachine
-    FavoritePlayMode.Jukebox, null -> PlaybackMode.Jukebox
+    else -> PlaybackMode.Jukebox
 }
 
 enum class JukeboxAudioMode(

@@ -163,13 +163,17 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
     }
 
     /**
-     * Starts a Wub Machine render over a snapshot of this player's audio. The job keeps the
+     * Starts a Wub Machine render over a snapshot of this player's audio. [buildRequest] receives
+     * the sample rate and frame count of exactly the audio being snapshotted, so the plan's slices
+     * cannot be laid out against a track that a concurrent load replaced. The job keeps the
      * samples alive, so this player may load other audio meanwhile. Null when nothing is loaded
      * or the request is malformed.
      */
-    fun beginWubRender(request: WubRenderRequest): WubRenderJob? {
+    fun beginWubRender(buildRequest: (sampleRate: Int, sourceFrames: Int) -> WubRenderRequest): WubRenderJob? {
         val handle = synchronized(nativeHandleLock) {
-            if (nativeHandle == 0L || request.sampleRate != sampleRate) return null
+            if (nativeHandle == 0L) return null
+            val request = buildRequest(sampleRate, nativeGetFrameCount(nativeHandle))
+            if (request.sampleRate != sampleRate) return null
             val parts = request.parts
             val sliceFields = IntArray(parts.sumOf { it.slices.size } * WUB_SLICE_FIELD_COUNT)
             var offset = 0
@@ -194,7 +198,7 @@ class BufferedAudioPlayer(private val offline: Boolean = false) : JukeboxPlayer 
             )
         }
         if (handle == 0L) return null
-        return WubRenderJob(handle, request.sampleRate)
+        return WubRenderJob(handle, sampleRate)
     }
 
     /**

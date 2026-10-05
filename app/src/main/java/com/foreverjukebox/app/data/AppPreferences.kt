@@ -7,12 +7,16 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 
 private val Context.dataStore by preferencesDataStore(name = "fj_preferences")
 
@@ -55,7 +59,8 @@ internal fun encodeSavedPlaylist(
 
 /**
  * Accepts the current object shape and the legacy bare track array. Entries that cannot be decoded
- * are dropped; wholly malformed input decodes as empty.
+ * are dropped and the resume index follows the entry it pointed at; wholly malformed input decodes
+ * as empty.
  */
 internal fun decodeSavedPlaylist(
     raw: String?,
@@ -63,16 +68,25 @@ internal fun decodeSavedPlaylist(
 ): SavedPlaylist {
     if (raw.isNullOrBlank()) return SavedPlaylist()
     return try {
-        if (raw.trimStart().startsWith("[")) {
-            SavedPlaylist(
-                tracks = json.decodeFromString(LenientSavedPlaylistTrackListSerializer, raw)
-            )
-        } else {
-            json.decodeFromString(SavedPlaylist.serializer(), raw)
+        when (val element = json.parseToJsonElement(raw)) {
+            is JsonArray -> SavedPlaylist(tracks = decodeSavedPlaylistTracks(json, element).items)
+            is JsonObject -> {
+                val tracks = decodeSavedPlaylistTracks(json, element["tracks"] as? JsonArray)
+                val lastIndex = (element["lastIndex"] as? JsonPrimitive)?.intOrNull
+                SavedPlaylist(
+                    tracks = tracks.items,
+                    lastIndex = lastIndex?.let(tracks::remapIndex)
+                )
+            }
+            else -> SavedPlaylist()
         }
     } catch (_: Exception) {
         SavedPlaylist()
     }
+}
+
+private fun decodeSavedPlaylistTracks(json: Json, array: JsonArray?): LenientListResult<SavedPlaylistTrack> {
+    return decodeLenientList(json, SavedPlaylistTrack.serializer(), array ?: JsonArray(emptyList()))
 }
 
 /** Entries that cannot be decoded are dropped; wholly malformed input decodes as empty. */

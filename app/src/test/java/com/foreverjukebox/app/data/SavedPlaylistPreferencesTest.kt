@@ -62,13 +62,13 @@ class SavedPlaylistPreferencesTest {
     }
 
     @Test
-    fun decodeSavedPlaylistTreatsUnknownPlayModeAsAbsent() {
+    fun decodeSavedPlaylistKeepsUnknownPlayModeVerbatim() {
         val raw = """{"tracks":[{"id":"yt:one","type":"Server","title":"One","playMode":"futuremode"}],"lastIndex":0}"""
 
         val decoded = decodeSavedPlaylist(raw)
 
         assertEquals(1, decoded.tracks.size)
-        assertNull(decoded.tracks.first().playMode)
+        assertEquals(FavoritePlayMode("futuremode"), decoded.tracks.first().playMode)
         assertEquals(0, decoded.lastIndex)
     }
 
@@ -82,7 +82,18 @@ class SavedPlaylistPreferencesTest {
         val decoded = decodeSavedPlaylist(raw)
 
         assertEquals(listOf("yt:one", "local-two"), decoded.tracks.map { it.id })
-        assertEquals(2, decoded.lastIndex)
+        // The resume index pointed at a dropped entry and now lands on the one that followed it.
+        assertEquals(1, decoded.lastIndex)
+    }
+
+    @Test
+    fun decodeSavedPlaylistMovesTheResumeIndexWithItsEntry() {
+        val tracks = """[{"id":"yt:one","type":"Server"},{"id":"bad","type":"Stream"},{"id":"local-two","type":"LocalCached"}]"""
+
+        assertEquals(1, decodeSavedPlaylist("""{"tracks":$tracks,"lastIndex":2}""").lastIndex)
+        assertEquals(0, decodeSavedPlaylist("""{"tracks":$tracks,"lastIndex":0}""").lastIndex)
+        assertEquals(-1, decodeSavedPlaylist("""{"tracks":$tracks,"lastIndex":-1}""").lastIndex)
+        assertNull(decodeSavedPlaylist("""{"tracks":[{"id":"bad","type":"Stream"}],"lastIndex":0}""").lastIndex)
     }
 
     @Test

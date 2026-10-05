@@ -132,7 +132,7 @@ internal class WubMachineCoordinator(
                     }
                 }
             }
-            finishRender(remix)
+            finishRender(generation, remix)
         }
     }
 
@@ -145,12 +145,22 @@ internal class WubMachineCoordinator(
         }
     }
 
-    private fun finishRender(remix: WubRemix?) {
+    private fun finishRender(generation: Int, remix: WubRemix?) {
+        if (generation != renderGeneration) return
+        // The track or mode moved on while the last slice was rendering and the state
+        // change has not reached sync() yet: the result is not this track's, so it
+        // neither marks it ready nor failed.
+        val stale = renderKey != getPlayback().wubRenderKey()
         renderJob = null
         renderKey = null
         val resume = resumeWhenReady
         resumeWhenReady = false
         setPlaybackBlocked(false)
+        if (stale) {
+            updatePlayback { it.copy(wubProgress = null) }
+            sync()
+            return
+        }
         if (remix != null) {
             updatePlayback { it.withRemix(remix) }
             onReady(resume)

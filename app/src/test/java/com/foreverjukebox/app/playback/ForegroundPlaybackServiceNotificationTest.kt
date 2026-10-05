@@ -307,7 +307,7 @@ class ForegroundPlaybackServiceNotificationTest {
                     action = action,
                     hasAudio = false,
                     isPlaying = false,
-                    autocanonizerActive = false
+                    externalTransportActive = false
                 )
             )
         }
@@ -321,7 +321,7 @@ class ForegroundPlaybackServiceNotificationTest {
                     action = action,
                     hasAudio = true,
                     isPlaying = false,
-                    autocanonizerActive = false
+                    externalTransportActive = false
                 )
             )
             assertFalse(
@@ -329,7 +329,7 @@ class ForegroundPlaybackServiceNotificationTest {
                     action = action,
                     hasAudio = false,
                     isPlaying = false,
-                    autocanonizerActive = true
+                    externalTransportActive = true
                 )
             )
             assertFalse(
@@ -337,7 +337,7 @@ class ForegroundPlaybackServiceNotificationTest {
                     action = action,
                     hasAudio = false,
                     isPlaying = true,
-                    autocanonizerActive = false
+                    externalTransportActive = false
                 )
             )
         }
@@ -351,7 +351,7 @@ class ForegroundPlaybackServiceNotificationTest {
                     action = action,
                     hasAudio = false,
                     isPlaying = false,
-                    autocanonizerActive = false
+                    externalTransportActive = false
                 )
             )
         }

@@ -343,14 +343,22 @@ class PlaybackController {
             setDucking(false)
             return
         }
-        if (autocanonizer.isRunning()) {
-            autocanonizer.pause()
-        } else {
-            engine.pauseJukebox()
-        }
+        activeExternalTransport()?.pause() ?: engine.pauseJukebox()
         markTransportPaused()
         setDucking(false)
         playbackStateChangedBroadcaster?.invoke()
+    }
+
+    /** The play mode transport running or paused outside the jukebox engine, if any. */
+    fun activeExternalTransport(): ExternalTransport? {
+        return listOf<ExternalTransport>(autocanonizer, wubMachine)
+            .firstOrNull { it.isRunning() || it.isPaused() }
+    }
+
+    /** Stops every transport that plays outside the jukebox engine. */
+    fun stopExternalTransports() {
+        autocanonizer.stop()
+        wubMachine.stop()
     }
 
     fun isPlaying(): Boolean = transportState == TransportState.Playing
@@ -363,11 +371,20 @@ class PlaybackController {
         return totalMs / 1000.0
     }
 
+    // The remix plays on its own player; the jukebox and autocanonizer share the main one.
     fun getPlaybackPositionMs(): Long {
-        return (player.getCurrentTime() * 1000.0).toLong()
+        val seconds = if (wubMachine.isRunning() || wubMachine.isPaused()) {
+            wubMachine.position()
+        } else {
+            player.getCurrentTime()
+        }
+        return (seconds * 1000.0).toLong()
     }
 
     fun getTrackDurationMs(): Long? {
+        if (wubMachine.isRunning() || wubMachine.isPaused()) {
+            return (wubMachine.durationSeconds() * 1000.0).toLong()
+        }
         return player.getDurationSeconds()?.let { (it * 1000.0).toLong() }
     }
 

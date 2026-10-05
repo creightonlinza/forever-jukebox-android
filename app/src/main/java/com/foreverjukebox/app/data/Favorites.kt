@@ -1,19 +1,22 @@
 package com.foreverjukebox.app.data
 
 import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * Where a favorite's audio came from, as the web app spells it on the wire. Values this build does
+ * not know are kept verbatim so a sync round trip never rewrites them; compare against the
+ * constants rather than enumerating.
+ */
 @Serializable
-enum class FavoriteSourceType {
-    @SerialName("youtube")
-    Youtube,
-    @SerialName("soundcloud")
-    SoundCloud,
-    @SerialName("bandcamp")
-    Bandcamp,
-    @SerialName("upload")
-    Upload
+@JvmInline
+value class FavoriteSourceType(val wireName: String) {
+    companion object {
+        val Youtube = FavoriteSourceType("youtube")
+        val SoundCloud = FavoriteSourceType("soundcloud")
+        val Bandcamp = FavoriteSourceType("bandcamp")
+        val Upload = FavoriteSourceType("upload")
+    }
 }
 
 fun favoriteSourceTypeFromProvider(raw: String?): FavoriteSourceType? = when (sourceProviderFromRaw(raw)) {
@@ -24,14 +27,19 @@ fun favoriteSourceTypeFromProvider(raw: String?): FavoriteSourceType? = when (so
     else -> null
 }
 
+/**
+ * Play mode a favorite or playlist entry was saved in, as spelled on the wire. A mode this build
+ * does not know is kept verbatim (and plays as jukebox, see toPlaybackMode) so syncing from a
+ * newer web or Android version never downgrades it on the server.
+ */
 @Serializable
-enum class FavoritePlayMode {
-    @SerialName("jukebox")
-    Jukebox,
-    @SerialName("autocanonizer")
-    Autocanonizer,
-    @SerialName("wubmachine")
-    WubMachine
+@JvmInline
+value class FavoritePlayMode(val wireName: String) {
+    companion object {
+        val Jukebox = FavoritePlayMode("jukebox")
+        val Autocanonizer = FavoritePlayMode("autocanonizer")
+        val WubMachine = FavoritePlayMode("wubmachine")
+    }
 }
 
 @Serializable

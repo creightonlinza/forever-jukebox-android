@@ -140,4 +140,12 @@ class PlaybackModeChangeTest {
         assertEquals(90.0, after.wubMachine.durationSeconds, 0.0)
         assertEquals(true, after.wubMachine.loop)
     }
+
+    @Test
+    fun modeChangeClearsAFailedRenderSoReturningRendersAgain() {
+        val before = PlaybackState(wubRenderFailed = true)
+
+        assertEquals(false, playbackStateAfterModeChange(before, preserveTransportState = false).wubRenderFailed)
+        assertEquals(false, playbackStateAfterModeChange(before, preserveTransportState = true).wubRenderFailed)
+    }
 }

@@ -255,12 +255,12 @@ internal fun isPlayRequestWithoutAudio(
     action: PlaybackAction,
     hasAudio: Boolean,
     isPlaying: Boolean,
-    autocanonizerActive: Boolean
+    externalTransportActive: Boolean
 ): Boolean {
     if (action != PlaybackAction.Play && action != PlaybackAction.Toggle) {
         return false
     }
-    return !hasAudio && !isPlaying && !autocanonizerActive
+    return !hasAudio && !isPlaying && !externalTransportActive
 }
 
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
@@ -891,15 +891,15 @@ class ForegroundPlaybackService : Service() {
             return
         }
         val controller = PlaybackControllerHolder.get(this)
-        val autocanonizer = controller.autocanonizer
-        val autocanonizerRunning = autocanonizer.isRunning()
-        val autocanonizerPaused = autocanonizer.isPaused()
+        val external = controller.activeExternalTransport()
+        val externalRunning = external?.isRunning() == true
+        val externalPaused = external?.isPaused() == true
         if (
             isPlayRequestWithoutAudio(
                 action = action,
                 hasAudio = controller.player.hasAudio(),
                 isPlaying = controller.isPlaying(),
-                autocanonizerActive = autocanonizerRunning || autocanonizerPaused
+                externalTransportActive = external != null
             )
         ) {
             AppLog.warn(TAG, "Ignoring $action press: no audio loaded")
@@ -915,11 +915,11 @@ class ForegroundPlaybackService : Service() {
         }
         when (action) {
             PlaybackAction.Play -> {
-                if (autocanonizerRunning) {
+                if (externalRunning) {
                     updateNotification(buildLocalNotificationState(true))
-                } else if (autocanonizerPaused) {
+                } else if (externalPaused) {
                     val resumed = controller.requestAudioFocusForLocalPlayback() &&
-                        autocanonizer.resume()
+                        external?.resume() == true
                     if (resumed) {
                         controller.startExternalPlayback(resetTimers = false)
                     }
@@ -932,8 +932,8 @@ class ForegroundPlaybackService : Service() {
                 }
             }
             PlaybackAction.Pause -> {
-                if (autocanonizerRunning) {
-                    autocanonizer.pause()
+                if (externalRunning) {
+                    external?.pause()
                     controller.pauseExternalPlayback()
                 } else {
                     // Idempotent when already paused/stopped; also cancels a play
@@ -944,18 +944,18 @@ class ForegroundPlaybackService : Service() {
             }
             PlaybackAction.Stop -> {
                 controller.stopPlayback()
-                autocanonizer.stop()
+                controller.stopExternalTransports()
                 controller.stopExternalPlayback()
                 updateNotification(buildLocalNotificationState(false))
             }
             PlaybackAction.Toggle -> {
-                if (autocanonizerRunning) {
-                    autocanonizer.pause()
+                if (externalRunning) {
+                    external?.pause()
                     controller.pauseExternalPlayback()
                     updateNotification(buildLocalNotificationState(false))
-                } else if (autocanonizerPaused) {
+                } else if (externalPaused) {
                     val resumed = controller.requestAudioFocusForLocalPlayback() &&
-                        autocanonizer.resume()
+                        external?.resume() == true
                     if (resumed) {
                         controller.startExternalPlayback(resetTimers = false)
                     }
@@ -1152,7 +1152,7 @@ class ForegroundPlaybackService : Service() {
         clearSleepTimer()
         val controller = PlaybackControllerHolder.get(this)
         controller.stopPlayback()
-        controller.autocanonizer.stop()
+        controller.stopExternalTransports()
         controller.stopExternalPlayback()
         if (activeMode == NotificationMode.Cast) {
             castController.sendCommand(PlaybackServiceConstants.CAST_COMMAND_NAMESPACE, "stop")

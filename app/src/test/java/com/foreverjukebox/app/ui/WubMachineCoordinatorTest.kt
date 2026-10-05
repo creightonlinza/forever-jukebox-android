@@ -258,6 +258,28 @@ class WubMachineCoordinatorTest {
     }
 
     @Test
+    fun renderFinishingAfterTrackChangeIsNotCreditedToTheNewTrack() = runTest {
+        val harness = Harness(this)
+        harness.update { wubTrack(jobId = "job-a") }
+        harness.renderer.midRender = {
+            // Track B's state lands during A's last slice; sync() has not run yet. The
+            // player dropped A's remix with the track, so A's install is refused.
+            harness.renderer.result = false
+            harness.renderer.midRender = { harness.renderer.result = true }
+            harness.update { wubTrack(jobId = "job-b") }
+        }
+
+        harness.coordinator.sync()
+        advanceUntilIdle()
+
+        // A's result is neither B's remix nor B's failure; B gets its own render.
+        assertEquals(2, harness.renderer.renders.size)
+        assertEquals(0, harness.failures)
+        assertTrue(harness.playback.wubReady)
+        assertEquals(listOf(true, false, true, false), harness.blocked)
+    }
+
+    @Test
     fun repeatedSyncDoesNotRestartSameRender() = runTest {
         val harness = Harness(this)
         harness.update { wubTrack() }

@@ -236,7 +236,7 @@ class ApiModelsContractTest {
     }
 
     @Test
-    fun favoritesSyncPayloadTreatsUnknownEnumValuesAsAbsent() {
+    fun favoritesSyncPayloadKeepsUnknownWireValuesVerbatim() {
         val payload = """
             {
               "favorites": [
@@ -254,8 +254,12 @@ class ApiModelsContractTest {
         val decoded = tolerantJson().decodeFromString(FavoritesSyncPayload.serializer(), payload)
 
         assertEquals(1, decoded.favorites.size)
-        assertNull(decoded.favorites.first().playMode)
-        assertNull(decoded.favorites.first().sourceType)
+        assertEquals(FavoritePlayMode("futuremode"), decoded.favorites.first().playMode)
+        assertEquals(FavoriteSourceType("mixcloud"), decoded.favorites.first().sourceType)
+        // A sync that writes the list back must not downgrade what it did not understand.
+        val encoded = tolerantJson().encodeToString(FavoritesSyncPayload.serializer(), decoded)
+        assertTrue(encoded.contains("\"playMode\":\"futuremode\""))
+        assertTrue(encoded.contains("\"sourceType\":\"mixcloud\""))
     }
 
     @Test
