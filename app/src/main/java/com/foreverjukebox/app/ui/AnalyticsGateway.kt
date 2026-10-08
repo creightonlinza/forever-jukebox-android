@@ -44,6 +44,7 @@ interface AnalyticsGateway {
 fun analyticsPlayMode(mode: PlaybackMode): String = when (mode) {
     PlaybackMode.Jukebox -> "jukebox"
     PlaybackMode.Autocanonizer -> "autocanonizer"
+    PlaybackMode.WubMachine -> "wubmachine"
 }
 
 fun analyticsSelectSource(tab: TopSongsTab): String = when (tab) {

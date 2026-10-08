@@ -19,13 +19,10 @@ import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
 class ApiClient(
-    private val json: Json = Json { ignoreUnknownKeys = true },
+    private val json: Json = tolerantJson(),
     private val githubApiBaseUrl: String = DEFAULT_GITHUB_API_BASE_URL
 ) {
-    private val jsonWithDefaults = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
+    private val jsonWithDefaults = tolerantJson { encodeDefaults = true }
     private val client = sharedClient
 
     suspend fun searchSpotify(baseUrl: String, query: String): List<SpotifySearchItem> {

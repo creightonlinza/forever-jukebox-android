@@ -238,6 +238,12 @@ extensions.configure<ApplicationExtension>("android") {
         }
     }
 
+    androidResources {
+        // The Wub Machine samples are opened through AssetFileDescriptor, which needs them
+        // stored uncompressed.
+        noCompress.add("webm")
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true

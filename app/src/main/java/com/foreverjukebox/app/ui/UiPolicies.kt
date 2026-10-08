@@ -145,10 +145,13 @@ internal fun favoriteActionContentDescription(
 }
 
 internal const val PREPARING_SWING_LABEL = "Preparing Swing mode"
+internal const val PREPARING_WUB_MACHINE_LABEL = "Building the Wub Machine remix"
+internal const val WUB_MACHINE_FAILED_MESSAGE = "The Wub Machine remix failed. Press play to try again."
 
 internal fun playbackTransportContentDescription(playback: PlaybackState): String {
     return when {
         playback.isPreparingSwing() -> PREPARING_SWING_LABEL
+        playback.isPreparingWubMachine() -> PREPARING_WUB_MACHINE_LABEL
         playback.isRunning -> "Pause"
         playback.isPaused -> "Resume"
         else -> "Play"
@@ -175,6 +178,7 @@ internal fun buildPlayTitle(
     }
     val resolvedTitle = when {
         playMode == PlaybackMode.Autocanonizer -> "$title (autocanonized)"
+        playMode == PlaybackMode.WubMachine -> "$title (wub machine remix)"
         audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
         else -> title
     }
@@ -212,10 +216,11 @@ internal fun playbackSummaryLine(playback: PlaybackState): String? {
     if (playback.isCasting) {
         return null
     }
-    return if (playback.playMode == PlaybackMode.Autocanonizer) {
-        "Listen Time: ${playback.listenTime}"
-    } else {
+    // Only the jukebox counts beats; the other modes play linearly.
+    return if (playback.playMode == PlaybackMode.Jukebox) {
         "Listen Time: ${playback.listenTime} - Total Beats: ${playback.beatsPlayed}"
+    } else {
+        "Listen Time: ${playback.listenTime}"
     }
 }
 

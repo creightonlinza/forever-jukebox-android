@@ -96,6 +96,7 @@ data class TopSongsResponse(
 
 @Serializable
 data class FavoritesSyncRequest(
+    @Serializable(with = LenientFavoriteTrackListSerializer::class)
     val favorites: List<FavoriteTrack> = emptyList()
 )
 
@@ -103,11 +104,13 @@ data class FavoritesSyncRequest(
 data class FavoritesSyncResponse(
     val code: String? = null,
     val count: Int? = null,
+    @Serializable(with = LenientFavoriteTrackListSerializer::class)
     val favorites: List<FavoriteTrack> = emptyList()
 )
 
 @Serializable
 data class FavoritesSyncPayload(
+    @Serializable(with = LenientFavoriteTrackListSerializer::class)
     val favorites: List<FavoriteTrack> = emptyList()
 )
 

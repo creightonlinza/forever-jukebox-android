@@ -5,21 +5,25 @@ import com.foreverjukebox.app.playback.PlaybackController
 internal data class ModeTransportPlan(
     val stopAllTransports: Boolean,
     val stopAutocanonizerWhileIdle: Boolean,
+    val stopWubMachineWhileIdle: Boolean,
     val invokeOnStopped: Boolean,
     val clearAutocanonizerAudio: Boolean
 )
 
+// The autocanonizer's second copy of the audio is dropped whenever the mode moves on; the
+// Wub Machine keeps its remix so returning to the mode needs no second render.
 internal fun resolveModeTransportPlan(
     previousMode: PlaybackMode,
     targetMode: PlaybackMode,
     isRunning: Boolean
 ): ModeTransportPlan {
     val clearAutocanonizerAudio =
-        previousMode == PlaybackMode.Autocanonizer && targetMode == PlaybackMode.Jukebox
+        previousMode == PlaybackMode.Autocanonizer && targetMode != PlaybackMode.Autocanonizer
     if (isRunning) {
         return ModeTransportPlan(
             stopAllTransports = true,
             stopAutocanonizerWhileIdle = false,
+            stopWubMachineWhileIdle = false,
             invokeOnStopped = true,
             clearAutocanonizerAudio = clearAutocanonizerAudio
         )
@@ -27,6 +31,7 @@ internal fun resolveModeTransportPlan(
     return ModeTransportPlan(
         stopAllTransports = false,
         stopAutocanonizerWhileIdle = previousMode == PlaybackMode.Autocanonizer,
+        stopWubMachineWhileIdle = previousMode == PlaybackMode.WubMachine,
         invokeOnStopped = false,
         clearAutocanonizerAudio = clearAutocanonizerAudio
     )
@@ -50,6 +55,10 @@ internal fun stopTransportForModeChange(
 
     if (plan.stopAutocanonizerWhileIdle) {
         controller.autocanonizer.stop()
+        controller.stopExternalPlayback()
+    }
+    if (plan.stopWubMachineWhileIdle) {
+        controller.wubMachine.stop()
         controller.stopExternalPlayback()
     }
     return plan
@@ -80,9 +89,13 @@ internal fun playbackStateAfterModeChange(
     playback: PlaybackState,
     preserveTransportState: Boolean
 ): PlaybackState {
+    // A failed render is retried on the way back into Wub Machine rather than leaving the
+    // mode with nothing to show.
     if (preserveTransportState) {
         return playback.copy(
-            autocanonizer = playback.autocanonizer.withResetCursorTimes()
+            autocanonizer = playback.autocanonizer.withResetCursorTimes(),
+            wubRenderFailed = false,
+            wubMachine = playback.wubMachine.copy(positionSeconds = 0.0)
         )
     }
     return playback.copy(
@@ -93,6 +106,8 @@ internal fun playbackStateAfterModeChange(
         canonizerOtherIndex = null,
         lastJumpFromIndex = null,
         jumpLine = null,
-        autocanonizer = playback.autocanonizer.withResetCursorTimes()
+        autocanonizer = playback.autocanonizer.withResetCursorTimes(),
+        wubRenderFailed = false,
+        wubMachine = playback.wubMachine.copy(positionSeconds = 0.0)
     )
 }

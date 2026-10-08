@@ -23,13 +23,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
+import kotlin.math.min
 
 /**
  * Owns the offline audio-export pipeline: plans a fresh jukebox path from the
  * cached local analysis, renders it through the native DSP on a second player
  * instance, encodes to M4A, and publishes the result to the Music collection.
- * Live playback is untouched and keeps running throughout.
+ * In Wub Machine mode the rendered remix is encoded as is. Live playback is
+ * untouched and keeps running throughout.
  */
 class ExportCoordinator(
     private val scope: CoroutineScope,
@@ -54,6 +57,10 @@ class ExportCoordinator(
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val state = getState()
         if (!shouldShowExportAction(state.appMode, state.playback, Build.VERSION.SDK_INT)) return
+        if (state.playback.playMode == PlaybackMode.WubMachine) {
+            startWubMachineExport(state)
+            return
+        }
         val jsonPath = state.localAnalysisJsonPath
         if (jsonPath.isNullOrBlank()) {
             setError("Track analysis is unavailable for export.")
@@ -75,6 +82,33 @@ class ExportCoordinator(
             return
         }
         val request = buildRequest(state, jsonPath, clampExportDurationSeconds(durationSeconds))
+        launchExport(request)
+    }
+
+    // The remix is already rendered, so the export is a straight encode of its PCM.
+    private fun startWubMachineExport(state: UiState) {
+        val remix = controller.wubMachine.player.audioPlayer
+        if (!remix.hasAudio()) {
+            setError("The Wub Machine remix is not ready yet.")
+            return
+        }
+        if (remix.getSampleRate() > M4aExportEncoder.MAX_AAC_SAMPLE_RATE ||
+            remix.getChannelCount() > M4aExportEncoder.MAX_AAC_CHANNELS
+        ) {
+            setError("This track's audio format can't be exported.")
+            return
+        }
+        val title = state.playback.trackTitle?.takeIf { it.isNotBlank() } ?: state.localSelectedFileName
+        launchExport(
+            ExportRequest.WubMachine(
+                displayName = ExportedAudioStore.buildDisplayName(title, ExportedAudioStore.WUB_MACHINE_SUFFIX),
+                title = title,
+                artist = state.playback.trackArtist
+            )
+        )
+    }
+
+    private fun launchExport(request: ExportRequest) {
         val generation = exportGeneration.incrementAndGet()
         updateState { it.copy(export = ExportUiState(isExporting = true)) }
         exportJob = scope.launch(Dispatchers.Default) {
@@ -105,7 +139,7 @@ class ExportCoordinator(
             ?.map { it.src.which to it.dest.which }
             ?.toSet()
             .orEmpty()
-        return ExportRequest(
+        return ExportRequest.Jukebox(
             jsonPath = jsonPath,
             durationSeconds = durationSeconds,
             config = engine.getConfig(),
@@ -158,6 +192,64 @@ class ExportCoordinator(
 
     private suspend fun renderToFile(
         request: ExportRequest,
+        tempFile: File,
+        generation: Int,
+        extendTimeout: () -> Unit
+    ) {
+        when (request) {
+            is ExportRequest.Jukebox -> renderJukeboxToFile(request, tempFile, generation, extendTimeout)
+            is ExportRequest.WubMachine -> renderWubMachineToFile(tempFile, generation, extendTimeout)
+        }
+    }
+
+    private fun reportProgress(generation: Int, rendered: Long, total: Long, extendTimeout: () -> Unit) {
+        val percent = if (total > 0) (rendered * 100 / total).toInt().coerceIn(0, 99) else 0
+        extendTimeout()
+        updateExportState(generation) { if (it.progressPercent == percent) it else it.copy(progressPercent = percent) }
+    }
+
+    // Pumps the remix through an offline clone with every effect off, so the file holds the
+    // remix exactly as it plays.
+    private suspend fun renderWubMachineToFile(
+        tempFile: File,
+        generation: Int,
+        extendTimeout: () -> Unit
+    ) {
+        val offline = BufferedAudioPlayer(offline = true)
+        try {
+            check(offline.cloneAudioFrom(controller.wubMachine.player.audioPlayer)) { "No remix to export" }
+            offline.setDucking(false)
+            offline.setJukeboxAudioMode(JukeboxAudioMode.Off)
+            val encoder = M4aExportEncoder(
+                sampleRate = offline.getSampleRate(),
+                channelCount = offline.getChannelCount(),
+                outputFile = tempFile
+            )
+            try {
+                val totalFrames = offline.getFrameCount().toLong()
+                val chunk = ShortArray(WUB_EXPORT_CHUNK_FRAMES * offline.getChannelCount())
+                var rendered = 0L
+                offline.seek(0.0)
+                while (rendered < totalFrames) {
+                    yield()
+                    val frames = min(WUB_EXPORT_CHUNK_FRAMES.toLong(), totalFrames - rendered).toInt()
+                    val got = offline.renderOffline(chunk, frames)
+                    check(got > 0) { "Export render made no progress" }
+                    encoder.writePcm(chunk, got)
+                    rendered += got
+                    reportProgress(generation, rendered, totalFrames, extendTimeout)
+                }
+                encoder.finish()
+            } finally {
+                encoder.release()
+            }
+        } finally {
+            offline.release()
+        }
+    }
+
+    private suspend fun renderJukeboxToFile(
+        request: ExportRequest.Jukebox,
         tempFile: File,
         generation: Int,
         extendTimeout: () -> Unit
@@ -237,19 +329,32 @@ class ExportCoordinator(
         updateState { it.copy(export = it.export.copy(errorMessage = message)) }
     }
 
-    private data class ExportRequest(
-        val jsonPath: String,
-        val durationSeconds: Int,
-        val config: JukeboxConfig,
-        val deletedEdgePairs: Set<Pair<Int, Int>>,
-        val userAnchorPair: Pair<Int, Int>?,
-        val sectionStartBeatIndices: List<Int>,
-        val displayName: String,
-        val title: String?,
+    private sealed interface ExportRequest {
+        val displayName: String
+        val title: String?
         val artist: String?
-    )
+
+        data class Jukebox(
+            val jsonPath: String,
+            val durationSeconds: Int,
+            val config: JukeboxConfig,
+            val deletedEdgePairs: Set<Pair<Int, Int>>,
+            val userAnchorPair: Pair<Int, Int>?,
+            val sectionStartBeatIndices: List<Int>,
+            override val displayName: String,
+            override val title: String?,
+            override val artist: String?
+        ) : ExportRequest
+
+        data class WubMachine(
+            override val displayName: String,
+            override val title: String?,
+            override val artist: String?
+        ) : ExportRequest
+    }
 
     private companion object {
         const val TEMP_EXPORT_DIR = "export"
+        const val WUB_EXPORT_CHUNK_FRAMES = 4096
     }
 }

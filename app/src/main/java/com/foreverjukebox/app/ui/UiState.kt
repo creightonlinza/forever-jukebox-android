@@ -13,6 +13,7 @@ import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.net.CleartextPolicy
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
+import com.foreverjukebox.app.wubmachine.WubRenderedPart
 import java.net.URI
 import kotlinx.serialization.Serializable
 
@@ -41,23 +42,32 @@ enum class SearchPanelTab {
     Upload
 }
 
-enum class PlaybackMode {
-    Jukebox,
-    Autocanonizer
+enum class PlaybackMode(val label: String) {
+    Jukebox("Jukebox"),
+    Autocanonizer("Autocanonizer"),
+    WubMachine("Wub Machine")
 }
 
-// Only autocanonizer is persisted explicitly; jukebox is the implicit default and
-// maps to null so untagged/legacy tracks fall back to jukebox on the way back in.
+/** Order of the play-mode menus, matching the web app's select. */
+val playModeMenuOrder: List<PlaybackMode> =
+    listOf(PlaybackMode.Jukebox, PlaybackMode.Autocanonizer, PlaybackMode.WubMachine)
+
+const val WUB_MACHINE_LOOP_LABEL = "Loop the track"
+
+// Jukebox is the implicit default and maps to null so untagged/legacy tracks fall
+// back to jukebox on the way back in; the other modes are persisted explicitly.
 fun PlaybackMode.toFavoritePlayModeOrNull(): FavoritePlayMode? = when (this) {
     PlaybackMode.Autocanonizer -> FavoritePlayMode.Autocanonizer
+    PlaybackMode.WubMachine -> FavoritePlayMode.WubMachine
     PlaybackMode.Jukebox -> null
 }
 
-// Legacy favorites predate autocanonizer favorites and decode to a null
-// playMode; treat them as jukebox.
+// Legacy favorites predate autocanonizer favorites and decode to a null playMode; they and
+// modes this build does not know play as jukebox.
 fun FavoritePlayMode?.toPlaybackMode(): PlaybackMode = when (this) {
     FavoritePlayMode.Autocanonizer -> PlaybackMode.Autocanonizer
-    FavoritePlayMode.Jukebox, null -> PlaybackMode.Jukebox
+    FavoritePlayMode.WubMachine -> PlaybackMode.WubMachine
+    else -> PlaybackMode.Jukebox
 }
 
 enum class JukeboxAudioMode(
@@ -245,6 +255,17 @@ data class AutocanonizerUiState(
     val trackDurationSeconds: Double = 0.0
 )
 
+/** The rendered Wub Machine remix and the playhead over it. */
+data class WubMachineUiState(
+    val parts: List<WubRenderedPart> = emptyList(),
+    // Waveform peaks of the remix, one per bin across its length.
+    val peaks: List<Float> = emptyList(),
+    val durationSeconds: Double = 0.0,
+    val positionSeconds: Double = 0.0,
+    // Repeat the body of the remix (between its intro and ending) instead of ending.
+    val loop: Boolean = false
+)
+
 /**
  * Sender-owned phase of pushing a track to the cast receiver. Written only by the sender-side cast
  * code; [reduceCastStatus] never sets it and only clears it once the receiver reports status for
@@ -281,6 +302,13 @@ data class PlaybackState(
     val swingReady: Boolean = false,
     // Percent complete of the swing render in flight; null when none is running.
     val swingProgress: Int? = null,
+    // True once the Wub Machine player holds the loaded track's remix.
+    val wubReady: Boolean = false,
+    // Percent complete of the remix render in flight; null when none is running.
+    val wubProgress: Int? = null,
+    // Set when the last remix render failed; the next play request clears it and retries.
+    val wubRenderFailed: Boolean = false,
+    val wubMachine: WubMachineUiState = WubMachineUiState(),
     val playAfterLoaded: Boolean = false,
     val isRunning: Boolean = false,
     val isPaused: Boolean = false,
@@ -509,7 +537,7 @@ fun shouldStartPlayAfterLoaded(playback: PlaybackState): Boolean {
         playback.analysisLoaded &&
         !playback.isLoading() &&
         playback.analysisErrorMessage.isNullOrBlank() &&
-        !playback.isPreparingSwing() &&
+        !playback.isPreparingRenderedAudio() &&
         !playback.isRunning
 }
 
@@ -533,6 +561,23 @@ fun PlaybackState.isPreparingSwing(): Boolean {
         analysisLoaded &&
         !swingReady
 }
+
+/**
+ * The Wub Machine plays a rendered remix of the track. From the moment a loaded track has
+ * the mode selected until that remix exists, playback waits. A failed render stops the wait
+ * until the next play request retries it.
+ */
+fun PlaybackState.isPreparingWubMachine(): Boolean {
+    return !isCasting &&
+        playMode == PlaybackMode.WubMachine &&
+        audioLoaded &&
+        analysisLoaded &&
+        !wubReady &&
+        !wubRenderFailed
+}
+
+/** Playback is waiting on a rendered copy of the track in whichever mode needs one. */
+fun PlaybackState.isPreparingRenderedAudio(): Boolean = isPreparingSwing() || isPreparingWubMachine()
 
 fun PlaybackState.isTrackLoading(): Boolean {
     return isLoading() || isCastLoading || castTransfer != null || castPlaybackState == "loading"
@@ -653,18 +698,24 @@ const val EXPORT_MAX_DURATION_SECONDS = 2 * 60 * 60
 
 /**
  * Whether the audio-export action is available: Local mode on a device with the
- * scoped-storage pending-entry flow (API 29+), jukebox playback (autocanonizer
- * export is unsupported), and a fully loaded, non-casting track.
+ * scoped-storage pending-entry flow (API 29+), jukebox playback or a rendered Wub
+ * Machine remix (autocanonizer export is unsupported), and a fully loaded,
+ * non-casting track.
  */
 fun shouldShowExportAction(
     mode: AppMode?,
     playback: PlaybackState,
     sdkInt: Int
 ): Boolean {
+    val exportableMode = when (playback.playMode) {
+        PlaybackMode.Jukebox -> true
+        PlaybackMode.WubMachine -> playback.wubReady
+        PlaybackMode.Autocanonizer -> false
+    }
     return mode == AppMode.Local &&
         sdkInt >= EXPORT_MIN_SDK &&
         !playback.isCasting &&
-        playback.playMode == PlaybackMode.Jukebox &&
+        exportableMode &&
         playback.audioLoaded &&
         playback.analysisLoaded &&
         !playback.isTrackLoading()

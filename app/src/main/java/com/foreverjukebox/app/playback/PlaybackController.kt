@@ -9,6 +9,8 @@ import com.foreverjukebox.app.audio.CowbellOverlayController
 import com.foreverjukebox.app.audio.NativeCowbellOverlayController
 import com.foreverjukebox.app.audio.NoOpCowbellOverlayController
 import com.foreverjukebox.app.autocanonizer.AutocanonizerController
+import com.foreverjukebox.app.wubmachine.WubMachineController
+import com.foreverjukebox.app.wubmachine.WubMachinePlayer
 import com.foreverjukebox.app.autocanonizer.BufferedAutocanonizerPlayer
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.JukeboxEngineOptions
@@ -50,6 +52,8 @@ class PlaybackController {
     private val autocanonizerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val autocanonizerPlayer = BufferedAutocanonizerPlayer(player)
     val autocanonizer = AutocanonizerController(autocanonizerPlayer, autocanonizerScope)
+    // The remix plays on its own player so the jukebox player's audio modes never touch it.
+    val wubMachine = WubMachineController(WubMachinePlayer(), autocanonizerScope)
     private var audioFocusController: PlaybackAudioFocusController =
         NoOpPlaybackAudioFocusController
     private var cowbellOverlay: CowbellOverlayController = NoOpCowbellOverlayController
@@ -113,6 +117,7 @@ class PlaybackController {
         duckingActive = active
         player.setDucking(active)
         autocanonizer.setDucking(active)
+        wubMachine.setDucking(active)
         cowbellOverlay.setVolume(if (active) DUCKED_VOLUME else NORMAL_VOLUME)
     }
 
@@ -338,14 +343,22 @@ class PlaybackController {
             setDucking(false)
             return
         }
-        if (autocanonizer.isRunning()) {
-            autocanonizer.pause()
-        } else {
-            engine.pauseJukebox()
-        }
+        activeExternalTransport()?.pause() ?: engine.pauseJukebox()
         markTransportPaused()
         setDucking(false)
         playbackStateChangedBroadcaster?.invoke()
+    }
+
+    /** The play mode transport running or paused outside the jukebox engine, if any. */
+    fun activeExternalTransport(): ExternalTransport? {
+        return listOf<ExternalTransport>(autocanonizer, wubMachine)
+            .firstOrNull { it.isRunning() || it.isPaused() }
+    }
+
+    /** Stops every transport that plays outside the jukebox engine. */
+    fun stopExternalTransports() {
+        autocanonizer.stop()
+        wubMachine.stop()
     }
 
     fun isPlaying(): Boolean = transportState == TransportState.Playing
@@ -358,11 +371,20 @@ class PlaybackController {
         return totalMs / 1000.0
     }
 
+    // The remix plays on its own player; the jukebox and autocanonizer share the main one.
     fun getPlaybackPositionMs(): Long {
-        return (player.getCurrentTime() * 1000.0).toLong()
+        val seconds = if (wubMachine.isRunning() || wubMachine.isPaused()) {
+            wubMachine.position()
+        } else {
+            player.getCurrentTime()
+        }
+        return (seconds * 1000.0).toLong()
     }
 
     fun getTrackDurationMs(): Long? {
+        if (wubMachine.isRunning() || wubMachine.isPaused()) {
+            return (wubMachine.durationSeconds() * 1000.0).toLong()
+        }
         return player.getDurationSeconds()?.let { (it * 1000.0).toLong() }
     }
 
@@ -400,6 +422,7 @@ class PlaybackController {
         audioFocusController.abandonAudioFocus()
         cowbellOverlay.cancelScheduledHits()
         autocanonizer.release()
+        wubMachine.release()
         player.release()
     }
 

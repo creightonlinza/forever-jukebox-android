@@ -105,6 +105,10 @@ internal fun PlaybackState.resetForNewTrack(keepLoadVisible: Boolean): PlaybackS
         analysisLoaded = false,
         swingReady = false,
         swingProgress = null,
+        wubReady = false,
+        wubProgress = null,
+        wubRenderFailed = false,
+        wubMachine = WubMachineUiState(loop = wubMachine.loop),
         playAfterLoaded = false,
         beatsPlayed = 0,
         listenTime = "00:00:00",
@@ -910,6 +914,7 @@ class PlaybackCoordinator(
         transientDecodeFailureJobId = null
         transientDecodeFailureError = null
         controller.autocanonizer.reset()
+        controller.wubMachine.clear()
         controller.stopExternalPlayback()
         controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
         controller.setCowbellSectionStartBeatIndices(emptyList())
@@ -1003,12 +1008,22 @@ class PlaybackCoordinator(
         )
         val currentTime = controller.player.getCurrentTime()
         val beatIndex = if (hasAnalysis) engine.getBeatAtTime(currentTime)?.which ?: -1 else -1
+        val restoredRemix = controller.wubMachine.remix()
         updateState {
             it.copy(
                 playback = it.playback.copy(
                     audioLoaded = hasAudio,
                     analysisLoaded = hasAnalysis,
                     swingReady = controller.player.hasSwingAudio(),
+                    wubReady = restoredRemix != null,
+                    wubMachine = restoredRemix?.let { remix ->
+                        it.playback.wubMachine.copy(
+                            parts = remix.parts,
+                            peaks = remix.peaks,
+                            durationSeconds = remix.durationSeconds,
+                            positionSeconds = controller.wubMachine.position()
+                        )
+                    } ?: it.playback.wubMachine,
                     vizData = vizData,
                     autocanonizerData = autocanonizerData,
                     playTitle = playTitle,

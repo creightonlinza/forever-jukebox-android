@@ -6,6 +6,7 @@ import com.foreverjukebox.app.playback.PlaybackController
 internal interface TransportStopControls {
     fun stopJukeboxPlayback()
     fun stopAutocanonizerPlayback()
+    fun stopWubMachinePlayback()
     fun stopExternalPlayback()
 }
 
@@ -18,6 +19,10 @@ private class PlaybackControllerStopControls(
 
     override fun stopAutocanonizerPlayback() {
         controller.autocanonizer.stop()
+    }
+
+    override fun stopWubMachinePlayback() {
+        controller.wubMachine.stop()
     }
 
     override fun stopExternalPlayback() {
@@ -78,6 +83,7 @@ internal data class JukeboxBeatSelectResult(
 internal fun stopAllPlaybackTransports(controls: TransportStopControls) {
     controls.stopJukeboxPlayback()
     controls.stopAutocanonizerPlayback()
+    controls.stopWubMachinePlayback()
     controls.stopExternalPlayback()
 }
 

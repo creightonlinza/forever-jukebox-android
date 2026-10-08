@@ -168,6 +168,8 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     onSetPlaybackMode = viewModel::selectPlaybackMode,
                     onSetVisualization = viewModel::setActiveVisualization,
                     onSelectBeat = viewModel::selectBeat,
+                    onSelectWubMachinePosition = viewModel::selectWubMachinePosition,
+                    onSetWubMachineLoop = viewModel::setWubMachineLoop,
                     onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
                     onSkipNext = viewModel::skipToNextPlaylistTrack
                 )

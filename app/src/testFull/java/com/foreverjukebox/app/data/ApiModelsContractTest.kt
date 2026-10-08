@@ -234,4 +234,52 @@ class ApiModelsContractTest {
         )
         assertNull(favoriteUniqueSongIdFromTrackId("src:youtube:"))
     }
+
+    @Test
+    fun favoritesSyncPayloadKeepsUnknownWireValuesVerbatim() {
+        val payload = """
+            {
+              "favorites": [
+                {
+                  "uniqueSongId": "dQw4w9WgXcQ",
+                  "title": "Track",
+                  "artist": "Artist",
+                  "sourceType": "mixcloud",
+                  "playMode": "futuremode"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val decoded = tolerantJson().decodeFromString(FavoritesSyncPayload.serializer(), payload)
+
+        assertEquals(1, decoded.favorites.size)
+        assertEquals(FavoritePlayMode("futuremode"), decoded.favorites.first().playMode)
+        assertEquals(FavoriteSourceType("mixcloud"), decoded.favorites.first().sourceType)
+        // A sync that writes the list back must not downgrade what it did not understand.
+        val encoded = tolerantJson().encodeToString(FavoritesSyncPayload.serializer(), decoded)
+        assertTrue(encoded.contains("\"playMode\":\"futuremode\""))
+        assertTrue(encoded.contains("\"sourceType\":\"mixcloud\""))
+    }
+
+    @Test
+    fun favoritesSyncResponseDropsOnlyMalformedEntries() {
+        val payload = """
+            {
+              "code": "ABCD",
+              "count": 3,
+              "favorites": [
+                {"uniqueSongId": "one", "title": "One", "artist": "A"},
+                {"uniqueSongId": "two"},
+                {"uniqueSongId": "three", "title": "Three", "artist": "C", "duration": null}
+              ]
+            }
+        """.trimIndent()
+
+        val decoded = tolerantJson().decodeFromString(FavoritesSyncResponse.serializer(), payload)
+
+        assertEquals("ABCD", decoded.code)
+        assertEquals(listOf("one", "three"), decoded.favorites.map { it.uniqueSongId })
+        assertNull(decoded.favorites.last().duration)
+    }
 }

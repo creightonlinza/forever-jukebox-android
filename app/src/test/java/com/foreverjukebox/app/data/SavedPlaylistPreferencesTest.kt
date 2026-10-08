@@ -60,4 +60,48 @@ class SavedPlaylistPreferencesTest {
         assertTrue(decodeSavedPlaylist("[not-json").tracks.isEmpty())
         assertTrue(decodeSavedPlaylist(null).tracks.isEmpty())
     }
+
+    @Test
+    fun decodeSavedPlaylistKeepsUnknownPlayModeVerbatim() {
+        val raw = """{"tracks":[{"id":"yt:one","type":"Server","title":"One","playMode":"futuremode"}],"lastIndex":0}"""
+
+        val decoded = decodeSavedPlaylist(raw)
+
+        assertEquals(1, decoded.tracks.size)
+        assertEquals(FavoritePlayMode("futuremode"), decoded.tracks.first().playMode)
+        assertEquals(0, decoded.lastIndex)
+    }
+
+    @Test
+    fun decodeSavedPlaylistDropsOnlyTheMalformedEntry() {
+        val raw = """{"tracks":[{"id":"yt:one","type":"Server","title":"One"},""" +
+            """{"id":"bad","type":"Stream"},""" +
+            """{"type":"Server"},""" +
+            """{"id":"local-two","type":"LocalCached"}],"lastIndex":2}"""
+
+        val decoded = decodeSavedPlaylist(raw)
+
+        assertEquals(listOf("yt:one", "local-two"), decoded.tracks.map { it.id })
+        // The resume index pointed at a dropped entry and now lands on the one that followed it.
+        assertEquals(1, decoded.lastIndex)
+    }
+
+    @Test
+    fun decodeSavedPlaylistMovesTheResumeIndexWithItsEntry() {
+        val tracks = """[{"id":"yt:one","type":"Server"},{"id":"bad","type":"Stream"},{"id":"local-two","type":"LocalCached"}]"""
+
+        assertEquals(1, decodeSavedPlaylist("""{"tracks":$tracks,"lastIndex":2}""").lastIndex)
+        assertEquals(0, decodeSavedPlaylist("""{"tracks":$tracks,"lastIndex":0}""").lastIndex)
+        assertEquals(-1, decodeSavedPlaylist("""{"tracks":$tracks,"lastIndex":-1}""").lastIndex)
+        assertNull(decodeSavedPlaylist("""{"tracks":[{"id":"bad","type":"Stream"}],"lastIndex":0}""").lastIndex)
+    }
+
+    @Test
+    fun decodeSavedPlaylistLegacyArrayDropsOnlyTheMalformedEntry() {
+        val legacy = """[{"id":"yt:one","type":"Server"},{"id":"bad","type":"Stream"}]"""
+
+        val decoded = decodeSavedPlaylist(legacy)
+
+        assertEquals(listOf("yt:one"), decoded.tracks.map { it.id })
+    }
 }

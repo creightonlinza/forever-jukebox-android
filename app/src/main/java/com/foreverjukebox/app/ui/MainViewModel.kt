@@ -33,6 +33,10 @@ import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.audio.SoundPoolLoadingAudioFeedbackPlayer
 import com.foreverjukebox.app.audio.SwingBeat
+import com.foreverjukebox.app.wubmachine.DubstepAnalysis
+import com.foreverjukebox.app.wubmachine.DubstepSampleLibrary
+import com.foreverjukebox.app.wubmachine.WubMachineRemixRenderer
+import com.foreverjukebox.app.wubmachine.WubRemix
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.net.FeedbackClient
 import com.foreverjukebox.app.playback.ForegroundPlaybackService
@@ -398,6 +402,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onFailed = ::handleSwingFailed,
         audioLoadHold = audioLoadWakeLock
     )
+    private val wubMachineRemixRenderer = WubMachineRemixRenderer(
+        sourcePlayer = controller.player,
+        samples = DubstepSampleLibrary(application),
+        controller = controller.wubMachine
+    )
+    private val wubMachineCoordinator = WubMachineCoordinator(
+        scope = viewModelScope,
+        renderer = object : WubMachineRenderer {
+            override fun hasRemix(): Boolean = wubMachineRemixRenderer.hasRemix()
+
+            override fun currentRemix(): WubRemix? = wubMachineRemixRenderer.currentRemix()
+
+            override fun render(
+                analysis: DubstepAnalysis,
+                onProgress: (completed: Int, total: Int) -> Boolean
+            ): WubRemix? = wubMachineRemixRenderer.render(analysis, onProgress)
+        },
+        getAnalysis = { engine.getAnalysis()?.let(DubstepAnalysis::from) },
+        getPlayback = { state.value.playback },
+        updatePlayback = ::updatePlaybackState,
+        setPlaybackBlocked = { blocked -> controller.audioModePreparing = blocked },
+        pausePlayback = ::pauseForWubMachineRender,
+        onReady = ::handleWubMachineReady,
+        onFailed = ::handleWubMachineFailed,
+        audioLoadHold = audioLoadWakeLock
+    )
     private val remoteTrackLoadCoordinator = RemoteTrackLoadCoordinator(
         scope = viewModelScope,
         playbackCoordinator = playbackCoordinator,
@@ -557,6 +587,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            state.map { it.playback.wubRenderKey() }.distinctUntilChanged().collect {
+                wubMachineCoordinator.sync()
+                syncPlaybackServiceSession()
+            }
+        }
+        viewModelScope.launch {
             preferences.appMode.collect { mode ->
                 val effectiveMode = if (BuildConfig.SERVER_MODE_AVAILABLE) {
                     mode
@@ -695,6 +731,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            preferences.wubMachineLoop.collect { enabled ->
+                controller.wubMachine.setLoop(enabled)
+                _state.update {
+                    it.copy(
+                        playback = it.playback.copy(
+                            wubMachine = it.playback.wubMachine.copy(loop = enabled)
+                        )
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
             preferences.highlightAnchorBranch.collect { enabled ->
                 _state.update {
                     it.copy(
@@ -734,7 +782,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         engine.onUpdate { engineState ->
             val currentPlayback = state.value.playback
-            if (currentPlayback.playMode == PlaybackMode.Autocanonizer) {
+            if (currentPlayback.playMode != PlaybackMode.Jukebox) {
                 return@onUpdate
             }
             val currentBeatIndex = engineState.currentBeatIndex
@@ -819,6 +867,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             syncPlaybackServiceSession()
         }
+        controller.wubMachine.setOnTick { seconds ->
+            if (state.value.playback.playMode != PlaybackMode.WubMachine) {
+                return@setOnTick
+            }
+            val previousSecond = state.value.playback.wubMachine.positionSeconds.toInt()
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        wubMachine = it.playback.wubMachine.copy(positionSeconds = seconds)
+                    )
+                )
+            }
+            if (seconds.toInt() != previousSecond) {
+                playbackCoordinator.maybeUpdateNotification()
+            }
+        }
+        controller.wubMachine.setOnEnded {
+            if (state.value.playback.playMode != PlaybackMode.WubMachine) {
+                return@setOnEnded
+            }
+            controller.stopExternalPlayback()
+            playbackCoordinator.stopListenTimer()
+            playbackCoordinator.updateListenTimeDisplay()
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        isRunning = false,
+                        isPaused = false,
+                        wubMachine = it.playback.wubMachine.copy(positionSeconds = 0.0)
+                    )
+                )
+            }
+            val current = state.value
+            if (shouldAdvancePlaylistOnWubMachineEnd(current)) {
+                selectPlaylistTrack(
+                    index = current.playlist.currentIndex + 1,
+                    playAfterLoaded = true
+                )
+                return@setOnEnded
+            }
+            syncPlaybackServiceSession()
+        }
 
         playbackCoordinator.restorePlaybackState()
         localAnalysisCoordinator.refreshLocalCachedTracks()
@@ -830,6 +920,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // The playback controller outlives this view model, so its play block
         // must not be left set by a render that dies with the scope.
         swingCoordinator.close()
+        wubMachineCoordinator.close()
         cancelCastSelection()
         localAnalysisCoordinator.cancelLocalAnalysisInternal(showCancelledMessage = false)
         runCatching {
@@ -2966,6 +3057,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             toggleAutocanonizerPlayback(current)
             return
         }
+        if (current.playMode == PlaybackMode.WubMachine) {
+            toggleWubMachinePlayback(current)
+            return
+        }
         if (current.isRunning) {
             pauseJukeboxPlayback()
             return
@@ -3001,6 +3096,142 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleSwingFailed() {
         viewModelScope.launch { showToast("Swing mode failed. Using Normal mode.") }
         resetAudioModeDefaults()
+    }
+
+    private fun pauseForWubMachineRender() {
+        if (state.value.playback.isRunning) {
+            pauseWubMachinePlayback()
+        } else {
+            controller.pausePlayback()
+        }
+    }
+
+    private fun handleWubMachineReady(resumePlayback: Boolean) {
+        val playback = state.value.playback
+        if (resumePlayback && !playback.isRunning) {
+            startOrResumeWubMachinePlayback(playback)
+        } else {
+            maybeStartPlayAfterLoaded()
+        }
+    }
+
+    private fun handleWubMachineFailed() {
+        viewModelScope.launch { showToast(WUB_MACHINE_FAILED_MESSAGE) }
+        syncPlaybackServiceSession()
+    }
+
+    private fun toggleWubMachinePlayback(current: PlaybackState) {
+        if (current.isRunning) {
+            pauseWubMachinePlayback()
+            return
+        }
+        if (current.wubRenderFailed) {
+            wubMachineCoordinator.retry()
+            wubMachineCoordinator.playWhenReady()
+            return
+        }
+        if (current.isPreparingWubMachine()) {
+            viewModelScope.launch { showToast("$PREPARING_WUB_MACHINE_LABEL...") }
+            wubMachineCoordinator.playWhenReady()
+            return
+        }
+        startOrResumeWubMachinePlayback(current)
+    }
+
+    private fun pauseWubMachinePlayback() {
+        controller.wubMachine.pause()
+        controller.pauseExternalPlayback()
+        playbackCoordinator.stopListenTimer()
+        playbackCoordinator.updateListenTimeDisplay()
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(isRunning = false, isPaused = true)
+            )
+        }
+        syncPlaybackServiceSession()
+    }
+
+    /** Starts the remix from [from] seconds, resumes a paused one, or renders it first. */
+    private fun startOrResumeWubMachinePlayback(current: PlaybackState, from: Double? = null) {
+        viewModelScope.launch {
+            if (!current.audioLoaded || !controller.player.hasAudio()) {
+                val ready = playbackCoordinator.ensureAudioReady()
+                if (!ready) {
+                    playbackCoordinator.setAnalysisError("Audio unavailable. Reload the track.")
+                    return@launch
+                }
+            }
+            // A remix evicted with its audio is rendered again and started once it is back.
+            wubMachineCoordinator.revalidate()
+            if (state.value.playback.isPreparingWubMachine()) {
+                wubMachineCoordinator.playWhenReady()
+                return@launch
+            }
+            if (!controller.wubMachine.isReady()) {
+                handleJukeboxPlaybackFailure("Wub Machine remix unavailable", WUB_MACHINE_FAILED_MESSAGE)
+                return@launch
+            }
+            if (!controller.requestAudioFocusForLocalPlayback()) {
+                return@launch
+            }
+            val resume = current.isPaused && from == null
+            val started = controller.wubMachine.play(from ?: if (resume) null else 0.0)
+            if (!started) {
+                handleJukeboxPlaybackFailure(
+                    reason = controller.wubMachine.player.describeLastStartFailure()
+                        ?: "Wub Machine player did not start"
+                )
+                return@launch
+            }
+            controller.startExternalPlayback(resetTimers = !resume)
+            playbackCoordinator.updateListenTimeDisplay()
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(isRunning = true, isPaused = false)
+                )
+            }
+            logPlayStarted()
+            playbackCoordinator.clearAnalysisErrorForPlaybackStart()
+            playbackCoordinator.startListenTimer()
+            syncPlaybackServiceSession()
+        }
+    }
+
+    /** A tap on the remix timeline plays from there. */
+    fun selectWubMachinePosition(seconds: Double) {
+        val current = state.value.playback
+        if (current.playMode != PlaybackMode.WubMachine || current.isCasting) return
+        if (blockPlaybackChangeWhileLoading()) return
+        if (!current.wubReady) {
+            togglePlayback()
+            return
+        }
+        if (current.isRunning) {
+            controller.wubMachine.play(seconds)
+            _state.update {
+                it.copy(
+                    playback = it.playback.copy(
+                        wubMachine = it.playback.wubMachine.copy(positionSeconds = seconds)
+                    )
+                )
+            }
+            return
+        }
+        startOrResumeWubMachinePlayback(current, from = seconds)
+    }
+
+    fun setWubMachineLoop(enabled: Boolean) {
+        controller.wubMachine.setLoop(enabled)
+        _state.update {
+            it.copy(
+                playback = it.playback.copy(
+                    wubMachine = it.playback.wubMachine.copy(loop = enabled)
+                )
+            )
+        }
+        viewModelScope.launch {
+            preferences.setWubMachineLoop(enabled)
+        }
     }
 
     private fun toggleCastPlayback(current: PlaybackState) {
@@ -3783,10 +4014,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         // The autocanonizer plays through the shared jukebox audio player, so the audio-mode
-        // effect is silenced in the player while it owns playback and re-armed from the
-        // retained selection on the way back. PlaybackState.jukeboxAudioMode holds the
-        // user's jukebox setting throughout; autocanonizer-mode code ignores it.
-        if (mode == PlaybackMode.Autocanonizer) {
+        // effect is silenced in the player while another mode owns playback and re-armed
+        // from the retained selection on the way back. PlaybackState.jukeboxAudioMode holds
+        // the user's jukebox setting throughout; the other modes ignore it.
+        if (mode != PlaybackMode.Jukebox) {
             controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
         } else if (current.jukeboxAudioMode != JukeboxAudioMode.Off) {
             controller.setJukeboxAudioMode(
@@ -3874,7 +4105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val requestedAudioMode = when (currentPlayback.playMode) {
                 PlaybackMode.Jukebox -> JukeboxAudioMode.fromWireValue(requestedAudioModeWireValue)
                     ?: currentPlayback.jukeboxAudioMode
-                PlaybackMode.Autocanonizer -> JukeboxAudioMode.Off
+                PlaybackMode.Autocanonizer, PlaybackMode.WubMachine -> JukeboxAudioMode.Off
             }
             val requestedIntensity = if (requestedAudioMode.supportsIntensity) {
                 AudioModeIntensity.clamp(

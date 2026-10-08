@@ -17,16 +17,20 @@ object ExportedAudioStore {
 
     /**
      * Filename convention shared with the web app's export:
-     * `<sanitized base>_forever.m4a`, falling back to `jukebox`.
+     * `<sanitized base>_forever.m4a` for jukebox audio and `<sanitized base>_wub.m4a`
+     * for a Wub Machine remix, falling back to `jukebox`.
      */
-    fun buildDisplayName(trackTitle: String?): String {
+    fun buildDisplayName(trackTitle: String?, suffix: String = JUKEBOX_SUFFIX): String {
         val base = trackTitle.orEmpty()
             .replace(ILLEGAL_FILENAME_CHARS, " ")
             .replace(Regex("\\s+"), " ")
             .trim()
             .ifBlank { DEFAULT_BASE_NAME }
-        return "${base}_forever.m4a"
+        return "$base$suffix.m4a"
     }
+
+    const val JUKEBOX_SUFFIX = "_forever"
+    const val WUB_MACHINE_SUFFIX = "_wub"
 
     @RequiresApi(Build.VERSION_CODES.Q)
     fun insertPending(

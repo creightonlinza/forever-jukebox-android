@@ -37,7 +37,7 @@ internal fun filterFavorites(favorites: List<FavoriteTrack>, rawQuery: String): 
             favorite.title,
             favorite.artist,
             favorite.uniqueSongId,
-            favorite.sourceType?.name
+            favorite.sourceType?.wireName
         ).any { value ->
             value.orEmpty().lowercase().contains(query)
         }

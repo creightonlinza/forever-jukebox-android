@@ -44,6 +44,14 @@ class ExportUiPolicyTest {
     }
 
     @Test
+    fun showsExportForRenderedWubMachineRemixOnly() {
+        val waiting = exportablePlayback().copy(playMode = PlaybackMode.WubMachine)
+        val rendered = waiting.copy(wubReady = true)
+        assertFalse(shouldShowExportAction(AppMode.Local, waiting, sdkInt = 29))
+        assertTrue(shouldShowExportAction(AppMode.Local, rendered, sdkInt = 29))
+    }
+
+    @Test
     fun hidesExportUntilTrackFullyLoaded() {
         assertFalse(
             shouldShowExportAction(

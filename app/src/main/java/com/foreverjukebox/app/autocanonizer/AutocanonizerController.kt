@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.autocanonizer
 
 import com.foreverjukebox.app.engine.normalizeAnalysis
+import com.foreverjukebox.app.playback.ExternalTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -10,7 +11,7 @@ import kotlinx.serialization.json.JsonElement
 class AutocanonizerController(
     private val player: AutocanonizerPlayer,
     private val scope: CoroutineScope
-) {
+) : ExternalTransport {
     companion object {
         const val PRIMARY_TILE_COLOR_HEX = AUTOCANONIZER_MAIN_COLOR_HEX
         const val OTHER_TILE_COLOR_HEX = AUTOCANONIZER_OTHER_COLOR_HEX
@@ -91,9 +92,9 @@ class AutocanonizerController(
 
     fun getTileColorOverrides(): Map<Int, String> = tileColorOverrides.toMap()
 
-    fun isRunning(): Boolean = running
+    override fun isRunning(): Boolean = running
 
-    fun isPaused(): Boolean = paused
+    override fun isPaused(): Boolean = paused
 
     fun reset() {
         stop()
@@ -133,7 +134,7 @@ class AutocanonizerController(
         return true
     }
 
-    fun pause() {
+    override fun pause() {
         if (!running) {
             return
         }
@@ -144,7 +145,7 @@ class AutocanonizerController(
         player.pause()
     }
 
-    fun resume(): Boolean {
+    override fun resume(): Boolean {
         if (!paused) {
             return false
         }
@@ -166,7 +167,7 @@ class AutocanonizerController(
         return true
     }
 
-    fun stop() {
+    override fun stop() {
         tickJob?.cancel()
         tickJob = null
         running = false

@@ -63,6 +63,7 @@ import com.foreverjukebox.app.visualization.AutocanonizerVisualization
 import com.foreverjukebox.app.visualization.EdgeRouting
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.JumpLine
+import com.foreverjukebox.app.visualization.WubMachineVisualization
 import com.foreverjukebox.app.visualization.edgeRoutingForVisualization
 import com.foreverjukebox.app.visualization.positioners
 import com.foreverjukebox.app.visualization.prefersWideAspectForVisualization
@@ -72,7 +73,6 @@ import com.foreverjukebox.app.visualization.prefersWideAspectForVisualization
 @Composable
 private fun PlaybackHeaderRow(
     playback: PlaybackState,
-    inAutocanonizer: Boolean,
     showServerActions: Boolean,
     showControls: Boolean,
     showTuningAndInfo: Boolean,
@@ -137,7 +137,7 @@ private fun PlaybackHeaderRow(
                         )
                     }
                 }
-                if (!inAutocanonizer && showTuningAndInfo) {
+                if (playback.playMode == PlaybackMode.Jukebox && showTuningAndInfo) {
                     SquareIconButton(
                         onClick = onOpenTuning,
                         modifier = Modifier.size(SmallButtonHeight)
@@ -263,8 +263,7 @@ internal fun ColumnScope.CastListenScreen(
     val canShowTransport = shouldShowPlaybackTransport(playback)
     val canSelectVisualization = playback.castControlsReady()
     val canShowReceiverDetails = playback.castReceiverDetailsReady()
-    val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
-    val showPlaylistControls = !inAutocanonizer
+    val showPlaylistControls = playback.playMode != PlaybackMode.Autocanonizer
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
     val showReportTrackAction = shouldShowReportTrackAction(appMode, playback, adminKey)
@@ -284,7 +283,6 @@ internal fun ColumnScope.CastListenScreen(
         if (hasCastTrack) {
             PlaybackHeaderRow(
                 playback = playback,
-                inAutocanonizer = inAutocanonizer,
                 showServerActions = showServerActions,
                 showControls = canShowTransport,
                 showTuningAndInfo = canShowReceiverDetails,
@@ -565,7 +563,9 @@ internal fun ColumnScope.LocalListenScreen(
     onSetPlaybackMode: (PlaybackMode) -> Unit,
     onSetVisualization: (Int) -> Unit,
     onSetCanonizerFinishOutSong: (Boolean) -> Unit,
+    onSetWubMachineLoop: (Boolean) -> Unit,
     onSelectBeat: (Int) -> Unit,
+    onSelectWubMachinePosition: (Double) -> Unit,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
     onOpenFullscreen: () -> Unit
@@ -575,7 +575,6 @@ internal fun ColumnScope.LocalListenScreen(
     val showReportTrackAction = shouldShowReportTrackAction(appMode, playback, adminKey)
     val showExportAction =
         shouldShowExportControls(appMode, playback, isExporting, Build.VERSION.SDK_INT)
-    val inAutocanonizer = playback.playMode == PlaybackMode.Autocanonizer
     val showInlineTitleWithControls = shouldShowPlaybackTransport(playback)
 
     Column(
@@ -590,7 +589,6 @@ internal fun ColumnScope.LocalListenScreen(
         if (showInlineTitleWithControls) {
             PlaybackHeaderRow(
                 playback = playback,
-                inAutocanonizer = inAutocanonizer,
                 showServerActions = showServerActions,
                 showControls = true,
                 showTuningAndInfo = true,
@@ -614,17 +612,21 @@ internal fun ColumnScope.LocalListenScreen(
             tuning = tuning,
             jumpLine = jumpLine,
             vizLabels = vizLabels,
-            inAutocanonizer = inAutocanonizer,
             onSetPlaybackMode = onSetPlaybackMode,
             onSetVisualization = onSetVisualization,
             onSetCanonizerFinishOutSong = onSetCanonizerFinishOutSong,
+            onSetWubMachineLoop = onSetWubMachineLoop,
             onSelectBeat = onSelectBeat,
+            onSelectWubMachinePosition = onSelectWubMachinePosition,
             playlist = playlist,
             onOpenPlaylist = onOpenPlaylist,
             onOpenFullscreen = onOpenFullscreen
         )
         if (shouldShowAutocanonizerCursorTimes(playback)) {
             AutocanonizerCursorTimeRow(state = playback.autocanonizer)
+        }
+        if (shouldShowWubMachineCursorTime(playback)) {
+            WubMachineCursorTimeRow(state = playback.wubMachine)
         }
     }
 }
@@ -635,11 +637,12 @@ private fun ColumnScope.LocalVisualizationPanel(
     tuning: TuningState,
     jumpLine: JumpLine?,
     vizLabels: List<String>,
-    inAutocanonizer: Boolean,
     onSetPlaybackMode: (PlaybackMode) -> Unit,
     onSetVisualization: (Int) -> Unit,
     onSetCanonizerFinishOutSong: (Boolean) -> Unit,
+    onSetWubMachineLoop: (Boolean) -> Unit,
     onSelectBeat: (Int) -> Unit,
+    onSelectWubMachinePosition: (Double) -> Unit,
     playlist: JukeboxPlaylistState,
     onOpenPlaylist: () -> Unit,
     onOpenFullscreen: () -> Unit
@@ -652,7 +655,7 @@ private fun ColumnScope.LocalVisualizationPanel(
     val edgeRouting = edgeRoutingForVisualization(playback.activeVizIndex)
     val isLandscapeVizContainer = vizContainerSize.width > vizContainerSize.height
     val useWideLayout =
-        !inAutocanonizer &&
+        playback.playMode == PlaybackMode.Jukebox &&
             isLandscapeVizContainer &&
             prefersWideAspectForVisualization(playback.activeVizIndex)
 
@@ -682,27 +685,27 @@ private fun ColumnScope.LocalVisualizationPanel(
             playback = playback,
             tuning = tuning,
             jumpLine = jumpLine,
-            inAutocanonizer = inAutocanonizer,
             vizSide = vizSide,
             edgeRouting = edgeRouting,
             modifier = jukeboxModifier,
-            onSelectBeat = onSelectBeat
+            onSelectBeat = onSelectBeat,
+            onSelectWubMachinePosition = onSelectWubMachinePosition
         )
 
         LocalPlaybackModeMenu(
-            inAutocanonizer = inAutocanonizer,
+            playMode = playback.playMode,
             showModeMenu = showModeMenu,
             onShowModeMenu = { showModeMenu = it },
             onSetPlaybackMode = onSetPlaybackMode
         )
         LocalVisualizationTopEndControls(
             playback = playback,
-            inAutocanonizer = inAutocanonizer,
             showVizMenu = showVizMenu,
             onShowVizMenu = { showVizMenu = it },
             vizLabels = vizLabels,
             onSetVisualization = onSetVisualization,
-            onSetCanonizerFinishOutSong = onSetCanonizerFinishOutSong
+            onSetCanonizerFinishOutSong = onSetCanonizerFinishOutSong,
+            onSetWubMachineLoop = onSetWubMachineLoop
         )
         LocalVisualizationBottomControls(
             playlist = playlist,
@@ -717,13 +720,13 @@ private fun LocalVisualizationContent(
     playback: PlaybackState,
     tuning: TuningState,
     jumpLine: JumpLine?,
-    inAutocanonizer: Boolean,
     vizSide: Dp,
     edgeRouting: EdgeRouting,
     modifier: Modifier,
-    onSelectBeat: (Int) -> Unit
+    onSelectBeat: (Int) -> Unit,
+    onSelectWubMachinePosition: (Double) -> Unit
 ) {
-    if (inAutocanonizer) {
+    if (playback.playMode == PlaybackMode.Autocanonizer) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -737,6 +740,14 @@ private fun LocalVisualizationContent(
                 modifier = Modifier.size(vizSide)
             )
         }
+        return
+    }
+    if (playback.playMode == PlaybackMode.WubMachine) {
+        WubMachineVisualization(
+            state = playback.wubMachine,
+            onSelectPosition = onSelectWubMachinePosition,
+            modifier = Modifier.fillMaxSize()
+        )
         return
     }
     Box(
@@ -758,7 +769,7 @@ private fun LocalVisualizationContent(
 
 @Composable
 private fun BoxScope.LocalPlaybackModeMenu(
-    inAutocanonizer: Boolean,
+    playMode: PlaybackMode,
     showModeMenu: Boolean,
     onShowModeMenu: (Boolean) -> Unit,
     onSetPlaybackMode: (PlaybackMode) -> Unit
@@ -780,7 +791,7 @@ private fun BoxScope.LocalPlaybackModeMenu(
                 modifier = Modifier.height(SmallButtonHeight)
             ) {
                 Text(
-                    text = if (inAutocanonizer) "Autocanonizer" else "Jukebox",
+                    text = playMode.label,
                     style = MaterialTheme.typography.labelSmall
                 )
                 Icon(
@@ -793,20 +804,15 @@ private fun BoxScope.LocalPlaybackModeMenu(
                 expanded = showModeMenu,
                 onDismissRequest = { onShowModeMenu(false) }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Autocanonizer") },
-                    onClick = {
-                        onSetPlaybackMode(PlaybackMode.Autocanonizer)
-                        onShowModeMenu(false)
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Jukebox") },
-                    onClick = {
-                        onSetPlaybackMode(PlaybackMode.Jukebox)
-                        onShowModeMenu(false)
-                    }
-                )
+                playModeMenuOrder.forEach { mode ->
+                    DropdownMenuItem(
+                        text = { Text(mode.label) },
+                        onClick = {
+                            onSetPlaybackMode(mode)
+                            onShowModeMenu(false)
+                        }
+                    )
+                }
             }
         }
     }
@@ -815,47 +821,37 @@ private fun BoxScope.LocalPlaybackModeMenu(
 @Composable
 private fun BoxScope.LocalVisualizationTopEndControls(
     playback: PlaybackState,
-    inAutocanonizer: Boolean,
     showVizMenu: Boolean,
     onShowVizMenu: (Boolean) -> Unit,
     vizLabels: List<String>,
     onSetVisualization: (Int) -> Unit,
-    onSetCanonizerFinishOutSong: (Boolean) -> Unit
+    onSetCanonizerFinishOutSong: (Boolean) -> Unit,
+    onSetWubMachineLoop: (Boolean) -> Unit
 ) {
-    if (inAutocanonizer) {
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val themeTokens = LocalThemeTokens.current
-            SquareIconButton(
-                onClick = { onSetCanonizerFinishOutSong(!playback.canonizerFinishOutSong) },
-                modifier = Modifier.size(SmallButtonHeight)
-            ) {
-                Icon(
-                    imageVector = if (playback.canonizerFinishOutSong) {
-                        Icons.Filled.CheckBox
-                    } else {
-                        Icons.Outlined.CheckBoxOutlineBlank
-                    },
-                    contentDescription = if (playback.canonizerFinishOutSong) {
-                        "Disable finish out the track"
-                    } else {
-                        "Enable finish out the track"
-                    },
-                    tint = themeTokens.accent,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Text(
-                "Finish out the track",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground
+    when (playback.playMode) {
+        PlaybackMode.Autocanonizer -> {
+            VisualizationCheckboxControl(
+                checked = playback.canonizerFinishOutSong,
+                label = "Finish out the track",
+                onToggle = { onSetCanonizerFinishOutSong(!playback.canonizerFinishOutSong) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
             )
+            return
         }
-        return
+        PlaybackMode.WubMachine -> {
+            VisualizationCheckboxControl(
+                checked = playback.wubMachine.loop,
+                label = WUB_MACHINE_LOOP_LABEL,
+                onToggle = { onSetWubMachineLoop(!playback.wubMachine.loop) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+            )
+            return
+        }
+        PlaybackMode.Jukebox -> Unit
     }
     Box(
         modifier = Modifier
@@ -941,6 +937,59 @@ internal fun shouldShowAutocanonizerCursorTimes(playback: PlaybackState): Boolea
     return playback.playMode == PlaybackMode.Autocanonizer && !playback.isCasting
 }
 
+internal fun shouldShowWubMachineCursorTime(playback: PlaybackState): Boolean {
+    return playback.playMode == PlaybackMode.WubMachine && !playback.isCasting && playback.wubReady
+}
+
+@Composable
+private fun WubMachineCursorTimeRow(state: WubMachineUiState) {
+    val position = formatCursorTime(state.positionSeconds)
+    val total = formatCursorTime(state.durationSeconds)
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.semantics {
+            contentDescription = "Remix position $position, total $total"
+        }
+    ) {
+        Text(position, color = MaterialTheme.colorScheme.onBackground)
+        Text("/", color = mutedColor)
+        Text(total, color = mutedColor)
+    }
+}
+
+/** The checkbox-with-label control the non-jukebox modes put in the viz corner. */
+@Composable
+internal fun VisualizationCheckboxControl(
+    checked: Boolean,
+    label: String,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val themeTokens = LocalThemeTokens.current
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SquareIconButton(
+            onClick = onToggle,
+            modifier = Modifier.size(SmallButtonHeight)
+        ) {
+            Icon(
+                imageVector = if (checked) Icons.Filled.CheckBox else Icons.Outlined.CheckBoxOutlineBlank,
+                contentDescription = if (checked) "Disable $label" else "Enable $label",
+                tint = themeTokens.accent,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+    }
+}
+
 @Composable
 private fun AutocanonizerCursorTimeRow(state: AutocanonizerUiState) {
     val tokens = LocalThemeTokens.current
@@ -974,8 +1023,8 @@ internal enum class ListenContentMode {
 internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMode {
     return when {
         playback.isCasting -> ListenContentMode.Cast
-        // The swing render's progress takes over the screen until it finishes.
-        playback.isPreparingSwing() -> ListenContentMode.None
+        // A render's progress (swing copy or Wub Machine remix) takes over the screen until it finishes.
+        playback.isPreparingRenderedAudio() -> ListenContentMode.None
         playback.audioLoaded && playback.analysisLoaded -> ListenContentMode.LocalReady
         !playback.analysisInFlight &&
             !playback.analysisCalculating &&
