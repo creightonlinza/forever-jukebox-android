@@ -172,8 +172,8 @@ class WubMachineController(
         tickJob = null
     }
 
-    // One tick of the playhead. At the end of the remix the body loops back around when looping
-    // is on; otherwise, or when the restart does not produce audio, the end is reported.
+    // One tick of the playhead. At the end of the remix a looping track restarts from the top;
+    // otherwise, or when the restart does not produce audio, the end is reported.
     private fun stepLocked(): TickStep {
         if (!running) return TickStep.Halted
         val seconds = player.position()
@@ -181,8 +181,8 @@ class WubMachineController(
         if (duration <= 0 || seconds < duration) return TickStep.Playing(seconds)
         player.stop()
         if (player.loop) {
-            player.play(player.loopRegion.start)
-            if (player.isPlaying()) return TickStep.Playing(player.loopRegion.start)
+            player.play(0.0)
+            if (player.isPlaying()) return TickStep.Playing(0.0)
         }
         running = false
         paused = false

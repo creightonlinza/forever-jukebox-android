@@ -13,8 +13,8 @@ const val WUB_PEAK_BINS = 2000
 
 /**
  * Plays a rendered Wub Machine remix start to finish on its own player, so the jukebox player
- * and its audio modes never touch the remix. With looping on, the body (everything between the
- * intro and the ending) repeats seamlessly.
+ * and its audio modes never touch the remix. With looping on, it jumps back to the start where
+ * the ending would begin.
  */
 class WubMachinePlayer(private val player: BufferedAudioPlayer = BufferedAudioPlayer()) {
     /** The player holding the remix PCM, for clones that render it offline. */
@@ -22,7 +22,8 @@ class WubMachinePlayer(private val player: BufferedAudioPlayer = BufferedAudioPl
 
     var parts: List<WubRenderedPart> = emptyList()
         private set
-    var loopRegion: WubLoopRegion = WubLoopRegion(0.0, 0.0)
+    /** Start of the ending; a looping remix wraps from here to 0. */
+    var loopEnd: Double = 0.0
         private set
     var loop: Boolean = false
         private set
@@ -42,7 +43,7 @@ class WubMachinePlayer(private val player: BufferedAudioPlayer = BufferedAudioPl
         }
         val duration = durationSeconds()
         parts = partsFor(duration)
-        loopRegion = wubLoopRegion(parts, duration)
+        loopEnd = wubLoopEnd(parts, duration)
         applyLoop()
         return true
     }
@@ -106,21 +107,21 @@ class WubMachinePlayer(private val player: BufferedAudioPlayer = BufferedAudioPl
     fun clear() {
         player.clear()
         parts = emptyList()
-        loopRegion = WubLoopRegion(0.0, 0.0)
+        loopEnd = 0.0
     }
 
     fun release() {
         player.release()
     }
 
-    // The native loop only engages from inside the body: a position already in the ending plays
-    // out, and the controller restarts from the loop start when it ends.
+    // The native loop only engages ahead of the ending: a position already in the ending plays
+    // out, and the controller restarts from the top when it ends.
     private fun applyLoop() {
         if (!hasRemix()) return
         player.setLoopRegion(
-            startSeconds = loopRegion.start,
-            endSeconds = loopRegion.end,
-            enabled = loop && position() < loopRegion.end
+            startSeconds = 0.0,
+            endSeconds = loopEnd,
+            enabled = loop && position() < loopEnd
         )
     }
 }

@@ -7,25 +7,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import com.foreverjukebox.app.ui.LocalThemeTokens
 import com.foreverjukebox.app.ui.WubMachineUiState
 import com.foreverjukebox.app.wubmachine.DubstepPartKind
-import com.foreverjukebox.app.wubmachine.WubLoopRegion
-import com.foreverjukebox.app.wubmachine.wubLoopRegion
 import kotlin.math.ceil
 import kotlin.math.max
-import kotlin.math.min
 
 // Matches the web palette (WubMachineViz.ts).
 private val IntroColor = Color(0xFF3DD9C1)
 private val DropColor = Color(0xFF9B5CFF)
 private val BreakColor = Color(0xFFFF4FA3)
 private val EndingColor = Color(0xFF8A93A6)
-private val LoopColor = Color(0xFFF1C47A)
 
 private const val H_PAD = 20f
 private const val PART_GAP = 2f
@@ -38,10 +32,6 @@ private const val BLOCK_OFFSET_FRACTION = 0.08f
 private const val BAR_SPACING = 2f
 private const val BAR_WIDTH = 1.5f
 private const val BAR_HEIGHT_FRACTION = 0.92f
-private const val ARC_HEIGHT_FRACTION = 0.22f
-private const val ARC_MIN_TOP = 8f
-private const val ARROW_HALF_WIDTH = 5f
-private const val ARROW_HEIGHT = 9f
 private const val PLAYHEAD_WIDTH = 2f
 private const val PLAYHEAD_OVERHANG = 6f
 
@@ -59,10 +49,7 @@ internal fun wubSecondsAtX(x: Float, width: Float, duration: Double): Double? {
     return ratio * duration
 }
 
-/**
- * Linear timeline of the remix: one waveform block per part, a playhead, and the
- * loop-back arc while looping is on. Tapping selects a time.
- */
+/** Linear timeline of the remix: one waveform block per part and a playhead. Tapping selects a time. */
 @Composable
 fun WubMachineVisualization(
     state: WubMachineUiState,
@@ -71,7 +58,6 @@ fun WubMachineVisualization(
 ) {
     val playheadColor = LocalThemeTokens.current.onBackground
     val duration = state.durationSeconds
-    val loopRegion = wubLoopRegion(state.parts, duration)
     Canvas(
         modifier = modifier.pointerInput(duration) {
             detectTapGestures { tap ->
@@ -80,14 +66,14 @@ fun WubMachineVisualization(
         }
     ) {
         if (duration <= 0 || size.width <= 2 * H_PAD || size.height <= 0f) return@Canvas
-        drawRemix(state, loopRegion, playheadColor)
+        drawRemix(state, playheadColor)
     }
 }
 
 private fun DrawScope.xOf(seconds: Double, duration: Double): Float =
     H_PAD + ((seconds / duration) * (size.width - 2 * H_PAD)).toFloat()
 
-private fun DrawScope.drawRemix(state: WubMachineUiState, loop: WubLoopRegion, playheadColor: Color) {
+private fun DrawScope.drawRemix(state: WubMachineUiState, playheadColor: Color) {
     val duration = state.durationSeconds
     val blockHeight = max(MIN_BLOCK_HEIGHT, size.height * BLOCK_HEIGHT_FRACTION)
     val blockTop = max(0f, (size.height - blockHeight) / 2 + size.height * BLOCK_OFFSET_FRACTION)
@@ -121,32 +107,9 @@ private fun DrawScope.drawRemix(state: WubMachineUiState, loop: WubLoopRegion, p
         }
     }
 
-    if (state.loop && loop.end > loop.start) {
-        drawLoopArc(loop, duration, blockTop)
-    }
-
     drawRect(
         color = playheadColor,
         topLeft = Offset(playheadX - PLAYHEAD_WIDTH / 2, blockTop - PLAYHEAD_OVERHANG),
         size = Size(PLAYHEAD_WIDTH, blockHeight + 2 * PLAYHEAD_OVERHANG)
     )
-}
-
-// A curve from the end of the body back to its start, with an arrowhead at the landing.
-private fun DrawScope.drawLoopArc(loop: WubLoopRegion, duration: Double, blockTop: Float) {
-    val fromX = xOf(loop.end, duration)
-    val toX = xOf(loop.start, duration)
-    val arcTop = max(ARC_MIN_TOP, blockTop - min(blockTop - ARC_MIN_TOP, size.height * ARC_HEIGHT_FRACTION))
-    val arc = Path().apply {
-        moveTo(fromX, blockTop - 4f)
-        cubicTo(fromX, arcTop, toX, arcTop, toX, blockTop - 4f)
-    }
-    drawPath(arc, color = LoopColor, style = Stroke(width = 2f))
-    val arrow = Path().apply {
-        moveTo(toX, blockTop - 2f)
-        lineTo(toX - ARROW_HALF_WIDTH, blockTop - 2f - ARROW_HEIGHT)
-        lineTo(toX + ARROW_HALF_WIDTH, blockTop - 2f - ARROW_HEIGHT)
-        close()
-    }
-    drawPath(arrow, color = LoopColor)
 }

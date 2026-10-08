@@ -106,22 +106,29 @@ class WubRenderPlanTest {
     }
 
     @Test
-    fun loopRegionRunsFromTheEndOfTheIntroToTheEnding() {
+    fun loopEndsWhereTheEndingStarts() {
         val plan = planDubstepRemix(makeAnalysis())
         val parts = layoutWubParts(plan, sampleRate, bedFrames, 3 * bedFrames + 500)
 
-        val loop = wubLoopRegion(parts, 41.642)
-        assertEquals(13.714, loop.start, 1e-9)
-        assertEquals(41.142, loop.end, 1e-9)
-        assertEquals(WubLoopRegion(0.0, 12.0), wubLoopRegion(emptyList(), 12.0))
+        assertEquals(41.142, wubLoopEnd(parts, 41.642), 1e-9)
+        assertEquals(12.0, wubLoopEnd(emptyList(), 12.0), 0.0)
     }
 
     @Test
-    fun loopedPositionWrapsInsideTheBody() {
-        val loop = WubLoopRegion(10.0, 30.0)
-        assertEquals(15.0, loopedPosition(10.0, 5.0, true, loop), 0.0)
-        assertEquals(15.0, loopedPosition(10.0, 25.0, true, loop), 1e-9)
-        assertEquals(35.0, loopedPosition(10.0, 25.0, false, loop), 0.0)
-        assertEquals(35.0, loopedPosition(10.0, 25.0, true, WubLoopRegion(30.0, 30.0)), 0.0)
+    fun loopedPositionAdvancesLinearlyWhenNotLooping() {
+        assertEquals(110.0, loopedPosition(10.0, 100.0, false, 90.0), 0.0)
+    }
+
+    @Test
+    fun loopedPositionWrapsFromTheLoopEndBackToTheStart() {
+        assertEquals(60.0, loopedPosition(10.0, 50.0, true, 90.0), 0.0)
+        assertEquals(0.0, loopedPosition(10.0, 80.0, true, 90.0), 0.0)
+        assertEquals(5.0, loopedPosition(10.0, 85.0, true, 90.0), 0.0)
+        assertEquals(5.0, loopedPosition(10.0, 80.0 + 90 * 3 + 5, true, 90.0), 0.0)
+    }
+
+    @Test
+    fun loopedPositionIgnoresADegenerateLoop() {
+        assertEquals(50.0, loopedPosition(0.0, 50.0, true, 0.0), 0.0)
     }
 }

@@ -116,7 +116,7 @@ class WubArrangementParityFixtureTest {
             tonic = raw["tonic"]?.jsonPrimitive?.intOrNull,
             sectionBudget = flag("sectionBudget"),
             skipQuiet = flag("skipQuiet"),
-            contrast = flag("contrast"),
+            balance = flag("balance"),
             fills = flag("fills")
         )
     }

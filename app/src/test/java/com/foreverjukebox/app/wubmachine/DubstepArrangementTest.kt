@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.log10
 
 /** Mirrors dubstepArrangement.test.ts in the web repo. */
 class DubstepArrangementTest {
@@ -58,14 +59,22 @@ class DubstepArrangementTest {
         return analysis.copy(sections = sections)
     }
 
-    private val analysis = makeAnalysis { beat -> listOf(0, 3, 9, 7)[beat % 4] }
+    // Per bar: the tonic, its minor third, its minor seventh and its fifth.
+    private val analysis = makeAnalysis { beat -> listOf(0, 3, 10, 7)[beat % 4] }
     private val plan = planDubstepRemix(analysis)
 
     @Test
-    fun estimateTonicFindsTheTonicOfAMajorScaleWeightedTowardItsTriad() {
-        val weights = listOf(0, 4, 7, 0, 4, 7, 0, 2, 5, 9, 11)
+    fun estimateTonicFindsTheTonicOfAMinorScaleWeightedTowardItsTriad() {
+        val weights = listOf(0, 3, 7, 0, 3, 7, 0, 2, 5, 8, 10)
         val segments = weights.mapIndexed { i, degree -> segment(i.toDouble(), (degree + 2) % 12) }
         assertEquals(2, estimateTonic(segments))
+    }
+
+    @Test
+    fun estimateTonicAnswersAMajorKeyWithItsRelativeMinor() {
+        val weights = listOf(0, 4, 7, 0, 4, 7, 0, 2, 5, 9, 11)
+        val segments = weights.mapIndexed { i, degree -> segment(i.toDouble(), (degree + 2) % 12) }
+        assertEquals(11, estimateTonic(segments))
     }
 
     @Test
@@ -98,23 +107,25 @@ class DubstepArrangementTest {
     }
 
     @Test
-    fun picksSectionBeatsBySegmentPitchTonicPlus3Plus9() {
+    fun picksSectionBeatsBySegmentPitchTonicPlus3Plus10() {
         val drop = plan.parts[3]
         assertEquals(0, plan.tonic)
         assertEquals(32, drop.slices.size)
         assertSame(drop.slices, plan.parts[4].slices)
         // A segment ends in the beat after the one it starts in.
-        fun pitchOf(start: Double) = listOf(0, 3, 9, 7)[((start / 0.5).toInt() - 1) % 4]
+        fun pitchOf(start: Double) = listOf(0, 3, 10, 7)[((start / 0.5).toInt() - 1) % 4]
         val pitches = drop.slices.take(16).map { pitchOf(it.start) }
-        assertEquals(List(8) { 0 } + listOf(3, 3, 3, 3, 9, 9, 9, 9), pitches)
+        assertEquals(List(8) { 0 } + listOf(3, 3, 3, 3, 10, 10, 10, 10), pitches)
         assertTrue(drop.slices.all { it.start >= 16 })
         assertEquals(drop.slices.take(16), drop.slices.drop(16))
     }
 
     @Test
     fun namesSamplesByKeySectionIndexAndSectionCount() {
-        assertEquals(listOf("wubs/c", "splashes/splash_04"), plan.parts[1].samples)
-        assertEquals(listOf("break-ends/c", "hats"), plan.parts[2].samples)
+        // Segment pitches start at A, so tonic 0 is A and tonic 2 is B.
+        assertEquals(listOf("wubs/a", "splashes/splash_04"), plan.parts[1].samples)
+        assertEquals(listOf("break-ends/a", "hats"), plan.parts[2].samples)
+        assertEquals("wubs/b", planDubstepRemix(analysis, DubstepPlanOptions(tonic = 2)).parts[1].samples[0])
         assertEquals("splashes/splash_02", plan.parts[3].samples[1])
         assertEquals(
             DubstepPart(
@@ -153,10 +164,40 @@ class DubstepArrangementTest {
     }
 
     @Test
+    fun mergesTheSongDownToAHandfulOfSections() {
+        // Twelve 40-beat sections, 480 beats: four remain, a drop and a break each.
+        val long = withSections(makeLongAnalysis(480), List(12) { 40 })
+        val merged = planDubstepRemix(
+            long,
+            DubstepPlanOptions(sectionBudget = true, contiguous = true, tonic = 0)
+        )
+        assertEquals(
+            listOf(
+                "intro",
+                "section 1 drop",
+                "section 1 break",
+                "section 2 drop",
+                "section 2 break",
+                "section 3 drop",
+                "section 3 break",
+                "section 4 drop",
+                "section 4 break",
+                "ending"
+            ),
+            merged.parts.map { it.label }
+        )
+        // Sections of 160, 160, 80 and 80 beats, in song order.
+        val starts = merged.parts.drop(1).dropLast(1).map { it.slices[0].start }
+        assertEquals(starts.sorted(), starts)
+        assertTrue(merged.parts[1].slices.all { it.start < 80 })
+        assertTrue(merged.parts[7].slices.all { it.start >= 200 })
+    }
+
+    @Test
     fun sizesEachSectionsShareByItsLength() {
-        // Sections of 8, 32 and 100 beats: the first folds into the second.
-        val long = withSections(makeLongAnalysis(140), listOf(8, 32, 100))
-        val budgeted = planDubstepRemix(long, DubstepPlanOptions(sectionBudget = true))
+        // Sections of 8, 32 and 220 beats: the first folds into the second.
+        val long = withSections(makeLongAnalysis(260), listOf(8, 32, 220))
+        val budgeted = planDubstepRemix(long, DubstepPlanOptions(sectionBudget = true, tonic = 0))
         assertEquals(
             listOf(
                 "intro",
@@ -174,29 +215,73 @@ class DubstepArrangementTest {
 
     @Test
     fun neverStacksMoreThanTwoDropsInARow() {
-        val long = withSections(makeLongAnalysis(160), listOf(32, 32, 32, 32, 32))
-        val budgeted = planDubstepRemix(long, DubstepPlanOptions(sectionBudget = true))
+        val short = withSections(makeLongAnalysis(96), listOf(32, 32, 32))
+        val budgeted = planDubstepRemix(short, DubstepPlanOptions(sectionBudget = true))
         assertEquals(
             listOf(
                 DubstepPartKind.Intro,
                 DubstepPartKind.Drop,
                 DubstepPartKind.Drop,
                 DubstepPartKind.Break,
-                DubstepPartKind.Drop,
-                DubstepPartKind.Drop,
                 DubstepPartKind.Ending
             ),
             budgeted.parts.map { it.kind }
         )
     }
 
+    private fun quietBetween(analysis: DubstepAnalysis, from: Double, until: Double): DubstepAnalysis {
+        return analysis.copy(
+            segments = analysis.segments.map {
+                if (it.start >= from && it.start < until) it.copy(loudnessMax = -80.0) else it
+            }
+        )
+    }
+
+    private val budgetSkippingQuiet =
+        DubstepPlanOptions(sectionBudget = true, skipQuiet = true, contiguous = true, tonic = 0)
+
     @Test
-    fun tiltsTheMixTowardTheSamplesInDropsAndTheSongInBreaks() {
-        val plain = planDubstepRemix(analysis)
-        val contrast = planDubstepRemix(analysis, DubstepPlanOptions(contrast = true))
-        assertEquals(plain.parts[1].mix + 0.15, contrast.parts[1].mix, 1e-9)
-        assertEquals(plain.parts[2].mix - 0.15, contrast.parts[2].mix, 1e-9)
-        assertEquals(plain.parts[2].samples, contrast.parts[2].samples)
+    fun neverMergesAcrossASkippedSection() {
+        // Two 24-beat sections either side of a quiet one stay apart.
+        val split = quietBetween(withSections(makeLongAnalysis(80), listOf(24, 32, 24)), 12.0, 28.0)
+        val merged = planDubstepRemix(split, budgetSkippingQuiet)
+        assertEquals(
+            listOf("intro", "section 1 drop", "section 2 drop", "ending"),
+            merged.parts.map { it.label }
+        )
+        assertTrue(merged.parts[1].slices.all { it.start < 12 })
+        assertTrue(merged.parts[2].slices.all { it.start >= 28 })
+    }
+
+    @Test
+    fun leavesOutAShortSectionStrandedByASkippedOne() {
+        // 8 beats, a quiet section, then 40 beats: the 8 have no neighbour.
+        val stranded = quietBetween(withSections(makeLongAnalysis(80), listOf(8, 32, 40)), 4.0, 20.0)
+        val merged = planDubstepRemix(stranded, budgetSkippingQuiet)
+        assertEquals(listOf("intro", "section 1 drop", "ending"), merged.parts.map { it.label })
+        assertTrue(merged.parts[1].slices.all { it.start >= 20 })
+    }
+
+    @Test
+    fun balancesEachPartAgainstItsSampleBed() {
+        // Segments peak at -10 dB, so the song averages about -14.3 dBFS.
+        val balanced = planDubstepRemix(analysis, DubstepPlanOptions(balance = true)).parts
+        val (intro, drop, brk) = balanced
+        // Song over bed (dB) once both are scaled by the mix.
+        fun songOverBed(mix: Double, bedLevel: Double, peak: Double = -10.0) =
+            20 * log10((1 - mix) / mix) + (peak - 4.3) - bedLevel
+        assertEquals(0.0, songOverBed(intro.mix, -7.1), 1e-9)
+        assertEquals(0.0, songOverBed(drop.mix, -12.9), 1e-9)
+        // The break wants the song 8 dB over, more than the bed gain limit allows.
+        assertEquals(0.3, brk.mix, 0.0)
+        assertEquals(plan.parts[2].samples, brk.samples)
+
+        // A louder song gets more of the bed; a quieter one less.
+        val base = makeAnalysis { beat -> listOf(0, 3, 10, 7)[beat % 4] }
+        val loud = base.copy(segments = base.segments.map { it.copy(loudnessMax = -4.0) })
+        val loudDrop = planDubstepRemix(loud, DubstepPlanOptions(balance = true)).parts[1]
+        assertTrue(loudDrop.mix > drop.mix)
+        assertEquals(0.0, songOverBed(loudDrop.mix, -12.9, peak = -4.0), 1e-9)
     }
 
     @Test

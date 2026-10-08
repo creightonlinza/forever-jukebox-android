@@ -104,24 +104,20 @@ fun layoutWubParts(
     }
 }
 
-/** Loop region of a rendered remix: from the end of the intro to the start of the ending. */
-data class WubLoopRegion(val start: Double, val end: Double)
-
-fun wubLoopRegion(parts: List<WubRenderedPart>, duration: Double): WubLoopRegion {
-    val intro = parts.firstOrNull { it.kind == DubstepPartKind.Intro }
-    val ending = parts.firstOrNull { it.kind == DubstepPartKind.Ending }
-    return WubLoopRegion(
-        start = intro?.let { it.start + it.duration } ?: 0.0,
-        end = ending?.start ?: duration
-    )
+/**
+ * Where a looping remix jumps back to the start of the track: the start of the ending, which
+ * never plays while looping.
+ */
+fun wubLoopEnd(parts: List<WubRenderedPart>, duration: Double): Double {
+    return parts.firstOrNull { it.kind == DubstepPartKind.Ending }?.start ?: duration
 }
 
 /**
- * Playback position for [elapsed] seconds of audio since [offset], wrapping from the loop end
- * back to its start while looping. Mirrors loopedPosition in WubMachineController.ts.
+ * Playback position for [elapsed] seconds of audio since [offset], wrapping from [loopEnd] back
+ * to the start while looping. Mirrors loopedPosition in WubMachineController.ts.
  */
-fun loopedPosition(offset: Double, elapsed: Double, looping: Boolean, loop: WubLoopRegion): Double {
+fun loopedPosition(offset: Double, elapsed: Double, looping: Boolean, loopEnd: Double): Double {
     val raw = offset + elapsed
-    if (!looping || raw < loop.end || loop.end <= loop.start) return raw
-    return loop.start + (raw - loop.start).mod(loop.end - loop.start)
+    if (!looping || raw < loopEnd || loopEnd <= 0) return raw
+    return raw % loopEnd
 }

@@ -673,8 +673,9 @@ public:
     }
 
     // Wraps playback from `endFrame` back to `startFrame` while enabled, for
-    // linear buffers whose body repeats (the Wub Machine remix loops between
-    // its intro and ending). Cleared whenever new audio is loaded.
+    // linear buffers that repeat short of their end (a looping Wub Machine
+    // remix wraps to its start instead of playing its ending). Cleared
+    // whenever new audio is loaded.
     void setLoopRegion(double startSeconds, double endSeconds, bool enabled) {
         const double rate = static_cast<double>(mSampleRate);
         mLoopStartFrame.store(std::max(0.0, startSeconds * rate));
