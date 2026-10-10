@@ -9,12 +9,15 @@ import androidx.core.net.toUri
 import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -26,6 +29,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 fun interface LocalAnalysisCacheKeyResolver {
     suspend fun resolve(uriString: String): String
@@ -65,11 +69,13 @@ class LocalAnalysisService(
         val updatedAtEpochMs: Long? = null
     )
 
-    private val cancelled = AtomicBoolean(false)
+    // Each run owns its cancel flag, so starting a replacement cannot clear the
+    // signal aimed at the run it supersedes.
+    private val activeRunCancelled = AtomicReference(AtomicBoolean(false))
     private val json = Json { ignoreUnknownKeys = true }
 
     fun cancel() {
-        cancelled.set(true)
+        activeRunCancelled.get().set(true)
         NativeAnalysisBridge.cancel()
     }
 
@@ -147,8 +153,8 @@ class LocalAnalysisService(
         uriString: String,
         fallbackTitle: String?
     ): Flow<LocalAnalysisUpdate> = callbackFlow {
-        cancelled.set(false)
-        NativeAnalysisBridge.resetCancellationState()
+        val runCancelled = AtomicBoolean(false)
+        activeRunCancelled.set(runCancelled)
         if (!cacheDir.exists()) {
             cacheDir.mkdirs()
         }
@@ -170,7 +176,7 @@ class LocalAnalysisService(
         }
 
         try {
-            withContext(Dispatchers.Default) {
+            runExclusively(runCancelled) {
                 if (analysisFile.exists()) {
                     emitProgress(95, "Wrapping up")
                     val cachedText = analysisFile.readText()
@@ -200,7 +206,7 @@ class LocalAnalysisService(
                         )
                     )
                     close()
-                    return@withContext
+                    return@runExclusively
                 }
 
                 emitProgress(1, "Processing audio")
@@ -212,11 +218,11 @@ class LocalAnalysisService(
                 logInfo(
                     "Stage Decoding complete: samples=${decoded.monoSamples.size}, sampleRate=${decoded.sampleRate}, heap=${heapSummary()}"
                 )
-                ensureNotCancelled()
+                ensureNotCancelled(runCancelled)
 
                 emitProgress(22, "Processing audio")
                 var monoSource: FloatArray? = decoded.monoSamples
-                ensureNotCancelled()
+                ensureNotCancelled(runCancelled)
 
                 emitProgress(30, "Processing audio")
                 logInfo("Stage Resample 22050 start: sourceSamples=${monoSource!!.size}, heap=${heapSummary()}")
@@ -227,16 +233,16 @@ class LocalAnalysisService(
                 // over the heap limit. Drop both references so it can be collected.
                 monoSource = null
                 decoded.monoSamples = FloatArray(0)
-                ensureNotCancelled()
+                ensureNotCancelled(runCancelled)
 
                 emitProgress(45, "Processing features")
-                ensureNotCancelled()
+                ensureNotCancelled(runCancelled)
 
                 emitProgress(62, "Processing audio")
                 logInfo("Stage Upsample 44100 start: sourceSamples=${mono22050.size}, heap=${heapSummary()}")
                 val mono44100From22050 = resampler.resample(mono22050, 22_050, 44_100)
                 logInfo("Stage Upsample 44100 complete: samples=${mono44100From22050.size}, heap=${heapSummary()}")
-                ensureNotCancelled()
+                ensureNotCancelled(runCancelled)
 
                 val (essentiaSamples, essentiaSampleRate, madmomSamples, madmomSampleRate, essentiaProfile) =
                     AnalyzerInputs(mono22050, 22_050, mono44100From22050, 44_100, "backend_defaults")
@@ -273,7 +279,7 @@ class LocalAnalysisService(
                     }
                 }
                 logInfo("Stage Analyzer complete: heap=${heapSummary()}")
-                ensureNotCancelled()
+                ensureNotCancelled(runCancelled)
 
                 emitProgress(95, "Wrapping up")
                 // The cache directory can disappear between the start of a long
@@ -354,9 +360,22 @@ class LocalAnalysisService(
         awaitClose {}
     }
 
-    private suspend fun ensureNotCancelled() {
+    private suspend fun runExclusively(
+        runCancelled: AtomicBoolean,
+        block: suspend CoroutineScope.() -> Unit
+    ) {
+        runMutex.withLock {
+            // Cleared only once the previous run has exited: a native stage still
+            // running would otherwise lose the cancel aimed at it.
+            NativeAnalysisBridge.resetCancellationState()
+            ensureNotCancelled(runCancelled)
+            withContext(Dispatchers.Default, block)
+        }
+    }
+
+    private suspend fun ensureNotCancelled(runCancelled: AtomicBoolean) {
         currentCoroutineContext().ensureActive()
-        if (cancelled.get()) {
+        if (runCancelled.get()) {
             throw CancellationException("Local analysis cancelled")
         }
     }
@@ -411,6 +430,11 @@ class LocalAnalysisService(
         private const val ANALYSIS_FILE_SUFFIX = ".analysis.json"
         private const val METADATA_FILE_SUFFIX = ".meta.json"
         private const val TUNING_FILE_SUFFIX = ".tuning"
+
+        // Process-wide, like the native cancel flag it protects. Runs hold whole-track
+        // buffers and share that one flag, so a run begins its work only once the run
+        // before it, from any instance, has fully stopped.
+        private val runMutex = Mutex()
 
         private fun heapSummary(): String {
             val runtime = Runtime.getRuntime()

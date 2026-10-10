@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.playback
 
+import android.content.Intent
 import android.support.v4.media.session.PlaybackStateCompat
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import org.junit.Assert.assertEquals
@@ -341,6 +342,77 @@ class ForegroundPlaybackServiceNotificationTest {
                 )
             )
         }
+    }
+
+    @Test
+    fun everyStartBeforeForegroundIsLogged() {
+        listOf(
+            null,
+            Intent.ACTION_MEDIA_BUTTON,
+            PlaybackServiceConstants.ACTION_START,
+            PlaybackServiceConstants.ACTION_UPDATE,
+            PlaybackServiceConstants.ACTION_STOP,
+            PlaybackServiceConstants.ACTION_TOGGLE
+        ).forEach { action ->
+            assertTrue(shouldLogServiceStart(action, hasStartedForeground = false))
+        }
+    }
+
+    @Test
+    fun routineStartsOnceInForegroundAreNotLogged() {
+        // These arrive on every notification refresh and would crowd the bounded
+        // crash-report log.
+        listOf(
+            PlaybackServiceConstants.ACTION_START,
+            PlaybackServiceConstants.ACTION_UPDATE,
+            PlaybackServiceConstants.ACTION_TOGGLE
+        ).forEach { action ->
+            assertFalse(shouldLogServiceStart(action, hasStartedForeground = true))
+        }
+    }
+
+    @Test
+    fun sleepTimerCommandsAreNeverLogged() {
+        // Delivered by startService on every hidden-session sync, in or out of foreground.
+        listOf(
+            PlaybackServiceConstants.ACTION_SET_SLEEP_TIMER,
+            PlaybackServiceConstants.ACTION_CLEAR_NOTIFICATION_KEEP_TIMER
+        ).forEach { action ->
+            assertFalse(shouldLogServiceStart(action, hasStartedForeground = false))
+            assertFalse(shouldLogServiceStart(action, hasStartedForeground = true))
+        }
+    }
+
+    @Test
+    fun mediaKeysStopsAndRestartsAreLoggedEvenInForeground() {
+        listOf(
+            null,
+            Intent.ACTION_MEDIA_BUTTON,
+            PlaybackServiceConstants.ACTION_STOP
+        ).forEach { action ->
+            assertTrue(shouldLogServiceStart(action, hasStartedForeground = true))
+        }
+    }
+
+    @Test
+    fun heldMediaKeyIsLoggedOncePerPress() {
+        val down = MediaKeyPress(keyCode = 85, isDown = true)
+        val up = MediaKeyPress(keyCode = 85, isDown = false)
+
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = down, previous = null))
+        // Auto-repeat while held, with and without the platform's repeat count.
+        assertTrue(isRepeatedMediaKey(repeatCount = 1, press = down, previous = down))
+        assertTrue(isRepeatedMediaKey(repeatCount = 0, press = down, previous = down))
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = up, previous = down))
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = down, previous = up))
+    }
+
+    @Test
+    fun differentMediaKeyIsNotARepeat() {
+        val playPause = MediaKeyPress(keyCode = 85, isDown = true)
+        val next = MediaKeyPress(keyCode = 87, isDown = true)
+
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = next, previous = playPause))
     }
 
     @Test

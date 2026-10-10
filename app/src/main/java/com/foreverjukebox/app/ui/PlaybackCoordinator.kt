@@ -9,6 +9,7 @@ import com.foreverjukebox.app.audio.LoadingAudioFeedbackController
 import com.foreverjukebox.app.data.HttpStatusException
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.canonicalJobId
+import com.foreverjukebox.app.data.isNotFound
 import com.foreverjukebox.app.data.sourceProviderFromRaw
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
@@ -341,7 +342,7 @@ class PlaybackCoordinator(
                 throw cancel
             } catch (error: IOException) {
                 AppLog.warn(TAG, "Polling failed for $jobId", error)
-                setAnalysisError("Loading failed.", cause = error)
+                setAnalysisError("Loading failed.", cause = error, expected = error.isNotFound())
             } catch (error: IllegalArgumentException) {
                 AppLog.warn(TAG, "Polling failed for $jobId", error)
                 setAnalysisError("Loading failed.", cause = error)

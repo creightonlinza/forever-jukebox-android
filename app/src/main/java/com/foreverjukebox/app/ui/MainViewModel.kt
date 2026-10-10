@@ -21,6 +21,7 @@ import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.HttpStatusException
+import com.foreverjukebox.app.data.isNotFound
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.SavedPlaylist
 import com.foreverjukebox.app.data.ServerAppConfig
@@ -2828,7 +2829,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         launchServerTrackLoadWithCache(
             cachedJobId = normalizedJobId,
-            failureLogMessage = "Failed to load track by job id"
+            failureLogMessage = "Failed to load track by job id",
+            notFoundIsExpected = true
         ) {
             val response = loadRemoteExplicitJobInitialResponse(
                 fetchJob = {
@@ -2914,6 +2916,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun launchServerTrackLoadWithCache(
         cachedJobId: String?,
         failureLogMessage: String,
+        notFoundIsExpected: Boolean = false,
         request: suspend () -> Boolean
     ) {
         remoteTrackLoadCoordinator.launch {
@@ -2941,9 +2944,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         diagnostics.logAnalysisFailed("server", "track_length_limit")
                         showServerTrackLengthLimitError()
                     } else {
-                        diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
+                        // Only a request that names a job treats 404 as a missing job. On
+                        // the requests that start work, a 404 is a missing endpoint and
+                        // stays a reported failure. The distinct reason keeps missing jobs
+                        // countable once they no longer reach crash reporting.
+                        val missingJob = notFoundIsExpected && error.isNotFound()
+                        diagnostics.logAnalysisFailed(
+                            "server",
+                            if (missingJob) "not_found" else error.javaClass.simpleName
+                        )
                         AppLog.warn(TAG, failureLogMessage, error)
-                        playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
+                        playbackCoordinator.setAnalysisError(
+                            "Loading failed.",
+                            cause = error,
+                            expected = missingJob
+                        )
                     }
                     return@launch
                 } catch (error: IOException) {
@@ -4503,7 +4518,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 throw cancel
             } catch (error: IOException) {
                 AppLog.warn(TAG, "Failed to recover server load state", error)
-                playbackCoordinator.setAnalysisError("Loading failed.")
+                playbackCoordinator.setAnalysisError("Loading failed.", expected = error.isNotFound())
             } catch (error: IllegalArgumentException) {
                 AppLog.warn(TAG, "Failed to recover server load state", error)
                 playbackCoordinator.setAnalysisError("Loading failed.")

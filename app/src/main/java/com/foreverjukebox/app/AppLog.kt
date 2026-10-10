@@ -8,8 +8,10 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
  * Logging facade for recoverable, non-fatal failures: writes to logcat for local
  * visibility and reports to Crashlytics for remote diagnostics. [warn] leaves a
  * breadcrumb in the Crashlytics log buffer (attached to any later crash/non-fatal
- * report); [error] additionally records a non-fatal exception. Fatal crashes are
- * captured automatically by the Crashlytics SDK and do not go through here.
+ * report); [error] additionally records a non-fatal exception. [info] leaves the
+ * same breadcrumb for a routine event whose timing explains a later report. Fatal
+ * crashes are captured automatically by the Crashlytics SDK and do not go through
+ * here.
  */
 object AppLog {
     private const val MAX_CAUSE_CHAIN_DEPTH = 5
@@ -24,6 +26,13 @@ object AppLog {
     private fun crashlytics(): FirebaseCrashlytics? =
         cachedCrashlytics ?: runCatching { FirebaseCrashlytics.getInstance() }
             .getOrNull()?.also { cachedCrashlytics = it }
+
+    // The Crashlytics log buffer is small and rolling: reserve this for rare
+    // lifecycle transitions, never per-frame or per-update events.
+    fun info(tag: String, message: String) {
+        Log.i(tag, message)
+        crashlytics()?.log("I ${format(tag, message, null)}")
+    }
 
     fun warn(tag: String, message: String, error: Throwable? = null) {
         Log.w(tag, message, error)

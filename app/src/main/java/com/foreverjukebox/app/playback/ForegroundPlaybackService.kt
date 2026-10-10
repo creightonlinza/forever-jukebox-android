@@ -159,7 +159,7 @@ internal fun localPlaybackNotificationArtist(
     }
 }
 
-private object PlaybackServiceConstants {
+internal object PlaybackServiceConstants {
     const val CHANNEL_ID = "fj_playback"
     const val NOTIFICATION_ID = 2001
     const val ACTION_START = "com.foreverjukebox.app.playback.START"
@@ -263,6 +263,44 @@ internal fun isPlayRequestWithoutAudio(
     return !hasAudio && !isPlaying && !externalTransportActive
 }
 
+/**
+ * Whether a start command earns a crash-report breadcrumb. Updates to a service that is
+ * already in the foreground are frequent enough to push everything else out of the
+ * bounded log, so only the starts that decide whether the service reaches foreground
+ * are kept: any start before foreground, media keys, stops, and system restarts. The
+ * sleep-timer commands never carry a foreground obligation and repeat on every hidden
+ * session sync, so they are never logged.
+ */
+internal fun shouldLogServiceStart(action: String?, hasStartedForeground: Boolean): Boolean {
+    if (action == PlaybackServiceConstants.ACTION_SET_SLEEP_TIMER ||
+        action == PlaybackServiceConstants.ACTION_CLEAR_NOTIFICATION_KEEP_TIMER
+    ) {
+        return false
+    }
+    if (!hasStartedForeground) {
+        return true
+    }
+    return action == null ||
+        action == Intent.ACTION_MEDIA_BUTTON ||
+        action == PlaybackServiceConstants.ACTION_STOP
+}
+
+internal data class MediaKeyPress(val keyCode: Int, val isDown: Boolean)
+
+/**
+ * True for a media key event that adds nothing to the breadcrumb trail: an auto-repeat
+ * from a held key, or the same key and phase as the event before it (some devices
+ * resend key-down without a repeat count). A held key would otherwise fill the bounded
+ * log on its own.
+ */
+internal fun isRepeatedMediaKey(
+    repeatCount: Int,
+    press: MediaKeyPress,
+    previous: MediaKeyPress?
+): Boolean {
+    return repeatCount > 0 || press == previous
+}
+
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
     return when (type) {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
@@ -335,6 +373,7 @@ class ForegroundPlaybackService : Service() {
     private var sleepTimerJob: Job? = null
     private var sleepTimerEndRealtimeMs: Long? = null
     private var hasStartedForeground = false
+    private var lastMediaKeyPress: MediaKeyPress? = null
     private var audioManager: AudioManager? = null
     private var bluetoothRouteMonitoringRegistered = false
     @Volatile
@@ -360,6 +399,7 @@ class ForegroundPlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        AppLog.info(TAG, "Service created")
         mediaSession = MediaSessionCompat(
             applicationContext.playbackAttributionContext(),
             "ForeverJukeboxPlayback"
@@ -431,6 +471,15 @@ class ForegroundPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val keyEvent = intent?.mediaKeyEvent()
+        if (shouldLogServiceStart(intent?.action, hasStartedForeground) &&
+            !isRepeatedMediaKeyStart(keyEvent)
+        ) {
+            AppLog.info(
+                TAG,
+                "Start command: ${describeStart(intent, keyEvent)} foreground=$hasStartedForeground"
+            )
+        }
         // Dispatches a hardware/Bluetooth key to the session callback, which runs the
         // same transport handling as the notification's own buttons.
         MediaButtonReceiver.handleIntent(mediaSession, intent)
@@ -484,6 +533,38 @@ class ForegroundPlaybackService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    private fun Intent.mediaKeyEvent(): KeyEvent? {
+        if (action != Intent.ACTION_MEDIA_BUTTON) {
+            return null
+        }
+        return IntentCompat.getParcelableExtra(this, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+    }
+
+    private fun isRepeatedMediaKeyStart(keyEvent: KeyEvent?): Boolean {
+        if (keyEvent == null) {
+            return false
+        }
+        val press = MediaKeyPress(keyEvent.keyCode, keyEvent.action == KeyEvent.ACTION_DOWN)
+        val repeated = isRepeatedMediaKey(keyEvent.repeatCount, press, lastMediaKeyPress)
+        lastMediaKeyPress = press
+        return repeated
+    }
+
+    private fun describeStart(intent: Intent?, keyEvent: KeyEvent?): String {
+        if (intent == null) {
+            return "sticky restart"
+        }
+        val action = intent.action ?: return "no action"
+        if (action != Intent.ACTION_MEDIA_BUTTON) {
+            return action.substringAfterLast('.')
+        }
+        if (keyEvent == null) {
+            return "MEDIA_BUTTON"
+        }
+        val phase = if (keyEvent.action == KeyEvent.ACTION_DOWN) "down" else "up"
+        return "MEDIA_BUTTON ${KeyEvent.keyCodeToString(keyEvent.keyCode)} $phase"
     }
 
     private fun refreshNotificationForCurrentPlayback(
@@ -780,6 +861,7 @@ class ForegroundPlaybackService : Service() {
             try {
                 startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
                 hasStartedForeground = true
+                AppLog.info(TAG, "Entered foreground")
             } catch (error: IllegalStateException) {
                 if (isForegroundStartDenied(error)) {
                     // Android can reject entering foreground if the app is background-restricted.
@@ -884,6 +966,7 @@ class ForegroundPlaybackService : Service() {
             if (sent) {
                 updateNotification(activeState.copy(isPlaying = targetPlayState))
             } else {
+                AppLog.info(TAG, "Stopping service: cast command not sent")
                 activeNotificationState = null
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -1057,6 +1140,7 @@ class ForegroundPlaybackService : Service() {
     private fun clearPlaybackNotificationKeepTimer() {
         activeNotificationState = null
         if (hasStartedForeground) {
+            AppLog.info(TAG, "Leaving foreground; service kept running")
             stopForeground(STOP_FOREGROUND_REMOVE)
             hasStartedForeground = false
         } else {
@@ -1093,6 +1177,7 @@ class ForegroundPlaybackService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             hasStartedForeground = false
         }
+        AppLog.info(TAG, "Stopping service")
         stopSelf()
     }
 
@@ -1170,6 +1255,7 @@ class ForegroundPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        AppLog.info(TAG, "Service destroyed")
         activeNotificationState = null
         isRunning = false
         hasStartedForeground = false
@@ -1182,6 +1268,7 @@ class ForegroundPlaybackService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // User explicitly removed the app task; tear down playback notification/service.
+        AppLog.info(TAG, "Stopping service: task removed")
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         super.onTaskRemoved(rootIntent)
@@ -1218,6 +1305,8 @@ class ForegroundPlaybackService : Service() {
         private var isRunning: Boolean = false
         @Volatile
         private var pendingForegroundStart: Boolean = false
+        @Volatile
+        private var foregroundStartDenied: Boolean = false
         private val _sleepTimerState = MutableStateFlow(SleepTimerStatus())
         val sleepTimerState: StateFlow<SleepTimerStatus> = _sleepTimerState
         const val ACTION_SLEEP_TIMER_EXPIRED: String =
@@ -1345,11 +1434,16 @@ class ForegroundPlaybackService : Service() {
                 }
                 ForegroundServiceStopCommand.StopService -> {
                     if (pendingForegroundStart) {
+                        AppLog.info(TAG, "Requesting stop through a foreground start")
                         val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                             action = PlaybackServiceConstants.ACTION_STOP
                         }
                         playbackContext.startForegroundService(intent)
                     } else {
+                        // Hidden-session syncs repeat this while nothing is running.
+                        if (isRunning) {
+                            AppLog.info(TAG, "Requesting stopService")
+                        }
                         playbackContext.stopService(
                             Intent(playbackContext, ForegroundPlaybackService::class.java)
                         )
@@ -1375,15 +1469,31 @@ class ForegroundPlaybackService : Service() {
                 return
             }
             pendingForegroundStart = true
+            // Playback retries this on every notification sync, so a standing denial is
+            // logged once rather than on each attempt.
+            val repeatedDenial = foregroundStartDenied
+            if (!repeatedDenial) {
+                AppLog.info(
+                    TAG,
+                    "Requesting foreground start: ${intent.action?.substringAfterLast('.')}"
+                )
+            }
             try {
                 playbackContext.startForegroundService(intent)
+                foregroundStartDenied = false
+                if (repeatedDenial) {
+                    AppLog.info(TAG, "Foreground start accepted after denial")
+                }
             } catch (error: IllegalStateException) {
                 pendingForegroundStart = false
-                AppLog.warn(
-                    TAG,
-                    "Foreground service start denied; continuing without notification.",
-                    error
-                )
+                foregroundStartDenied = true
+                if (!repeatedDenial) {
+                    AppLog.warn(
+                        TAG,
+                        "Foreground service start denied; continuing without notification.",
+                        error
+                    )
+                }
             }
         }
     }

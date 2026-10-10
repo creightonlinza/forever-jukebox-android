@@ -1,8 +1,11 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.HttpStatusException
+import com.foreverjukebox.app.data.isNotFound
 import java.io.IOException
 import java.net.UnknownHostException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,6 +13,15 @@ import org.junit.Test
 class ServerLoadFailurePolicyTest {
 
     private val jobId = "7e6deb7a9efe4078a6a62ed74bd11818"
+
+    @Test
+    fun onlyHttp404CountsAsNotFound() {
+        assertTrue(HttpStatusException(404).isNotFound())
+        assertFalse(HttpStatusException(500).isNotFound())
+        assertFalse(HttpStatusException(403).isNotFound())
+        assertFalse(IOException("HTTP 404").isNotFound())
+        assertFalse(UnknownHostException("Unable to resolve host").isNotFound())
+    }
 
     // A restricted device fails the cached decode first and the fallback fetch second.
     // The decode failure is the root cause and must be what the user sees and what
