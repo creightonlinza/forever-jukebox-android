@@ -36,6 +36,8 @@ class LocalAnalysisCoordinator(
     private val diagnostics: DiagnosticsGateway,
     private val audioLoadHold: AudioLoadHold
 ) {
+    // Never cleared from inside the job: a superseded run unwinds after its
+    // replacement is already stored here, and would wipe the replacement.
     private var localAnalysisJob: Job? = null
 
     fun isAnalysisRunning(): Boolean = localAnalysisJob?.isActive == true
@@ -123,8 +125,6 @@ class LocalAnalysisCoordinator(
                 handleAnalysisFailure(source, error)
             } catch (error: SecurityException) {
                 handleAnalysisFailure(source, error)
-            } finally {
-                localAnalysisJob = null
             }
         }
     }

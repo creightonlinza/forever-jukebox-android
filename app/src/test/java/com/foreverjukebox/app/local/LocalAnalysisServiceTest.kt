@@ -1,7 +1,15 @@
 package com.foreverjukebox.app.local
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -14,6 +22,7 @@ import org.junit.Test
 import java.io.File
 import java.security.MessageDigest
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicInteger
 
 class LocalAnalysisServiceTest {
     @Test
@@ -318,6 +327,70 @@ class LocalAnalysisServiceTest {
         assertEquals(null, completed.artifact.artist)
     }
 
+    @Test
+    fun replacementRunWaitsForSupersededRunToStop() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val decoder = GatedDecoder()
+        val service = LocalAnalysisService(
+            decoder = decoder,
+            resampler = PassThroughResampler(),
+            analyzer = FakeAnalyzer(),
+            modelExtractor = NoopModelProvider(),
+            cacheDir = cacheDir
+        )
+
+        val superseded = launch {
+            service.analyze("file:///tmp/superseded.mp3", "Superseded").collect { }
+        }
+        decoder.firstCallEntered.await()
+        superseded.cancel()
+        service.cancel()
+        val replacement = async {
+            service.analyze("file:///tmp/replacement.mp3", "Replacement").toList()
+        }
+
+        // Real time, not the test scheduler: the superseded run is parked on a real thread.
+        val startedWhileSupersededRan = withContext(Dispatchers.Default) {
+            withTimeoutOrNull(250) { decoder.secondCallEntered.await() }
+        }
+        decoder.releaseFirstCall.complete(Unit)
+
+        assertNull(startedWhileSupersededRan)
+        assertTrue(replacement.await().any { it is LocalAnalysisUpdate.Completed })
+    }
+
+    @Test
+    fun cancelStillStopsRunAfterReplacementStarts() = runTest {
+        val cacheDir = Files.createTempDirectory("fj-local-analysis-test").toFile()
+        val decoder = GatedDecoder()
+        val service = LocalAnalysisService(
+            decoder = decoder,
+            resampler = PassThroughResampler(),
+            analyzer = FakeAnalyzer(),
+            modelExtractor = NoopModelProvider(),
+            cacheDir = cacheDir
+        )
+        val cancelledUri = "file:///tmp/cancelled.mp3"
+
+        val cancelledUpdates = mutableListOf<LocalAnalysisUpdate>()
+        val cancelledRun = launch {
+            service.analyze(cancelledUri, "Cancelled").collect { cancelledUpdates += it }
+        }
+        decoder.firstCallEntered.await()
+        service.cancel()
+        val replacement = async {
+            service.analyze("file:///tmp/replacement.mp3", "Replacement").toList()
+        }
+        runCurrent()
+
+        decoder.releaseFirstCall.complete(Unit)
+        cancelledRun.join()
+
+        assertFalse(cancelledUpdates.any { it is LocalAnalysisUpdate.Completed })
+        assertFalse(File(cacheDir, "${analysisCacheKey(cancelledUri)}.analysis.json").exists())
+        assertTrue(replacement.await().any { it is LocalAnalysisUpdate.Completed })
+    }
+
     private fun analysisCacheKey(uriString: String): String {
         val hash = MessageDigest.getInstance("SHA-256")
             .digest(uriString.toByteArray(Charsets.UTF_8))
@@ -333,6 +406,33 @@ private class FakeDecoder : LocalAudioDecoderPort {
         onDecodeProgress(10)
         onDecodeProgress(60)
         onDecodeProgress(100)
+        return DecodedLocalAudio(
+            monoSamples = FloatArray(22_050) { 0f },
+            sampleRate = 22_050,
+            durationSeconds = 1.0,
+            sourceUri = uriString,
+            displayName = "Fixture Track"
+        )
+    }
+}
+
+/** The first call parks, ignoring cancellation like a native stage, until released. */
+private class GatedDecoder : LocalAudioDecoderPort {
+    val firstCallEntered = CompletableDeferred<Unit>()
+    val secondCallEntered = CompletableDeferred<Unit>()
+    val releaseFirstCall = CompletableDeferred<Unit>()
+    private val calls = AtomicInteger(0)
+
+    override suspend fun decodeToMono(
+        uriString: String,
+        onDecodeProgress: (Int) -> Unit
+    ): DecodedLocalAudio {
+        if (calls.incrementAndGet() == 1) {
+            firstCallEntered.complete(Unit)
+            withContext(NonCancellable) { releaseFirstCall.await() }
+        } else {
+            secondCallEntered.complete(Unit)
+        }
         return DecodedLocalAudio(
             monoSamples = FloatArray(22_050) { 0f },
             sampleRate = 22_050,
