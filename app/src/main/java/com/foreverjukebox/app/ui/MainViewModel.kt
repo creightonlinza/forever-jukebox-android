@@ -2943,7 +2943,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         diagnostics.logAnalysisFailed("server", error.javaClass.simpleName)
                         AppLog.warn(TAG, failureLogMessage, error)
-                        playbackCoordinator.setAnalysisError("Loading failed.", cause = error)
+                        // A 404 means the server does not have the requested job (deleted,
+                        // expired, or a link to a different server) — a state of the request,
+                        // not a fault the app can act on.
+                        playbackCoordinator.setAnalysisError(
+                            "Loading failed.",
+                            cause = error,
+                            expected = error.statusCode == 404
+                        )
                     }
                     return@launch
                 } catch (error: IOException) {
