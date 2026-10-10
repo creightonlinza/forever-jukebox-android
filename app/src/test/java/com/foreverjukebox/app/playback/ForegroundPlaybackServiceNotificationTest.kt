@@ -1,11 +1,21 @@
 package com.foreverjukebox.app.playback
 
+import android.content.Intent
 import android.support.v4.media.session.PlaybackStateCompat
 import com.foreverjukebox.app.ui.JukeboxAudioMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+
+// The service's action constants are file-private; these mirror their wire values.
+private const val ACTION_START = "com.foreverjukebox.app.playback.START"
+private const val ACTION_UPDATE = "com.foreverjukebox.app.playback.UPDATE"
+private const val ACTION_STOP = "com.foreverjukebox.app.playback.STOP"
+private const val ACTION_TOGGLE = "com.foreverjukebox.app.playback.TOGGLE"
+private const val ACTION_SET_SLEEP_TIMER = "com.foreverjukebox.app.playback.SET_SLEEP_TIMER"
+private const val ACTION_CLEAR_NOTIFICATION_KEEP_TIMER =
+    "com.foreverjukebox.app.playback.CLEAR_NOTIFICATION_KEEP_TIMER"
 
 class ForegroundPlaybackServiceNotificationTest {
 
@@ -340,6 +350,56 @@ class ForegroundPlaybackServiceNotificationTest {
                     externalTransportActive = false
                 )
             )
+        }
+    }
+
+    @Test
+    fun everyStartBeforeForegroundIsLogged() {
+        listOf(
+            null,
+            Intent.ACTION_MEDIA_BUTTON,
+            ACTION_START,
+            ACTION_UPDATE,
+            ACTION_STOP,
+            ACTION_TOGGLE
+        ).forEach { action ->
+            assertTrue(shouldLogServiceStart(action, hasStartedForeground = false))
+        }
+    }
+
+    @Test
+    fun routineStartsOnceInForegroundAreNotLogged() {
+        // These arrive on every notification refresh and would crowd the bounded
+        // crash-report log.
+        listOf(
+            ACTION_START,
+            ACTION_UPDATE,
+            ACTION_TOGGLE
+        ).forEach { action ->
+            assertFalse(shouldLogServiceStart(action, hasStartedForeground = true))
+        }
+    }
+
+    @Test
+    fun sleepTimerCommandsAreNeverLogged() {
+        // Delivered by startService on every hidden-session sync, in or out of foreground.
+        listOf(
+            ACTION_SET_SLEEP_TIMER,
+            ACTION_CLEAR_NOTIFICATION_KEEP_TIMER
+        ).forEach { action ->
+            assertFalse(shouldLogServiceStart(action, hasStartedForeground = false))
+            assertFalse(shouldLogServiceStart(action, hasStartedForeground = true))
+        }
+    }
+
+    @Test
+    fun mediaKeysStopsAndRestartsAreLoggedEvenInForeground() {
+        listOf(
+            null,
+            Intent.ACTION_MEDIA_BUTTON,
+            ACTION_STOP
+        ).forEach { action ->
+            assertTrue(shouldLogServiceStart(action, hasStartedForeground = true))
         }
     }
 

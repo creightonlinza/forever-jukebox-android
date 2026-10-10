@@ -263,6 +263,28 @@ internal fun isPlayRequestWithoutAudio(
     return !hasAudio && !isPlaying && !externalTransportActive
 }
 
+/**
+ * Whether a start command earns a crash-report breadcrumb. Updates to a service that is
+ * already in the foreground are frequent enough to push everything else out of the
+ * bounded log, so only the starts that decide whether the service reaches foreground
+ * are kept: any start before foreground, media keys, stops, and system restarts. The
+ * sleep-timer commands never carry a foreground obligation and repeat on every hidden
+ * session sync, so they are never logged.
+ */
+internal fun shouldLogServiceStart(action: String?, hasStartedForeground: Boolean): Boolean {
+    if (action == PlaybackServiceConstants.ACTION_SET_SLEEP_TIMER ||
+        action == PlaybackServiceConstants.ACTION_CLEAR_NOTIFICATION_KEEP_TIMER
+    ) {
+        return false
+    }
+    if (!hasStartedForeground) {
+        return true
+    }
+    return action == null ||
+        action == Intent.ACTION_MEDIA_BUTTON ||
+        action == PlaybackServiceConstants.ACTION_STOP
+}
+
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
     return when (type) {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
@@ -360,6 +382,7 @@ class ForegroundPlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        AppLog.info(TAG, "Service created")
         mediaSession = MediaSessionCompat(
             applicationContext.playbackAttributionContext(),
             "ForeverJukeboxPlayback"
@@ -431,6 +454,12 @@ class ForegroundPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (shouldLogServiceStart(intent?.action, hasStartedForeground)) {
+            AppLog.info(
+                TAG,
+                "Start command: ${describeStart(intent)} foreground=$hasStartedForeground"
+            )
+        }
         // Dispatches a hardware/Bluetooth key to the session callback, which runs the
         // same transport handling as the notification's own buttons.
         MediaButtonReceiver.handleIntent(mediaSession, intent)
@@ -484,6 +513,23 @@ class ForegroundPlaybackService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    private fun describeStart(intent: Intent?): String {
+        if (intent == null) {
+            return "sticky restart"
+        }
+        val action = intent.action ?: return "no action"
+        if (action != Intent.ACTION_MEDIA_BUTTON) {
+            return action.substringAfterLast('.')
+        }
+        val keyEvent = IntentCompat.getParcelableExtra(
+            intent,
+            Intent.EXTRA_KEY_EVENT,
+            KeyEvent::class.java
+        ) ?: return "MEDIA_BUTTON"
+        val phase = if (keyEvent.action == KeyEvent.ACTION_DOWN) "down" else "up"
+        return "MEDIA_BUTTON ${KeyEvent.keyCodeToString(keyEvent.keyCode)} $phase"
     }
 
     private fun refreshNotificationForCurrentPlayback(
@@ -780,6 +826,7 @@ class ForegroundPlaybackService : Service() {
             try {
                 startForeground(PlaybackServiceConstants.NOTIFICATION_ID, notification)
                 hasStartedForeground = true
+                AppLog.info(TAG, "Entered foreground")
             } catch (error: IllegalStateException) {
                 if (isForegroundStartDenied(error)) {
                     // Android can reject entering foreground if the app is background-restricted.
@@ -884,6 +931,7 @@ class ForegroundPlaybackService : Service() {
             if (sent) {
                 updateNotification(activeState.copy(isPlaying = targetPlayState))
             } else {
+                AppLog.info(TAG, "Stopping service: cast command not sent")
                 activeNotificationState = null
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -1057,6 +1105,7 @@ class ForegroundPlaybackService : Service() {
     private fun clearPlaybackNotificationKeepTimer() {
         activeNotificationState = null
         if (hasStartedForeground) {
+            AppLog.info(TAG, "Leaving foreground; service kept running")
             stopForeground(STOP_FOREGROUND_REMOVE)
             hasStartedForeground = false
         } else {
@@ -1093,6 +1142,7 @@ class ForegroundPlaybackService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             hasStartedForeground = false
         }
+        AppLog.info(TAG, "Stopping service")
         stopSelf()
     }
 
@@ -1170,6 +1220,7 @@ class ForegroundPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        AppLog.info(TAG, "Service destroyed")
         activeNotificationState = null
         isRunning = false
         hasStartedForeground = false
@@ -1182,6 +1233,7 @@ class ForegroundPlaybackService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // User explicitly removed the app task; tear down playback notification/service.
+        AppLog.info(TAG, "Stopping service: task removed")
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         super.onTaskRemoved(rootIntent)
@@ -1345,11 +1397,16 @@ class ForegroundPlaybackService : Service() {
                 }
                 ForegroundServiceStopCommand.StopService -> {
                     if (pendingForegroundStart) {
+                        AppLog.info(TAG, "Requesting stop through a foreground start")
                         val intent = Intent(playbackContext, ForegroundPlaybackService::class.java).apply {
                             action = PlaybackServiceConstants.ACTION_STOP
                         }
                         playbackContext.startForegroundService(intent)
                     } else {
+                        // Hidden-session syncs repeat this while nothing is running.
+                        if (isRunning) {
+                            AppLog.info(TAG, "Requesting stopService")
+                        }
                         playbackContext.stopService(
                             Intent(playbackContext, ForegroundPlaybackService::class.java)
                         )
@@ -1375,6 +1432,10 @@ class ForegroundPlaybackService : Service() {
                 return
             }
             pendingForegroundStart = true
+            AppLog.info(
+                TAG,
+                "Requesting foreground start: ${intent.action?.substringAfterLast('.')}"
+            )
             try {
                 playbackContext.startForegroundService(intent)
             } catch (error: IllegalStateException) {
