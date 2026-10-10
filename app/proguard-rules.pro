@@ -9,6 +9,7 @@
 -keep interface com.foreverjukebox.app.local.NativeAnalysisBridge$MadmomBeatsPortProgressCallback { *; }
 -keep interface com.foreverjukebox.app.local.NativeAnalysisBridge$EssentiaProgressCallback { *; }
 -keep interface com.foreverjukebox.app.audio.BufferedAudioPlayer$SwingProgressCallback { *; }
+-keep interface com.foreverjukebox.app.audio.BufferedAudioPlayer$WubProgressCallback { *; }
 
 # Keep serialization models and serializers stable for cached analysis JSON,
 # preferences payloads, and server responses in minified release builds.
