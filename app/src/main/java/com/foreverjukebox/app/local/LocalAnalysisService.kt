@@ -72,10 +72,6 @@ class LocalAnalysisService(
     // Each run owns its cancel flag, so starting a replacement cannot clear the
     // signal aimed at the run it supersedes.
     private val activeRunCancelled = AtomicReference(AtomicBoolean(false))
-
-    // Runs hold whole-track buffers and share one native cancel flag, so a run
-    // begins its work only once the run before it has fully stopped.
-    private val runMutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
 
     fun cancel() {
@@ -434,6 +430,11 @@ class LocalAnalysisService(
         private const val ANALYSIS_FILE_SUFFIX = ".analysis.json"
         private const val METADATA_FILE_SUFFIX = ".meta.json"
         private const val TUNING_FILE_SUFFIX = ".tuning"
+
+        // Process-wide, like the native cancel flag it protects. Runs hold whole-track
+        // buffers and share that one flag, so a run begins its work only once the run
+        // before it, from any instance, has fully stopped.
+        private val runMutex = Mutex()
 
         private fun heapSummary(): String {
             val runtime = Runtime.getRuntime()

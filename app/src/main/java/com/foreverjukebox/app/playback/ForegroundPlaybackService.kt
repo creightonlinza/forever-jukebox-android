@@ -159,7 +159,7 @@ internal fun localPlaybackNotificationArtist(
     }
 }
 
-private object PlaybackServiceConstants {
+internal object PlaybackServiceConstants {
     const val CHANNEL_ID = "fj_playback"
     const val NOTIFICATION_ID = 2001
     const val ACTION_START = "com.foreverjukebox.app.playback.START"
@@ -1305,6 +1305,8 @@ class ForegroundPlaybackService : Service() {
         private var isRunning: Boolean = false
         @Volatile
         private var pendingForegroundStart: Boolean = false
+        @Volatile
+        private var foregroundStartDenied: Boolean = false
         private val _sleepTimerState = MutableStateFlow(SleepTimerStatus())
         val sleepTimerState: StateFlow<SleepTimerStatus> = _sleepTimerState
         const val ACTION_SLEEP_TIMER_EXPIRED: String =
@@ -1467,19 +1469,31 @@ class ForegroundPlaybackService : Service() {
                 return
             }
             pendingForegroundStart = true
-            AppLog.info(
-                TAG,
-                "Requesting foreground start: ${intent.action?.substringAfterLast('.')}"
-            )
+            // Playback retries this on every notification sync, so a standing denial is
+            // logged once rather than on each attempt.
+            val repeatedDenial = foregroundStartDenied
+            if (!repeatedDenial) {
+                AppLog.info(
+                    TAG,
+                    "Requesting foreground start: ${intent.action?.substringAfterLast('.')}"
+                )
+            }
             try {
                 playbackContext.startForegroundService(intent)
+                foregroundStartDenied = false
+                if (repeatedDenial) {
+                    AppLog.info(TAG, "Foreground start accepted after denial")
+                }
             } catch (error: IllegalStateException) {
                 pendingForegroundStart = false
-                AppLog.warn(
-                    TAG,
-                    "Foreground service start denied; continuing without notification.",
-                    error
-                )
+                foregroundStartDenied = true
+                if (!repeatedDenial) {
+                    AppLog.warn(
+                        TAG,
+                        "Foreground service start denied; continuing without notification.",
+                        error
+                    )
+                }
             }
         }
     }
