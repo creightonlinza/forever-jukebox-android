@@ -404,6 +404,27 @@ class ForegroundPlaybackServiceNotificationTest {
     }
 
     @Test
+    fun heldMediaKeyIsLoggedOncePerPress() {
+        val down = MediaKeyPress(keyCode = 85, isDown = true)
+        val up = MediaKeyPress(keyCode = 85, isDown = false)
+
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = down, previous = null))
+        // Auto-repeat while held, with and without the platform's repeat count.
+        assertTrue(isRepeatedMediaKey(repeatCount = 1, press = down, previous = down))
+        assertTrue(isRepeatedMediaKey(repeatCount = 0, press = down, previous = down))
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = up, previous = down))
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = down, previous = up))
+    }
+
+    @Test
+    fun differentMediaKeyIsNotARepeat() {
+        val playPause = MediaKeyPress(keyCode = 85, isDown = true)
+        val next = MediaKeyPress(keyCode = 87, isDown = true)
+
+        assertFalse(isRepeatedMediaKey(repeatCount = 0, press = next, previous = playPause))
+    }
+
+    @Test
     fun pauseAndStopPressesWithNothingLoadedKeepNormalHandling() {
         listOf(PlaybackAction.Pause, PlaybackAction.Stop).forEach { action ->
             assertFalse(

@@ -285,6 +285,22 @@ internal fun shouldLogServiceStart(action: String?, hasStartedForeground: Boolea
         action == PlaybackServiceConstants.ACTION_STOP
 }
 
+internal data class MediaKeyPress(val keyCode: Int, val isDown: Boolean)
+
+/**
+ * True for a media key event that adds nothing to the breadcrumb trail: an auto-repeat
+ * from a held key, or the same key and phase as the event before it (some devices
+ * resend key-down without a repeat count). A held key would otherwise fill the bounded
+ * log on its own.
+ */
+internal fun isRepeatedMediaKey(
+    repeatCount: Int,
+    press: MediaKeyPress,
+    previous: MediaKeyPress?
+): Boolean {
+    return repeatCount > 0 || press == previous
+}
+
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
     return when (type) {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
@@ -357,6 +373,7 @@ class ForegroundPlaybackService : Service() {
     private var sleepTimerJob: Job? = null
     private var sleepTimerEndRealtimeMs: Long? = null
     private var hasStartedForeground = false
+    private var lastMediaKeyPress: MediaKeyPress? = null
     private var audioManager: AudioManager? = null
     private var bluetoothRouteMonitoringRegistered = false
     @Volatile
@@ -454,10 +471,13 @@ class ForegroundPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (shouldLogServiceStart(intent?.action, hasStartedForeground)) {
+        val keyEvent = intent?.mediaKeyEvent()
+        if (shouldLogServiceStart(intent?.action, hasStartedForeground) &&
+            !isRepeatedMediaKeyStart(keyEvent)
+        ) {
             AppLog.info(
                 TAG,
-                "Start command: ${describeStart(intent)} foreground=$hasStartedForeground"
+                "Start command: ${describeStart(intent, keyEvent)} foreground=$hasStartedForeground"
             )
         }
         // Dispatches a hardware/Bluetooth key to the session callback, which runs the
@@ -515,7 +535,24 @@ class ForegroundPlaybackService : Service() {
         return START_STICKY
     }
 
-    private fun describeStart(intent: Intent?): String {
+    private fun Intent.mediaKeyEvent(): KeyEvent? {
+        if (action != Intent.ACTION_MEDIA_BUTTON) {
+            return null
+        }
+        return IntentCompat.getParcelableExtra(this, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+    }
+
+    private fun isRepeatedMediaKeyStart(keyEvent: KeyEvent?): Boolean {
+        if (keyEvent == null) {
+            return false
+        }
+        val press = MediaKeyPress(keyEvent.keyCode, keyEvent.action == KeyEvent.ACTION_DOWN)
+        val repeated = isRepeatedMediaKey(keyEvent.repeatCount, press, lastMediaKeyPress)
+        lastMediaKeyPress = press
+        return repeated
+    }
+
+    private fun describeStart(intent: Intent?, keyEvent: KeyEvent?): String {
         if (intent == null) {
             return "sticky restart"
         }
@@ -523,11 +560,9 @@ class ForegroundPlaybackService : Service() {
         if (action != Intent.ACTION_MEDIA_BUTTON) {
             return action.substringAfterLast('.')
         }
-        val keyEvent = IntentCompat.getParcelableExtra(
-            intent,
-            Intent.EXTRA_KEY_EVENT,
-            KeyEvent::class.java
-        ) ?: return "MEDIA_BUTTON"
+        if (keyEvent == null) {
+            return "MEDIA_BUTTON"
+        }
         val phase = if (keyEvent.action == KeyEvent.ACTION_DOWN) "down" else "up"
         return "MEDIA_BUTTON ${KeyEvent.keyCodeToString(keyEvent.keyCode)} $phase"
     }
