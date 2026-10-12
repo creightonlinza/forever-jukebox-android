@@ -3,6 +3,15 @@ package com.foreverjukebox.app.wubmachine
 import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.audio.BufferedAudioPlayer
 
+/** What a render in flight is working on; each stage reports its own completed and total counts. */
+enum class WubRenderStage {
+    /** Decoding the bundled samples the remix names that are not in memory yet. */
+    Samples,
+
+    /** Stretching the track's slices onto the beat grid and mixing them under the samples. */
+    Remix
+}
+
 /**
  * Renders the loaded track's Wub Machine remix: plans the arrangement, feeds the native renderer
  * the track snapshot and the decoded samples it names, and installs the result on the remix
@@ -20,13 +29,13 @@ class WubMachineRemixRenderer(
 
     /**
      * Null when the render was cancelled, failed, or the remix player dropped its track meanwhile
-     * (the result then stays uninstalled). [onProgress] receives completed and total slices;
-     * returning false cancels.
+     * (the result then stays uninstalled). [onProgress] receives the samples decoded so far, when
+     * any need decoding, then the slices rendered; returning false cancels.
      */
     @Suppress("TooGenericExceptionCaught")
     fun render(
         analysis: DubstepAnalysis,
-        onProgress: (completed: Int, total: Int) -> Boolean
+        onProgress: (stage: WubRenderStage, completed: Int, total: Int) -> Boolean
     ): WubRemix? {
         val generation = controller.remixGeneration()
         val plan = planDubstepRemix(analysis, options)
@@ -36,13 +45,24 @@ class WubMachineRemixRenderer(
                 .also { request = it }
         } ?: return null
         try {
+            val toDecode = request.sampleNames.count { !samples.isLoaded(it) }
+            var decoded = 0
+            if (toDecode > 0 && !onProgress(WubRenderStage.Samples, 0, toDecode)) return null
             request.sampleNames.forEachIndexed { index, name ->
+                val wasLoaded = samples.isLoaded(name)
                 val pcm = samples.load(name)
                 val added = job.addSample(index, pcm.data, pcm.dataLength, pcm.sampleRate, pcm.channelCount)
                 if (!added) return null
+                if (!wasLoaded) {
+                    decoded += 1
+                    if (!onProgress(WubRenderStage.Samples, decoded, toDecode)) return null
+                }
             }
             samples.retainOnly(request.sampleNames)
-            if (!job.run(onProgress)) return null
+            val rendered = job.run { completed, total ->
+                onProgress(WubRenderStage.Remix, completed, total)
+            }
+            if (!rendered) return null
             val installed = controller.install(job, generation) { durationSeconds ->
                 layoutWubParts(
                     plan = plan,

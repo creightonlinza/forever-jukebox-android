@@ -108,6 +108,7 @@ internal fun PlaybackState.resetForNewTrack(keepLoadVisible: Boolean): PlaybackS
         swingProgress = null,
         wubReady = false,
         wubProgress = null,
+        wubLoadingSamples = false,
         wubRenderFailed = false,
         wubMachine = WubMachineUiState(loop = wubMachine.loop),
         playAfterLoaded = false,

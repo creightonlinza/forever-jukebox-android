@@ -202,7 +202,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             // Cancelling the render leaves the mode, as the web app does when the remix is abandoned.
             LoadingStatus(
                 progress = playback.wubProgress,
-                label = "$PREPARING_WUB_MACHINE_LABEL...",
+                label = "${preparingWubMachineLabel(playback)}...",
                 trackTitle = loadingTrackMetadata?.title,
                 trackArtist = loadingTrackMetadata?.artist,
                 showCancel = true,

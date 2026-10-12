@@ -146,12 +146,18 @@ internal fun favoriteActionContentDescription(
 
 internal const val PREPARING_SWING_LABEL = "Preparing Swing mode"
 internal const val PREPARING_WUB_MACHINE_LABEL = "Building the Wub Machine remix"
+internal const val LOADING_WUB_SAMPLES_LABEL = "Loading samples"
+
+/** What a Wub Machine render in flight is doing, for the loading status and the play button. */
+internal fun preparingWubMachineLabel(playback: PlaybackState): String {
+    return if (playback.wubLoadingSamples) LOADING_WUB_SAMPLES_LABEL else PREPARING_WUB_MACHINE_LABEL
+}
 internal const val WUB_MACHINE_FAILED_MESSAGE = "The Wub Machine remix failed. Press play to try again."
 
 internal fun playbackTransportContentDescription(playback: PlaybackState): String {
     return when {
         playback.isPreparingSwing() -> PREPARING_SWING_LABEL
-        playback.isPreparingWubMachine() -> PREPARING_WUB_MACHINE_LABEL
+        playback.isPreparingWubMachine() -> preparingWubMachineLabel(playback)
         playback.isRunning -> "Pause"
         playback.isPaused -> "Resume"
         else -> "Play"

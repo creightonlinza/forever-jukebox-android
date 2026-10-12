@@ -4,6 +4,7 @@ import com.foreverjukebox.app.engine.TrackMeta
 import com.foreverjukebox.app.wubmachine.DubstepAnalysis
 import com.foreverjukebox.app.wubmachine.DubstepPartKind
 import com.foreverjukebox.app.wubmachine.WubRemix
+import com.foreverjukebox.app.wubmachine.WubRenderStage
 import com.foreverjukebox.app.wubmachine.WubRenderedPart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -37,18 +38,30 @@ class WubMachineCoordinatorTest {
         // that land while a slice is being stretched.
         var midRender: () -> Unit = {}
 
+        // Samples the render decodes before it starts on the remix.
+        var samplesToDecode = 0
+
+        // Runs once the samples are decoded, before the first slice.
+        var afterSamples: () -> Unit = {}
+
         override fun hasRemix(): Boolean = installed
 
         override fun currentRemix(): WubRemix? = remix.takeIf { installed }
 
         override fun render(
             analysis: DubstepAnalysis,
-            onProgress: (completed: Int, total: Int) -> Boolean
+            onProgress: (stage: WubRenderStage, completed: Int, total: Int) -> Boolean
         ): WubRemix? {
             renders += analysis
-            val keepGoing = onProgress(1, 2)
+            for (decoded in 0..samplesToDecode) {
+                if (samplesToDecode > 0 && !onProgress(WubRenderStage.Samples, decoded, samplesToDecode)) {
+                    return null
+                }
+            }
+            afterSamples()
+            val keepGoing = onProgress(WubRenderStage.Remix, 1, 2)
             midRender()
-            if (!keepGoing || !onProgress(2, 2)) return null
+            if (!keepGoing || !onProgress(WubRenderStage.Remix, 2, 2)) return null
             installed = result
             return remix.takeIf { result }
         }
@@ -277,6 +290,46 @@ class WubMachineCoordinatorTest {
         assertEquals(0, harness.failures)
         assertTrue(harness.playback.wubReady)
         assertEquals(listOf(true, false, true, false), harness.blocked)
+    }
+
+    @Test
+    fun reportsSampleLoadingAsItsOwnStageBeforeTheRemix() = runTest {
+        val harness = Harness(this)
+        harness.renderer.samplesToDecode = 2
+        var loadingAfterSamples: Boolean? = null
+        var loadingMidRemix: Boolean? = null
+        harness.renderer.afterSamples = { loadingAfterSamples = harness.playback.wubLoadingSamples }
+        harness.renderer.midRender = { loadingMidRemix = harness.playback.wubLoadingSamples }
+        harness.update { wubTrack() }
+
+        harness.coordinator.sync()
+        assertFalse(harness.playback.wubLoadingSamples)
+        advanceUntilIdle()
+
+        assertEquals(true, loadingAfterSamples)
+        assertEquals(false, loadingMidRemix)
+        // Each stage counts from its own zero.
+        assertEquals(listOf(0, 50, 100, 50, 100, null), harness.progressHistory)
+        assertTrue(harness.playback.wubReady)
+        assertFalse(harness.playback.wubLoadingSamples)
+    }
+
+    @Test
+    fun cancellingWhileSamplesLoadClearsTheStage() = runTest {
+        val harness = Harness(this)
+        harness.renderer.samplesToDecode = 2
+        harness.renderer.afterSamples = {
+            harness.update { harness.playback.copy(playMode = PlaybackMode.Jukebox) }
+            harness.coordinator.sync()
+        }
+        harness.update { wubTrack() }
+
+        harness.coordinator.sync()
+        advanceUntilIdle()
+
+        assertFalse(harness.playback.wubLoadingSamples)
+        assertNull(harness.playback.wubProgress)
+        assertFalse(harness.playback.wubReady)
     }
 
     @Test

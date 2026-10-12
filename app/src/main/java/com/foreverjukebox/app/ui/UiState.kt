@@ -304,8 +304,10 @@ data class PlaybackState(
     val swingProgress: Int? = null,
     // True once the Wub Machine player holds the loaded track's remix.
     val wubReady: Boolean = false,
-    // Percent complete of the remix render in flight; null when none is running.
+    // Percent complete of the current stage of the remix render in flight; null when none is running.
     val wubProgress: Int? = null,
+    // True while that render is decoding its samples, before any of the remix is built.
+    val wubLoadingSamples: Boolean = false,
     // Set when the last remix render failed; the next play request clears it and retries.
     val wubRenderFailed: Boolean = false,
     val wubMachine: WubMachineUiState = WubMachineUiState(),

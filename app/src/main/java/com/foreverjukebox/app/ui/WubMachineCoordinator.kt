@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.wubmachine.DubstepAnalysis
 import com.foreverjukebox.app.wubmachine.WubRemix
+import com.foreverjukebox.app.wubmachine.WubRenderStage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +19,10 @@ internal interface WubMachineRenderer {
     fun currentRemix(): WubRemix?
 
     /** Blocks until done; [onProgress] returning false cancels. Null unless the remix is installed. */
-    fun render(analysis: DubstepAnalysis, onProgress: (completed: Int, total: Int) -> Boolean): WubRemix?
+    fun render(
+        analysis: DubstepAnalysis,
+        onProgress: (stage: WubRenderStage, completed: Int, total: Int) -> Boolean
+    ): WubRemix?
 }
 
 /** Identifies the render a preparing track needs, so a track change restarts it. */
@@ -116,7 +120,7 @@ internal class WubMachineCoordinator(
         resumeWhenReady = playback.isRunning
         setPlaybackBlocked(true)
         pausePlayback()
-        updatePlayback { it.copy(wubProgress = 0) }
+        updatePlayback { it.copy(wubProgress = 0, wubLoadingSamples = false) }
         renderKey = key
         renderGeneration += 1
         val generation = renderGeneration
@@ -126,8 +130,8 @@ internal class WubMachineCoordinator(
             val remix = audioLoadHold.hold {
                 withContext(renderDispatcher) {
                     val analysis = getAnalysis() ?: return@withContext null
-                    renderer.render(analysis) { completed, total ->
-                        reportProgress(generation, completed, total)
+                    renderer.render(analysis) { stage, completed, total ->
+                        reportProgress(generation, stage, completed, total)
                         isActive
                     }
                 }
@@ -136,12 +140,18 @@ internal class WubMachineCoordinator(
         }
     }
 
-    private fun reportProgress(generation: Int, completed: Int, total: Int) {
+    private fun reportProgress(generation: Int, stage: WubRenderStage, completed: Int, total: Int) {
         if (total <= 0 || generation != renderGeneration) return
         val percent = (completed * PERCENT_MAX / total).coerceIn(0, PERCENT_MAX)
+        val loadingSamples = stage == WubRenderStage.Samples
         updatePlayback {
-            if (it.wubProgress == null || it.wubProgress == percent) it
-            else it.copy(wubProgress = percent)
+            if (it.wubProgress == null ||
+                (it.wubProgress == percent && it.wubLoadingSamples == loadingSamples)
+            ) {
+                it
+            } else {
+                it.copy(wubProgress = percent, wubLoadingSamples = loadingSamples)
+            }
         }
     }
 
@@ -157,7 +167,7 @@ internal class WubMachineCoordinator(
         resumeWhenReady = false
         setPlaybackBlocked(false)
         if (stale) {
-            updatePlayback { it.copy(wubProgress = null) }
+            updatePlayback { it.copy(wubProgress = null, wubLoadingSamples = false) }
             sync()
             return
         }
@@ -165,7 +175,7 @@ internal class WubMachineCoordinator(
             updatePlayback { it.withRemix(remix) }
             onReady(resume)
         } else {
-            updatePlayback { it.copy(wubProgress = null, wubRenderFailed = true) }
+            updatePlayback { it.copy(wubProgress = null, wubLoadingSamples = false, wubRenderFailed = true) }
             onFailed()
         }
     }
@@ -178,12 +188,13 @@ internal class WubMachineCoordinator(
         renderGeneration += 1
         job.cancel()
         setPlaybackBlocked(false)
-        updatePlayback { it.copy(wubProgress = null) }
+        updatePlayback { it.copy(wubProgress = null, wubLoadingSamples = false) }
     }
 
     private fun PlaybackState.withRemix(remix: WubRemix): PlaybackState = copy(
         wubReady = true,
         wubProgress = null,
+        wubLoadingSamples = false,
         wubRenderFailed = false,
         wubMachine = wubMachine.copy(
             parts = remix.parts,

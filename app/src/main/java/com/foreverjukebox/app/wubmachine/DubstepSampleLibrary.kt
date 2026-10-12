@@ -38,6 +38,10 @@ class DubstepSampleLibrary(context: Context) : DubstepSampleSource {
         }
     }
 
+    /** True once [name] is decoded, so loading it again costs nothing. */
+    @Synchronized
+    fun isLoaded(name: String): Boolean = name in cache
+
     @Synchronized
     fun retainOnly(names: Collection<String>) {
         cache.keys.retainAll(names.toSet())

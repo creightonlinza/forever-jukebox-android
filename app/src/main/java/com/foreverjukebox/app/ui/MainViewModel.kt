@@ -37,6 +37,7 @@ import com.foreverjukebox.app.audio.SwingBeat
 import com.foreverjukebox.app.wubmachine.DubstepAnalysis
 import com.foreverjukebox.app.wubmachine.DubstepSampleLibrary
 import com.foreverjukebox.app.wubmachine.WubMachineRemixRenderer
+import com.foreverjukebox.app.wubmachine.WubRenderStage
 import com.foreverjukebox.app.wubmachine.WubRemix
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.net.FeedbackClient
@@ -417,7 +418,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             override fun render(
                 analysis: DubstepAnalysis,
-                onProgress: (completed: Int, total: Int) -> Boolean
+                onProgress: (stage: WubRenderStage, completed: Int, total: Int) -> Boolean
             ): WubRemix? = wubMachineRemixRenderer.render(analysis, onProgress)
         },
         getAnalysis = { engine.getAnalysis()?.let(DubstepAnalysis::from) },
@@ -3146,7 +3147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (current.isPreparingWubMachine()) {
-            viewModelScope.launch { showToast("$PREPARING_WUB_MACHINE_LABEL...") }
+            viewModelScope.launch { showToast("${preparingWubMachineLabel(current)}...") }
             wubMachineCoordinator.playWhenReady()
             return
         }

@@ -40,12 +40,14 @@ class WubMachinePlaybackPolicyTest {
         val reset = loadedWub.copy(
             wubReady = true,
             wubProgress = 40,
+            wubLoadingSamples = true,
             wubRenderFailed = true,
             wubMachine = WubMachineUiState(durationSeconds = 90.0, positionSeconds = 12.0, loop = true)
         ).resetForNewTrack(keepLoadVisible = false)
 
         assertFalse(reset.wubReady)
         assertNull(reset.wubProgress)
+        assertFalse(reset.wubLoadingSamples)
         assertFalse(reset.wubRenderFailed)
         assertEquals(WubMachineUiState(loop = true), reset.wubMachine)
     }
@@ -63,6 +65,10 @@ class WubMachinePlaybackPolicyTest {
         val preparing = loadedWub.copy(wubProgress = 40, isPaused = true)
 
         assertEquals(PREPARING_WUB_MACHINE_LABEL, playbackTransportContentDescription(preparing))
+        assertEquals(
+            LOADING_WUB_SAMPLES_LABEL,
+            playbackTransportContentDescription(preparing.copy(wubLoadingSamples = true))
+        )
         assertEquals(ListenContentMode.None, resolveListenContentMode(preparing))
         assertEquals(
             PlaybackServiceSession.LocalLoading(40),
