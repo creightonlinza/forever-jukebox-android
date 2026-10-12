@@ -21,7 +21,7 @@ private class FirebaseAnalyticsGateway(context: Context) : AnalyticsGateway {
     }
 
     override fun logSelectTrack(source: String, trackId: String?, trackTitle: String?) {
-        log("select_track", "source" to source, "track_id" to trackId, "track_title" to trackTitle)
+        log("select_track", "ui_source" to source, "track_id" to trackId, "track_title" to trackTitle)
     }
 
     override fun logFavorite(trackId: String, trackTitle: String?) {
@@ -63,7 +63,7 @@ private class FirebaseAnalyticsGateway(context: Context) : AnalyticsGateway {
     override fun logPlaylistAdd(source: String, trackId: String, size: Int) {
         val analytics = firebase ?: return
         val bundle = Bundle()
-        bundle.putString("source", source)
+        bundle.putString("ui_source", source)
         bundle.putString("track_id", trackId)
         bundle.putLong("size", size.toLong())
         analytics.logEvent("playlist_add", bundle)
