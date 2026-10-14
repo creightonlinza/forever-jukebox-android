@@ -34,7 +34,6 @@ import androidx.media.session.MediaButtonReceiver
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
-import com.foreverjukebox.app.ui.JukeboxAudioMode
 import com.foreverjukebox.app.AppLog
 import com.foreverjukebox.app.ProcessExitDiagnostics
 import com.foreverjukebox.app.MainActivity
@@ -117,49 +116,6 @@ internal fun compactActionIndices(actionCount: Int): IntArray {
     return IntArray(visibleCount) { it }
 }
 
-internal fun loadingNotificationProgressBucket(progress: Int?): Int? {
-    val safeProgress = progress?.coerceIn(0, 100) ?: return null
-    val bucket = (safeProgress / 10) * 10
-    return bucket.takeIf { it >= 10 }
-}
-
-internal fun loadingNotificationTitle(progressBucket: Int?): String {
-    return progressBucket?.let { "Loading - $it%" } ?: LOADING_NOTIFICATION_TITLE
-}
-
-internal fun localPlaybackNotificationTitle(
-    baseTitle: String?,
-    audioMode: JukeboxAudioMode,
-    isLoading: Boolean,
-    loadingProgressBucket: Int?,
-    isLoadFailed: Boolean = false
-): String {
-    if (isLoadFailed) {
-        return LOAD_FAILED_NOTIFICATION_TITLE
-    }
-    if (isLoading) {
-        return loadingNotificationTitle(loadingProgressBucket)
-    }
-    val title = baseTitle.orEmpty()
-    return when {
-        title.isBlank() -> DEFAULT_NOTIFICATION_TITLE
-        audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
-        else -> title
-    }
-}
-
-internal fun localPlaybackNotificationArtist(
-    baseArtist: String?,
-    isLoading: Boolean,
-    isLoadFailed: Boolean = false
-): String {
-    return if (isLoading || isLoadFailed) {
-        DEFAULT_NOTIFICATION_TITLE
-    } else {
-        baseArtist.orEmpty()
-    }
-}
-
 private object PlaybackServiceConstants {
     const val CHANNEL_ID = "fj_playback"
     const val NOTIFICATION_ID = 2001
@@ -192,9 +148,6 @@ private object PlaybackServiceConstants {
 }
 
 private const val NOTIFICATION_ACCENT = "#4AC7FF"
-private const val DEFAULT_NOTIFICATION_TITLE = "Forever Jukebox"
-private const val LOADING_NOTIFICATION_TITLE = "Loading"
-private const val LOAD_FAILED_NOTIFICATION_TITLE = "Loading Failed"
 private const val CAST_FALLBACK_DEVICE_LABEL = "Other device"
 private const val BLUETOOTH_DISCONNECT_WINDOW_MS = 3_000L
 private const val DEFAULT_ACTION_ICON_SIZE_PX = 96
@@ -202,66 +155,6 @@ private const val DEFAULT_ACTION_ICON_SIZE_PX = 96
 private enum class NotificationMode {
     Local,
     Cast
-}
-
-internal enum class PlaybackAction {
-    Play,
-    Pause,
-    Stop,
-    Toggle
-}
-
-internal enum class TransportActionRoute {
-    /** Drop the press: no meaningful transport target in this notification state. */
-    Ignore,
-
-    /** Ask the app to run the failed-load retry flow instead of touching playback. */
-    BroadcastRetry,
-
-    /** Normal transport handling (play/pause/stop/toggle the active playback). */
-    Handle
-}
-
-/**
- * Routes a transport press by notification state. While a load is in flight every
- * press is dropped; while a failed notification is showing, Play/Toggle become the
- * retry trigger (Pause/Stop have nothing to act on); otherwise the press reaches
- * normal playback handling.
- */
-internal fun routeTransportAction(
-    isLoading: Boolean,
-    isLoadFailed: Boolean,
-    action: PlaybackAction
-): TransportActionRoute {
-    if (isLoading) {
-        return TransportActionRoute.Ignore
-    }
-    if (isLoadFailed) {
-        return if (action == PlaybackAction.Play || action == PlaybackAction.Toggle) {
-            TransportActionRoute.BroadcastRetry
-        } else {
-            TransportActionRoute.Ignore
-        }
-    }
-    return TransportActionRoute.Handle
-}
-
-/**
- * True when a local press asks to start playback but nothing is loaded to play. Media
- * keys can start the service long after the UI released its audio (app exited, task
- * removed, Bluetooth device auto-sending Play on connect), so this is an expected
- * state rather than a playback failure.
- */
-internal fun isPlayRequestWithoutAudio(
-    action: PlaybackAction,
-    hasAudio: Boolean,
-    isPlaying: Boolean,
-    externalTransportActive: Boolean
-): Boolean {
-    if (action != PlaybackAction.Play && action != PlaybackAction.Toggle) {
-        return false
-    }
-    return !hasAudio && !isPlaying && !externalTransportActive
 }
 
 internal fun isBluetoothOutputDeviceType(type: Int): Boolean {
@@ -382,7 +275,7 @@ class ForegroundPlaybackService : Service() {
                     }
                     when (keyEvent.keyCode) {
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                            handlePlaybackAction(PlaybackAction.Toggle)
+                            handlePlaybackAction(resolveToggleAction())
                             return true
                         }
                         KeyEvent.KEYCODE_MEDIA_PLAY -> {
@@ -448,11 +341,7 @@ class ForegroundPlaybackService : Service() {
                 }
             }
             PlaybackServiceConstants.ACTION_TOGGLE -> {
-                if (intent.getBooleanExtra(PlaybackServiceConstants.EXTRA_IS_CASTING, false)) {
-                    handleCastToggle()
-                } else {
-                    handlePlaybackAction(PlaybackAction.Toggle)
-                }
+                handlePlaybackAction(resolveToggleAction())
             }
             PlaybackServiceConstants.ACTION_SET_SLEEP_TIMER -> {
                 val durationMs = intent.getLongExtra(
@@ -872,14 +761,12 @@ class ForegroundPlaybackService : Service() {
             PlaybackAction.Play -> true
             PlaybackAction.Pause,
             PlaybackAction.Stop -> false
-            PlaybackAction.Toggle -> !(activeState?.isPlaying ?: PlaybackControllerHolder.get(this).isPlaying())
         }
         if (activeState?.mode == NotificationMode.Cast) {
             val command = when (action) {
                 PlaybackAction.Play -> "play"
                 PlaybackAction.Pause -> "pause"
                 PlaybackAction.Stop -> "stop"
-                PlaybackAction.Toggle -> if (activeState.isPlaying) "pause" else "play"
             }
             val sent = castController.sendCommand(
                 PlaybackServiceConstants.CAST_COMMAND_NAMESPACE,
@@ -952,32 +839,23 @@ class ForegroundPlaybackService : Service() {
                 controller.stopExternalPlayback()
                 updateNotification(buildLocalNotificationState(false))
             }
-            PlaybackAction.Toggle -> {
-                if (externalRunning) {
-                    external?.pause()
-                    controller.pauseExternalPlayback()
-                    updateNotification(buildLocalNotificationState(false))
-                } else if (externalPaused) {
-                    val resumed = controller.requestAudioFocusForLocalPlayback() &&
-                        external?.resume() == true
-                    if (resumed) {
-                        controller.startExternalPlayback(resetTimers = false)
-                    }
-                    updateNotification(buildLocalNotificationState(resumed))
-                } else if (controller.isPlaying()) {
-                    controller.pausePlayback()
-                    updateNotification(buildLocalNotificationState(false))
-                } else {
-                    val running = controller.playOrResumePlayback()
-                    updateNotification(buildLocalNotificationState(running))
-                }
-            }
         }
         broadcastLocalPlaybackStateChanged()
     }
 
-    private fun handleCastToggle() {
-        handlePlaybackAction(PlaybackAction.Toggle)
+    // A toggle press resolves to the opposite of what the notification currently shows,
+    // the same choice the session makes for a play/pause key.
+    private fun resolveToggleAction(): PlaybackAction {
+        val activeState = activeNotificationState
+        val isPlaying = if (activeState?.mode == NotificationMode.Cast) {
+            activeState.isPlaying
+        } else {
+            val controller = PlaybackControllerHolder.get(this)
+            val external = controller.activeExternalTransport()
+            external?.isRunning() == true ||
+                (external?.isPaused() != true && controller.isPlaying())
+        }
+        return if (isPlaying) PlaybackAction.Pause else PlaybackAction.Play
     }
 
     private fun registerBluetoothRouteMonitoring() {
