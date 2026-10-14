@@ -11,6 +11,7 @@ class JukeboxSessionSpecTest {
 
     private val pausedTrack = LocalPlaybackStatus(
         isPlaying = false,
+        isPaused = true,
         title = "Track",
         artist = "Artist",
         audioMode = JukeboxAudioMode.Off,
@@ -87,7 +88,7 @@ class JukeboxSessionSpecTest {
     fun localSurfaceReadsPlayStateTitleAndDurationFromController() {
         val spec = resolveJukeboxSessionSpec(
             snapshot(PlaybackSessionSurface.Local),
-            pausedTrack.copy(isPlaying = true, audioMode = JukeboxAudioMode.Nightcore)
+            pausedTrack.copy(isPlaying = true, isPaused = false, audioMode = JukeboxAudioMode.Nightcore)
         )
 
         assertEquals(Player.STATE_READY, spec.playbackState)
@@ -99,6 +100,26 @@ class JukeboxSessionSpecTest {
         assertTrue(spec.showsArtwork)
         assertTrue(spec.commands.contains(Player.COMMAND_PLAY_PAUSE))
         assertTrue(spec.commands.contains(Player.COMMAND_STOP))
+    }
+
+    @Test
+    fun pausedLocalTrackIsReadyWithAPlayButton() {
+        val spec = resolveJukeboxSessionSpec(snapshot(PlaybackSessionSurface.Local), pausedTrack)
+
+        assertEquals(Player.STATE_READY, spec.playbackState)
+        assertFalse(spec.playWhenReady)
+    }
+
+    @Test
+    fun stoppedLocalTrackIsIdleSoADismissedNotificationStaysDismissed() {
+        val spec = resolveJukeboxSessionSpec(
+            snapshot(PlaybackSessionSurface.Local),
+            pausedTrack.copy(isPaused = false)
+        )
+
+        assertEquals(Player.STATE_IDLE, spec.playbackState)
+        assertTrue(spec.hasMediaItem)
+        assertTrue(spec.commands.contains(Player.COMMAND_PLAY_PAUSE))
     }
 
     @Test
@@ -165,6 +186,52 @@ class JukeboxSessionSpecTest {
         )
 
         assertFalse(spec.playWhenReady)
+    }
+
+    @Test
+    fun stoppedCastReceiverIsIdleUntilItPlaysAgain() {
+        val idle = resolveJukeboxSessionSpec(
+            snapshot(PlaybackSessionSurface.Cast(isPlaying = false, title = "T", artist = "A")),
+            pausedTrack,
+            CastCommandOverride(stopped = true)
+        )
+        assertEquals(Player.STATE_IDLE, idle.playbackState)
+
+        val playing = resolveJukeboxSessionSpec(
+            snapshot(PlaybackSessionSurface.Cast(isPlaying = true, title = "T", artist = "A")),
+            pausedTrack,
+            CastCommandOverride(stopped = true)
+        )
+        assertEquals(Player.STATE_READY, playing.playbackState)
+    }
+
+    @Test
+    fun castStopLatchSurvivesSnapshotsWhileTheReceiverStaysIdle() {
+        val stopped = CastCommandOverride(isPlaying = false, stopped = true)
+
+        assertEquals(
+            CastCommandOverride(stopped = true),
+            stopped.afterSnapshot(PlaybackSessionSurface.Cast(isPlaying = false, title = null, artist = null))
+        )
+        assertEquals(
+            CastCommandOverride(),
+            stopped.afterSnapshot(PlaybackSessionSurface.Cast(isPlaying = true, title = null, artist = null))
+        )
+        assertEquals(CastCommandOverride(), stopped.afterSnapshot(PlaybackSessionSurface.Local))
+    }
+
+    @Test
+    fun castStopLatchClearsOnlyOnPlay() {
+        val stopped = CastCommandOverride(stopped = true)
+
+        assertEquals(
+            CastCommandOverride(isPlaying = false, stopped = true),
+            stopped.afterCommand(PlaybackAction.Pause, CastCommandOverride(isPlaying = false))
+        )
+        assertEquals(
+            CastCommandOverride(isPlaying = true),
+            stopped.afterCommand(PlaybackAction.Play, CastCommandOverride(isPlaying = true))
+        )
     }
 
     @Test

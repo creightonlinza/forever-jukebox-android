@@ -48,7 +48,7 @@ internal class JukeboxPlayer(
 
     fun publish(snapshot: PlaybackSessionSnapshot) {
         this.snapshot = snapshot
-        castOverride = CastCommandOverride()
+        castOverride = castOverride.afterSnapshot(snapshot.surface)
         invalidateState()
     }
 
@@ -100,7 +100,8 @@ internal class JukeboxPlayer(
     }
 
     private fun applyAction(action: PlaybackAction) {
-        commandHandler.handle(action, snapshot.surface)?.let { castOverride = it }
+        val result = commandHandler.handle(action, snapshot.surface) ?: return
+        castOverride = castOverride.afterCommand(action, result)
     }
 
     private fun schedulePositionRefresh(active: Boolean) {
@@ -161,6 +162,7 @@ internal class JukeboxPlayer(
  * and [Player.seekToPrevious] are final on a [SimpleBasePlayer] and resolve against its
  * own single-item timeline, so the skip has to be intercepted before it gets there.
  */
+@OptIn(UnstableApi::class)
 internal class JukeboxSessionPlayer(
     private val jukeboxPlayer: JukeboxPlayer
 ) : ForwardingPlayer(jukeboxPlayer) {

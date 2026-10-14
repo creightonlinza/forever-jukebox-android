@@ -53,6 +53,7 @@ internal fun localPlaybackNotificationArtist(
 /** The controller's view of the loaded local track, read when the session state is built. */
 internal data class LocalPlaybackStatus(
     val isPlaying: Boolean,
+    val isPaused: Boolean,
     val title: String?,
     val artist: String?,
     val audioMode: JukeboxAudioMode,
@@ -60,14 +61,33 @@ internal data class LocalPlaybackStatus(
 )
 
 /**
- * Transient overrides the session applies on top of a cast snapshot until the next one
- * arrives: the play state a forwarded command asked for, or that the receiver could not
- * be reached at all.
+ * What the session applies on top of a cast snapshot after forwarding a press. [isPlaying]
+ * and [unreachable] last until the next snapshot arrives; [stopped] lasts until the
+ * receiver plays again, so a notification dismissed with a stop stays dismissed while
+ * later snapshots report the receiver idle.
  */
 internal data class CastCommandOverride(
     val isPlaying: Boolean? = null,
-    val unreachable: Boolean = false
+    val unreachable: Boolean = false,
+    val stopped: Boolean = false
 )
+
+/** Folds a forwarded press's [result] into the override; only a play clears a stop. */
+internal fun CastCommandOverride.afterCommand(
+    action: PlaybackAction,
+    result: CastCommandOverride
+): CastCommandOverride {
+    val stillStopped = stopped && action != PlaybackAction.Play
+    return result.copy(stopped = result.stopped || stillStopped)
+}
+
+/** What survives a newly published snapshot: a stop, while the receiver stays idle. */
+internal fun CastCommandOverride.afterSnapshot(
+    surface: PlaybackSessionSurface
+): CastCommandOverride {
+    val receiverIdle = surface is PlaybackSessionSurface.Cast && !surface.isPlaying
+    return CastCommandOverride(stopped = stopped && receiverIdle)
+}
 
 /**
  * Everything the media session reports, as plain values. [playbackState] is a
@@ -120,6 +140,10 @@ private fun transportCommands(snapshot: PlaybackSessionSnapshot): Set<Int> {
  * play slot and Media3 keeps the service in the foreground while a screen-off skip loads.
  * It exposes no transport commands, matching a notification with no buttons. A failed load
  * reports a paused track whose play press retries it.
+ *
+ * A stopped track (loaded but never started, or stopped) reports idle. The service shows
+ * idle sessions too, so this only matters once the user dismisses the notification:
+ * dismissal arrives as a stop, and an idle session keeps Media3 from re-posting it.
  */
 internal fun resolveJukeboxSessionSpec(
     snapshot: PlaybackSessionSnapshot,
@@ -152,7 +176,11 @@ internal fun resolveJukeboxSessionSpec(
         )
         PlaybackSessionSurface.Local -> JukeboxSessionSpec(
             hasMediaItem = true,
-            playbackState = Player.STATE_READY,
+            playbackState = if (local.isPlaying || local.isPaused) {
+                Player.STATE_READY
+            } else {
+                Player.STATE_IDLE
+            },
             playWhenReady = local.isPlaying,
             title = localPlaybackNotificationTitle(
                 baseTitle = local.title,
@@ -169,10 +197,15 @@ internal fun resolveJukeboxSessionSpec(
         is PlaybackSessionSurface.Cast -> if (castOverride.unreachable) {
             HIDDEN_SPEC
         } else {
+            val isPlaying = castOverride.isPlaying ?: surface.isPlaying
             JukeboxSessionSpec(
                 hasMediaItem = true,
-                playbackState = Player.STATE_READY,
-                playWhenReady = castOverride.isPlaying ?: surface.isPlaying,
+                playbackState = if (castOverride.stopped && !isPlaying) {
+                    Player.STATE_IDLE
+                } else {
+                    Player.STATE_READY
+                },
+                playWhenReady = isPlaying,
                 title = surface.title?.takeIf { it.isNotBlank() } ?: DEFAULT_NOTIFICATION_TITLE,
                 artist = surface.artist.orEmpty(),
                 durationMs = null,

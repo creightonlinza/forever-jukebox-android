@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Forever Jukebox</string>
+    <string name="playback_notification_channel_name">Playback</string>
 </resources>

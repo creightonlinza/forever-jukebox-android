@@ -15,7 +15,6 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.ui.ForeverJukeboxApp
 import com.foreverjukebox.app.ui.MainViewModel
 import com.foreverjukebox.app.ui.sharedTextCarriesLink
@@ -128,9 +127,6 @@ class MainActivity : FragmentActivity() {
             enable = false,
             clearCastState = !isChangingConfigurations
         )
-        if (isFinishing) {
-            ForegroundPlaybackService.stop(this)
-        }
         super.onDestroy()
     }
 

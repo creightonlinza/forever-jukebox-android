@@ -190,7 +190,10 @@ internal class JukeboxCommandHandler(
             warn("Cast $command press not delivered; hiding the cast session")
             return CastCommandOverride(unreachable = true)
         }
-        return CastCommandOverride(isPlaying = action == PlaybackAction.Play)
+        return CastCommandOverride(
+            isPlaying = action == PlaybackAction.Play,
+            stopped = action == PlaybackAction.Stop
+        )
     }
 
     private fun handleLocal(action: PlaybackAction) {

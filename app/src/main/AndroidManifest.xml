@@ -60,31 +60,20 @@
                  local-only and intentionally has neither. -->
         </activity>
         <!--
-          Hardware and Bluetooth media keys reach the app through this pair. Without
-          them the only route is winning the system's "media button session" slot,
-          which a session earns by actually playing — so a notification showing a
-          play button for something that has not played yet (a freshly loaded track,
-          a failed load offering Retry, a service restarted while paused) would get
-          no response from a headset. The receiver also gives MediaSessionCompat a
-          media button PendingIntent, which is what lets keys restart playback after
-          the service is gone.
+          Media3 session service. Media keys reach the session while it exists; there is
+          deliberately no MEDIA_BUTTON receiver, so a key pressed after the service is gone
+          does not restart it (no playback resumption). The MediaSessionService action lets
+          the app's own MediaController resolve the session token; nothing outside the app
+          binds to it.
         -->
         <service
-            android:name=".playback.ForegroundPlaybackService"
+            android:name=".playback.PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="true">
             <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
-        <!-- Exported because the media key broadcast is sent by the system. -->
-        <receiver
-            android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

@@ -15,8 +15,10 @@ import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
 import com.foreverjukebox.app.engine.VisualizationData
-import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
+import com.foreverjukebox.app.playback.PlaybackSessionHost
+import com.foreverjukebox.app.playback.PlaybackSessionSnapshot
+import com.foreverjukebox.app.playback.PlaybackSessionSurface
 import com.foreverjukebox.app.playback.loadingNotificationProgressBucket
 import java.io.File
 import java.io.IOException
@@ -177,14 +179,13 @@ class PlaybackCoordinator(
     private var transientDecodeFailureError: Throwable? = null
     private var deleteEligibilityJobId: String? = null
     private var pendingTuningParams: String? = null
-    private var lastNotificationUpdateMs = 0L
+    private val playbackSessionHost = PlaybackSessionHost(application)
 
     fun onCleared() {
         listenTimerJob?.cancel()
         pollJob?.cancel()
         backgroundAudioLoadJob?.cancel()
-        // A media key can start the service without this coordinator ever marking the
-        // session visible, and the owner going away releases the audio it would control.
+        // The owner going away releases the audio the session would control.
         hardStopPlaybackServiceSession()
     }
 
@@ -795,14 +796,6 @@ class PlaybackCoordinator(
         return true
     }
 
-    fun maybeUpdateNotification() {
-        if (!controller.isPlaying()) return
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastNotificationUpdateMs < 500L) return
-        lastNotificationUpdateMs = now
-        syncPlaybackServiceSession()
-    }
-
     internal fun syncPlaybackServiceSession() {
         val current = getState()
         val session = resolvePlaybackServiceSession(current)
@@ -824,7 +817,7 @@ class PlaybackCoordinator(
     private fun syncHiddenPlaybackServiceSession() {
         resetPlaybackServiceSessionTracking()
         playbackServiceSessionVisible = false
-        ForegroundPlaybackService.stop(application)
+        playbackSessionHost.hide()
     }
 
     private fun syncCastPlaybackServiceSession(
@@ -832,14 +825,16 @@ class PlaybackCoordinator(
         skip: PlaybackServiceSkipAvailability
     ) {
         resetPlaybackServiceSessionTracking()
-        ForegroundPlaybackService.updateCast(
-            context = application,
-            isPlaying = session.isPlaying,
-            title = session.title,
-            artist = session.artist,
-            deviceName = session.deviceName,
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext
+        playbackSessionHost.show(
+            PlaybackSessionSnapshot(
+                surface = PlaybackSessionSurface.Cast(
+                    isPlaying = session.isPlaying,
+                    title = session.title,
+                    artist = session.artist
+                ),
+                canSkipPrevious = skip.canSkipPrevious,
+                canSkipNext = skip.canSkipNext
+            )
         )
         playbackServiceSessionVisible = true
         lastPlaybackServiceSessionKind = session.kind
@@ -857,12 +852,12 @@ class PlaybackCoordinator(
         ) {
             return
         }
-        ForegroundPlaybackService.update(
-            context = application,
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext,
-            isLoading = true,
-            loadingProgress = session.progress
+        playbackSessionHost.show(
+            PlaybackSessionSnapshot(
+                surface = PlaybackSessionSurface.Loading(progressBucket),
+                canSkipPrevious = skip.canSkipPrevious,
+                canSkipNext = skip.canSkipNext
+            )
         )
         playbackServiceSessionVisible = true
         lastPlaybackServiceSessionKind = session.kind
@@ -876,10 +871,7 @@ class PlaybackCoordinator(
         ) {
             return
         }
-        ForegroundPlaybackService.update(
-            context = application,
-            isLoadFailed = true
-        )
+        playbackSessionHost.show(PlaybackSessionSnapshot(surface = PlaybackSessionSurface.LoadFailed))
         playbackServiceSessionVisible = true
         lastPlaybackServiceSessionKind = PlaybackServiceSessionKind.LocalFailed
         lastLoadingNotificationBucket = null
@@ -887,10 +879,12 @@ class PlaybackCoordinator(
 
     private fun syncLocalPlaybackServiceSession(skip: PlaybackServiceSkipAvailability) {
         resetPlaybackServiceSessionTracking()
-        ForegroundPlaybackService.update(
-            context = application,
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext
+        playbackSessionHost.show(
+            PlaybackSessionSnapshot(
+                surface = PlaybackSessionSurface.Local,
+                canSkipPrevious = skip.canSkipPrevious,
+                canSkipNext = skip.canSkipNext
+            )
         )
         playbackServiceSessionVisible = true
         val current = getState()
@@ -900,7 +894,7 @@ class PlaybackCoordinator(
     private fun hardStopPlaybackServiceSession() {
         resetPlaybackServiceSessionTracking()
         playbackServiceSessionVisible = false
-        ForegroundPlaybackService.stop(application)
+        playbackSessionHost.hide()
     }
 
     private fun resetPlaybackServiceSessionTracking() {

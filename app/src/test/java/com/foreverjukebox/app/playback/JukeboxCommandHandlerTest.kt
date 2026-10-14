@@ -265,7 +265,7 @@ class JukeboxCommandHandlerTest {
 
         assertEquals(CastCommandOverride(isPlaying = false), paused)
         assertEquals(CastCommandOverride(isPlaying = true), played)
-        assertEquals(CastCommandOverride(isPlaying = false), stopped)
+        assertEquals(CastCommandOverride(isPlaying = false, stopped = true), stopped)
         assertEquals(listOf("cast:pause", "cast:play", "cast:stop"), events.calls)
         assertEquals(emptyList<String>(), target.calls)
     }
