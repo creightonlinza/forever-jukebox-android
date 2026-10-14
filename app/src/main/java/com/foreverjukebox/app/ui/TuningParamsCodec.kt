@@ -202,7 +202,7 @@ object TuningParamsCodec {
             params.add("ab=$anchorBranchId")
         }
         val normalizedAudioMode = audioModeWireValue?.trim().orEmpty()
-        if (normalizedAudioMode.isNotBlank() && normalizedAudioMode != JukeboxAudioMode.Off.wireValue) {
+        if (!isAudioModeOff(normalizedAudioMode)) {
             params.add("am=$normalizedAudioMode")
             AudioModeIntensity.wireParamOrNull(
                 JukeboxAudioMode.fromWireValue(normalizedAudioMode),

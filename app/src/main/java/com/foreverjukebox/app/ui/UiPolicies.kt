@@ -51,6 +51,54 @@ internal fun tuningParamsForCurrentTrack(
     )
 }
 
+// Whether a branch tuning reset would change anything. Listed field by field rather than derived
+// from the saved-params string, so a future non-tuning param can never count as tuning.
+// highlightAnchorBranch is a sticky preference that a reset keeps, so it never counts.
+internal fun hasNonDefaultBranchTuning(
+    tuning: TuningState,
+    hasDeletedBranches: Boolean,
+    hasNonDefaultAnchor: Boolean
+): Boolean {
+    val defaults = TuningState()
+    return tuning.threshold != null ||
+        tuning.minProb != defaults.minProb ||
+        tuning.maxProb != defaults.maxProb ||
+        tuning.ramp != defaults.ramp ||
+        tuning.justBackwards ||
+        tuning.minJumpDistancePercent > 0 ||
+        tuning.removeSequential ||
+        hasDeletedBranches ||
+        hasNonDefaultAnchor
+}
+
+// Reads deleted branches and the anchor from whichever source is live. On device the engine owns
+// them; its visualization data leaves out an anchor on the track's own default edge, which a reset
+// would not change. While casting the receiver reports them, including a default-edge anchor.
+internal fun hasBranchTuningToReset(
+    state: UiState,
+    engineHasDeletedBranches: () -> Boolean
+): Boolean {
+    val tuning = state.tuning
+    return if (state.playback.isCasting) {
+        hasNonDefaultBranchTuning(
+            tuning = tuning,
+            hasDeletedBranches = tuning.deletedEdgeIds.isNotEmpty(),
+            hasNonDefaultAnchor = tuning.anchorBranchId != null
+        )
+    } else {
+        hasNonDefaultBranchTuning(
+            tuning = tuning,
+            hasDeletedBranches = engineHasDeletedBranches(),
+            hasNonDefaultAnchor = state.playback.vizData?.userAnchorEdgeId != null
+        )
+    }
+}
+
+internal fun isAudioModeOff(wireValue: String): Boolean {
+    val normalized = wireValue.trim().lowercase()
+    return normalized.isEmpty() || normalized == JukeboxAudioMode.Off.wireValue
+}
+
 internal fun favoriteForCurrentTrack(state: UiState): FavoriteTrack? {
     val trackIds = state.playback.reusableTrackIdsForMatching()
     if (trackIds.isEmpty()) {

@@ -1407,6 +1407,8 @@ class PlaybackCoordinator(
         return (max * safe) / 100.0
     }
 
+    fun hasDeletedEdges(): Boolean = getDeletedEdgeIds().isNotEmpty()
+
     private fun getDeletedEdgeIds(): List<Int> {
         val graph = engine.getGraphState() ?: return emptyList()
         return graph.allEdges.filter { it.deleted }.map { it.id }

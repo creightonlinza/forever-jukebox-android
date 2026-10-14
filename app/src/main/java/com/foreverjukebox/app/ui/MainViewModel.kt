@@ -4241,6 +4241,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         analyticsChangedTuneControls(previousTuning, nextTuning).forEach(analytics::logTune)
     }
 
+    fun canResetBranchTuning(): Boolean {
+        return hasBranchTuningToReset(state.value, playbackCoordinator::hasDeletedEdges)
+    }
+
     fun resetBranchTuningDefaults() {
         viewModelScope.launch {
             // No analytics here: the web app fires `tune` only from the apply path, so a

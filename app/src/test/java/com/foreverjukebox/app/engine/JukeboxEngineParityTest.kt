@@ -294,6 +294,41 @@ class JukeboxEngineParityTest {
     }
 
     @Test
+    fun userAnchorOnTheDefaultEdgeIsNotReportedAsAUserAnchor() {
+        // The tuning dialog's Reset visibility reads userAnchorEdgeId, so an anchor that a
+        // reset would not change must not appear there (web: resetDefaults.test.ts).
+        val engine = JukeboxEngine(FakePlayer())
+        val beats = mutableListOf(makeBeat(0), makeBeat(1), makeBeat(2), makeBeat(3))
+        linkBeats(beats)
+        val defaultEdge = makeEdge(1, beats[1], beats[0], 10.0)
+        val otherEdge = makeEdge(3, beats[3], beats[0], 5.0)
+        beats[1].neighbors = mutableListOf(defaultEdge)
+        beats[1].allNeighbors = mutableListOf(defaultEdge)
+        beats[3].neighbors = mutableListOf(otherEdge)
+        beats[3].allNeighbors = mutableListOf(otherEdge)
+        val graph = JukeboxGraphState(
+            computedThreshold = 0,
+            currentThreshold = 0,
+            lastBranchPoint = 1,
+            totalBeats = beats.size,
+            longestReach = 0.0,
+            allEdges = mutableListOf(defaultEdge, otherEdge)
+        )
+        setPrivateField(engine, "analysis", makeAnalysis(beats))
+        setPrivateField(engine, "graph", graph)
+        setPrivateField(engine, "beats", beats)
+
+        engine.setUserAnchorEdge(defaultEdge)
+
+        assertEquals(defaultEdge.id, engine.getUserAnchorEdgeId())
+        assertNull(engine.getVisualizationData()?.userAnchorEdgeId)
+
+        engine.setUserAnchorEdge(otherEdge)
+
+        assertEquals(otherEdge.id, engine.getVisualizationData()?.userAnchorEdgeId)
+    }
+
+    @Test
     fun userAnchorFallsBackToDefaultAnchorWhenDeleted() {
         val player = FakePlayer()
         val engine = JukeboxEngine(player)

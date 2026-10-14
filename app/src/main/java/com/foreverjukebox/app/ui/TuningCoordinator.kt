@@ -57,9 +57,11 @@ internal fun buildCastTuningResetParams(
 }
 
 internal fun buildCastAudioModeResetParams(currentAudioModeWireValue: String): String? {
-    val current = currentAudioModeWireValue.trim()
-    val alreadyOff = current.isBlank() || current == JukeboxAudioMode.Off.wireValue
-    return if (alreadyOff) null else TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Off)
+    return if (isAudioModeOff(currentAudioModeWireValue)) {
+        null
+    } else {
+        TuningParamsCodec.buildAudioModeParam(JukeboxAudioMode.Off)
+    }
 }
 
 /**

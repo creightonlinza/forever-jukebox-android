@@ -371,11 +371,7 @@ private fun buildCastPlaybackTitle(
     val audioModeLabel = supportedAudioModes
         .firstOrNull { it.wireValue == normalizedWireValue }
         ?.label
-    val titledMode = if (
-        normalizedWireValue.isBlank() ||
-        normalizedWireValue == JukeboxAudioMode.Off.wireValue ||
-        audioModeLabel.isNullOrBlank()
-    ) {
+    val titledMode = if (isAudioModeOff(normalizedWireValue) || audioModeLabel.isNullOrBlank()) {
         baseTitle
     } else {
         "$baseTitle ($audioModeLabel)"

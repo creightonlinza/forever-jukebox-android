@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.foreverjukebox.app.engine.MIN_THRESHOLD
+import kotlin.math.roundToInt
 
 internal val MIN_JUMP_DISTANCE_OPTIONS = listOf(0, 5, 10, 20, 30)
 
@@ -85,6 +86,79 @@ internal fun chosenThresholdOrAuto(
     }
 }
 
+/**
+ * The Tuning tab's controls in the units TuningState stores, with the threshold already resolved
+ * through [chosenThresholdOrAuto]. Compared against the form as it opened to tell whether the user
+ * has edited anything; highlightAnchorBranch is a sticky preference and is left out.
+ */
+internal data class BranchTuningForm(
+    val threshold: Int?,
+    val minProb: Int,
+    val maxProb: Int,
+    val ramp: Int,
+    val justBackwards: Boolean,
+    val minJumpDistancePercent: Int,
+    val removeSequential: Boolean
+)
+
+/**
+ * The form as the dialog opens, normalized the way the controls hold it: the probability range is
+ * ordered, and a min jump distance off the slider's stops lands on the stop the slider shows.
+ */
+internal fun openedBranchTuningForm(
+    initialThreshold: Int?,
+    initialMinProb: Int,
+    initialMaxProb: Int,
+    initialRamp: Int,
+    initialJustBackwards: Boolean,
+    initialMinJumpDistancePercent: Int,
+    initialRemoveSequential: Boolean
+): BranchTuningForm {
+    return BranchTuningForm(
+        threshold = initialThreshold,
+        minProb = minOf(initialMinProb, initialMaxProb),
+        maxProb = maxOf(initialMinProb, initialMaxProb),
+        ramp = initialRamp,
+        justBackwards = initialJustBackwards,
+        minJumpDistancePercent = minJumpDistancePercentForIndex(
+            minJumpDistanceIndexForPercent(initialMinJumpDistancePercent)
+        ),
+        removeSequential = initialRemoveSequential
+    )
+}
+
+/** The form as the controls currently stand, in the same units Apply would commit. */
+internal fun editedBranchTuningForm(
+    threshold: Float,
+    thresholdChosen: Boolean,
+    thresholdMoved: Boolean,
+    computedThreshold: Int?,
+    probRange: ClosedFloatingPointRange<Float>,
+    ramp: Float,
+    justBackwards: Boolean,
+    minJumpIndex: Float,
+    removeSequential: Boolean
+): BranchTuningForm {
+    return BranchTuningForm(
+        threshold = chosenThresholdOrAuto(
+            threshold = threshold.toInt(),
+            thresholdChosen = thresholdChosen,
+            thresholdMoved = thresholdMoved,
+            computedThreshold = computedThreshold
+        ),
+        minProb = probRange.start.roundToInt(),
+        maxProb = probRange.endInclusive.roundToInt(),
+        ramp = ramp.roundToInt(),
+        justBackwards = justBackwards,
+        minJumpDistancePercent = minJumpDistancePercentForIndex(minJumpIndex.toInt()),
+        removeSequential = removeSequential
+    )
+}
+
+internal fun audioModeResetVisible(appliedWireValue: String, formWireValue: String): Boolean {
+    return !isAudioModeOff(appliedWireValue) || !isAudioModeOff(formWireValue)
+}
+
 @Composable
 @Suppress("AssignedValueIsNeverRead")
 fun TuningDialog(
@@ -101,6 +175,7 @@ fun TuningDialog(
     initialAudioModeIntensity: Int,
     audioModeOptions: List<AudioModeOption>,
     isAudioModePickerEnabled: Boolean,
+    branchTuningNonDefault: Boolean,
     onDismiss: () -> Unit,
     onResetBranchTuning: () -> Unit,
     onResetAudioMode: () -> Unit,
@@ -150,6 +225,34 @@ fun TuningDialog(
     }
     val selectedMinJumpDistancePercent =
         minJumpDistancePercentForIndex(minJumpIndex.toInt())
+    val openedForm = openedBranchTuningForm(
+        initialThreshold = initialThreshold,
+        initialMinProb = initialMinProb,
+        initialMaxProb = initialMaxProb,
+        initialRamp = initialRamp,
+        initialJustBackwards = initialJustBackwards,
+        initialMinJumpDistancePercent = initialMinJumpDistancePercent,
+        initialRemoveSequential = initialRemoveSequential
+    )
+    val editedForm = editedBranchTuningForm(
+        threshold = threshold,
+        thresholdChosen = thresholdChosen,
+        thresholdMoved = thresholdMoved,
+        computedThreshold = computedThreshold,
+        probRange = probRange,
+        ramp = ramp,
+        justBackwards = justBackwards,
+        minJumpIndex = minJumpIndex,
+        removeSequential = removeSequential
+    )
+    // Reset shows only when pressing it would change something: applied settings that differ
+    // from the defaults, or edits made since the dialog opened.
+    val showReset = when (selectedTab) {
+        TuningDialogTab.Tuning ->
+            branchTuningNonDefault || editedForm != openedForm
+        TuningDialogTab.AudioMode ->
+            audioModeResetVisible(initialAudioModeWireValue, audioModeWireValue)
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -230,21 +333,24 @@ fun TuningDialog(
                         horizontalArrangement = Arrangement.Start,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedButton(
-                            onClick = {
-                                when (selectedTab) {
-                                    TuningDialogTab.Tuning -> onResetBranchTuning()
-                                    TuningDialogTab.AudioMode -> onResetAudioMode()
-                                }
-                                onDismiss()
-                            },
-                            colors = pillOutlinedButtonColors(),
-                            border = pillButtonBorder(),
-                            shape = PillShape,
-                            contentPadding = SmallButtonPadding,
-                            modifier = Modifier.height(SmallButtonHeight)
-                        ) {
-                            Text("Reset", style = MaterialTheme.typography.labelSmall)
+                        // The row stays when empty so Close and Apply keep their place on the right.
+                        if (showReset) {
+                            OutlinedButton(
+                                onClick = {
+                                    when (selectedTab) {
+                                        TuningDialogTab.Tuning -> onResetBranchTuning()
+                                        TuningDialogTab.AudioMode -> onResetAudioMode()
+                                    }
+                                    onDismiss()
+                                },
+                                colors = pillOutlinedButtonColors(),
+                                border = pillButtonBorder(),
+                                shape = PillShape,
+                                contentPadding = SmallButtonPadding,
+                                modifier = Modifier.height(SmallButtonHeight)
+                            ) {
+                                Text("Reset", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
 

@@ -327,6 +327,11 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         } else {
             localAudioModeOptions
         }
+        // Keyed on everything the check reads: a cast status or a track load can land while the
+        // dialog is open, and the engine's deleted branches change only alongside vizData.
+        val branchTuningNonDefault = remember(tuning, playback.isCasting, playback.vizData) {
+            viewModel.canResetBranchTuning()
+        }
         TuningDialog(
             initialThreshold = tuning.threshold,
             computedThreshold = tuning.computedThreshold,
@@ -349,6 +354,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             },
             audioModeOptions = audioModeOptions,
             isAudioModePickerEnabled = !playback.isCasting || audioModeOptions.isNotEmpty(),
+            branchTuningNonDefault = branchTuningNonDefault,
             onDismiss = { showTuning = false },
             onResetBranchTuning = viewModel::resetBranchTuningDefaults,
             onResetAudioMode = viewModel::resetAudioModeDefaults,
