@@ -268,8 +268,7 @@ class PlaybackCoordinatorStatusPolicyTest {
             PlaybackServiceSession.Cast(
                 isPlaying = false,
                 title = "Cast Track",
-                artist = "Cast Artist",
-                deviceName = "Living Room"
+                artist = "Cast Artist"
             ),
             resolvePlaybackServiceSession(
                 PlaybackState(

@@ -40,8 +40,7 @@ internal sealed class PlaybackServiceSession {
     data class Cast(
         val isPlaying: Boolean,
         val title: String?,
-        val artist: String?,
-        val deviceName: String?
+        val artist: String?
     ) : PlaybackServiceSession() {
         override val kind: PlaybackServiceSessionKind = PlaybackServiceSessionKind.Cast
     }
@@ -74,8 +73,7 @@ internal fun resolvePlaybackServiceSession(
         return PlaybackServiceSession.Cast(
             isPlaying = playback.isRunning,
             title = playback.castNotificationTitle(),
-            artist = playback.trackArtist,
-            deviceName = playback.castDeviceName
+            artist = playback.trackArtist
         )
     }
     if (playback.isCasting) {

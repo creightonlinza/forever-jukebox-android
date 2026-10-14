@@ -52,11 +52,6 @@ internal class JukeboxPlayer(
         invalidateState()
     }
 
-    /** Re-reads controller state after a change made outside the session. */
-    fun refresh() {
-        invalidateState()
-    }
-
     fun skipToPrevious() {
         verifyApplicationThread()
         commandHandler.skipToPrevious(snapshot.surface)
