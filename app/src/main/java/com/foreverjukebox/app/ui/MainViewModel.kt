@@ -3651,11 +3651,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // would vanish on press. The load that follows rolls the same notification
         // into its loading state.
         playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
-        loadTrackById(
+        // The reset leaves the state loading, so the load skips the loading lock.
+        beginOutsideSelection()
+        loadTrackByIdInternal(
             trackId = retryRequest.trackId,
             title = retryRequest.title,
             artist = retryRequest.artist,
-            playAfterLoaded = retryRequest.playAfterLoaded
+            playAfterLoaded = retryRequest.playAfterLoaded,
+            ignoreLoadingLock = true
         )
     }
 

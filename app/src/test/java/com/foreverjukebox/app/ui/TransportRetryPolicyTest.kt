@@ -4,6 +4,8 @@ import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.playback.PlaybackSessionSurface
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -262,5 +264,22 @@ class TransportRetryPolicyTest {
             TransportRetryPressAction.RetryLoad,
             transportRetryPressAction(playable.copy(isCasting = true))
         )
+    }
+
+    @Test
+    fun retryResetHoldsTheLoadingLockSoTheRetryLoadMustBypassIt() {
+        // retryFailedLoad resets with the load kept visible before it starts the load.
+        // The reset state already counts as loading, so a load that honors the lock
+        // would return at once and leave the track stuck on "Fetching audio".
+        val failed = PlaybackState(
+            analysisErrorMessage = "Loading failed.",
+            lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+        )
+        assertNotNull(failedLoadRetryRequest(failed))
+        assertFalse(shouldBlockPlaybackChangeWhileLoading(failed))
+
+        val reset = failed.resetForNewTrack(keepLoadVisible = true)
+
+        assertTrue(shouldBlockPlaybackChangeWhileLoading(reset))
     }
 }
