@@ -262,6 +262,22 @@ internal fun JukeboxPlaylistState.removeTrackAt(index: Int): JukeboxPlaylistStat
     return copy(tracks = nextTracks, currentIndex = nextCurrentIndex, resumeIndex = nextResumeIndex)
 }
 
+/**
+ * Drops every entry for a deleted local track, so playlist navigation never lands on a track
+ * that can no longer be opened. The current entry stays: its audio is already loaded and keeps
+ * playing until the user moves on.
+ */
+internal fun JukeboxPlaylistState.withoutDeletedLocalTrack(localId: String): JukeboxPlaylistState {
+    return tracks.indices.reversed().fold(this) { playlist, index ->
+        val track = playlist.tracks[index]
+        if (track.type == PlaylistTrackType.LocalCached && track.id == localId) {
+            playlist.removeTrackAt(index)
+        } else {
+            playlist
+        }
+    }
+}
+
 internal fun JukeboxPlaylistState.canSkipPrevious(): Boolean = currentIndex > 0
 
 internal fun JukeboxPlaylistState.canSkipNext(): Boolean {

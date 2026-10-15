@@ -1078,6 +1078,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (updated.size != favorites.size) {
                 favoritesController.updateFavorites(updated)
             }
+            val playlist = state.value.playlist
+            val trimmed = playlist.withoutDeletedLocalTrack(trackId)
+            if (trimmed != playlist) {
+                updatePlaylistState { trimmed }
+                syncPlaybackServiceSession()
+            }
         }
         localAnalysisCoordinator.deleteCachedLocalTrack(localId)
     }
