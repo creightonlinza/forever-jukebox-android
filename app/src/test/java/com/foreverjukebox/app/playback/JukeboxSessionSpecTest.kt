@@ -160,14 +160,15 @@ class JukeboxSessionSpecTest {
     }
 
     @Test
-    fun localSurfaceTreatsUnknownDurationAsUnset() {
+    fun localSurfaceFallsBackForMissingTrackMetadata() {
         val spec = resolveJukeboxSessionSpec(
             snapshot(PlaybackSessionSurface.Local),
-            pausedTrack.copy(title = null, durationMs = 0L)
+            pausedTrack.copy(title = null, artist = null, durationMs = 0L)
         )
 
         assertEquals(null, spec.durationMs)
         assertEquals("Forever Jukebox", spec.title)
+        assertEquals("", spec.artist)
     }
 
     @Test
@@ -366,120 +367,10 @@ class JukeboxSessionSpecTest {
     }
 
     @Test
-    fun localNotificationTitleUsesLoadingTitleBeforeTrackMetadataFallback() {
-        assertEquals(
-            "Loading",
-            localPlaybackNotificationTitle(
-                baseTitle = null,
-                audioMode = JukeboxAudioMode.Off,
-                isLoading = true,
-                loadingProgressBucket = null
-            )
-        )
-        assertEquals(
-            "Loading - 20%",
-            localPlaybackNotificationTitle(
-                baseTitle = "Track",
-                audioMode = JukeboxAudioMode.Nightcore,
-                isLoading = true,
-                loadingProgressBucket = 20
-            )
-        )
-        assertEquals(
-            "Forever Jukebox",
-            localPlaybackNotificationTitle(
-                baseTitle = null,
-                audioMode = JukeboxAudioMode.Off,
-                isLoading = false,
-                loadingProgressBucket = null
-            )
-        )
-        assertEquals(
-            "Track",
-            localPlaybackNotificationTitle(
-                baseTitle = "Track",
-                audioMode = JukeboxAudioMode.Off,
-                isLoading = false,
-                loadingProgressBucket = null
-            )
-        )
-        assertEquals(
-            "Track (nightcore)",
-            localPlaybackNotificationTitle(
-                baseTitle = "Track",
-                audioMode = JukeboxAudioMode.Nightcore,
-                isLoading = false,
-                loadingProgressBucket = null
-            )
-        )
-    }
-
-    @Test
-    fun localNotificationTitleUsesFailedTitleForLoadFailure() {
-        assertEquals(
-            "Loading Failed",
-            localPlaybackNotificationTitle(
-                baseTitle = "Track",
-                audioMode = JukeboxAudioMode.Nightcore,
-                isLoading = false,
-                loadingProgressBucket = null,
-                isLoadFailed = true
-            )
-        )
-    }
-
-    @Test
-    fun localNotificationArtistUsesAppNameWhileLoading() {
-        assertEquals(
-            "Forever Jukebox",
-            localPlaybackNotificationArtist(
-                baseArtist = null,
-                isLoading = true
-            )
-        )
-        assertEquals(
-            "Forever Jukebox",
-            localPlaybackNotificationArtist(
-                baseArtist = "Artist",
-                isLoading = true
-            )
-        )
-    }
-
-    @Test
-    fun localNotificationArtistUsesAppNameForLoadFailure() {
-        assertEquals(
-            "Forever Jukebox",
-            localPlaybackNotificationArtist(
-                baseArtist = "Artist",
-                isLoading = false,
-                isLoadFailed = true
-            )
-        )
-    }
-
-    @Test
-    fun localNotificationArtistUsesProvidedValueWhenNotLoading() {
-        assertEquals(
-            "",
-            localPlaybackNotificationArtist(
-                baseArtist = null,
-                isLoading = false
-            )
-        )
-        assertEquals(
-            "",
-            localPlaybackNotificationArtist(
-                baseArtist = "",
-                isLoading = false
-            )
-        )
-        assertEquals(
-            "Artist",
-            localPlaybackNotificationArtist(
-                baseArtist = "Artist",
-                isLoading = false
-            )
-        )
+    fun localNotificationTitleFallsBackToAppNameAndTagsTheAudioMode() {
+        assertEquals("Forever Jukebox", localPlaybackNotificationTitle(null, JukeboxAudioMode.Off))
+        assertEquals("Forever Jukebox", localPlaybackNotificationTitle(" ", JukeboxAudioMode.Nightcore))
+        assertEquals("Track", localPlaybackNotificationTitle("Track", JukeboxAudioMode.Off))
+        assertEquals("Track (nightcore)", localPlaybackNotificationTitle("Track", JukeboxAudioMode.Nightcore))
     }
 }

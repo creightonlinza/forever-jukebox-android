@@ -312,6 +312,20 @@ class JukeboxCommandHandlerTest {
     }
 
     @Test
+    fun pressesOnAHiddenSessionAreDropped() {
+        val target = FakeTarget(playing = true)
+        val events = FakeEvents()
+        val handler = handler(target, events)
+
+        PlaybackAction.entries.forEach { action ->
+            assertNull(handler.handle(action, PlaybackSessionSurface.Hidden))
+        }
+
+        assertEquals(emptyList<String>(), target.calls)
+        assertEquals(emptyList<String>(), events.calls)
+    }
+
+    @Test
     fun skipsAreIgnoredOnFailedAndHiddenSurfaces() {
         val events = FakeEvents()
         val handler = handler(FakeTarget(), events)

@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.playback
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -9,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SleepTimerTest {
 
     private fun TestScope.countdown(onExpired: () -> Unit = {}) = SleepTimerCountdown(

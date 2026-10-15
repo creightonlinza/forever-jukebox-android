@@ -96,7 +96,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionMapsIdleToHidden() {
+    fun playbackSessionMapsIdleToHidden() {
         assertEquals(
             PlaybackSessionSurface.Hidden,
             resolvePlaybackSessionSurface(PlaybackState())
@@ -121,7 +121,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     // foreground service mid-transition, which a backgrounded app cannot reliably
     // restart — and without it the OS restricts the codec the load needs.
     @Test
-    fun resetIntoNewLoadKeepsPlaybackServiceSessionVisible() {
+    fun resetIntoNewLoadKeepsPlaybackSessionVisible() {
         val playing = PlaybackState(
             audioLoaded = true,
             analysisLoaded = true,
@@ -163,7 +163,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionKeepsReadyStateForPlayAfterLoadedHandoff() {
+    fun playbackSessionKeepsReadyStateForPlayAfterLoadedHandoff() {
         val readyForAutoPlay = PlaybackState(
             playAfterLoaded = true,
             audioLoaded = true,
@@ -177,7 +177,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionMapsTransportStates() {
+    fun playbackSessionMapsTransportStates() {
         assertEquals(
             PlaybackSessionSurface.Local,
             resolvePlaybackSessionSurface(PlaybackState(isRunning = true))
@@ -189,7 +189,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionHidesUnreadyOrFailedTracks() {
+    fun playbackSessionHidesUnreadyOrFailedTracks() {
         assertEquals(
             PlaybackSessionSurface.Hidden,
             resolvePlaybackSessionSurface(
@@ -214,7 +214,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionKeepsRetryableFailedLoadVisibleWhenRequested() {
+    fun playbackSessionKeepsRetryableFailedLoadVisibleWhenRequested() {
         val failed = PlaybackState(
             analysisErrorMessage = "Loading failed.",
             lastJobId = "job_123"
@@ -234,7 +234,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionWouldHideIntermediateCachedAudioState() {
+    fun playbackSessionWouldHideIntermediateCachedAudioState() {
         assertEquals(
             PlaybackSessionSurface.Hidden,
             resolvePlaybackSessionSurface(
@@ -250,7 +250,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionKeepsCachedAudioDecodeVisibleWhileLoading() {
+    fun playbackSessionKeepsCachedAudioDecodeVisibleWhileLoading() {
         assertEquals(
             PlaybackSessionSurface.Loading(progressBucket = null),
             resolvePlaybackSessionSurface(
@@ -264,7 +264,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSessionMapsCastNotificationState() {
+    fun playbackSessionMapsCastNotificationState() {
         assertEquals(
             PlaybackSessionSurface.Cast(
                 isPlaying = false,

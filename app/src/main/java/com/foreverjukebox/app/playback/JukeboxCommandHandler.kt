@@ -136,8 +136,9 @@ internal class JukeboxCommandHandler(
 ) {
     /**
      * Applies [action] for [surface] and returns what the session should layer over the
-     * snapshot afterwards, or null when nothing changes. A stop on any surface but Loading
-     * is marked, since that is how a dismissed notification arrives.
+     * snapshot afterwards, or null when nothing changes. A stop on a visible surface other
+     * than Loading is marked, since that is how a dismissed notification arrives. A hidden
+     * session exposes no transport, so presses that reach it anyway are dropped.
      */
     fun handle(action: PlaybackAction, surface: PlaybackSessionSurface): SessionOverride? {
         val route = routeTransportAction(
@@ -153,16 +154,17 @@ internal class JukeboxCommandHandler(
             }
             TransportActionRoute.Handle -> when (surface) {
                 is PlaybackSessionSurface.Cast -> handleCast(action)
-                PlaybackSessionSurface.Local,
-                PlaybackSessionSurface.Hidden -> {
+                PlaybackSessionSurface.Local -> {
                     handleLocal(action)
                     null
                 }
+                PlaybackSessionSurface.Hidden,
                 is PlaybackSessionSurface.Loading,
                 PlaybackSessionSurface.LoadFailed -> null
             }
         }
         val marksStop = action == PlaybackAction.Stop &&
+            surface != PlaybackSessionSurface.Hidden &&
             surface !is PlaybackSessionSurface.Loading &&
             result?.castUnreachable != true
         return if (marksStop) (result ?: SessionOverride()).copy(stopped = true) else result

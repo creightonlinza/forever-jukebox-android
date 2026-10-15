@@ -17,36 +17,12 @@ internal fun loadingNotificationTitle(progressBucket: Int?): String {
     return progressBucket?.let { "Loading - $it%" } ?: LOADING_NOTIFICATION_TITLE
 }
 
-internal fun localPlaybackNotificationTitle(
-    baseTitle: String?,
-    audioMode: JukeboxAudioMode,
-    isLoading: Boolean,
-    loadingProgressBucket: Int?,
-    isLoadFailed: Boolean = false
-): String {
-    if (isLoadFailed) {
-        return LOAD_FAILED_NOTIFICATION_TITLE
-    }
-    if (isLoading) {
-        return loadingNotificationTitle(loadingProgressBucket)
-    }
+internal fun localPlaybackNotificationTitle(baseTitle: String?, audioMode: JukeboxAudioMode): String {
     val title = baseTitle.orEmpty()
     return when {
         title.isBlank() -> DEFAULT_NOTIFICATION_TITLE
         audioMode != JukeboxAudioMode.Off -> "$title (${audioMode.wireValue})"
         else -> title
-    }
-}
-
-internal fun localPlaybackNotificationArtist(
-    baseArtist: String?,
-    isLoading: Boolean,
-    isLoadFailed: Boolean = false
-): String {
-    return if (isLoading || isLoadFailed) {
-        DEFAULT_NOTIFICATION_TITLE
-    } else {
-        baseArtist.orEmpty()
     }
 }
 
@@ -233,13 +209,8 @@ internal fun resolveJukeboxSessionSpec(
                 playbackState = readyOrStopped(override.stopped && !playWhenReady),
                 playWhenReady = playWhenReady,
                 suppressedByAudioFocus = waitingForFocus,
-                title = localPlaybackNotificationTitle(
-                    baseTitle = local.title,
-                    audioMode = local.audioMode,
-                    isLoading = false,
-                    loadingProgressBucket = null
-                ),
-                artist = localPlaybackNotificationArtist(baseArtist = local.artist, isLoading = false),
+                title = localPlaybackNotificationTitle(local.title, local.audioMode),
+                artist = local.artist.orEmpty(),
                 durationMs = local.durationMs?.takeIf { it > 0L },
                 showsArtwork = true,
                 reportsPosition = true,
