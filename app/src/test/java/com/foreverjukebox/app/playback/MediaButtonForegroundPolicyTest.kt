@@ -64,11 +64,23 @@ class MediaButtonForegroundPolicyTest {
     }
 
     @Test
-    fun api31And32UseARuntimeReceiverSoAnEmptySessionNeedsNothing() {
-        assertEquals(
-            MediaButtonStartAction.None,
-            resolve(sdkInt = Build.VERSION_CODES.S, sessionVisible = false)
-        )
+    fun api31And32PlayPressOnANotificationThatOutlivedItsProcessShutsTheServiceDown() {
+        listOf(Build.VERSION_CODES.S, Build.VERSION_CODES.S_V2).forEach { sdkInt ->
+            assertEquals(
+                MediaButtonStartAction.ShutDown,
+                resolve(sdkInt = sdkInt, sessionVisible = false)
+            )
+        }
+    }
+
+    @Test
+    fun api31And32OtherKeysOnAnEmptySessionNeedNothing() {
+        listOf(KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS).forEach { keyCode ->
+            assertEquals(
+                MediaButtonStartAction.None,
+                resolve(sdkInt = Build.VERSION_CODES.S, sessionVisible = false, keyCode = keyCode)
+            )
+        }
     }
 
     @Test

@@ -89,7 +89,10 @@ internal enum class MediaButtonStartAction {
  * where Media3 only promotes once playback engages. The notification's play button is one:
  * a press that cannot start playback (audio focus denied, a retry, nothing loaded) would
  * leave the start unmet. Before API 31 the session's stored media-button target is this
- * service, so a key after process death starts it with no session to show.
+ * service, so a key after process death starts it with no session to show. On API 31 and
+ * 32 a paused notification that outlived its process (Media3 leaves the foreground after
+ * a long pause, so the system no longer removes it with the process) starts it the same
+ * way from its play button.
  */
 internal fun resolveMediaButtonStart(
     sdkInt: Int,
@@ -101,15 +104,17 @@ internal fun resolveMediaButtonStart(
     if (keyCode == null || sdkInt >= Build.VERSION_CODES.TIRAMISU) {
         return MediaButtonStartAction.None
     }
+    val isPlayKey = keyCode == KeyEvent.KEYCODE_MEDIA_PLAY ||
+        keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
     if (!sessionVisible) {
-        return if (sdkInt < Build.VERSION_CODES.S) {
+        // From API 31 only the play button is a foreground start; the other buttons are
+        // plain service starts that the empty session stops on its own.
+        return if (sdkInt < Build.VERSION_CODES.S || isPlayKey) {
             MediaButtonStartAction.ShutDown
         } else {
             MediaButtonStartAction.None
         }
     }
-    val isPlayKey = keyCode == KeyEvent.KEYCODE_MEDIA_PLAY ||
-        keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
     return if (isPlayKey) MediaButtonStartAction.PromoteSession else MediaButtonStartAction.None
 }
 
