@@ -133,11 +133,22 @@ fun uploadTitleFromFileName(fileName: String): String {
  */
 fun uploadMimeTypesForPicker(allowedExts: List<String>): Array<String> {
     val exts = normalizeUploadExts(allowedExts)
-    val types = mutableListOf("audio/*")
-    if (".ogg" in exts) types.add("application/ogg")
-    if (".webm" in exts) types.add("video/webm")
+    val types = mutableListOf(AUDIO_PICKER_MIME)
+    if (".ogg" in exts) types.add(OGG_PICKER_MIME)
+    if (".webm" in exts) types.add(WEBM_PICKER_MIME)
     return types.toTypedArray()
 }
+
+/**
+ * MIME filter for Local mode's SAF picker. The on-device decoder reads the first audio track of
+ * Ogg and WebM files like any other audio, so the non-audio types providers give them are included.
+ */
+fun localAnalysisMimeTypesForPicker(): Array<String> =
+    arrayOf(AUDIO_PICKER_MIME, OGG_PICKER_MIME, WEBM_PICKER_MIME)
+
+private const val AUDIO_PICKER_MIME = "audio/*"
+private const val OGG_PICKER_MIME = "application/ogg"
+private const val WEBM_PICKER_MIME = "video/webm"
 
 /** Local error for a file whose type can't be resolved to an allowed upload extension. */
 fun unsupportedUploadTypeMessage(allowedExts: List<String>): String {

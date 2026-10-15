@@ -131,6 +131,15 @@ class UserSourcePolicyTest {
     }
 
     @Test
+    fun localPickerOffersOggAndWebmFilesThatProvidersTypeAsNonAudio() {
+        // MediaStore types .webm as video/webm, so an audio/* filter greys those files out.
+        assertArrayEquals(
+            arrayOf("audio/*", "application/ogg", "video/webm"),
+            localAnalysisMimeTypesForPicker()
+        )
+    }
+
+    @Test
     fun pickerMimesIncludeNonAudioTypesOnlyWhenAllowed() {
         assertArrayEquals(
             arrayOf("audio/*", "application/ogg", "video/webm"),

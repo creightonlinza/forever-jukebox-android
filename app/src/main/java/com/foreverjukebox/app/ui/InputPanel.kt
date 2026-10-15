@@ -99,7 +99,7 @@ fun InputPanel(
                     label = "Add Audio",
                     icon = Icons.Outlined.AudioFile,
                     iconTint = LocalThemeTokens.current.titleAccent,
-                    onClick = { filePicker.launch(arrayOf("audio/*")) },
+                    onClick = { filePicker.launch(localAnalysisMimeTypesForPicker()) },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text("Completed Analysis", style = MaterialTheme.typography.labelLarge)
