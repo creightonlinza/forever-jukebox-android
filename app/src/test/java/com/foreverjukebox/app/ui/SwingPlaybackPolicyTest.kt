@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.playback.PlaybackSessionSurface
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -56,12 +57,12 @@ class SwingPlaybackPolicyTest {
         assertEquals(PREPARING_SWING_LABEL, playbackTransportContentDescription(preparing))
         assertEquals(ListenContentMode.None, resolveListenContentMode(preparing))
         assertEquals(
-            PlaybackServiceSession.LocalLoading(40),
-            resolvePlaybackServiceSession(preparing)
+            PlaybackSessionSurface.Loading(progressBucket = 40),
+            resolvePlaybackSessionSurface(preparing)
         )
         assertEquals(
-            PlaybackServiceSession.LocalPaused,
-            resolvePlaybackServiceSession(preparing.copy(swingReady = true))
+            PlaybackSessionSurface.Local,
+            resolvePlaybackSessionSurface(preparing.copy(swingReady = true))
         )
     }
 

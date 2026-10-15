@@ -17,6 +17,9 @@ import com.google.common.util.concurrent.ListenableFuture
 private const val MEDIA_ITEM_UID = "jukebox"
 private const val POSITION_REFRESH_INTERVAL_MS = 1_000L
 
+/** How long a forwarded cast press is shown before the receiver's own report wins. */
+private const val CAST_PLAY_OVERRIDE_TIMEOUT_MS = 5_000L
+
 /**
  * The media session's view of playback. State comes from the published
  * [PlaybackSessionSnapshot] plus the [PlaybackController]'s live values; transport presses
@@ -34,38 +37,62 @@ internal class JukeboxPlayer(
     private val commandHandler: JukeboxCommandHandler,
     private val artworkData: ByteArray?
 ) : SimpleBasePlayer(looper) {
-    private var snapshot = PlaybackSessionState.snapshot
-    private var castOverride = CastCommandOverride()
+    private var published = PlaybackSessionState.published.value
+    private var override = SessionOverride()
     private val handler = Handler(looper)
     private var positionRefreshScheduled = false
     private val positionRefresh = Runnable {
         positionRefreshScheduled = false
         invalidateState()
     }
+    private val castPlayOverrideExpiry = Runnable {
+        override = override.copy(castPlaying = null)
+        invalidateState()
+    }
+
+    // The metadata only changes with the track, so the item is rebuilt only then; reusing
+    // the instance also spares Media3 comparing the artwork bytes on every refresh.
+    private var cachedItemKey: MediaItemKey? = null
+    private var cachedItem: MediaItemData? = null
+
+    private data class MediaItemKey(
+        val title: String,
+        val artist: String,
+        val durationMs: Long?,
+        val showsArtwork: Boolean
+    )
 
     val surface: PlaybackSessionSurface
-        get() = snapshot.surface
+        get() = published.snapshot.surface
 
-    fun publish(snapshot: PlaybackSessionSnapshot) {
-        this.snapshot = snapshot
-        castOverride = castOverride.afterSnapshot(snapshot.surface)
+    fun publish(next: PlaybackSessionState.Published) {
+        val previous = published
+        published = next
+        override = override.afterSnapshot(
+            previous = previous.snapshot.surface,
+            surface = next.snapshot.surface,
+            surfaceChanged = next.surfaceEpoch != previous.surfaceEpoch
+        )
+        if (override.castPlaying == null) {
+            handler.removeCallbacks(castPlayOverrideExpiry)
+        }
         invalidateState()
     }
 
     fun skipToPrevious() {
         verifyApplicationThread()
-        commandHandler.skipToPrevious(snapshot.surface)
+        commandHandler.skipToPrevious(surface)
     }
 
     fun skipToNext() {
         verifyApplicationThread()
-        commandHandler.skipToNext(snapshot.surface)
+        commandHandler.skipToNext(surface)
     }
 
     /** Pauses local playback for a lost output route, as a pause press would. */
     fun pauseLocalPlayback() {
         verifyApplicationThread()
-        if (snapshot.surface != PlaybackSessionSurface.Local) {
+        if (surface != PlaybackSessionSurface.Local) {
             return
         }
         applyAction(PlaybackAction.Pause)
@@ -73,8 +100,10 @@ internal class JukeboxPlayer(
     }
 
     override fun getState(): State {
-        val spec = resolveJukeboxSessionSpec(snapshot, readLocalStatus(), castOverride)
-        schedulePositionRefresh(spec.reportsPosition && spec.playWhenReady)
+        val local = readLocalStatus()
+        override = override.afterLocalStatus(surface, local)
+        val spec = resolveJukeboxSessionSpec(published.snapshot, local, override)
+        schedulePositionRefresh(spec.positionAdvances)
         return buildState(spec)
     }
 
@@ -90,13 +119,18 @@ internal class JukeboxPlayer(
 
     override fun handleRelease(): ListenableFuture<*> {
         handler.removeCallbacks(positionRefresh)
+        handler.removeCallbacks(castPlayOverrideExpiry)
         positionRefreshScheduled = false
         return Futures.immediateVoidFuture()
     }
 
     private fun applyAction(action: PlaybackAction) {
-        val result = commandHandler.handle(action, snapshot.surface) ?: return
-        castOverride = castOverride.afterCommand(action, result)
+        val result = commandHandler.handle(action, surface) ?: return
+        override = override.afterCommand(action, result)
+        handler.removeCallbacks(castPlayOverrideExpiry)
+        if (override.castPlaying != null) {
+            handler.postDelayed(castPlayOverrideExpiry, CAST_PLAY_OVERRIDE_TIMEOUT_MS)
+        }
     }
 
     private fun schedulePositionRefresh(active: Boolean) {
@@ -121,9 +155,30 @@ internal class JukeboxPlayer(
                 spec.playWhenReady,
                 Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
             )
+        if (spec.suppressedByAudioFocus) {
+            builder.setPlaybackSuppressionReason(
+                Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS
+            )
+        }
         if (!spec.hasMediaItem) {
             return builder.build()
         }
+        val positionMs = if (spec.reportsPosition) readPositionMs().coerceAtLeast(0L) else 0L
+        val position = if (spec.positionAdvances) {
+            PositionSupplier.getExtrapolating(positionMs, 1f)
+        } else {
+            PositionSupplier.getConstant(positionMs)
+        }
+        return builder
+            .setPlaylist(listOf(mediaItemFor(spec)))
+            .setCurrentMediaItemIndex(0)
+            .setContentPositionMs(position)
+            .build()
+    }
+
+    private fun mediaItemFor(spec: JukeboxSessionSpec): MediaItemData {
+        val key = MediaItemKey(spec.title, spec.artist, spec.durationMs, spec.showsArtwork)
+        cachedItem?.takeIf { key == cachedItemKey }?.let { return it }
         val metadata = MediaMetadata.Builder()
             .setTitle(spec.title)
             .setArtist(spec.artist)
@@ -138,17 +193,9 @@ internal class JukeboxPlayer(
             .setMediaItem(mediaItem)
             .setDurationUs(spec.durationMs?.let(Util::msToUs) ?: C.TIME_UNSET)
             .build()
-        val positionMs = if (spec.reportsPosition) readPositionMs().coerceAtLeast(0L) else 0L
-        val position = if (spec.reportsPosition && spec.playWhenReady) {
-            PositionSupplier.getExtrapolating(positionMs, 1f)
-        } else {
-            PositionSupplier.getConstant(positionMs)
-        }
-        return builder
-            .setPlaylist(listOf(item))
-            .setCurrentMediaItemIndex(0)
-            .setContentPositionMs(position)
-            .build()
+        cachedItemKey = key
+        cachedItem = item
+        return item
     }
 }
 

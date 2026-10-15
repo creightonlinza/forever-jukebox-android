@@ -36,20 +36,37 @@ internal data class PlaybackSessionSnapshot(
  * Process-wide hand-off from the UI layer to the media session service. Every publish
  * emits, even an unchanged snapshot, because the session also re-reads controller state
  * (title, audio mode, play state) that the snapshot does not carry.
+ *
+ * [Published.surfaceEpoch] advances whenever the kind of surface changes. The service
+ * collects a conflated flow and can miss a short-lived snapshot (a Loading between two
+ * tracks), so the epoch is what tells it the surface moved on in the meantime.
  */
 internal object PlaybackSessionState {
     internal data class Published(
         val snapshot: PlaybackSessionSnapshot,
-        val revision: Long
+        val revision: Long,
+        val surfaceEpoch: Long
     )
 
-    private val _published = MutableStateFlow(Published(PlaybackSessionSnapshot(), 0L))
+    private val _published = MutableStateFlow(Published(PlaybackSessionSnapshot(), 0L, 0L))
     val published: StateFlow<Published> = _published
 
     val snapshot: PlaybackSessionSnapshot
         get() = _published.value.snapshot
 
     fun publish(snapshot: PlaybackSessionSnapshot) {
-        _published.update { current -> Published(snapshot, current.revision + 1) }
+        _published.update { current -> nextPublished(current, snapshot) }
     }
+}
+
+internal fun nextPublished(
+    current: PlaybackSessionState.Published,
+    snapshot: PlaybackSessionSnapshot
+): PlaybackSessionState.Published {
+    val surfaceChanged = snapshot.surface::class != current.snapshot.surface::class
+    return PlaybackSessionState.Published(
+        snapshot = snapshot,
+        revision = current.revision + 1,
+        surfaceEpoch = if (surfaceChanged) current.surfaceEpoch + 1 else current.surfaceEpoch
+    )
 }

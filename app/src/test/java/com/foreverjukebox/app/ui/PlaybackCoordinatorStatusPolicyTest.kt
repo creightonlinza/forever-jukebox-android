@@ -2,6 +2,7 @@ package com.foreverjukebox.app.ui
 
 import java.io.IOException
 import org.junit.Assert.assertFalse
+import com.foreverjukebox.app.playback.PlaybackSessionSurface
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -97,16 +98,16 @@ class PlaybackCoordinatorStatusPolicyTest {
     @Test
     fun playbackServiceSessionMapsIdleToHidden() {
         assertEquals(
-            PlaybackServiceSession.Hidden,
-            resolvePlaybackServiceSession(PlaybackState())
+            PlaybackSessionSurface.Hidden,
+            resolvePlaybackSessionSurface(PlaybackState())
         )
     }
 
     @Test
-    fun playbackServiceSessionMapsLoadingToLocalLoading() {
+    fun playbackSessionMapsLoadingToBucketedLoading() {
         assertEquals(
-            PlaybackServiceSession.LocalLoading(progress = 42),
-            resolvePlaybackServiceSession(
+            PlaybackSessionSurface.Loading(progressBucket = 40),
+            resolvePlaybackSessionSurface(
                 PlaybackState(
                     analysisInFlight = true,
                     analysisProgress = 42
@@ -129,8 +130,8 @@ class PlaybackCoordinatorStatusPolicyTest {
         )
         val reset = playing.resetForNewTrack(keepLoadVisible = true)
         assertEquals(
-            PlaybackServiceSession.LocalLoading(progress = null),
-            resolvePlaybackServiceSession(reset)
+            PlaybackSessionSurface.Loading(progressBucket = null),
+            resolvePlaybackSessionSurface(reset)
         )
         assertFalse(reset.audioLoaded)
         assertFalse(reset.isRunning)
@@ -143,16 +144,16 @@ class PlaybackCoordinatorStatusPolicyTest {
     fun resetWithoutNewLoadResolvesHidden() {
         val playing = PlaybackState(audioLoaded = true, analysisLoaded = true, isRunning = true)
         assertEquals(
-            PlaybackServiceSession.Hidden,
-            resolvePlaybackServiceSession(playing.resetForNewTrack(keepLoadVisible = false))
+            PlaybackSessionSurface.Hidden,
+            resolvePlaybackSessionSurface(playing.resetForNewTrack(keepLoadVisible = false))
         )
     }
 
     @Test
-    fun playbackServiceSessionMapsLoadedTrackToLocalReady() {
+    fun playbackSessionMapsLoadedTrackToLocal() {
         assertEquals(
-            PlaybackServiceSession.LocalReady,
-            resolvePlaybackServiceSession(
+            PlaybackSessionSurface.Local,
+            resolvePlaybackSessionSurface(
                 PlaybackState(
                     audioLoaded = true,
                     analysisLoaded = true
@@ -170,28 +171,28 @@ class PlaybackCoordinatorStatusPolicyTest {
         )
 
         assertEquals(
-            PlaybackServiceSession.LocalReady,
-            resolvePlaybackServiceSession(readyForAutoPlay)
+            PlaybackSessionSurface.Local,
+            resolvePlaybackSessionSurface(readyForAutoPlay)
         )
     }
 
     @Test
     fun playbackServiceSessionMapsTransportStates() {
         assertEquals(
-            PlaybackServiceSession.LocalPlaying,
-            resolvePlaybackServiceSession(PlaybackState(isRunning = true))
+            PlaybackSessionSurface.Local,
+            resolvePlaybackSessionSurface(PlaybackState(isRunning = true))
         )
         assertEquals(
-            PlaybackServiceSession.LocalPaused,
-            resolvePlaybackServiceSession(PlaybackState(isPaused = true))
+            PlaybackSessionSurface.Local,
+            resolvePlaybackSessionSurface(PlaybackState(isPaused = true))
         )
     }
 
     @Test
     fun playbackServiceSessionHidesUnreadyOrFailedTracks() {
         assertEquals(
-            PlaybackServiceSession.Hidden,
-            resolvePlaybackServiceSession(
+            PlaybackSessionSurface.Hidden,
+            resolvePlaybackSessionSurface(
                 PlaybackState(
                     playAfterLoaded = true,
                     audioLoaded = true,
@@ -200,8 +201,8 @@ class PlaybackCoordinatorStatusPolicyTest {
             )
         )
         assertEquals(
-            PlaybackServiceSession.Hidden,
-            resolvePlaybackServiceSession(
+            PlaybackSessionSurface.Hidden,
+            resolvePlaybackSessionSurface(
                 PlaybackState(
                     playAfterLoaded = true,
                     audioLoaded = true,
@@ -220,12 +221,12 @@ class PlaybackCoordinatorStatusPolicyTest {
         )
 
         assertEquals(
-            PlaybackServiceSession.Hidden,
-            resolvePlaybackServiceSession(failed)
+            PlaybackSessionSurface.Hidden,
+            resolvePlaybackSessionSurface(failed)
         )
         assertEquals(
-            PlaybackServiceSession.LocalFailed,
-            resolvePlaybackServiceSession(
+            PlaybackSessionSurface.LoadFailed,
+            resolvePlaybackSessionSurface(
                 playback = failed,
                 keepFailedLoadVisible = true
             )
@@ -235,8 +236,8 @@ class PlaybackCoordinatorStatusPolicyTest {
     @Test
     fun playbackServiceSessionWouldHideIntermediateCachedAudioState() {
         assertEquals(
-            PlaybackServiceSession.Hidden,
-            resolvePlaybackServiceSession(
+            PlaybackSessionSurface.Hidden,
+            resolvePlaybackSessionSurface(
                 PlaybackState(
                     audioLoaded = true,
                     analysisLoaded = false,
@@ -251,8 +252,8 @@ class PlaybackCoordinatorStatusPolicyTest {
     @Test
     fun playbackServiceSessionKeepsCachedAudioDecodeVisibleWhileLoading() {
         assertEquals(
-            PlaybackServiceSession.LocalLoading(progress = null),
-            resolvePlaybackServiceSession(
+            PlaybackSessionSurface.Loading(progressBucket = null),
+            resolvePlaybackSessionSurface(
                 PlaybackState(
                     audioLoaded = true,
                     analysisLoaded = false,
@@ -265,12 +266,12 @@ class PlaybackCoordinatorStatusPolicyTest {
     @Test
     fun playbackServiceSessionMapsCastNotificationState() {
         assertEquals(
-            PlaybackServiceSession.Cast(
+            PlaybackSessionSurface.Cast(
                 isPlaying = false,
                 title = "Cast Track",
                 artist = "Cast Artist"
             ),
-            resolvePlaybackServiceSession(
+            resolvePlaybackSessionSurface(
                 PlaybackState(
                     isCasting = true,
                     trackTitle = "Cast Track",
@@ -282,7 +283,7 @@ class PlaybackCoordinatorStatusPolicyTest {
     }
 
     @Test
-    fun playbackServiceSkipAvailabilityFollowsPlaylistState() {
+    fun playbackSessionSkipAvailabilityFollowsPlaylistState() {
         val state = UiState(
             playlist = JukeboxPlaylistState(
                 tracks = listOf(
@@ -294,14 +295,13 @@ class PlaybackCoordinatorStatusPolicyTest {
             )
         )
 
-        assertEquals(
-            PlaybackServiceSkipAvailability(canSkipPrevious = true, canSkipNext = true),
-            resolvePlaybackServiceSkipAvailability(state)
-        )
+        val snapshot = resolvePlaybackSessionSnapshot(state)
+        assertTrue(snapshot.canSkipPrevious)
+        assertTrue(snapshot.canSkipNext)
     }
 
     @Test
-    fun playbackServiceSkipAvailabilityDisablesWhileTrackLoading() {
+    fun playbackSessionSkipAvailabilityDisablesWhileTrackLoading() {
         val state = UiState(
             playback = PlaybackState(audioLoading = true),
             playlist = JukeboxPlaylistState(
@@ -314,9 +314,8 @@ class PlaybackCoordinatorStatusPolicyTest {
             )
         )
 
-        assertEquals(
-            PlaybackServiceSkipAvailability(canSkipPrevious = false, canSkipNext = false),
-            resolvePlaybackServiceSkipAvailability(state)
-        )
+        val snapshot = resolvePlaybackSessionSnapshot(state)
+        assertFalse(snapshot.canSkipPrevious)
+        assertFalse(snapshot.canSkipNext)
     }
 }

@@ -2,16 +2,18 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.playback.PlaybackSessionSurface
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * Pins the transport-retry contract end to end at the policy layer:
  *
- * 1. Visibility — [resolvePlaybackServiceSession] (the UiState entry point the
+ * 1. Visibility — [resolvePlaybackSessionSnapshot] (the UiState entry point the
  *    coordinator syncs through) must keep a retryable failure on screen as
- *    [PlaybackServiceSession.LocalFailed]. Any failure with a retryable track id
- *    resolves to LocalFailed, never Hidden — including when the track is still
+ *    [PlaybackSessionSurface.LoadFailed]. Any failure with a retryable track id
+ *    resolves to LoadFailed, never Hidden — including when the track is still
  *    fully loaded in memory. Tearing the notification down strands the user:
  *    a stopped foreground service cannot be restarted from the background.
  * 2. Press behavior — [transportRetryPressAction] decides what the button does,
@@ -22,7 +24,7 @@ import org.junit.Test
  * (or any press-behavior concern) is the drift this test exists to reject.
  *
  * One precedence exception: audibly running playback outranks the failed surface,
- * because the failed surface drops Pause/Stop presses — the transport must keep
+ * because the failed surface has no pause — the transport must keep
  * controlling audio that is actually playing.
  */
 class TransportRetryPolicyTest {
@@ -31,9 +33,9 @@ class TransportRetryPolicyTest {
     // without server mode have no retry flow, so the session hides instead.
     private val expectedRetryableFailure =
         if (BuildConfig.SERVER_MODE_AVAILABLE) {
-            PlaybackServiceSession.LocalFailed
+            PlaybackSessionSurface.LoadFailed
         } else {
-            PlaybackServiceSession.Hidden
+            PlaybackSessionSurface.Hidden
         }
 
     private fun serverState(playback: PlaybackState) = UiState(
@@ -50,7 +52,7 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(expectedRetryableFailure, resolvePlaybackServiceSession(state))
+        assertEquals(expectedRetryableFailure, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test
@@ -67,7 +69,7 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(expectedRetryableFailure, resolvePlaybackServiceSession(state))
+        assertEquals(expectedRetryableFailure, resolvePlaybackSessionSnapshot(state).surface)
         assertEquals(
             TransportRetryPressAction.ResumePlayback,
             transportRetryPressAction(state.playback)
@@ -89,11 +91,11 @@ class TransportRetryPolicyTest {
         // Without server mode there is no retry flow, and the paused loaded track
         // falls through to its normal paused notification instead.
         val expected = if (BuildConfig.SERVER_MODE_AVAILABLE) {
-            PlaybackServiceSession.LocalFailed
+            PlaybackSessionSurface.LoadFailed
         } else {
-            PlaybackServiceSession.LocalPaused
+            PlaybackSessionSurface.Local
         }
-        assertEquals(expected, resolvePlaybackServiceSession(state))
+        assertEquals(expected, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test
@@ -108,7 +110,7 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(expectedRetryableFailure, resolvePlaybackServiceSession(state))
+        assertEquals(expectedRetryableFailure, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test
@@ -125,7 +127,7 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(expectedRetryableFailure, resolvePlaybackServiceSession(state))
+        assertEquals(expectedRetryableFailure, resolvePlaybackSessionSnapshot(state).surface)
         assertEquals(
             TransportRetryPressAction.RetryLoad,
             transportRetryPressAction(state.playback)
@@ -148,7 +150,7 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(PlaybackServiceSession.LocalPlaying, resolvePlaybackServiceSession(state))
+        assertEquals(PlaybackSessionSurface.Local, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test
@@ -163,7 +165,7 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(PlaybackServiceSession.Hidden, resolvePlaybackServiceSession(state))
+        assertEquals(PlaybackSessionSurface.Hidden, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test
@@ -172,7 +174,7 @@ class TransportRetryPolicyTest {
             PlaybackState(analysisErrorMessage = "Loading failed.")
         )
 
-        assertEquals(PlaybackServiceSession.Hidden, resolvePlaybackServiceSession(state))
+        assertEquals(PlaybackSessionSurface.Hidden, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test
@@ -187,7 +189,7 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(PlaybackServiceSession.Hidden, resolvePlaybackServiceSession(state))
+        assertEquals(PlaybackSessionSurface.Hidden, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test
@@ -203,9 +205,8 @@ class TransportRetryPolicyTest {
             )
         )
 
-        assertEquals(
-            PlaybackServiceSessionKind.LocalLoading,
-            resolvePlaybackServiceSession(state).kind
+        assertTrue(
+            resolvePlaybackSessionSnapshot(state).surface is PlaybackSessionSurface.Loading
         )
     }
 
@@ -220,7 +221,7 @@ class TransportRetryPolicyTest {
         )
 
         assertEquals(false, shouldOfferInAppLoadRetry(state))
-        assertEquals(expectedRetryableFailure, resolvePlaybackServiceSession(state))
+        assertEquals(expectedRetryableFailure, resolvePlaybackSessionSnapshot(state).surface)
     }
 
     @Test

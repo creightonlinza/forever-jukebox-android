@@ -22,6 +22,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
@@ -92,11 +93,12 @@ internal enum class MediaButtonStartAction {
  */
 internal fun resolveMediaButtonStart(
     sdkInt: Int,
-    inForeground: Boolean,
     sessionVisible: Boolean,
     keyCode: Int?
 ): MediaButtonStartAction {
-    if (keyCode == null || inForeground || sdkInt >= Build.VERSION_CODES.TIRAMISU) {
+    // Not gated on the service already being in the foreground: Media3 can leave it
+    // without notifying the service, and re-promoting a foreground service is harmless.
+    if (keyCode == null || sdkInt >= Build.VERSION_CODES.TIRAMISU) {
         return MediaButtonStartAction.None
     }
     if (!sessionVisible) {
@@ -185,6 +187,7 @@ class PlaybackService : MediaSessionService() {
                 LocalPlaybackStatus(
                     isPlaying = controller.isPlaying(),
                     isPaused = controller.isPaused(),
+                    isWaitingForFocus = controller.isWaitingForFocus(),
                     title = controller.getTrackTitle(),
                     artist = controller.getTrackArtist(),
                     audioMode = controller.player.getJukeboxAudioMode(),
@@ -200,6 +203,19 @@ class PlaybackService : MediaSessionService() {
             artworkData = loadArtworkData()
         )
         jukeboxPlayer = player
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            // Below API 33 the notification's elapsed-time chronometer is anchored when the
+            // notification is built, and Media3 does not rebuild it for position jumps.
+            player.addListener(object : Player.Listener {
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int
+                ) {
+                    triggerNotificationUpdate()
+                }
+            })
+        }
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
                 .setChannelId(NOTIFICATION_CHANNEL_ID)
@@ -224,7 +240,7 @@ class PlaybackService : MediaSessionService() {
             .build()
         serviceScope.launch {
             PlaybackSessionState.published.collect { published ->
-                player.publish(published.snapshot)
+                player.publish(published)
                 if (published.snapshot.surface == PlaybackSessionSurface.Hidden) {
                     stopSelf()
                 }
@@ -242,7 +258,6 @@ class PlaybackService : MediaSessionService() {
             ?.keyCode
         val action = resolveMediaButtonStart(
             sdkInt = Build.VERSION.SDK_INT,
-            inForeground = foregroundRequired,
             sessionVisible = PlaybackSessionState.snapshot.surface != PlaybackSessionSurface.Hidden,
             keyCode = keyCode
         )
@@ -252,6 +267,8 @@ class PlaybackService : MediaSessionService() {
             MediaButtonStartAction.PromoteSession -> {
                 foregroundStartPending = true
                 triggerNotificationUpdate()
+                // Consumed by the update above when it ran; never carried to a later one.
+                foregroundStartPending = false
             }
             MediaButtonStartAction.ShutDown -> shutDownUnservedStart()
         }

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -29,6 +30,8 @@ internal class PlaybackSessionHost(context: Context) {
     @Volatile
     private var connectionWanted = false
     private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var lastConnectAttemptMs = 0L
+    private var failureLogged = false
     private val applyConnection = Runnable { applyWantedConnection() }
 
     fun show(snapshot: PlaybackSessionSnapshot) {
@@ -53,8 +56,10 @@ internal class PlaybackSessionHost(context: Context) {
     private fun applyWantedConnection() {
         val future = controllerFuture
         if (connectionWanted) {
-            if (future == null || !future.isLive()) {
+            val now = SystemClock.elapsedRealtime()
+            if (shouldConnect(future, now)) {
                 future?.let(MediaController::releaseFuture)
+                lastConnectAttemptMs = now
                 controllerFuture = connect()
             }
         } else if (future != null) {
@@ -63,9 +68,14 @@ internal class PlaybackSessionHost(context: Context) {
         }
     }
 
-    // A connection that failed, or whose service went away, is replaced on the next show.
-    private fun ListenableFuture<MediaController>.isLive(): Boolean {
-        return !isDone || runCatching { get().isConnected }.getOrDefault(false)
+    // A connection that failed, or whose service went away, is replaced on a later show,
+    // at most once per retry interval so a persistent failure doesn't rebind on every sync.
+    private fun shouldConnect(future: ListenableFuture<MediaController>?, nowMs: Long): Boolean {
+        if (future == null) {
+            return true
+        }
+        val live = !future.isDone || runCatching { future.get().isConnected }.getOrDefault(false)
+        return !live && nowMs - lastConnectAttemptMs >= RECONNECT_INTERVAL_MS
     }
 
     private fun connect(): ListenableFuture<MediaController> {
@@ -79,9 +89,15 @@ internal class PlaybackSessionHost(context: Context) {
     }
 
     private fun logConnectionFailure(future: ListenableFuture<MediaController>) {
-        val failure = runCatching { future.get() }.exceptionOrNull() ?: return
-        // A cancelled future was released before it connected.
-        if (failure !is CancellationException) {
+        val failure = runCatching { future.get() }.exceptionOrNull()
+        if (failure == null) {
+            failureLogged = false
+            return
+        }
+        // A cancelled future was released before it connected. Repeated failures are
+        // logged once until a connection succeeds again.
+        if (failure !is CancellationException && !failureLogged) {
+            failureLogged = true
             val cause = (failure as? ExecutionException)?.cause ?: failure
             AppLog.warn(TAG, "Playback session connection failed", cause)
         }
@@ -89,5 +105,6 @@ internal class PlaybackSessionHost(context: Context) {
 
     private companion object {
         private const val TAG = "PlaybackSessionHost"
+        private const val RECONNECT_INTERVAL_MS = 5_000L
     }
 }

@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.FavoritePlayMode
+import com.foreverjukebox.app.playback.PlaybackSessionSurface
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -71,12 +72,12 @@ class WubMachinePlaybackPolicyTest {
         )
         assertEquals(ListenContentMode.None, resolveListenContentMode(preparing))
         assertEquals(
-            PlaybackServiceSession.LocalLoading(40),
-            resolvePlaybackServiceSession(preparing)
+            PlaybackSessionSurface.Loading(progressBucket = 40),
+            resolvePlaybackSessionSurface(preparing)
         )
         assertEquals(
-            PlaybackServiceSession.LocalPaused,
-            resolvePlaybackServiceSession(preparing.copy(wubReady = true))
+            PlaybackSessionSurface.Local,
+            resolvePlaybackSessionSurface(preparing.copy(wubReady = true))
         )
     }
 

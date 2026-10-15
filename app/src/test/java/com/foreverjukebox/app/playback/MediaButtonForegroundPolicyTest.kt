@@ -9,10 +9,9 @@ class MediaButtonForegroundPolicyTest {
 
     private fun resolve(
         sdkInt: Int = Build.VERSION_CODES.R,
-        inForeground: Boolean = false,
         sessionVisible: Boolean = true,
         keyCode: Int? = KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
-    ) = resolveMediaButtonStart(sdkInt, inForeground, sessionVisible, keyCode)
+    ) = resolveMediaButtonStart(sdkInt, sessionVisible, keyCode)
 
     @Test
     fun notificationPlayPressBeforeApi33PromotesTheSession() {
@@ -26,12 +25,11 @@ class MediaButtonForegroundPolicyTest {
     }
 
     @Test
-    fun serviceAlreadyInForegroundNeedsNothingMore() {
-        assertEquals(MediaButtonStartAction.None, resolve(inForeground = true))
-        assertEquals(
-            MediaButtonStartAction.None,
-            resolve(inForeground = true, sessionVisible = false)
-        )
+    fun playPressPromotesEvenWhenTheServiceMayAlreadyBeInTheForeground() {
+        // Media3 can leave the foreground without telling the service, so the guard never
+        // trusts a cached foreground flag.
+        assertEquals(MediaButtonStartAction.PromoteSession, resolve())
+        assertEquals(MediaButtonStartAction.ShutDown, resolve(sessionVisible = false))
     }
 
     @Test

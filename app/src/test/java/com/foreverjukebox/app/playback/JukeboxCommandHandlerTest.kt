@@ -161,10 +161,11 @@ class JukeboxCommandHandlerTest {
         val target = FakeTarget(playing = true)
         val events = FakeEvents()
 
-        handler(target, events).handle(PlaybackAction.Stop, PlaybackSessionSurface.Local)
+        val override = handler(target, events).handle(PlaybackAction.Stop, PlaybackSessionSurface.Local)
 
         assertEquals(listOf("stopAll"), target.calls)
         assertEquals(listOf("stateChanged"), events.calls)
+        assertEquals(SessionOverride(stopped = true), override)
     }
 
     @Test
@@ -245,12 +246,32 @@ class JukeboxCommandHandlerTest {
         val events = FakeEvents()
         val handler = handler(target, events)
 
-        handler.handle(PlaybackAction.Play, PlaybackSessionSurface.LoadFailed)
-        handler.handle(PlaybackAction.Pause, PlaybackSessionSurface.LoadFailed)
-        handler.handle(PlaybackAction.Stop, PlaybackSessionSurface.LoadFailed)
+        assertNull(handler.handle(PlaybackAction.Play, PlaybackSessionSurface.LoadFailed))
+        assertNull(handler.handle(PlaybackAction.Pause, PlaybackSessionSurface.LoadFailed))
 
         assertEquals(emptyList<String>(), target.calls)
         assertEquals(listOf("retry"), events.calls)
+    }
+
+    @Test
+    fun stopOnFailedLoadOnlyMarksTheSurfaceStopped() {
+        val target = FakeTarget()
+        val events = FakeEvents()
+
+        val override = handler(target, events).handle(PlaybackAction.Stop, PlaybackSessionSurface.LoadFailed)
+
+        // A dismissal arrives as this stop; it must not retry or touch playback.
+        assertEquals(SessionOverride(stopped = true), override)
+        assertEquals(emptyList<String>(), target.calls)
+        assertEquals(emptyList<String>(), events.calls)
+    }
+
+    @Test
+    fun stopWhileLoadingIsNotMarked() {
+        assertNull(
+            handler(FakeTarget(), FakeEvents())
+                .handle(PlaybackAction.Stop, PlaybackSessionSurface.Loading(progressBucket = null))
+        )
     }
 
     @Test
@@ -263,9 +284,9 @@ class JukeboxCommandHandlerTest {
         val played = handler.handle(PlaybackAction.Play, cast)
         val stopped = handler.handle(PlaybackAction.Stop, cast)
 
-        assertEquals(CastCommandOverride(isPlaying = false), paused)
-        assertEquals(CastCommandOverride(isPlaying = true), played)
-        assertEquals(CastCommandOverride(isPlaying = false, stopped = true), stopped)
+        assertEquals(SessionOverride(castPlaying = false), paused)
+        assertEquals(SessionOverride(castPlaying = true), played)
+        assertEquals(SessionOverride(castPlaying = false, stopped = true), stopped)
         assertEquals(listOf("cast:pause", "cast:play", "cast:stop"), events.calls)
         assertEquals(emptyList<String>(), target.calls)
     }
@@ -276,7 +297,7 @@ class JukeboxCommandHandlerTest {
 
         val override = handler(FakeTarget(), events).handle(PlaybackAction.Pause, cast)
 
-        assertEquals(CastCommandOverride(unreachable = true), override)
+        assertEquals(SessionOverride(castUnreachable = true), override)
     }
 
     @Test

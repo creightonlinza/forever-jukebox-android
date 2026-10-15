@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.playback
 
+import com.foreverjukebox.app.ui.stopAllPlaybackTransports
+
 internal enum class PlaybackAction {
     Play,
     Pause,
@@ -20,7 +22,7 @@ internal enum class TransportActionRoute {
 /**
  * Routes a transport press by notification state. While a load is in flight every
  * press is dropped; while a failed notification is showing, Play becomes the retry
- * trigger (Pause/Stop have nothing to act on); otherwise the press reaches normal
+ * trigger (Pause/Stop have no playback to act on); otherwise the press reaches normal
  * playback handling.
  */
 internal fun routeTransportAction(
@@ -102,9 +104,7 @@ internal class PlaybackControllerTransportTarget(
     }
 
     override fun stopAllPlayback() {
-        controller.stopPlayback()
-        controller.stopExternalTransports()
-        controller.stopExternalPlayback()
+        stopAllPlaybackTransports(controller)
     }
 }
 
@@ -135,33 +135,37 @@ internal class JukeboxCommandHandler(
     private val warn: (String) -> Unit
 ) {
     /**
-     * Applies [action] for [surface]. Returns the override the session should show until
-     * the next cast snapshot arrives, or null when the press was not forwarded to cast.
+     * Applies [action] for [surface] and returns what the session should layer over the
+     * snapshot afterwards, or null when nothing changes. A stop on any surface but Loading
+     * is marked, since that is how a dismissed notification arrives.
      */
-    fun handle(action: PlaybackAction, surface: PlaybackSessionSurface): CastCommandOverride? {
+    fun handle(action: PlaybackAction, surface: PlaybackSessionSurface): SessionOverride? {
         val route = routeTransportAction(
             isLoading = surface is PlaybackSessionSurface.Loading,
             isLoadFailed = surface == PlaybackSessionSurface.LoadFailed,
             action = action
         )
-        when (route) {
-            TransportActionRoute.Ignore -> return null
+        val result = when (route) {
+            TransportActionRoute.Ignore -> null
             TransportActionRoute.BroadcastRetry -> {
                 events.retryFailedLoad()
-                return null
-            }
-            TransportActionRoute.Handle -> Unit
-        }
-        return when (surface) {
-            is PlaybackSessionSurface.Cast -> handleCast(action)
-            PlaybackSessionSurface.Local,
-            PlaybackSessionSurface.Hidden -> {
-                handleLocal(action)
                 null
             }
-            is PlaybackSessionSurface.Loading,
-            PlaybackSessionSurface.LoadFailed -> null
+            TransportActionRoute.Handle -> when (surface) {
+                is PlaybackSessionSurface.Cast -> handleCast(action)
+                PlaybackSessionSurface.Local,
+                PlaybackSessionSurface.Hidden -> {
+                    handleLocal(action)
+                    null
+                }
+                is PlaybackSessionSurface.Loading,
+                PlaybackSessionSurface.LoadFailed -> null
+            }
         }
+        val marksStop = action == PlaybackAction.Stop &&
+            surface !is PlaybackSessionSurface.Loading &&
+            result?.castUnreachable != true
+        return if (marksStop) (result ?: SessionOverride()).copy(stopped = true) else result
     }
 
     fun skipToPrevious(surface: PlaybackSessionSurface) {
@@ -180,7 +184,7 @@ internal class JukeboxCommandHandler(
         return surface == PlaybackSessionSurface.Local || surface is PlaybackSessionSurface.Cast
     }
 
-    private fun handleCast(action: PlaybackAction): CastCommandOverride {
+    private fun handleCast(action: PlaybackAction): SessionOverride {
         val command = when (action) {
             PlaybackAction.Play -> "play"
             PlaybackAction.Pause -> "pause"
@@ -188,12 +192,9 @@ internal class JukeboxCommandHandler(
         }
         if (!events.sendCastCommand(command)) {
             warn("Cast $command press not delivered; hiding the cast session")
-            return CastCommandOverride(unreachable = true)
+            return SessionOverride(castUnreachable = true)
         }
-        return CastCommandOverride(
-            isPlaying = action == PlaybackAction.Play,
-            stopped = action == PlaybackAction.Stop
-        )
+        return SessionOverride(castPlaying = action == PlaybackAction.Play)
     }
 
     private fun handleLocal(action: PlaybackAction) {

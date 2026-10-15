@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.os.SystemClock
 import com.foreverjukebox.app.ui.CastController
+import com.foreverjukebox.app.ui.stopAllPlaybackTransports
 import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -98,10 +99,7 @@ object SleepTimer {
     }
 
     private fun stopPlaybackForSleepTimer(context: Context) {
-        val controller = PlaybackControllerHolder.get(context)
-        controller.stopPlayback()
-        controller.stopExternalTransports()
-        controller.stopExternalPlayback()
+        stopAllPlaybackTransports(PlaybackControllerHolder.get(context))
         if (PlaybackSessionState.snapshot.surface is PlaybackSessionSurface.Cast) {
             CastController(context as Application).sendTransportCommand("stop")
         }
