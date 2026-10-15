@@ -413,8 +413,9 @@ class PlaybackCoordinator(
             if (!hasCompleteTrackCache(jobId)) {
                 return@withContext null
             }
-            val analysisText = analysisPath.readText()
-            val response = json.decodeFromString<TrackAnalysisResult>(analysisText)
+            val response = readCachedAnalysis(analysisPath, json) { error ->
+                AppLog.warn(TAG, "Discarding unreadable cached analysis for $jobId", error)
+            } ?: return@withContext null
             response to audioPath
         }
         if (cached == null) {
@@ -1222,7 +1223,7 @@ class PlaybackCoordinator(
         scope.launch(Dispatchers.IO) {
             ignoreFailures {
                 val payload = json.encodeToString(response)
-                analysisFile(jobId).writeText(payload)
+                writeTextAtomically(analysisFile(jobId), payload)
             }
         }
     }
