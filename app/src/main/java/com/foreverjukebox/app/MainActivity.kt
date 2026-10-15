@@ -44,13 +44,14 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
-        viewModel.handleDeepLink(intent?.data)
-        if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
-            viewModel.openListenTab()
-        }
-        // A configuration change replays onCreate with the launching intent, so a share is only
-        // read on a genuinely new instance.
+        // A configuration change or a restore after process death replays onCreate with the
+        // launching intent, so its link, tab request and share are only read on a genuinely new
+        // instance; replaying the link would reload its track over whatever is playing.
         if (savedInstanceState == null) {
+            viewModel.handleDeepLink(intent?.data)
+            if (intent.getBooleanExtra(EXTRA_OPEN_LISTEN_TAB, false)) {
+                viewModel.openListenTab()
+            }
             handleShareIntent(intent)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
