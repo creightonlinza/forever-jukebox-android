@@ -41,8 +41,9 @@ import com.foreverjukebox.app.wubmachine.WubRenderStage
 import com.foreverjukebox.app.wubmachine.WubRemix
 import com.foreverjukebox.app.local.LocalAnalysisService
 import com.foreverjukebox.app.net.FeedbackClient
-import com.foreverjukebox.app.playback.ForegroundPlaybackService
+import com.foreverjukebox.app.playback.PlaybackBroadcasts
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
+import com.foreverjukebox.app.playback.SleepTimer
 import com.foreverjukebox.app.playback.PlaybackStartResult
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.visualization.visualizationCount
@@ -519,22 +520,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val playbackServiceEventReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
             when (intent?.action) {
-                ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED -> {
+                PlaybackBroadcasts.ACTION_SLEEP_TIMER_EXPIRED -> {
                     handleSleepTimerExpired()
                 }
-                ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED -> {
+                PlaybackBroadcasts.ACTION_PLAYBACK_STATE_CHANGED -> {
                     handleLocalPlaybackStateChanged()
                 }
-                ForegroundPlaybackService.ACTION_PLAYLIST_PREVIOUS -> {
+                PlaybackBroadcasts.ACTION_PLAYLIST_PREVIOUS -> {
                     skipToPreviousPlaylistTrack()
                 }
-                ForegroundPlaybackService.ACTION_PLAYLIST_NEXT -> {
+                PlaybackBroadcasts.ACTION_PLAYLIST_NEXT -> {
                     skipToNextPlaylistTrack()
                 }
-                ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN -> {
+                PlaybackBroadcasts.ACTION_CLOSE_FULLSCREEN -> {
                     closeFullscreenVisualization()
                 }
-                ForegroundPlaybackService.ACTION_RETRY_FAILED_LOAD -> {
+                PlaybackBroadcasts.ACTION_RETRY_FAILED_LOAD -> {
                     when (transportRetryPressAction(state.value.playback)) {
                         TransportRetryPressAction.ResumePlayback -> togglePlayback()
                         TransportRetryPressAction.RetryLoad -> retryFailedLoad()
@@ -546,12 +547,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val playbackServiceEvents = IntentFilter().apply {
-            addAction(ForegroundPlaybackService.ACTION_SLEEP_TIMER_EXPIRED)
-            addAction(ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED)
-            addAction(ForegroundPlaybackService.ACTION_PLAYLIST_PREVIOUS)
-            addAction(ForegroundPlaybackService.ACTION_PLAYLIST_NEXT)
-            addAction(ForegroundPlaybackService.ACTION_CLOSE_FULLSCREEN)
-            addAction(ForegroundPlaybackService.ACTION_RETRY_FAILED_LOAD)
+            addAction(PlaybackBroadcasts.ACTION_SLEEP_TIMER_EXPIRED)
+            addAction(PlaybackBroadcasts.ACTION_PLAYBACK_STATE_CHANGED)
+            addAction(PlaybackBroadcasts.ACTION_PLAYLIST_PREVIOUS)
+            addAction(PlaybackBroadcasts.ACTION_PLAYLIST_NEXT)
+            addAction(PlaybackBroadcasts.ACTION_CLOSE_FULLSCREEN)
+            addAction(PlaybackBroadcasts.ACTION_RETRY_FAILED_LOAD)
         }
         ContextCompat.registerReceiver(
             getApplication(),
@@ -768,7 +769,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            ForegroundPlaybackService.sleepTimerState.collect { status ->
+            SleepTimer.state.collect { status ->
                 val selectedOption = sleepTimerOptionForDurationMs(status.configuredDurationMs)
                 val remainingMs = status.remainingMs.coerceAtLeast(0L)
                 _state.update {
@@ -822,7 +823,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
-            playbackCoordinator.maybeUpdateNotification()
         }
         controller.autocanonizer.setOnBeat { index, _, forcedOtherIndex, cursorTimes ->
             if (state.value.playback.playMode != PlaybackMode.Autocanonizer) {
@@ -845,7 +845,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
             }
-            playbackCoordinator.maybeUpdateNotification()
         }
         controller.autocanonizer.setOnEnded {
             if (state.value.playback.playMode != PlaybackMode.Autocanonizer) {
@@ -873,16 +872,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (state.value.playback.playMode != PlaybackMode.WubMachine) {
                 return@setOnTick
             }
-            val previousSecond = state.value.playback.wubMachine.positionSeconds.toInt()
             _state.update {
                 it.copy(
                     playback = it.playback.copy(
                         wubMachine = it.playback.wubMachine.copy(positionSeconds = seconds)
                     )
                 )
-            }
-            if (seconds.toInt() != previousSecond) {
-                playbackCoordinator.maybeUpdateNotification()
             }
         }
         controller.wubMachine.setOnEnded {
@@ -1082,6 +1077,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val updated = removeFavoritesForTrackIds(favorites, setOf(trackId))
             if (updated.size != favorites.size) {
                 favoritesController.updateFavorites(updated)
+            }
+            val playlist = state.value.playlist
+            val trimmed = playlist.withoutDeletedLocalTrack(trackId)
+            if (trimmed != playlist) {
+                updatePlaylistState { trimmed }
+                syncPlaybackServiceSession()
             }
         }
         localAnalysisCoordinator.deleteCachedLocalTrack(localId)
@@ -3656,11 +3657,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // would vanish on press. The load that follows rolls the same notification
         // into its loading state.
         playbackCoordinator.resetForNewTrack(stopPlaybackService = false)
-        loadTrackById(
+        // The reset leaves the state loading, so the load skips the loading lock.
+        beginOutsideSelection()
+        loadTrackByIdInternal(
             trackId = retryRequest.trackId,
             title = retryRequest.title,
             artist = retryRequest.artist,
-            playAfterLoaded = retryRequest.playAfterLoaded
+            playAfterLoaded = retryRequest.playAfterLoaded,
+            ignoreLoadingLock = true
         )
     }
 
@@ -3773,10 +3777,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setSleepTimer(option: SleepTimerOption) {
         // Reached only from the dialog's Set button, so this is the confirmed selection.
         analytics.logSleepTimer(analyticsSleepTimerDuration(option))
-        ForegroundPlaybackService.setSleepTimer(
-            context = getApplication(),
-            durationMs = option.durationMs
-        )
+        SleepTimer.set(getApplication(), option.durationMs)
     }
 
     private fun formatMinutes(value: Double): String {

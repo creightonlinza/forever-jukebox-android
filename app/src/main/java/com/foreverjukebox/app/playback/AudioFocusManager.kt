@@ -1,7 +1,6 @@
 package com.foreverjukebox.app.playback
 
 import android.content.Context
-import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -110,7 +109,5 @@ internal class AndroidPlaybackAudioFocusController(
 }
 
 internal fun broadcastLocalPlaybackStateChanged(context: Context) {
-    context.sendBroadcast(Intent(ForegroundPlaybackService.ACTION_PLAYBACK_STATE_CHANGED).apply {
-        setPackage(context.packageName)
-    })
+    PlaybackBroadcasts.send(context, PlaybackBroadcasts.ACTION_PLAYBACK_STATE_CHANGED)
 }

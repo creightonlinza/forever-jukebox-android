@@ -338,9 +338,15 @@ class PlaybackController {
     }
 
     private fun pauseForAudioFocusLoss() {
+        val hadPendingFocusPlay = pendingFocusPlayResetFromStart != null
         cancelPendingFocusPlay()
         if (transportState != TransportState.Playing) {
             setDucking(false)
+            if (hadPendingFocusPlay) {
+                // The media session shows a parked play as waiting on focus, which holds
+                // the service in the foreground; tell it the wait is over.
+                playbackStateChangedBroadcaster?.invoke()
+            }
             return
         }
         activeExternalTransport()?.pause() ?: engine.pauseJukebox()
@@ -364,6 +370,9 @@ class PlaybackController {
     fun isPlaying(): Boolean = transportState == TransportState.Playing
 
     fun isPaused(): Boolean = transportState == TransportState.Paused
+
+    /** True while a play request is parked on a delayed audio focus grant. */
+    fun isWaitingForFocus(): Boolean = pendingFocusPlayResetFromStart != null
 
     fun getListenTimeSeconds(): Double {
         val now = SystemClock.elapsedRealtime()

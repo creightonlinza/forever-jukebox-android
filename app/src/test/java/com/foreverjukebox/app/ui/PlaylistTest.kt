@@ -284,6 +284,56 @@ class PlaylistTest {
     }
 
     @Test
+    fun deletedLocalTrackLeavesThePlaylistSoNextSkipsPastIt() {
+        val current = track("local-a", type = PlaylistTrackType.LocalCached)
+        val deleted = track("local-b", type = PlaylistTrackType.LocalCached)
+        val after = track("local-c", type = PlaylistTrackType.LocalCached)
+        val playlist = JukeboxPlaylistState(tracks = listOf(current, deleted, after), currentIndex = 0)
+
+        val updated = playlist.withoutDeletedLocalTrack("local-b")
+
+        assertEquals(listOf(current, after), updated.tracks)
+        assertEquals(0, updated.currentIndex)
+        assertEquals(after, updated.tracks[updated.currentIndex + 1])
+    }
+
+    @Test
+    fun deletedLocalTrackKeepsTheCurrentEntryAndOnlyMatchesLocalEntries() {
+        val current = track("local-a", type = PlaylistTrackType.LocalCached)
+        val serverWithSameId = track("local-a")
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(serverWithSameId, current, track("local-a", type = PlaylistTrackType.LocalCached)),
+            currentIndex = 1
+        )
+
+        val updated = playlist.withoutDeletedLocalTrack("local-a")
+
+        assertEquals(listOf(serverWithSameId, current), updated.tracks)
+        assertEquals(1, updated.currentIndex)
+    }
+
+    @Test
+    fun deletedLocalTrackShiftsTheSavedResumePoint() {
+        val resume = track("local-c", type = PlaylistTrackType.LocalCached)
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("local-b", type = PlaylistTrackType.LocalCached), track("one"), resume),
+            currentIndex = -1,
+            resumeIndex = 2
+        )
+
+        val updated = playlist.withoutDeletedLocalTrack("local-b")
+
+        assertEquals(resume, updated.resumeTrack())
+    }
+
+    @Test
+    fun deletingATrackOutsideThePlaylistChangesNothing() {
+        val playlist = initializePlaylist(track("current"), track("next"))
+
+        assertEquals(playlist, playlist.withoutDeletedLocalTrack("local-z"))
+    }
+
+    @Test
     fun removeTrackAtRefusesCurrentTrack() {
         val playlist = initializePlaylist(track("current"), track("next"))
 

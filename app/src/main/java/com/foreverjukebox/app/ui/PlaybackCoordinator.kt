@@ -15,9 +15,9 @@ import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
 import com.foreverjukebox.app.engine.VisualizationData
-import com.foreverjukebox.app.playback.ForegroundPlaybackService
 import com.foreverjukebox.app.playback.PlaybackController
-import com.foreverjukebox.app.playback.loadingNotificationProgressBucket
+import com.foreverjukebox.app.playback.PlaybackSessionHost
+import com.foreverjukebox.app.playback.PlaybackSessionSurface
 import java.io.File
 import java.io.IOException
 import java.time.Duration
@@ -89,7 +89,7 @@ internal fun resolveAutocanonizerTrackDuration(
  * Playback state after the current track is cleared ahead of a new one.
  *
  * [keepLoadVisible] is set when a new load follows immediately: the reset state must
- * then already resolve as loading ([PlaybackServiceSession.LocalLoading]). Otherwise
+ * then already resolve as loading ([PlaybackSessionSurface.Loading]). Otherwise
  * there is a window — until the load coroutine posts its first loading event — where
  * the state resolves to Hidden, and any racing service sync (e.g. the outgoing track's
  * async stop callback) tears down the foreground service. A backgrounded app can only
@@ -167,9 +167,6 @@ class PlaybackCoordinator(
     private var pollJob: Job? = null
     private var backgroundAudioLoadJob: Job? = null
     private var audioLoadInFlight = false
-    private var playbackServiceSessionVisible = false
-    private var lastPlaybackServiceSessionKind: PlaybackServiceSessionKind? = null
-    private var lastLoadingNotificationBucket: Int? = null
     private var lastJobId: String? = null
     private var lastPlayCountedJobId: String? = null
     private var transientDecodeFailureJobId: String? = null
@@ -177,15 +174,14 @@ class PlaybackCoordinator(
     private var transientDecodeFailureError: Throwable? = null
     private var deleteEligibilityJobId: String? = null
     private var pendingTuningParams: String? = null
-    private var lastNotificationUpdateMs = 0L
+    private val playbackSessionHost = PlaybackSessionHost(application)
 
     fun onCleared() {
         listenTimerJob?.cancel()
         pollJob?.cancel()
         backgroundAudioLoadJob?.cancel()
-        // A media key can start the service without this coordinator ever marking the
-        // session visible, and the owner going away releases the audio it would control.
-        hardStopPlaybackServiceSession()
+        // The owner going away releases the audio the session would control.
+        playbackSessionHost.hide()
     }
 
     fun hasActiveServerLoadWork(): Boolean {
@@ -417,8 +413,9 @@ class PlaybackCoordinator(
             if (!hasCompleteTrackCache(jobId)) {
                 return@withContext null
             }
-            val analysisText = analysisPath.readText()
-            val response = json.decodeFromString<TrackAnalysisResult>(analysisText)
+            val response = readCachedAnalysis(analysisPath, json) { error ->
+                AppLog.warn(TAG, "Discarding unreadable cached analysis for $jobId", error)
+            } ?: return@withContext null
             response to audioPath
         }
         if (cached == null) {
@@ -795,117 +792,13 @@ class PlaybackCoordinator(
         return true
     }
 
-    fun maybeUpdateNotification() {
-        if (!controller.isPlaying()) return
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastNotificationUpdateMs < 500L) return
-        lastNotificationUpdateMs = now
-        syncPlaybackServiceSession()
-    }
-
     internal fun syncPlaybackServiceSession() {
-        val current = getState()
-        val session = resolvePlaybackServiceSession(current)
-        val skip = resolvePlaybackServiceSkipAvailability(current)
-        when (session) {
-            PlaybackServiceSession.Hidden -> syncHiddenPlaybackServiceSession()
-            is PlaybackServiceSession.Cast -> syncCastPlaybackServiceSession(session, skip)
-            is PlaybackServiceSession.LocalLoading -> syncLocalLoadingPlaybackServiceSession(
-                session,
-                skip
-            )
-            PlaybackServiceSession.LocalFailed -> syncLocalFailedPlaybackServiceSession()
-            PlaybackServiceSession.LocalPaused,
-            PlaybackServiceSession.LocalPlaying,
-            PlaybackServiceSession.LocalReady -> syncLocalPlaybackServiceSession(skip)
+        val snapshot = resolvePlaybackSessionSnapshot(getState())
+        if (snapshot.surface == PlaybackSessionSurface.Hidden) {
+            playbackSessionHost.hide()
+        } else {
+            playbackSessionHost.show(snapshot)
         }
-    }
-
-    private fun syncHiddenPlaybackServiceSession() {
-        resetPlaybackServiceSessionTracking()
-        playbackServiceSessionVisible = false
-        ForegroundPlaybackService.stop(application)
-    }
-
-    private fun syncCastPlaybackServiceSession(
-        session: PlaybackServiceSession.Cast,
-        skip: PlaybackServiceSkipAvailability
-    ) {
-        resetPlaybackServiceSessionTracking()
-        ForegroundPlaybackService.updateCast(
-            context = application,
-            isPlaying = session.isPlaying,
-            title = session.title,
-            artist = session.artist,
-            deviceName = session.deviceName,
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext
-        )
-        playbackServiceSessionVisible = true
-        lastPlaybackServiceSessionKind = session.kind
-    }
-
-    private fun syncLocalLoadingPlaybackServiceSession(
-        session: PlaybackServiceSession.LocalLoading,
-        skip: PlaybackServiceSkipAvailability
-    ) {
-        val progressBucket = loadingNotificationProgressBucket(session.progress)
-        if (
-            playbackServiceSessionVisible &&
-            lastPlaybackServiceSessionKind == session.kind &&
-            lastLoadingNotificationBucket == progressBucket
-        ) {
-            return
-        }
-        ForegroundPlaybackService.update(
-            context = application,
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext,
-            isLoading = true,
-            loadingProgress = session.progress
-        )
-        playbackServiceSessionVisible = true
-        lastPlaybackServiceSessionKind = session.kind
-        lastLoadingNotificationBucket = progressBucket
-    }
-
-    private fun syncLocalFailedPlaybackServiceSession() {
-        if (
-            playbackServiceSessionVisible &&
-            lastPlaybackServiceSessionKind == PlaybackServiceSessionKind.LocalFailed
-        ) {
-            return
-        }
-        ForegroundPlaybackService.update(
-            context = application,
-            isLoadFailed = true
-        )
-        playbackServiceSessionVisible = true
-        lastPlaybackServiceSessionKind = PlaybackServiceSessionKind.LocalFailed
-        lastLoadingNotificationBucket = null
-    }
-
-    private fun syncLocalPlaybackServiceSession(skip: PlaybackServiceSkipAvailability) {
-        resetPlaybackServiceSessionTracking()
-        ForegroundPlaybackService.update(
-            context = application,
-            canSkipPrevious = skip.canSkipPrevious,
-            canSkipNext = skip.canSkipNext
-        )
-        playbackServiceSessionVisible = true
-        val current = getState()
-        lastPlaybackServiceSessionKind = resolvePlaybackServiceSession(current).kind
-    }
-
-    private fun hardStopPlaybackServiceSession() {
-        resetPlaybackServiceSessionTracking()
-        playbackServiceSessionVisible = false
-        ForegroundPlaybackService.stop(application)
-    }
-
-    private fun resetPlaybackServiceSessionTracking() {
-        lastPlaybackServiceSessionKind = null
-        lastLoadingNotificationBucket = null
     }
 
     fun resetForNewTrack(stopPlaybackService: Boolean = true) {
@@ -924,9 +817,8 @@ class PlaybackCoordinator(
         controller.stopPlayback()
         controller.resetTimers()
         controller.setTrackMeta(null, null)
-        resetPlaybackServiceSessionTracking()
         if (stopPlaybackService) {
-            hardStopPlaybackServiceSession()
+            playbackSessionHost.hide()
         }
         stopListenTimer()
         updateState {
@@ -945,9 +837,9 @@ class PlaybackCoordinator(
                 )
             )
         }
-        if (stopPlaybackService) {
-            syncPlaybackServiceSession()
-        }
+        // Published right away: a track-to-track reset resolves to Loading, which keeps
+        // the session in the foreground and marks the change of track for the service.
+        syncPlaybackServiceSession()
         engine.stopJukebox()
         val emptyViz = VisualizationData(beats = emptyList(), edges = mutableListOf())
         updateState { it.copy(playback = it.playback.copy(vizData = emptyViz)) }
@@ -1331,7 +1223,7 @@ class PlaybackCoordinator(
         scope.launch(Dispatchers.IO) {
             ignoreFailures {
                 val payload = json.encodeToString(response)
-                analysisFile(jobId).writeText(payload)
+                writeTextAtomically(analysisFile(jobId), payload)
             }
         }
     }

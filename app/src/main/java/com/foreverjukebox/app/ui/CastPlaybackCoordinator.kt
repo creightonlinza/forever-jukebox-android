@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.playback.CAST_COMMAND_NAMESPACE
 import com.foreverjukebox.app.cast.CastRelayClient
 import com.google.android.gms.cast.framework.CastSession
 import kotlinx.coroutines.CoroutineScope
@@ -464,7 +465,6 @@ class CastPlaybackCoordinator(
     }
 
     private companion object {
-        const val CAST_COMMAND_NAMESPACE = "urn:x-cast:com.foreverjukebox.app"
         const val CAST_TRACK_TOO_LONG_ERROR_CODE = "cast_track_too_long"
         const val CAST_TRACK_DURATION_UNKNOWN_ERROR_CODE = "cast_track_duration_unknown"
         const val CAST_CONTENT_NOT_FOUND_ERROR_CODE = "cast_content_not_found"
