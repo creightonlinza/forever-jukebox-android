@@ -1,10 +1,8 @@
 package com.foreverjukebox.app.ui
 
 internal val currentWhatsNewBullets = listOf(
-    "Added (fixed) Wub Machine play mode: a dubstep remix of any track, built on your device",
+    "Added Wub Machine play mode: a dubstep remix of any track, built on your device",
     "Added Swing audio mode: gives any track a swing feel (Tuning)",
-    "Added Report Track feature",
-    "Previously played track is accessible on the Jukebox screen",
     "Local mode: Added audio export for tuned jukebox audio",
     "Added new Upload tab; add your own files & links (when server-enabled)",
     "Favorites now flag when a track's tuning has changed from what you saved",
