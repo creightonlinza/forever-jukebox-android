@@ -107,6 +107,16 @@ internal fun favoriteForCurrentTrack(state: UiState): FavoriteTrack? {
     return state.favorites.firstOrNull { canonicalTrackId(it.uniqueSongId) in trackIds }
 }
 
+// Favorites minus every entry saved under trackId, or null when none matched.
+internal fun favoritesWithoutTrack(
+    favorites: List<FavoriteTrack>,
+    trackId: String
+): List<FavoriteTrack>? {
+    val target = canonicalTrackId(trackId) ?: return null
+    val remaining = favorites.filterNot { canonicalTrackId(it.uniqueSongId) == target }
+    return remaining.takeIf { it.size != favorites.size }
+}
+
 // Web parity (favorites-actions.ts maybeAutoFavoriteUserSupplied): user-supplied tracks
 // (upload or URL submission) are silently favorited once analysis succeeds. Silent no-op on
 // duplicate or limit, artist falls back to "" (not "Unknown" — sync payloads are shared

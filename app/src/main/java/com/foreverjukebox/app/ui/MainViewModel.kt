@@ -21,6 +21,7 @@ import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.HttpStatusException
+import com.foreverjukebox.app.data.isJobNotFound
 import com.foreverjukebox.app.data.isNotFound
 import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.SavedPlaylist
@@ -1750,11 +1751,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun removeFavorite(uniqueSongId: String) {
-        val favorites = state.value.favorites
-        val canonicalTarget = canonicalTrackId(uniqueSongId) ?: return
-        val filtered = favorites.filterNot { canonicalTrackId(it.uniqueSongId) == canonicalTarget }
-        if (filtered.size == favorites.size) return
-        favoritesController.updateFavorites(filtered)
+        val remaining = favoritesWithoutTrack(state.value.favorites, uniqueSongId) ?: return
+        favoritesController.updateFavorites(remaining)
+    }
+
+    // The API reports this job gone for good, so a favorite under its id can never load.
+    private suspend fun removeFavoriteForMissingJob(jobId: String) {
+        val remaining = favoritesWithoutTrack(state.value.favorites, jobId) ?: return
+        favoritesController.updateFavorites(remaining)
+        showToast("Removed from Favorites")
     }
 
     fun refreshTopSongs() {
@@ -2961,6 +2966,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             cause = error,
                             expected = missingJob
                         )
+                        if (missingJob && error.isJobNotFound() && cachedJobId != null) {
+                            removeFavoriteForMissingJob(cachedJobId)
+                        }
                     }
                     return@launch
                 } catch (error: IOException) {

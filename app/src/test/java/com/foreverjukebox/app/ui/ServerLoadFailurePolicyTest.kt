@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.HttpStatusException
+import com.foreverjukebox.app.data.isJobNotFound
 import com.foreverjukebox.app.data.isNotFound
 import java.io.IOException
 import java.net.UnknownHostException
@@ -21,6 +22,15 @@ class ServerLoadFailurePolicyTest {
         assertFalse(HttpStatusException(403).isNotFound())
         assertFalse(IOException("HTTP 404").isNotFound())
         assertFalse(UnknownHostException("Unable to resolve host").isNotFound())
+    }
+
+    @Test
+    fun onlyTheApiMissingJobAnswerCountsAsJobNotFound() {
+        assertTrue(HttpStatusException(404, """{"detail":"Job not found"}""").isJobNotFound())
+        assertFalse(HttpStatusException(404, "<html>Not Found</html>").isJobNotFound())
+        assertFalse(HttpStatusException(404, """{"detail":"Not Found"}""").isJobNotFound())
+        assertFalse(HttpStatusException(404).isJobNotFound())
+        assertFalse(HttpStatusException(500, """{"detail":"Job not found"}""").isJobNotFound())
     }
 
     // A restricted device fails the cached decode first and the fallback fetch second.

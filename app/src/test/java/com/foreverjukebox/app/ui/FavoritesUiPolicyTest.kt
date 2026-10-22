@@ -5,6 +5,7 @@ import com.foreverjukebox.app.data.FavoriteTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -171,6 +172,26 @@ class FavoritesUiPolicyTest {
     fun favoriteSortDirectionTogglesBetweenAscendingAndDescending() {
         assertEquals(FavoriteSortDirection.Descending, FavoriteSortDirection.Ascending.toggled())
         assertEquals(FavoriteSortDirection.Ascending, FavoriteSortDirection.Descending.toggled())
+    }
+
+    @Test
+    fun favoritesWithoutTrackDropsOnlyTheMatchingJob() {
+        val missing = favorite("5efa4421f5924eee8aac43d997e9aa5a", "Gone", "")
+        val kept = favorite("a3f3c0dc73c6476c9db95c227f9206f2", "Kept", "")
+        val sourceId = favorite("wdSfFVe_L3s", "Legacy", "")
+
+        assertEquals(
+            listOf(kept, sourceId),
+            favoritesWithoutTrack(listOf(missing, kept, sourceId), missing.uniqueSongId)
+        )
+    }
+
+    @Test
+    fun favoritesWithoutTrackIsNullWhenNothingMatches() {
+        val favorites = listOf(favorite("a3f3c0dc73c6476c9db95c227f9206f2", "Kept", ""))
+
+        assertNull(favoritesWithoutTrack(favorites, "5efa4421f5924eee8aac43d997e9aa5a"))
+        assertNull(favoritesWithoutTrack(favorites, "not a track id"))
     }
 
     private fun sampleFavorites(): List<FavoriteTrack> {
