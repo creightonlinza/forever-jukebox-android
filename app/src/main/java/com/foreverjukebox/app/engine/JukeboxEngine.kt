@@ -191,6 +191,11 @@ class JukeboxEngine(
         if (resetState) {
             resetState()
         }
+        // The player drops its anchor jump on stop, and the autocanonizer shares the
+        // player, so the anchor is armed whenever the jukebox starts rather than kept
+        // across stops. The tick's own schedule cannot guarantee the anchor: it needs
+        // lead time the tick thread may not get.
+        syncAnchorJump()
         ticking = true
         tickJob = scope.launch {
             while (ticking) {
@@ -330,7 +335,11 @@ class JukeboxEngine(
             guard -= 1
         }
 
-        verifyPlaybackSync()
+        if (verifyPlaybackSync()) {
+            // The resync drops the pending advance; preparing it now keeps the next
+            // boundary's jump from waiting for a tick that wakes too close to schedule it.
+            preparePendingAdvance(nextAudioTime)
+        }
         consumePromotedJumpEvent()
         emitState(lastJumped)
         lastJumped = false
@@ -528,13 +537,19 @@ class JukeboxEngine(
 
     private fun verifyPlaybackSync(): Boolean {
         if (analysis == null || beats.isEmpty()) return false
+        // Track position first: the audio clock can advance between the reads, and
+        // reading it second keeps a derived boundary from landing ahead of the player.
         val trackTime = player.getCurrentTime()
+        val audioTime = player.getAudioTime()
+        // At or past the boundary the pending advance owns the transition; the player
+        // may already be on the next beat.
+        if (audioTime >= nextAudioTime - BOUNDARY_TIE_TOLERANCE_SECONDS) return false
         val beatIndex = findBeatIndexByTime(trackTime)
         if (beatIndex !in beats.indices) return false
         val expectedNextAudioTime = nextAudioTimeForBeatAt(
             beatIndex = beatIndex,
             trackTime = trackTime,
-            audioTime = player.getAudioTime()
+            audioTime = audioTime
         )
         val beatMismatch = currentBeatIndex != beatIndex
         val boundaryMismatch = abs(nextAudioTime - expectedNextAudioTime) > SYNC_TOLERANCE_SECONDS
@@ -774,4 +789,5 @@ private data class PendingAdvance(
 
 private const val MIN_JUMP_SCHEDULE_LEAD_SECONDS = 0.08
 private const val SYNC_TOLERANCE_SECONDS = 0.075
+private const val BOUNDARY_TIE_TOLERANCE_SECONDS = 1e-6
 private const val TICK_INTERVAL_MS = 50L
