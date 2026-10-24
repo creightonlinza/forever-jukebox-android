@@ -180,6 +180,7 @@ data class UiState(
     val favoritesSortDirection: FavoriteSortDirection = FavoriteSortDirection.Ascending,
     val favoritesSyncCode: String? = null,
     val allowFavoritesSync: Boolean = false,
+    val allowTrackReports: Boolean = false,
     val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     val maxTrackLengthMinutes: Double? = null,
     val allowUserUrl: Boolean = false,
@@ -511,9 +512,11 @@ fun shouldShowDeleteTrackAction(
 fun shouldShowReportTrackAction(
     mode: AppMode?,
     playback: PlaybackState,
-    adminKey: String
+    adminKey: String,
+    allowTrackReports: Boolean
 ): Boolean {
     return BuildConfig.SERVER_MODE_AVAILABLE &&
+        allowTrackReports &&
         mode == AppMode.Server &&
         !playback.lastJobId.isNullOrBlank() &&
         !shouldShowDeleteTrackAction(mode, playback, adminKey)

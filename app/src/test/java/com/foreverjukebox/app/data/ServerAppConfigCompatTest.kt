@@ -21,6 +21,7 @@ class ServerAppConfigCompatTest {
         val config = json.decodeFromString<ServerAppConfig>(legacy)
 
         assertEquals(true, config.allowFavoritesSync)
+        assertFalse(config.allowTrackReports)
         assertEquals(50, config.maxFavorites)
         assertEquals(12.0, config.maxTrackLength!!, 0.0)
         assertFalse(config.allowUserUrl)
@@ -33,6 +34,7 @@ class ServerAppConfigCompatTest {
     fun fullConfigRoundTrips() {
         val config = ServerAppConfig(
             allowFavoritesSync = true,
+            allowTrackReports = true,
             maxFavorites = 100,
             maxTrackLength = 12.0,
             allowUserUrl = true,

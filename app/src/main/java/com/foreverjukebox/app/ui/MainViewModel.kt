@@ -1231,6 +1231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 allowFavoritesSync = config?.allowFavoritesSync ?: false,
+                allowTrackReports = config?.allowTrackReports ?: false,
                 maxFavorites = maxFavorites,
                 favorites = favoritesController.normalizeFavorites(
                     items = it.favorites,
@@ -1343,6 +1344,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 favorites = emptyList(),
                 favoritesSyncCode = null,
                 allowFavoritesSync = false,
+                allowTrackReports = false,
                 maxTrackLengthMinutes = null,
                 trackLengthLimitErrorMessage = null,
                 favoritesSyncLoading = false,

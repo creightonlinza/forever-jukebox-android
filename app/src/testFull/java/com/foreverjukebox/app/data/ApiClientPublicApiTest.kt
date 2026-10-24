@@ -551,6 +551,40 @@ class ApiClientPublicApiTest {
     }
 
     @Test
+    fun getAppConfigUsesExpectedPathAndParsesTrackReportsFlag() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "allow_user_upload": false,
+                      "allow_user_url": false,
+                      "allow_favorites_sync": false,
+                      "allow_track_reports": true,
+                      "max_favorites": 150
+                    }
+                    """.trimIndent()
+                )
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"allow_user_upload": false, "allow_user_url": false, "max_favorites": 150}""")
+        )
+
+        val baseUrl = server.url("/base/").toString()
+        val config = api.getAppConfig(baseUrl)
+        val legacyConfig = api.getAppConfig(baseUrl)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/base/api/app-config", request.path)
+        assertTrue(config.allowTrackReports)
+        assertFalse(legacyConfig.allowTrackReports)
+    }
+
+    @Test
     fun getAppConfigRejectsInvalidBaseUrl() = runTest {
         val result = runCatching {
             api.getAppConfig("not-a-url")

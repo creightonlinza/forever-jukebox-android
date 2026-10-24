@@ -122,25 +122,42 @@ class AppModePolicyTest {
     fun reportTrackActionShowsOnlyWhenDeleteActionIsHidden() {
         val playback = PlaybackState(lastJobId = "job_123", deleteEligible = false)
 
-        assertTrue(shouldShowReportTrackAction(AppMode.Server, playback, adminKey = ""))
+        assertTrue(shouldShowReportTrackAction(AppMode.Server, playback, adminKey = "", allowTrackReports = true))
         assertFalse(
             shouldShowReportTrackAction(
                 AppMode.Server,
                 playback.copy(deleteEligible = true),
-                adminKey = ""
+                adminKey = "",
+                allowTrackReports = true
             )
         )
-        assertFalse(shouldShowReportTrackAction(AppMode.Server, playback, adminKey = "admin-secret"))
+        assertFalse(
+            shouldShowReportTrackAction(AppMode.Server, playback, adminKey = "admin-secret", allowTrackReports = true)
+        )
+    }
+
+    @Test
+    fun reportTrackActionRequiresServerToAllowReports() {
+        val playback = PlaybackState(lastJobId = "job_123", deleteEligible = false)
+
+        assertFalse(
+            shouldShowReportTrackAction(AppMode.Server, playback, adminKey = "", allowTrackReports = false)
+        )
     }
 
     @Test
     fun reportTrackActionRequiresServerModeAndCurrentJob() {
         val playback = PlaybackState(lastJobId = "job_123", deleteEligible = false)
 
-        assertFalse(shouldShowReportTrackAction(AppMode.Local, playback, adminKey = ""))
-        assertFalse(shouldShowReportTrackAction(null, playback, adminKey = ""))
+        assertFalse(shouldShowReportTrackAction(AppMode.Local, playback, adminKey = "", allowTrackReports = true))
+        assertFalse(shouldShowReportTrackAction(null, playback, adminKey = "", allowTrackReports = true))
         assertFalse(
-            shouldShowReportTrackAction(AppMode.Server, playback.copy(lastJobId = null), adminKey = "")
+            shouldShowReportTrackAction(
+                AppMode.Server,
+                playback.copy(lastJobId = null),
+                adminKey = "",
+                allowTrackReports = true
+            )
         )
     }
 

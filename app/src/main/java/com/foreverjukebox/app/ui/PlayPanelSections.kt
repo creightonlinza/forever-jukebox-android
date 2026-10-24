@@ -237,6 +237,7 @@ internal fun ColumnScope.CastListenScreen(
     playback: PlaybackState,
     appMode: AppMode?,
     adminKey: String,
+    allowTrackReports: Boolean,
     vizLabels: List<String>,
     isFavorite: Boolean,
     hasTuningDrift: Boolean,
@@ -266,7 +267,8 @@ internal fun ColumnScope.CastListenScreen(
     val showPlaylistControls = playback.playMode != PlaybackMode.Autocanonizer
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
-    val showReportTrackAction = shouldShowReportTrackAction(appMode, playback, adminKey)
+    val showReportTrackAction =
+        shouldShowReportTrackAction(appMode, playback, adminKey, allowTrackReports)
     val themeTokens = LocalThemeTokens.current
     var showVizMenu by remember(playback.activeVizIndex) { mutableStateOf(false) }
     val castLabel = playback.castDeviceName?.let { "Connected to $it" } ?: "Connected to cast device"
@@ -546,6 +548,7 @@ internal fun ColumnScope.LocalListenScreen(
     playback: PlaybackState,
     appMode: AppMode?,
     adminKey: String,
+    allowTrackReports: Boolean,
     tuning: TuningState,
     vizLabels: List<String>,
     jumpLine: JumpLine?,
@@ -572,7 +575,8 @@ internal fun ColumnScope.LocalListenScreen(
 ) {
     val showServerActions = shouldShowServerListenActions(appMode)
     val showDeleteTrackAction = shouldShowDeleteTrackAction(appMode, playback, adminKey)
-    val showReportTrackAction = shouldShowReportTrackAction(appMode, playback, adminKey)
+    val showReportTrackAction =
+        shouldShowReportTrackAction(appMode, playback, adminKey, allowTrackReports)
     val showExportAction =
         shouldShowExportControls(appMode, playback, isExporting, Build.VERSION.SDK_INT)
     val showInlineTitleWithControls = shouldShowPlaybackTransport(playback)

@@ -37,6 +37,7 @@ private fun PlaybackFailedWithLoadedVizPreview() {
                 playback = previewLoadedPlaybackState(),
                 appMode = AppMode.Local,
                 adminKey = "",
+                allowTrackReports = false,
                 tuning = TuningState(),
                 vizLabels = visualizationLabels,
                 jumpLine = null,

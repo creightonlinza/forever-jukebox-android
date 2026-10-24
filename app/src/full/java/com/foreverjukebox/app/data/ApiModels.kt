@@ -71,6 +71,7 @@ data class AppConfigResponse(
     @SerialName("allow_user_upload") val allowUserUpload: Boolean = false,
     @SerialName("allow_user_url") val allowUserUrl: Boolean = false,
     @SerialName("allow_favorites_sync") val allowFavoritesSync: Boolean = false,
+    @SerialName("allow_track_reports") val allowTrackReports: Boolean = false,
     @SerialName("max_favorites") val maxFavorites: Int = DEFAULT_MAX_FAVORITES,
     @SerialName("max_upload_size") val maxUploadSize: Long? = null,
     @SerialName("allowed_upload_exts") val allowedUploadExts: List<String>? = null,

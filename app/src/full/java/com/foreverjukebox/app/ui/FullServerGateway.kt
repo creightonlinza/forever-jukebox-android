@@ -194,6 +194,7 @@ private fun AnalysisStartResponse.toTrackAnalysisStartResult(): TrackAnalysisSta
 private fun AppConfigResponse.toServerAppConfig(): ServerAppConfig {
     return ServerAppConfig(
         allowFavoritesSync = allowFavoritesSync,
+        allowTrackReports = allowTrackReports,
         maxFavorites = maxFavorites,
         maxTrackLength = maxTrackLength,
         allowUserUrl = allowUserUrl,
