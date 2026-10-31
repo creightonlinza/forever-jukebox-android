@@ -16,22 +16,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.engine.Edge
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.ui.LocalThemeTokens
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 
 private const val EDGE_SAMPLE_LIMIT = 300
 private const val EDGE_AVOID_RADIUS = 6f
 private const val BEAT_SELECT_THRESHOLD = 16f
 private const val ARC_VERTICAL_GUTTER = 4f
+private val TILE_DOT_RADIUS = 2.dp
+private val TILE_MARKER_MIN_WIDTH = 3.dp
+private val TILE_SELECT_MARGIN = 8.dp
 
 class JumpLine(val from: Int, val to: Int, val startedAt: Long)
 
@@ -44,18 +52,11 @@ fun JukeboxVisualization(
     onSelectBeat: (Int) -> Unit,
     modifier: Modifier = Modifier,
     edgeRouting: EdgeRouting = EdgeRouting.Auto,
-    highlightAnchorBranch: Boolean = false
+    highlightAnchorBranch: Boolean = false,
+    beatTiles: Boolean = false,
+    beatVisits: List<Int> = emptyList()
 ) {
     var layoutSize by remember { mutableStateOf(IntSize.Zero) }
-    var nowState by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
-
-    LaunchedEffect(jumpLine) {
-        if (jumpLine == null) return@LaunchedEffect
-        while (SystemClock.elapsedRealtime() - jumpLine.startedAt < 1100) {
-            nowState = SystemClock.elapsedRealtime()
-            kotlinx.coroutines.delay(16)
-        }
-    }
 
     val positions = remember(data?.beats?.size, layoutSize, positioner) {
         if (data == null || layoutSize.width == 0 || layoutSize.height == 0) {
@@ -67,19 +68,23 @@ fun JukeboxVisualization(
 
     val center = Offset(layoutSize.width / 2f, layoutSize.height / 2f)
     val themeTokens = LocalThemeTokens.current
-    val beatFill = themeTokens.beatFill
-    val beatHighlight = themeTokens.beatHighlight
-    val edgeStroke = themeTokens.edgeStroke
-    val anchorHighlight = themeTokens.danger
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { layoutSize = it }
-            .pointerInput(data, positions) {
+            .pointerInput(data, positions, beatTiles) {
                 detectTapGestures { tap ->
                     if (data == null || positions.isEmpty()) return@detectTapGestures
-                    val beatIndex = findNearestBeat(tap, positions)
+                    val beatIndex = if (beatTiles) {
+                        BeatTileGeometry(
+                            width = size.width.toFloat(),
+                            height = size.height.toFloat(),
+                            count = positions.size
+                        ).tileIndexAt(tap.x, tap.y, TILE_SELECT_MARGIN.toPx())
+                    } else {
+                        findNearestBeat(tap, positions)
+                    }
                     if (beatIndex != null) {
                         onSelectBeat(beatIndex)
                         return@detectTapGestures
@@ -88,65 +93,189 @@ fun JukeboxVisualization(
                 }
             }
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            if (data == null || positions.isEmpty()) return@Canvas
+        BaseLayer(
+            data = data,
+            positions = positions,
+            center = center,
+            edgeStroke = themeTokens.edgeStroke,
+            anchorHighlight = themeTokens.danger,
+            beatFill = themeTokens.beatFill,
+            showBeatDots = !beatTiles,
+            edgeRouting = edgeRouting,
+            highlightAnchorBranch = highlightAnchorBranch
+        )
+        if (beatTiles) {
+            TileLayer(
+                beatColors = data?.beatColors.orEmpty(),
+                beatVisits = beatVisits,
+                beatCount = positions.size,
+                fallbackColor = themeTokens.beatFill
+            )
+        }
+        OverlayLayer(
+            positions = positions,
+            currentIndex = currentIndex,
+            jumpLine = jumpLine,
+            center = center,
+            beatHighlight = themeTokens.beatHighlight,
+            beatTiles = beatTiles,
+            edgeRouting = edgeRouting
+        )
+    }
+}
 
-            val edges = data.edges
-            val maxEdges = 2500
-            val step = if (edges.size > maxEdges) {
-                kotlin.math.ceil(edges.size / maxEdges.toDouble()).toInt()
-            } else {
-                1
-            }
+// The base and tile layers each record into their own graphics layer, so a sibling's
+// invalidation replays them instead of re-running their draw code.
+@Composable
+private fun BaseLayer(
+    data: VisualizationData?,
+    positions: List<VizPoint>,
+    center: Offset,
+    edgeStroke: Color,
+    anchorHighlight: Color,
+    beatFill: Color,
+    showBeatDots: Boolean,
+    edgeRouting: EdgeRouting,
+    highlightAnchorBranch: Boolean
+) {
+    Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { }) {
+        if (data == null || positions.isEmpty()) return@Canvas
 
-            for (i in edges.indices step step) {
-                val edge = edges[i]
-                if (edge.deleted) continue
-                drawEdge(edge, positions, center, edgeStroke, 1.0f, edgeRouting)
-            }
+        val edges = data.edges
+        val maxEdges = 2500
+        val step = if (edges.size > maxEdges) {
+            kotlin.math.ceil(edges.size / maxEdges.toDouble()).toInt()
+        } else {
+            1
+        }
 
-            if (highlightAnchorBranch && data.anchorEdgeId != null) {
-                for (edge in edges) {
-                    if (edge.deleted || edge.id != data.anchorEdgeId) {
-                        continue
-                    }
-                    drawEdge(edge, positions, center, anchorHighlight, 1.8f, edgeRouting)
-                    break
+        for (i in edges.indices step step) {
+            val edge = edges[i]
+            if (edge.deleted) continue
+            drawEdge(edge, positions, center, edgeStroke, 1.0f, edgeRouting)
+        }
+
+        if (highlightAnchorBranch && data.anchorEdgeId != null) {
+            for (edge in edges) {
+                if (edge.deleted || edge.id != data.anchorEdgeId) {
+                    continue
                 }
+                drawEdge(edge, positions, center, anchorHighlight, 1.8f, edgeRouting)
+                break
             }
+        }
 
+        if (showBeatDots) {
             for (p in positions) {
                 drawCircle(beatFill, radius = 2f, center = Offset(p.x, p.y))
             }
+        }
+    }
+}
 
-            if (currentIndex >= 0 && currentIndex < positions.size) {
+@Composable
+private fun TileLayer(
+    beatColors: List<String>,
+    beatVisits: List<Int>,
+    beatCount: Int,
+    fallbackColor: Color
+) {
+    val colors = remember(beatColors, fallbackColor) {
+        beatColors.map { parseColor(it, fallbackColor) }
+    }
+    Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { }) {
+        if (beatCount == 0) return@Canvas
+        val geometry = BeatTileGeometry(size.width, size.height, beatCount)
+        val scale = tileScale(beatVisits.maxOrNull() ?: 0)
+        for (i in 0 until beatCount) {
+            val level = tileLevel(beatVisits.getOrElse(i) { 0 }, scale)
+            drawTile(geometry, i, geometry.tileHeight(level), colors.getOrNull(i) ?: fallbackColor)
+        }
+    }
+}
+
+@Composable
+private fun OverlayLayer(
+    positions: List<VizPoint>,
+    currentIndex: Int,
+    jumpLine: JumpLine?,
+    center: Offset,
+    beatHighlight: Color,
+    beatTiles: Boolean,
+    edgeRouting: EdgeRouting
+) {
+    var nowState by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+
+    LaunchedEffect(jumpLine) {
+        if (jumpLine == null) return@LaunchedEffect
+        while (SystemClock.elapsedRealtime() - jumpLine.startedAt < 1100) {
+            nowState = SystemClock.elapsedRealtime()
+            kotlinx.coroutines.delay(16)
+        }
+    }
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        if (positions.isEmpty()) return@Canvas
+
+        if (currentIndex >= 0 && currentIndex < positions.size) {
+            if (beatTiles) {
+                val geometry = BeatTileGeometry(size.width, size.height, positions.size)
+                drawTile(
+                    geometry = geometry,
+                    index = currentIndex,
+                    height = geometry.fullHeight,
+                    color = beatHighlight,
+                    minWidth = TILE_MARKER_MIN_WIDTH.toPx()
+                )
+            } else {
                 val p = positions[currentIndex]
                 drawCircle(beatHighlight, radius = 10f, center = Offset(p.x, p.y))
             }
+        }
 
-            if (jumpLine != null) {
-                val age = (nowState - jumpLine.startedAt).coerceAtLeast(0L)
-                if (age < 1000) {
-                    val from = positions.getOrNull(jumpLine.from)
-                    val to = positions.getOrNull(jumpLine.to)
-                    if (from != null && to != null) {
-                        val alpha = (1f - age / 1000f).coerceIn(0f, 1f)
-                        val color = beatHighlight.copy(alpha = alpha)
-                        drawJumpLine(
-                            from = from,
-                            to = to,
-                            positions = positions,
-                            center = center,
-                            color = color,
-                            edgeRouting = edgeRouting,
-                            fromIndex = jumpLine.from,
-                            toIndex = jumpLine.to
-                        )
-                    }
+        if (jumpLine != null) {
+            val age = (nowState - jumpLine.startedAt).coerceAtLeast(0L)
+            if (age < 1000) {
+                val from = positions.getOrNull(jumpLine.from)
+                val to = positions.getOrNull(jumpLine.to)
+                if (from != null && to != null) {
+                    val alpha = (1f - age / 1000f).coerceIn(0f, 1f)
+                    val color = beatHighlight.copy(alpha = alpha)
+                    drawJumpLine(
+                        from = from,
+                        to = to,
+                        positions = positions,
+                        center = center,
+                        color = color,
+                        edgeRouting = edgeRouting,
+                        fromIndex = jumpLine.from,
+                        toIndex = jumpLine.to
+                    )
                 }
             }
         }
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTile(
+    geometry: BeatTileGeometry,
+    index: Int,
+    height: Float,
+    color: Color,
+    minWidth: Float = 0f
+) {
+    val strokeWidth = geometry.tileWidth(minWidth)
+    val ends = geometry.tileLineEnds(height, strokeWidth, TILE_DOT_RADIUS.toPx())
+    val angle = geometry.tileAngle(index)
+    val cosine = cos(angle).toFloat()
+    val sine = sin(angle).toFloat()
+    drawLine(
+        color = color,
+        start = center + Offset(cosine * ends.start, sine * ends.start),
+        end = center + Offset(cosine * ends.end, sine * ends.end),
+        strokeWidth = strokeWidth,
+        cap = StrokeCap.Round
+    )
 }
 
 private fun findNearestBeat(tap: Offset, positions: List<VizPoint>): Int? {

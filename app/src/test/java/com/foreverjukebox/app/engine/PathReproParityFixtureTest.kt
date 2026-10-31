@@ -123,6 +123,9 @@ class PathReproParityFixtureTest {
                 selectionTrace.jumpTrace.count { it },
                 engineTrace.scheduleJumpCount
             )
+            val expectedBeatVisits = testCase["expected"]!!.jsonObject["beatVisits"]!!.jsonArray
+                .map { it.jsonPrimitive.int }
+            assertEquals("$id: engine beat visits", expectedBeatVisits, engineTrace.beatVisits)
         }
     }
 
@@ -237,7 +240,8 @@ class PathReproParityFixtureTest {
             beatTrace = beatTrace,
             jumpTrace = jumpTrace,
             lastJumpFromTrace = lastJumpFromTrace,
-            scheduleJumpCount = player.scheduleJumpCalls.size
+            scheduleJumpCount = player.scheduleJumpCalls.size,
+            beatVisits = engine.getBeatVisits()
         )
     }
 
@@ -299,48 +303,6 @@ class PathReproParityFixtureTest {
         }
     }
 
-    private fun makeAnalysisPayload(count: Int): kotlinx.serialization.json.JsonElement {
-        val beats = kotlinx.serialization.json.JsonArray((0 until count).map { i ->
-            kotlinx.serialization.json.JsonObject(
-                mapOf(
-                    "start" to kotlinx.serialization.json.JsonPrimitive(i.toDouble()),
-                    "duration" to kotlinx.serialization.json.JsonPrimitive(1.0),
-                    "confidence" to kotlinx.serialization.json.JsonPrimitive(1.0)
-                )
-            )
-        })
-        val segments = kotlinx.serialization.json.JsonArray((0 until count).map { i ->
-            kotlinx.serialization.json.JsonObject(
-                mapOf(
-                    "start" to kotlinx.serialization.json.JsonPrimitive(i.toDouble()),
-                    "duration" to kotlinx.serialization.json.JsonPrimitive(1.0),
-                    "confidence" to kotlinx.serialization.json.JsonPrimitive(1.0),
-                    "loudness_start" to kotlinx.serialization.json.JsonPrimitive(0.0),
-                    "loudness_max" to kotlinx.serialization.json.JsonPrimitive(0.0),
-                    "loudness_max_time" to kotlinx.serialization.json.JsonPrimitive(0.0),
-                    "pitches" to kotlinx.serialization.json.JsonArray(
-                        List(12) { kotlinx.serialization.json.JsonPrimitive(0.0) }
-                    ),
-                    "timbre" to kotlinx.serialization.json.JsonArray(
-                        List(12) { kotlinx.serialization.json.JsonPrimitive(0.0) }
-                    )
-                )
-            )
-        })
-        return kotlinx.serialization.json.JsonObject(
-            mapOf(
-                "sections" to beats,
-                "bars" to beats,
-                "beats" to beats,
-                "tatums" to beats,
-                "segments" to segments,
-                "track" to kotlinx.serialization.json.JsonObject(
-                    mapOf("duration" to kotlinx.serialization.json.JsonPrimitive(count.toDouble()))
-                )
-            )
-        )
-    }
-
     private fun makeBeat(which: Int): QuantumBase {
         return QuantumBase(
             start = which.toDouble(),
@@ -396,7 +358,8 @@ class PathReproParityFixtureTest {
         val beatTrace: List<Int>,
         val jumpTrace: List<Boolean>,
         val lastJumpFromTrace: List<Int?>,
-        val scheduleJumpCount: Int
+        val scheduleJumpCount: Int,
+        val beatVisits: List<Int>
     )
 
     private fun invokeAdvanceBeat(engine: JukeboxEngine, audioTime: Double) {

@@ -103,6 +103,7 @@ internal fun playbackStateAfterModeChange(
         isPaused = false,
         beatsPlayed = 0,
         currentBeatIndex = -1,
+        beatVisits = emptyList(),
         canonizerOtherIndex = null,
         lastJumpFromIndex = null,
         jumpLine = null,

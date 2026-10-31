@@ -327,6 +327,7 @@ data class PlaybackState(
     val autocanonizer: AutocanonizerUiState = AutocanonizerUiState(),
     val activeVizIndex: Int = defaultVisualizationIndex,
     val currentBeatIndex: Int = -1,
+    val beatVisits: List<Int> = emptyList(),
     val canonizerOtherIndex: Int? = null,
     val canonizerTileColorOverrides: Map<Int, String> = emptyMap(),
     val lastJumpFromIndex: Int? = null,
@@ -392,6 +393,7 @@ internal fun playbackStateAfterAutocanonizerStart(playback: PlaybackState): Play
     return playback.copy(
         beatsPlayed = 0,
         currentBeatIndex = -1,
+        beatVisits = emptyList(),
         canonizerOtherIndex = null,
         canonizerTileColorOverrides = emptyMap(),
         lastJumpFromIndex = null,

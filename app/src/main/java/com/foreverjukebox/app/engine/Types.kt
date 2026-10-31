@@ -152,7 +152,8 @@ data class JukeboxState(
     val lastJumpToIndex: Int?,
     val currentThreshold: Int,
     val lastBranchPoint: Int,
-    val curRandomBranchChance: Double
+    val curRandomBranchChance: Double,
+    val beatVisits: List<Int> = emptyList()
 )
 
 data class JumpEvent(

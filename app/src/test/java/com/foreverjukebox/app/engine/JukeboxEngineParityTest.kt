@@ -1288,43 +1288,6 @@ class JukeboxEngineParityTest {
         assertEquals(listOf(1), engine.getSectionStartBeatIndices())
     }
 
-    private fun makeAnalysisPayload(count: Int): JsonElement {
-        val beats = JsonArray((0 until count).map { i ->
-            JsonObject(
-                mapOf(
-                    "start" to JsonPrimitive(i.toDouble()),
-                    "duration" to JsonPrimitive(1.0),
-                    "confidence" to JsonPrimitive(1.0)
-                )
-            )
-        })
-        val segments = JsonArray((0 until count).map { i ->
-            JsonObject(
-                mapOf(
-                    "start" to JsonPrimitive(i.toDouble()),
-                    "duration" to JsonPrimitive(1.0),
-                    "confidence" to JsonPrimitive(1.0),
-                    "loudness_start" to JsonPrimitive(0.0),
-                    "loudness_max" to JsonPrimitive(0.0),
-                    "loudness_max_time" to JsonPrimitive(0.0),
-                    "pitches" to JsonArray(List(12) { JsonPrimitive(0.0) }),
-                    "timbre" to JsonArray(List(12) { JsonPrimitive(0.0) })
-                )
-            )
-        })
-
-        return JsonObject(
-            mapOf(
-                "sections" to beats,
-                "bars" to beats,
-                "beats" to beats,
-                "tatums" to beats,
-                "segments" to segments,
-                "track" to JsonObject(mapOf("duration" to JsonPrimitive(count.toDouble())))
-            )
-        )
-    }
-
     private fun makeAnalysisPayloadWithSections(
         beatStarts: List<Double>,
         sectionStarts: List<Double>

@@ -15,6 +15,7 @@ class PlaybackModeChangeTest {
             isPaused = true,
             beatsPlayed = 42,
             currentBeatIndex = 17,
+            beatVisits = listOf(1, 2),
             canonizerOtherIndex = 12,
             autocanonizer = AutocanonizerUiState(
                 mainSeconds = 62.0,
@@ -31,6 +32,7 @@ class PlaybackModeChangeTest {
         assertFalse(after.isPaused)
         assertEquals(0, after.beatsPlayed)
         assertEquals(-1, after.currentBeatIndex)
+        assertEquals(emptyList<Int>(), after.beatVisits)
         assertNull(after.canonizerOtherIndex)
         assertEquals(0.0, after.autocanonizer.mainSeconds, 0.0)
         assertEquals(0.0, after.autocanonizer.otherSeconds, 0.0)

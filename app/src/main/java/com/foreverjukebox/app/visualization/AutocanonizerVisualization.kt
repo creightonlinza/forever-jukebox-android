@@ -571,7 +571,7 @@ private fun sectionColor(index: Int): Color {
     return Color.hsv(hue, 0.8f, 0.55f, alpha = 0.75f)
 }
 
-private fun parseColor(hex: String, fallback: Color): Color {
+internal fun parseColor(hex: String, fallback: Color): Color {
     return runCatching {
         Color(hex.toColorInt())
     }.getOrElse {

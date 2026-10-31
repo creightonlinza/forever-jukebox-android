@@ -60,7 +60,7 @@ private class PlaybackControllerAutocanonizerControls(
 internal interface JukeboxBeatSelectControls {
     fun seekToBeat(index: Int, data: VisualizationData?): Boolean
     fun isPlaying(): Boolean
-    fun togglePlayback(): Boolean
+    fun startAtBeat(index: Int, data: VisualizationData?): Boolean
 }
 
 private class PlaybackControllerJukeboxBeatSelectControls(
@@ -72,7 +72,9 @@ private class PlaybackControllerJukeboxBeatSelectControls(
 
     override fun isPlaying(): Boolean = controller.isPlaying()
 
-    override fun togglePlayback(): Boolean = controller.togglePlayback()
+    override fun startAtBeat(index: Int, data: VisualizationData?): Boolean {
+        return controller.startAtBeat(index, data)
+    }
 }
 
 internal data class JukeboxBeatSelectResult(
@@ -125,18 +127,14 @@ internal fun seekOrStartJukeboxAtBeat(
     index: Int,
     data: VisualizationData?
 ): JukeboxBeatSelectResult {
-    if (!controls.seekToBeat(index, data)) {
-        return JukeboxBeatSelectResult(success = false, startedPlayback = false)
-    }
     if (controls.isPlaying()) {
-        return JukeboxBeatSelectResult(success = true, startedPlayback = false)
+        return JukeboxBeatSelectResult(
+            success = controls.seekToBeat(index, data),
+            startedPlayback = false
+        )
     }
-    val started = controls.togglePlayback()
-    if (!started) {
-        return JukeboxBeatSelectResult(success = false, startedPlayback = false)
-    }
-    val reseeked = controls.seekToBeat(index, data)
-    return JukeboxBeatSelectResult(success = reseeked, startedPlayback = reseeked)
+    val started = controls.startAtBeat(index, data)
+    return JukeboxBeatSelectResult(success = started, startedPlayback = started)
 }
 
 internal fun seekOrStartJukeboxAtBeat(
