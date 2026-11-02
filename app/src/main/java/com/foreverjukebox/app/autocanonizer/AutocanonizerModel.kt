@@ -3,9 +3,9 @@ package com.foreverjukebox.app.autocanonizer
 import com.foreverjukebox.app.engine.QuantumBase
 import com.foreverjukebox.app.engine.Segment
 import com.foreverjukebox.app.engine.TrackAnalysis
+import com.foreverjukebox.app.engine.computeBeatColors
 import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 data class AutocanonizerSection(
@@ -76,7 +76,8 @@ fun buildAutocanonizerData(
     calculateNearestNeighbors(beats)
     foldBySection(beats)
     assignNormalizedVolumes(beats)
-    assignBeatColors(beats, analysis.segments)
+    computeBeatColors(beats.map { it.overlappingSegments }, analysis.segments)
+        .forEachIndexed { index, color -> beats[index].colorHex = color }
 
     return AutocanonizerData(
         beats = beats,
@@ -247,45 +248,4 @@ private fun calcWindowMedian(beats: List<AutocanonizerBeat>, windowSize: Int) {
         values.sort()
         beat.medianVolume = values.getOrNull(values.size / 2) ?: beat.volume
     }
-}
-
-private fun assignBeatColors(beats: List<AutocanonizerBeat>, segments: List<Segment>) {
-    val minValues = doubleArrayOf(100.0, 100.0, 100.0)
-    val maxValues = doubleArrayOf(-100.0, -100.0, -100.0)
-
-    for (segment in segments) {
-        for (i in 0..2) {
-            val value = segment.timbre.getOrNull(i + 1) ?: continue
-            if (value < minValues[i]) {
-                minValues[i] = value
-            }
-            if (value > maxValues[i]) {
-                maxValues[i] = value
-            }
-        }
-    }
-
-    for (beat in beats) {
-        val segment = beat.overlappingSegments.firstOrNull()
-        if (segment == null) {
-            beat.colorHex = "#333333"
-            continue
-        }
-        val rgb = IntArray(3)
-        for (i in 0..2) {
-            val value = segment.timbre.getOrNull(i + 1) ?: 0.0
-            val range = maxValues[i] - minValues[i]
-            val norm = if (range == 0.0) 0.5 else (value - minValues[i]) / range
-            rgb[i] = (norm * 255.0).roundToInt().coerceIn(0, 255)
-        }
-        beat.colorHex = toHex(rgb[1], rgb[2], rgb[0])
-    }
-}
-
-private fun toHex(r: Int, g: Int, b: Int): String {
-    return "#${toHexPart(r)}${toHexPart(g)}${toHexPart(b)}"
-}
-
-private fun toHexPart(value: Int): String {
-    return value.coerceIn(0, 255).toString(16).padStart(2, '0')
 }

@@ -64,6 +64,7 @@ import com.foreverjukebox.app.visualization.EdgeRouting
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.WubMachineVisualization
+import com.foreverjukebox.app.visualization.beatTilesForVisualization
 import com.foreverjukebox.app.visualization.edgeRoutingForVisualization
 import com.foreverjukebox.app.visualization.positioners
 import com.foreverjukebox.app.visualization.prefersWideAspectForVisualization
@@ -764,6 +765,8 @@ private fun LocalVisualizationContent(
             jumpLine = jumpLine,
             positioner = positioners.getOrNull(playback.activeVizIndex) ?: positioners.first(),
             edgeRouting = edgeRouting,
+            beatTiles = beatTilesForVisualization(playback.activeVizIndex),
+            beatVisits = playback.beatVisits,
             highlightAnchorBranch = tuning.highlightAnchorBranch,
             onSelectBeat = onSelectBeat,
             modifier = modifier

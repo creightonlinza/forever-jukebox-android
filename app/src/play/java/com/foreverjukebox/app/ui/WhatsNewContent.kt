@@ -1,6 +1,7 @@
 package com.foreverjukebox.app.ui
 
 internal val currentWhatsNewBullets = listOf(
+    "Updated Classic visualization: colored tiles now grow as beats replay",
     "Added Wub Machine play mode: a dubstep remix of any track, built on your device",
     "Added Swing audio mode: gives any track a swing feel (Tuning)",
     "Resume your last played track from the Jukebox screen",

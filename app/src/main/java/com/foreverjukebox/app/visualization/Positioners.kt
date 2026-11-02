@@ -22,7 +22,8 @@ data class VisualizationLayout(
     val label: String,
     val positioner: Positioner,
     val edgeRouting: EdgeRouting = EdgeRouting.Auto,
-    val preferWideAspect: Boolean = false
+    val preferWideAspect: Boolean = false,
+    val beatTiles: Boolean = false
 )
 
 private fun createArcDiagramPositioner(): Positioner = { data, width, height ->
@@ -45,7 +46,7 @@ private fun createArcDiagramPositioner(): Positioner = { data, width, height ->
 
 private fun createClassicPositioner(): Positioner = { data, width, height ->
     val count = data.beats.size
-    val radius = min(width, height) * 0.4f
+    val radius = min(width, height) * CLASSIC_RADIUS_RATIO
     val cx = width / 2f
     val cy = height / 2f
     (0 until count).map { i ->
@@ -244,7 +245,11 @@ val visualizationLayouts: List<VisualizationLayout> = listOf(
         edgeRouting = EdgeRouting.ArcDiagram,
         preferWideAspect = true
     ),
-    VisualizationLayout(label = "Classic", positioner = createClassicPositioner()),
+    VisualizationLayout(
+        label = "Classic",
+        positioner = createClassicPositioner(),
+        beatTiles = true
+    ),
     VisualizationLayout(label = "Galaxy", positioner = createGalaxyPositioner()),
     VisualizationLayout(
         label = "Grid",
@@ -271,6 +276,10 @@ val defaultVisualizationIndex: Int =
 
 fun edgeRoutingForVisualization(index: Int): EdgeRouting {
     return visualizationLayouts.getOrNull(index)?.edgeRouting ?: EdgeRouting.Auto
+}
+
+fun beatTilesForVisualization(index: Int): Boolean {
+    return visualizationLayouts.getOrNull(index)?.beatTiles ?: false
 }
 
 fun prefersWideAspectForVisualization(index: Int): Boolean {

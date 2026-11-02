@@ -59,6 +59,7 @@ import com.foreverjukebox.app.visualization.AutocanonizerVisualization
 import com.foreverjukebox.app.visualization.EdgeRouting
 import com.foreverjukebox.app.visualization.JukeboxVisualization
 import com.foreverjukebox.app.visualization.WubMachineVisualization
+import com.foreverjukebox.app.visualization.beatTilesForVisualization
 import com.foreverjukebox.app.visualization.edgeRoutingForVisualization
 import com.foreverjukebox.app.visualization.positioners
 import com.foreverjukebox.app.visualization.prefersWideAspectForVisualization
@@ -247,6 +248,8 @@ private fun FullscreenVisualizationContent(
                 jumpLine = playback.jumpLine,
                 positioner = positioners.getOrNull(playback.activeVizIndex) ?: positioners.first(),
                 edgeRouting = edgeRouting,
+                beatTiles = beatTilesForVisualization(playback.activeVizIndex),
+                beatVisits = playback.beatVisits,
                 highlightAnchorBranch = tuning.highlightAnchorBranch,
                 onSelectBeat = onSelectBeat,
                 modifier = jukeboxModifier

@@ -41,6 +41,8 @@ class JukeboxEngine(
     private var currentBeatIndex = -1
     private var nextAudioTime = 0.0
     private var beatsPlayed = 0
+    private val beatVisits = BeatVisitCounter()
+    private var beatColors: List<String> = emptyList()
     private var curRandomBranchChance = 0.0
     private var lastJumped = false
     private var lastJumpTime: Double? = null
@@ -85,6 +87,9 @@ class JukeboxEngine(
         graph = analysis?.let { graphBuilder(it, config) }
         applyDeletedEdges()
         beats = analysis?.beats ?: mutableListOf()
+        beatColors = analysis?.let { loaded ->
+            computeBeatColors(loaded.beats.map { it.overlappingSegments }, loaded.segments)
+        }.orEmpty()
         resetState()
         syncAnchorJump()
     }
@@ -95,6 +100,7 @@ class JukeboxEngine(
         analysis = null
         graph = null
         beats = mutableListOf()
+        beatColors = emptyList()
         resetState()
         syncAnchorJump()
     }
@@ -172,6 +178,7 @@ class JukeboxEngine(
         val userAnchorEdgeId = userAnchorEdge?.id?.takeIf { it != defaultAnchorEdge?.id }
         return VisualizationData(
             beats = current.beats,
+            beatColors = beatColors,
             edges = edgeMap.values.toMutableList(),
             lastBranchPoint = currentGraph.lastBranchPoint,
             anchorEdgeId = anchorEdgeId,
@@ -183,7 +190,11 @@ class JukeboxEngine(
 
     fun pause() = player.pause()
 
-    fun startJukebox(resetState: Boolean = true) {
+    /**
+     * [startBeat] positions the engine before the tick loop launches, so no tick can
+     * advance from a position the caller is about to replace.
+     */
+    fun startJukebox(resetState: Boolean = true, startBeat: Int? = null) {
         if (analysis == null || beats.isEmpty()) {
             throw IllegalStateException("Analysis not loaded")
         }
@@ -191,6 +202,7 @@ class JukeboxEngine(
         if (resetState) {
             resetState()
         }
+        startBeat?.let(::seekToBeat)
         // The player drops its anchor jump on stop, and the autocanonizer shares the
         // player, so the anchor is armed whenever the jukebox starts rather than kept
         // across stops. The tick's own schedule cannot guarantee the anchor: it needs
@@ -229,6 +241,9 @@ class JukeboxEngine(
     }
 
     fun isRunning(): Boolean = ticking
+
+    /** Plays per beat since the last reset, as an immutable snapshot safe to read on any thread. */
+    fun getBeatVisits(): List<Int> = beatVisits.snapshot()
 
     fun clearDeletedEdges() {
         deletedEdgeKeys.clear()
@@ -274,6 +289,7 @@ class JukeboxEngine(
         val audioNow = player.getAudioTime()
         val playbackRate = getPlaybackRate()
         currentBeatIndex = clamped
+        beatVisits.record(clamped)
         nextAudioTime = audioNow + beat.duration / playbackRate
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
@@ -292,6 +308,7 @@ class JukeboxEngine(
         currentBeatIndex = -1
         nextAudioTime = 0.0
         beatsPlayed = 0
+        beatVisits.reset(beats.size)
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
         branchState.lastDestBySource = null
@@ -362,6 +379,7 @@ class JukeboxEngine(
         currentBeatIndex = 0
         nextAudioTime = audioTime + firstBeat.duration / getPlaybackRate()
         beatsPlayed += 1
+        beatVisits.record(0)
         lastJumped = true
         lastJumpTime = firstBeat.start
         lastJumpFromIndex = beats.lastIndex
@@ -394,7 +412,12 @@ class JukeboxEngine(
         val currentGraph = graph ?: return null
         val currentIndex = currentBeatIndex
         val beatsCount = beats.size
-        var chosenIndex = 0
+        // The first beat is wherever the player is, which is beat 0 unless it started late.
+        var chosenIndex = if (currentIndex < 0 && beats.isNotEmpty()) {
+            findBeatIndexByTime(player.getCurrentTime())
+        } else {
+            0
+        }
         var shouldJump = false
         var jumpFromIndex: Int? = null
         var sourceBoundaryTime: Double? = null
@@ -514,9 +537,20 @@ class JukeboxEngine(
             lastJumpToIndex = null
         }
 
+        // The first beat can start after the track does, so its boundary comes from the track
+        // position; afterward each beat follows the previous boundary.
+        nextAudioTime = if (currentBeatIndex < 0) {
+            nextAudioTimeForBeatAt(
+                beatIndex = advance.chosenIndex,
+                trackTime = player.getCurrentTime(),
+                audioTime = advance.boundaryAudioTime
+            )
+        } else {
+            advance.boundaryAudioTime + targetBeat.duration / getPlaybackRate()
+        }
         currentBeatIndex = advance.chosenIndex
-        nextAudioTime = advance.boundaryAudioTime + targetBeat.duration / getPlaybackRate()
         beatsPlayed += 1
+        beatVisits.record(advance.chosenIndex)
     }
 
     private fun clearPendingAdvance(cancelScheduledJump: Boolean) {
@@ -580,6 +614,9 @@ class JukeboxEngine(
         beatIndex: Int,
         nextBoundaryAudioTime: Double
     ) {
+        if (beatIndex != currentBeatIndex) {
+            beatVisits.record(beatIndex)
+        }
         currentBeatIndex = beatIndex
         nextAudioTime = nextBoundaryAudioTime
         lastJumped = false
@@ -758,7 +795,8 @@ class JukeboxEngine(
             lastJumpToIndex = lastJumpToIndex,
             currentThreshold = currentGraph.currentThreshold,
             lastBranchPoint = currentGraph.lastBranchPoint,
-            curRandomBranchChance = curRandomBranchChance
+            curRandomBranchChance = curRandomBranchChance,
+            beatVisits = beatVisits.snapshot()
         )
         listeners.forEach { it(state) }
     }
@@ -773,6 +811,7 @@ data class JukeboxEngineOptions(
 data class VisualizationData(
     val beats: List<QuantumBase>,
     val edges: MutableList<Edge>,
+    val beatColors: List<String> = emptyList(),
     val lastBranchPoint: Int = -1,
     val anchorEdgeId: Int? = null,
     val userAnchorEdgeId: Int? = null

@@ -88,16 +88,15 @@ class PlaybackTransportTest {
         assertTrue(result.success)
         assertFalse(result.startedPlayback)
         assertEquals(1, controls.seekCalls)
-        assertEquals(0, controls.toggleCalls)
+        assertEquals(emptyList<Int>(), controls.startIndexes)
         assertEquals(5, controls.lastSeekIndex)
     }
 
     @Test
-    fun seekOrStartJukeboxAtBeatStartsWhenStopped() {
+    fun seekOrStartJukeboxAtBeatStartsOnTheBeatWithoutSeekingWhenNotRunning() {
         val controls = FakeJukeboxBeatControls(
             isPlayingInitially = false,
-            seekResults = mutableListOf(true, true),
-            toggleResult = true
+            seekResults = mutableListOf()
         )
 
         val result = seekOrStartJukeboxAtBeat(
@@ -108,17 +107,15 @@ class PlaybackTransportTest {
 
         assertTrue(result.success)
         assertTrue(result.startedPlayback)
-        assertEquals(2, controls.seekCalls)
-        assertEquals(1, controls.toggleCalls)
-        assertEquals(9, controls.lastSeekIndex)
+        assertEquals(0, controls.seekCalls)
+        assertEquals(listOf(9), controls.startIndexes)
     }
 
     @Test
-    fun seekOrStartJukeboxAtBeatFailsWhenInitialSeekFails() {
+    fun seekOrStartJukeboxAtBeatFailsWhenSeekFailsWhileRunning() {
         val controls = FakeJukeboxBeatControls(
-            isPlayingInitially = false,
-            seekResults = mutableListOf(false),
-            toggleResult = true
+            isPlayingInitially = true,
+            seekResults = mutableListOf(false)
         )
 
         val result = seekOrStartJukeboxAtBeat(
@@ -129,16 +126,15 @@ class PlaybackTransportTest {
 
         assertFalse(result.success)
         assertFalse(result.startedPlayback)
-        assertEquals(1, controls.seekCalls)
-        assertEquals(0, controls.toggleCalls)
+        assertEquals(emptyList<Int>(), controls.startIndexes)
     }
 
     @Test
-    fun seekOrStartJukeboxAtBeatFailsWhenToggleFails() {
+    fun seekOrStartJukeboxAtBeatFailsWhenStartFails() {
         val controls = FakeJukeboxBeatControls(
             isPlayingInitially = false,
-            seekResults = mutableListOf(true),
-            toggleResult = false
+            seekResults = mutableListOf(),
+            startResult = false
         )
 
         val result = seekOrStartJukeboxAtBeat(
@@ -149,8 +145,7 @@ class PlaybackTransportTest {
 
         assertFalse(result.success)
         assertFalse(result.startedPlayback)
-        assertEquals(1, controls.seekCalls)
-        assertEquals(1, controls.toggleCalls)
+        assertEquals(listOf(4), controls.startIndexes)
     }
 }
 
@@ -212,11 +207,11 @@ private class FakeAutocanonizerControls(
 private class FakeJukeboxBeatControls(
     isPlayingInitially: Boolean,
     private val seekResults: MutableList<Boolean>,
-    private val toggleResult: Boolean = true
+    private val startResult: Boolean = true
 ) : JukeboxBeatSelectControls {
     private var playing = isPlayingInitially
     var seekCalls = 0
-    var toggleCalls = 0
+    val startIndexes = mutableListOf<Int>()
     var lastSeekIndex: Int? = null
 
     override fun seekToBeat(index: Int, data: com.foreverjukebox.app.engine.VisualizationData?): Boolean {
@@ -227,11 +222,11 @@ private class FakeJukeboxBeatControls(
 
     override fun isPlaying(): Boolean = playing
 
-    override fun togglePlayback(): Boolean {
-        toggleCalls += 1
-        if (toggleResult) {
+    override fun startAtBeat(index: Int, data: com.foreverjukebox.app.engine.VisualizationData?): Boolean {
+        startIndexes += index
+        if (startResult) {
             playing = true
         }
-        return toggleResult
+        return startResult
     }
 }

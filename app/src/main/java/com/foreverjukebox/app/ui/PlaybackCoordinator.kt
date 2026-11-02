@@ -125,6 +125,7 @@ internal fun PlaybackState.resetForNewTrack(keepLoadVisible: Boolean): PlaybackS
         vizData = null,
         autocanonizerData = null,
         currentBeatIndex = -1,
+        beatVisits = emptyList(),
         canonizerOtherIndex = null,
         canonizerTileColorOverrides = emptyMap(),
         jumpLine = null,
@@ -752,6 +753,7 @@ class PlaybackCoordinator(
                 playback = it.playback.copy(
                     analysisLoaded = true,
                     vizData = vizData,
+                    beatVisits = engine.getBeatVisits(),
                     autocanonizerData = autocanonizerData,
                     playTitle = playTitle,
                     trackDurationSeconds = loadedTrackMeta.durationSeconds,
@@ -933,6 +935,7 @@ class PlaybackCoordinator(
                     trackTitle = title,
                     trackArtist = artist,
                     currentBeatIndex = beatIndex,
+                    beatVisits = engine.getBeatVisits(),
                     canonizerOtherIndex = controller.autocanonizer.getForcedOtherIndex(),
                     canonizerTileColorOverrides = controller.autocanonizer.getTileColorOverrides(),
                     isRunning = controller.isPlaying(),

@@ -819,6 +819,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     playback = it.playback.copy(
                         beatsPlayed = engineState.beatsPlayed,
                         currentBeatIndex = currentBeatIndex,
+                        beatVisits = engineState.beatVisits,
                         lastJumpFromIndex = lastJumpFrom,
                         jumpLine = jumpLine
                     )
@@ -3319,6 +3320,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         playback = it.playback.copy(
                             beatsPlayed = if (wasPaused) it.playback.beatsPlayed else 0,
                             currentBeatIndex = if (wasPaused) it.playback.currentBeatIndex else -1,
+                            beatVisits = engine.getBeatVisits(),
                             canonizerOtherIndex = null,
                             isRunning = running,
                             isPaused = paused
@@ -3953,6 +3955,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 playback = it.playback.copy(
                     currentBeatIndex = index,
+                    beatVisits = engine.getBeatVisits(),
                     isRunning = controller.isPlaying(),
                     isPaused = controller.isPaused(),
                     canonizerOtherIndex = null
@@ -4066,6 +4069,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (transportPlan.clearAutocanonizerAudio) {
                 controller.autocanonizer.clearSyncedAudio()
             }
+            // The state update below clears the visits; a later restore reads them from here.
+            engine.resetStats()
         }
         lastCowbellBeatsPlayed = -1
         playbackCoordinator.applyPlaybackMode(mode)
