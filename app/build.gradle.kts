@@ -40,7 +40,7 @@ googleServices {
 }
 
 val madmomBeatsPortFfiAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-val madmomBeatsPortFfiVersion = "4.1.1"
+val madmomBeatsPortFfiVersion = "4.2.0"
 val madmomBeatsPortFfiZipUrlProperty: Provider<String> = providers.gradleProperty("madmomBeatsPortFfiZipUrl")
 val madmomBeatsPortFfiZipPathProperty: Provider<String> = providers.gradleProperty("madmomBeatsPortFfiZipPath")
 val madmomBeatsPortFfiZipUrl: Provider<String> = madmomBeatsPortFfiZipUrlProperty.orElse(
