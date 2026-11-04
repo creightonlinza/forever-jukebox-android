@@ -102,16 +102,36 @@ class SwingTimingTest {
     }
 
     @Test
-    fun skipsBeatsOutsideTheSourceOrTooShortToSplit() {
-        assertNull(swingFrameSegmentsForBeat(SwingBeat(-0.5, 1.0), sampleRate = 10, sourceFrames = 100))
-        assertNull(swingFrameSegmentsForBeat(SwingBeat(9.5, 1.0), sampleRate = 10, sourceFrames = 100))
+    fun skipsBeatsWithBadTimingOrTooShortToSplit() {
+        assertNull(swingFrameSegmentsForBeat(SwingBeat(Double.NaN, 0.2), sampleRate = 10, sourceFrames = 100))
+        assertNull(swingFrameSegmentsForBeat(SwingBeat(0.0, Double.NaN), sampleRate = 10, sourceFrames = 100))
+        assertNull(swingFrameSegmentsForBeat(SwingBeat(0.0, -0.5), sampleRate = 10, sourceFrames = 100))
+        assertNull(swingFrameSegmentsForBeat(SwingBeat(0.0, 0.0), sampleRate = 10, sourceFrames = 100))
         assertNull(swingFrameSegmentsForBeat(SwingBeat(1.0, 0.1), sampleRate = 10, sourceFrames = 100))
+        assertNull(swingFrameSegmentsForBeat(SwingBeat(9.95, 1.0), sampleRate = 10, sourceFrames = 100))
+    }
 
+    @Test
+    fun trimsABeatThatRunsPastTheEndOfTheSource() {
         val segments = swingFrameSegments(
-            beats = listOf(SwingBeat(0.0, 1.0), SwingBeat(9.5, 1.0), SwingBeat(1.0, 1.0)),
-            sampleRate = 10,
+            beats = listOf(SwingBeat(start = 0.8, duration = 0.3)),
+            sampleRate = 100,
             sourceFrames = 100
         )
-        assertEquals(listOf(0, 7, 10, 17), segments.map { it.outputStartFrame })
+
+        assertEquals(listOf(10, 10), segments.map { it.inputFrameCount })
+        assertEquals(listOf(13, 7), segments.map { it.outputFrameCount })
+    }
+
+    @Test
+    fun trimsABeatThatStartsBeforeTheSource() {
+        val segments = swingFrameSegments(
+            beats = listOf(SwingBeat(start = -0.1, duration = 0.3)),
+            sampleRate = 100,
+            sourceFrames = 100
+        )
+
+        assertEquals(listOf(0, 10), segments.map { it.inputStartFrame })
+        assertEquals(listOf(13, 7), segments.map { it.outputFrameCount })
     }
 }

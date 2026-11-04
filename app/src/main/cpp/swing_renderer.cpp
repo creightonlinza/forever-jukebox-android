@@ -53,7 +53,12 @@ struct StretchScratch {
           chunkPtrs(static_cast<size_t>(channels)) {}
 };
 
+// Stops if Rubber Band keeps reporting output it never hands over; the
+// stretch is padded to its target length afterwards.
+constexpr int kMaxEmptyRetrieves = 5;
+
 void drain(RubberBandStretcher& stretcher, StretchScratch& scratch) {
+    int emptyReads = 0;
     for (;;) {
         const int available = stretcher.available();
         if (available < 1) return;
@@ -63,6 +68,11 @@ void drain(RubberBandStretcher& stretcher, StretchScratch& scratch) {
         }
         const size_t received =
             stretcher.retrieve(scratch.chunkPtrs.data(), static_cast<size_t>(available));
+        if (received == 0) {
+            if (++emptyReads >= kMaxEmptyRetrieves) return;
+            continue;
+        }
+        emptyReads = 0;
         for (size_t channel = 0; channel < scratch.chunk.size(); channel += 1) {
             scratch.stretched[channel].insert(
                 scratch.stretched[channel].end(),

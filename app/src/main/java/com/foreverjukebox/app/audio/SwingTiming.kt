@@ -48,19 +48,20 @@ fun swingSegmentsForBeat(
     beat: SwingBeat,
     swingAmount: Double = DEFAULT_SWING_AMOUNT
 ): Pair<SwingSegment, SwingSegment> {
-    val duration = beat.duration.coerceAtLeast(0.0)
+    val start = if (beat.start.isFinite()) beat.start else 0.0
+    val duration = if (beat.duration.isFinite()) beat.duration.coerceAtLeast(0.0) else 0.0
     val half = duration / 2
     val swing = clampSwingAmount(swingAmount)
 
     val outputADuration = half * (1 + swing)
     val outputBDuration = duration - outputADuration
     return SwingSegment(
-        inputStart = beat.start,
+        inputStart = start,
         inputDuration = half,
         outputDuration = outputADuration,
         playbackRate = half / outputADuration.coerceAtLeast(MIN_OUTPUT_DURATION)
     ) to SwingSegment(
-        inputStart = beat.start + half,
+        inputStart = start + half,
         inputDuration = half,
         outputDuration = outputBDuration,
         playbackRate = half / outputBDuration.coerceAtLeast(MIN_OUTPUT_DURATION)
@@ -68,8 +69,10 @@ fun swingSegmentsForBeat(
 }
 
 /**
- * Frame-accurate halves for [beat], or null when the beat falls outside the
- * source or is too short to split.
+ * Frame-accurate halves for [beat], or null when its timing is not finite and
+ * positive or what lies inside the source is too short to split. A beat
+ * running past either end of the source is trimmed to it and swung over what
+ * remains.
  */
 fun swingFrameSegmentsForBeat(
     beat: SwingBeat,
@@ -77,16 +80,30 @@ fun swingFrameSegmentsForBeat(
     sourceFrames: Int,
     swingAmount: Double = DEFAULT_SWING_AMOUNT
 ): Pair<SwingFrameSegment, SwingFrameSegment>? {
-    val beatStartFrame = Math.round(beat.start * sampleRate)
-    val beatEndFrame = Math.round((beat.start + beat.duration) * sampleRate)
-    if (beatStartFrame < 0 || beatEndFrame > sourceFrames || beatEndFrame - beatStartFrame < 2) {
+    if (!beat.start.isFinite() || !beat.duration.isFinite() || beat.duration <= 0.0) {
+        return null
+    }
+    val rawStartFrame = Math.round(beat.start * sampleRate)
+    val rawEndFrame = Math.round((beat.start + beat.duration) * sampleRate)
+    val beatStartFrame = rawStartFrame.coerceAtLeast(0L)
+    val beatEndFrame = rawEndFrame.coerceAtMost(sourceFrames.toLong())
+    if (beatEndFrame - beatStartFrame < 2) {
         return null
     }
 
     val beatFrameCount = (beatEndFrame - beatStartFrame).toInt()
     val inputAFrameCount = beatFrameCount / 2
+    val trimmed = beatStartFrame != rawStartFrame || beatEndFrame != rawEndFrame
+    val splitBeat = if (trimmed) {
+        SwingBeat(
+            start = beatStartFrame.toDouble() / sampleRate,
+            duration = beatFrameCount.toDouble() / sampleRate
+        )
+    } else {
+        beat
+    }
     val outputAFrameCount = Math.round(
-        swingSegmentsForBeat(beat, swingAmount).first.outputDuration * sampleRate
+        swingSegmentsForBeat(splitBeat, swingAmount).first.outputDuration * sampleRate
     ).coerceIn(1L, beatFrameCount - 1L).toInt()
     val startFrame = beatStartFrame.toInt()
     return SwingFrameSegment(
