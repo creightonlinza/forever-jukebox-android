@@ -348,6 +348,7 @@ dependencies {
     implementation("androidx.compose.runtime:runtime:1.10.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
     implementation("androidx.media3:media3-session:1.11.1")
     implementation("androidx.mediarouter:mediarouter:1.8.1")
 

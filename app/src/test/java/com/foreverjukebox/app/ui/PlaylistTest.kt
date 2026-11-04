@@ -603,6 +603,106 @@ class PlaylistTest {
     }
 
     @Test
+    fun moveTrackKeepsTheCurrentTrackWhenMovingIt() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two"), track("three")),
+            currentIndex = 0
+        )
+
+        val updated = playlist.moveTrack(0, 2)
+
+        assertEquals(listOf(track("two"), track("three"), track("one")), updated.tracks)
+        assertEquals(2, updated.currentIndex)
+        assertEquals(track("one"), updated.currentTrack())
+        assertFalse(updated.canSkipNext())
+        assertTrue(updated.canSkipPrevious())
+    }
+
+    @Test
+    fun moveTrackShiftsTheCurrentTrackPastTheMovedEntry() {
+        val tracks = listOf(track("one"), track("two"), track("three"), track("four"))
+        val playlist = JukeboxPlaylistState(tracks = tracks, currentIndex = 1)
+
+        val movedDownPast = playlist.moveTrack(0, 3)
+        val movedUpPast = playlist.moveTrack(3, 0)
+        val movedBehind = playlist.moveTrack(2, 3)
+
+        assertEquals(track("two"), movedDownPast.currentTrack())
+        assertEquals(0, movedDownPast.currentIndex)
+        assertEquals(track("two"), movedUpPast.currentTrack())
+        assertEquals(2, movedUpPast.currentIndex)
+        assertEquals(1, movedBehind.currentIndex)
+    }
+
+    @Test
+    fun moveTrackWhileInactiveKeepsTheResumeTrack() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two"), track("three")),
+            currentIndex = -1,
+            resumeIndex = 1
+        )
+
+        val updated = playlist.moveTrack(2, 0)
+
+        assertEquals(listOf(track("three"), track("one"), track("two")), updated.tracks)
+        assertEquals(-1, updated.currentIndex)
+        assertEquals(track("two"), updated.resumeTrack())
+        assertEquals(2, updated.persistedLastIndex())
+    }
+
+    @Test
+    fun moveTrackIgnoresOutOfRangeAndNoOpMoves() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two")),
+            currentIndex = 0
+        )
+
+        assertEquals(playlist, playlist.moveTrack(0, 0))
+        assertEquals(playlist, playlist.moveTrack(-1, 1))
+        assertEquals(playlist, playlist.moveTrack(0, 2))
+    }
+
+    @Test
+    fun withoutDuplicateTracksKeepsTheCurrentEntry() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two"), track("one", title = "Migrated")),
+            currentIndex = 2
+        )
+
+        val updated = playlist.withoutDuplicateTracks()
+
+        assertEquals(listOf(track("two"), track("one", title = "Migrated")), updated.tracks)
+        assertEquals(1, updated.currentIndex)
+    }
+
+    @Test
+    fun withoutDuplicateTracksKeepsTheResumeEntryThenTheEarliest() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two"), track("one", title = "Later"), track("two")),
+            currentIndex = -1,
+            resumeIndex = 2
+        )
+
+        val updated = playlist.withoutDuplicateTracks()
+
+        assertEquals(listOf(track("two"), track("one", title = "Later")), updated.tracks)
+        assertEquals(track("one", title = "Later"), updated.resumeTrack())
+    }
+
+    @Test
+    fun restoredSavedPlaylistStateCollapsesDuplicateEntries() {
+        val saved = SavedPlaylist(
+            tracks = listOf(track("one"), track("two"), track("one")).map { it.toSavedPlaylistTrack() },
+            lastIndex = 1
+        )
+
+        val restored = restoredSavedPlaylistState(saved, AppMode.Server, emptyList())
+
+        assertEquals(listOf(track("one"), track("two")), restored.tracks)
+        assertEquals(track("two"), restored.resumeTrack())
+    }
+
+    @Test
     fun inactivePlaylistCanRemoveAnyTrackAndPersistsRemainingTuning() {
         val first = track("first", tuningParams = "jb=1")
         val second = track("second", tuningParams = "thresh=9")

@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -31,17 +33,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -372,6 +380,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 viewModel.selectPlaylistDialogTrack(index)
             },
             onRemove = viewModel::removePlaylistTrack,
+            onMove = viewModel::movePlaylistTrack,
             onClear = viewModel::clearPlaylist,
             onClose = { showPlaylist = false }
         )
@@ -426,80 +435,148 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     }
 }
 
+/** TalkBack stand-ins for dragging, which accessibility services cannot perform. */
+private fun playlistMoveActions(
+    index: Int,
+    lastIndex: Int,
+    onMove: (from: Int, to: Int) -> Unit
+): List<CustomAccessibilityAction> = buildList {
+    if (index > 0) {
+        add(CustomAccessibilityAction("Move up") { onMove(index, index - 1); true })
+    }
+    if (index < lastIndex) {
+        add(CustomAccessibilityAction("Move down") { onMove(index, index + 1); true })
+    }
+}
+
 @Composable
 private fun PlaylistDialog(
     playlist: JukeboxPlaylistState,
     onSelect: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    onMove: (from: Int, to: Int) -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit
 ) {
+    val playlistKeys = playlist.tracks.map { it.playlistKey }
+    val playlistIndexByKey = playlistKeys.withIndex().associate { (index, key) -> key to index }
+    // Drags reorder this local copy of the order every frame; the view model only sees the
+    // finished move, so a drag persists once instead of on every slot it passes. Keyed on the
+    // order alone, so a metadata update landing mid-drag leaves the drag in place.
+    var orderedKeys by remember(playlistKeys) { mutableStateOf(playlistKeys) }
+    val lazyListState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        orderedKeys = orderedKeys.toMutableList().apply { add(to.index, removeAt(from.index)) }
+    }
+    // The drag handle keeps the callback from its first composition, so it reads both orders
+    // through updated state rather than capturing them.
+    val latestPlaylistKeys by rememberUpdatedState(playlistKeys)
+    val latestOrderedKeys by rememberUpdatedState(orderedKeys)
+    val commitMove: (String) -> Unit = { key ->
+        val from = latestPlaylistKeys.indexOf(key)
+        val to = latestOrderedKeys.indexOf(key)
+        if (from >= 0 && to >= 0) {
+            onMove(from, to)
+        }
+    }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Playlist") },
         text = {
             LazyColumn(
+                state = lazyListState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 360.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                itemsIndexed(playlist.tracks) { index, track ->
-                    val selected = index == playlist.currentIndex
-                    val displayTitle = track.title?.takeIf { it.isNotBlank() } ?: "Untitled"
-                    val displayArtist = track.artist?.takeIf { it.isNotBlank() }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(SurfaceShape)
-                            .background(
-                                if (selected) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                } else {
-                                    MaterialTheme.colorScheme.surface
-                                }
+                itemsIndexed(orderedKeys, key = { _, key -> key }) { position, key ->
+                    // Actions address the view model's order, which differs from the
+                    // on-screen position while a drag is in flight.
+                    val index = playlistIndexByKey[key] ?: return@itemsIndexed
+                    val track = playlist.tracks[index]
+                    ReorderableItem(reorderState, key = key) { isDragging ->
+                        val selected = index == playlist.currentIndex
+                        val displayTitle = track.title?.takeIf { it.isNotBlank() } ?: "Untitled"
+                        val displayArtist = track.artist?.takeIf { it.isNotBlank() }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(SurfaceShape)
+                                .background(
+                                    when {
+                                        isDragging -> MaterialTheme.colorScheme.surfaceVariant
+                                        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                        else -> MaterialTheme.colorScheme.surface
+                                    }
+                                ),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // The handle sits outside the clickable area: a drag gesture
+                            // leaves taps unconsumed, so a short press would select the track.
+                            Icon(
+                                Icons.Default.DragHandle,
+                                contentDescription = "Reorder",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .size(24.dp)
+                                    .draggableHandle(onDragStopped = { commitMove(key) })
+                                    .semantics {
+                                        customActions = playlistMoveActions(
+                                            index = index,
+                                            lastIndex = playlist.tracks.lastIndex,
+                                            onMove = onMove
+                                        )
+                                    }
                             )
-                            .clickable(enabled = playlist.canSelectTrackAt(index)) {
-                                onSelect(index)
-                            }
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${index + 1}.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = displayTitle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (displayArtist != null) {
-                                Text(
-                                    text = displayArtist,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        if (playlist.canRemoveTrackAt(index)) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            SquareIconButton(
-                                onClick = { onRemove(index) },
-                                modifier = Modifier.size(28.dp)
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable(enabled = playlist.canSelectTrackAt(index)) {
+                                        onSelect(index)
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Remove from playlist",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(14.dp)
+                                Text(
+                                    text = "${position + 1}.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = displayTitle,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (displayArtist != null) {
+                                        Text(
+                                            text = displayArtist,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                            if (playlist.canRemoveTrackAt(index)) {
+                                SquareIconButton(
+                                    onClick = { onRemove(index) },
+                                    modifier = Modifier
+                                        .padding(end = 8.dp)
+                                        .size(28.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove from playlist",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                         }
                     }

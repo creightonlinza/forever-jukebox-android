@@ -1490,7 +1490,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         track
                     }
                 }
-            )
+            ).withoutDuplicateTracks()
         }
     }
 
@@ -3911,6 +3911,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun removePlaylistTrack(index: Int) {
         updatePlaylistState { it.removeTrackAt(index) }
+        syncPlaybackServiceSession()
+    }
+
+    fun movePlaylistTrack(from: Int, to: Int) {
+        updatePlaylistState { it.moveTrack(from, to) }
         syncPlaybackServiceSession()
     }
 

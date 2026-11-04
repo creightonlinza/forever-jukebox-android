@@ -263,6 +263,47 @@ internal fun JukeboxPlaylistState.removeTrackAt(index: Int): JukeboxPlaylistStat
 }
 
 /**
+ * Moves the entry at [from] to [to]. The current and resume positions follow their tracks,
+ * so reordering never changes what is playing or what "Continue listening" resumes.
+ */
+internal fun JukeboxPlaylistState.moveTrack(from: Int, to: Int): JukeboxPlaylistState {
+    if (from !in tracks.indices || to !in tracks.indices || from == to) {
+        return this
+    }
+    val nextTracks = tracks.toMutableList().apply { add(to, removeAt(from)) }
+    return copy(
+        tracks = nextTracks,
+        currentIndex = indexAfterMove(currentIndex, from, to),
+        resumeIndex = indexAfterMove(resumeIndex, from, to)
+    )
+}
+
+private fun indexAfterMove(index: Int, from: Int, to: Int): Int = when {
+    index == from -> to
+    index in (from + 1)..to -> index - 1
+    index in to until from -> index + 1
+    else -> index
+}
+
+/**
+ * Collapses entries that share a playlist key, which the playlist UI keys its rows on. The
+ * current entry, then the resume entry, then the earliest one survives in each group.
+ */
+internal fun JukeboxPlaylistState.withoutDuplicateTracks(): JukeboxPlaylistState {
+    val keptIndexByKey = mutableMapOf<String, Int>()
+    tracks.forEachIndexed { index, track -> keptIndexByKey.putIfAbsent(track.playlistKey, index) }
+    resumeTrack()?.let { keptIndexByKey[it.playlistKey] = resumeIndex }
+    currentTrack()?.let { keptIndexByKey[it.playlistKey] = currentIndex }
+    return tracks.indices.reversed().fold(this) { playlist, index ->
+        if (keptIndexByKey[tracks[index].playlistKey] == index) {
+            playlist
+        } else {
+            playlist.removeTrackAt(index)
+        }
+    }
+}
+
+/**
  * Drops every entry for a deleted local track, so playlist navigation never lands on a track
  * that can no longer be opened. The current entry stays: its audio is already loaded and keeps
  * playing until the user moves on.
@@ -383,6 +424,7 @@ internal fun restoredSavedPlaylistState(
             ?: 0
     }
     return JukeboxPlaylistState(tracks = playableTracks, currentIndex = -1, resumeIndex = resumeIndex)
+        .withoutDuplicateTracks()
 }
 
 internal fun PlaylistTrack.toSavedPlaylistTrack(): SavedPlaylistTrack {
@@ -457,7 +499,7 @@ internal fun playablePlaylistTracks(
 
 private fun playlistKeyOf(type: PlaylistTrackType, id: String): String = "${type.name}:${id.trim()}"
 
-private val PlaylistTrack.playlistKey: String
+internal val PlaylistTrack.playlistKey: String
     get() = playlistKeyOf(type, id)
 
 private fun PlaylistTrack.withMetadataFrom(incoming: PlaylistTrack): PlaylistTrack {
