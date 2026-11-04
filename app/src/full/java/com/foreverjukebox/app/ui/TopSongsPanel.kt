@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -48,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -117,7 +120,13 @@ fun TopSongsPanel(
     var pendingFavorites by remember { mutableStateOf<List<FavoriteTrack>>(emptyList()) }
     var pendingCode by remember { mutableStateOf("") }
     var showCreateButton by remember { mutableStateOf(true) }
-    var favoritesQuery by remember { mutableStateOf("") }
+    var favoritesQuery by rememberSaveable { mutableStateOf("") }
+    // Hoisted above the sub-tab switch so each list keeps its scroll position while another
+    // sub-tab is shown and when the favorites list moves in or out of PullToRefreshBox.
+    val topSongsListState = rememberLazyListState()
+    val trendingListState = rememberLazyListState()
+    val recentListState = rememberLazyListState()
+    val favoritesListState = rememberLazyListState()
     var createHint by remember {
         mutableStateOf("Create a sync code to share your favorites between devices.")
     }
@@ -164,7 +173,10 @@ fun TopSongsPanel(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (items.isNotEmpty()) {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LazyColumn(
+                            state = topSongsListState,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             itemsIndexed(items) { index, item ->
                                 val title = item.title
                                 val artist = item.artist
@@ -235,7 +247,10 @@ fun TopSongsPanel(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (trendingItems.isNotEmpty()) {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LazyColumn(
+                            state = trendingListState,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             itemsIndexed(trendingItems) { index, item ->
                                 val title = item.title
                                 val artist = item.artist
@@ -306,7 +321,10 @@ fun TopSongsPanel(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (recentItems.isNotEmpty()) {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LazyColumn(
+                            state = recentListState,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             itemsIndexed(recentItems) { index, item ->
                                 val title = item.title
                                 val artist = item.artist
@@ -420,6 +438,7 @@ fun TopSongsPanel(
                         FavoritesListContent(
                             favorites = favorites,
                             rawQuery = favoritesQuery,
+                            listState = favoritesListState,
                             onQueryChange = { favoritesQuery = it },
                             loading = favoritesLoading,
                             showLoadingSpinner = false,
@@ -435,6 +454,7 @@ fun TopSongsPanel(
                     FavoritesListContent(
                         favorites = favorites,
                         rawQuery = favoritesQuery,
+                        listState = favoritesListState,
                         onQueryChange = { favoritesQuery = it },
                         loading = favoritesLoading,
                         showLoadingSpinner = true,
@@ -592,6 +612,7 @@ fun TopSongsPanel(
 private fun FavoritesListContent(
     favorites: List<FavoriteTrack>,
     rawQuery: String,
+    listState: LazyListState,
     onQueryChange: (String) -> Unit,
     loading: Boolean,
     showLoadingSpinner: Boolean,
@@ -662,7 +683,10 @@ private fun FavoritesListContent(
             if (filteredFavorites.isEmpty()) {
                 ListStatusMessage(text = "No favorites match \"$trimmedQuery\".")
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     item {
                         FavoritesTableHeader(
                             sortKey = sortKey,

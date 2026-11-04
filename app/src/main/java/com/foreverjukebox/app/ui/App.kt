@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalContext
@@ -32,6 +33,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
     var showSleepTimer by remember { mutableStateOf(false) }
     // Saveable so an open feedback dialog and its typed text survive activity recreation.
     var showFeedback by rememberSaveable { mutableStateOf(false) }
+    val tabStateHolder = rememberSaveableStateHolder()
     ForeverJukeboxTheme(mode = state.themeMode) {
         LaunchedEffect(state.fullscreenVisualizationVisible, fullscreenVisualizationAllowed) {
             if (state.fullscreenVisualizationVisible && !fullscreenVisualizationAllowed) {
@@ -65,23 +67,27 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Box(modifier = Modifier.weight(1f, fill = true)) {
-                        when (state.activeTab) {
-                            TabId.Input -> InputPanel(
-                                state = state,
-                                onOpenFile = viewModel::startLocalAnalysis,
-                                onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
-                                onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
-                                onDeleteCachedTrack = viewModel::deleteCachedLocalTrack,
-                                onSortChange = viewModel::setLocalAnalysisSort
-                            )
-                            TabId.Top,
-                            TabId.Search -> ServerTabContent(
-                                tabId = state.activeTab,
-                                state = state,
-                                viewModel = viewModel
-                            )
-                            TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
-                            TabId.Faq -> FaqPanel()
+                        // Per-tab saveable state (list scroll positions, search queries) is kept
+                        // while another tab is shown, so returning to a tab restores where it was.
+                        tabStateHolder.SaveableStateProvider(state.activeTab) {
+                            when (state.activeTab) {
+                                TabId.Input -> InputPanel(
+                                    state = state,
+                                    onOpenFile = viewModel::startLocalAnalysis,
+                                    onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
+                                    onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
+                                    onDeleteCachedTrack = viewModel::deleteCachedLocalTrack,
+                                    onSortChange = viewModel::setLocalAnalysisSort
+                                )
+                                TabId.Top,
+                                TabId.Search -> ServerTabContent(
+                                    tabId = state.activeTab,
+                                    state = state,
+                                    viewModel = viewModel
+                                )
+                                TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
+                                TabId.Faq -> FaqPanel()
+                            }
                         }
                     }
                     if (shouldShowPlaybackBar(state.playback)) {
