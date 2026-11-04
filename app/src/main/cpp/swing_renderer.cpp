@@ -29,10 +29,10 @@ int16_t toInt16(float sample) {
     return static_cast<int16_t>(std::lrint(clamped * 32768.0f));
 }
 
+// Input may run past the end of the source (it reads as silence); output may not.
 bool segmentFits(const SwingSegment& segment, int64_t totalFrames) {
     return segment.inputStartFrame >= 0 && segment.inputFrameCount >= 0 &&
            segment.outputStartFrame >= 0 && segment.outputFrameCount >= 0 &&
-           segment.inputStartFrame + segment.inputFrameCount <= totalFrames &&
            segment.outputStartFrame + segment.outputFrameCount <= totalFrames;
 }
 
@@ -53,15 +53,14 @@ struct StretchScratch {
           chunkPtrs(static_cast<size_t>(channels)) {}
 };
 
-// Stops if Rubber Band keeps reporting output it never hands over; the
-// stretch is padded to its target length afterwards.
 constexpr int kMaxEmptyRetrieves = 5;
 
-void drain(RubberBandStretcher& stretcher, StretchScratch& scratch) {
+// False when Rubber Band keeps reporting output it never hands over.
+bool drain(RubberBandStretcher& stretcher, StretchScratch& scratch) {
     int emptyReads = 0;
     for (;;) {
         const int available = stretcher.available();
-        if (available < 1) return;
+        if (available < 1) return true;
         for (size_t channel = 0; channel < scratch.chunk.size(); channel += 1) {
             scratch.chunk[channel].resize(static_cast<size_t>(available));
             scratch.chunkPtrs[channel] = scratch.chunk[channel].data();
@@ -69,7 +68,7 @@ void drain(RubberBandStretcher& stretcher, StretchScratch& scratch) {
         const size_t received =
             stretcher.retrieve(scratch.chunkPtrs.data(), static_cast<size_t>(available));
         if (received == 0) {
-            if (++emptyReads >= kMaxEmptyRetrieves) return;
+            if (++emptyReads >= kMaxEmptyRetrieves) return false;
             continue;
         }
         emptyReads = 0;
@@ -82,9 +81,30 @@ void drain(RubberBandStretcher& stretcher, StretchScratch& scratch) {
     }
 }
 
+// Linear stand-in for a segment Rubber Band stalls on, matching the web
+// player's fallback: `scratch.stretched` gets `scratch.input` resampled to
+// `targetFrames` frames per channel.
+void resampleLinear(StretchScratch& scratch, size_t inputFrames, size_t targetFrames) {
+    const double ratio = static_cast<double>(inputFrames) / static_cast<double>(targetFrames);
+    for (size_t channel = 0; channel < scratch.input.size(); channel += 1) {
+        const std::vector<float>& input = scratch.input[channel];
+        std::vector<float>& output = scratch.stretched[channel];
+        output.resize(targetFrames);
+        for (size_t index = 0; index < targetFrames; index += 1) {
+            const double position = static_cast<double>(index) * ratio;
+            const size_t lower = static_cast<size_t>(position);
+            const float from = lower < inputFrames ? input[lower] : 0.0f;
+            const float to = lower + 1 < inputFrames ? input[lower + 1] : from;
+            output[index] =
+                from + (to - from) * static_cast<float>(position - static_cast<double>(lower));
+        }
+    }
+}
+
 // Leaves `scratch.stretched` holding `scratch.input` stretched to exactly
 // `targetFrames` frames per channel: truncated when Rubber Band overshoots,
-// padded with the last sample when it falls short.
+// padded with the last sample when it falls short, and linearly resampled
+// when it stalls.
 void stretchToFrameCount(
     StretchScratch& scratch,
     int32_t sampleRate,
@@ -126,9 +146,15 @@ void stretchToFrameCount(
         }
         read += count;
         stretcher.process(scratch.inputPtrs.data(), count, read >= inputFrames);
-        drain(stretcher, scratch);
+        if (!drain(stretcher, scratch)) {
+            resampleLinear(scratch, inputFrames, targetFrames);
+            return;
+        }
     }
-    drain(stretcher, scratch);
+    if (!drain(stretcher, scratch)) {
+        resampleLinear(scratch, inputFrames, targetFrames);
+        return;
+    }
 
     for (auto& channel : scratch.stretched) {
         const float pad = channel.empty() ? 0.0f : channel.back();
@@ -276,7 +302,11 @@ bool renderSwingPcm(
             planar.resize(inputFrames);
             const size_t base =
                 static_cast<size_t>(segment.inputStartFrame) * channels + channel;
-            for (size_t frame = 0; frame < inputFrames; frame += 1) {
+            // Frames past the end of the source read as silence.
+            const size_t readable = static_cast<size_t>(std::clamp<int64_t>(
+                totalFrames - segment.inputStartFrame, 0, segment.inputFrameCount));
+            std::fill(planar.begin() + static_cast<std::ptrdiff_t>(readable), planar.end(), 0.0f);
+            for (size_t frame = 0; frame < readable; frame += 1) {
                 planar[frame] = static_cast<float>(source[base + frame * channels]) / 32768.0f;
             }
         }

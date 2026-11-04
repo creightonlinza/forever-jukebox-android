@@ -2,6 +2,7 @@ package com.foreverjukebox.app.audio
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Mirrors the web app's swingTiming and swingRenderer geometry cases so both platforms agree. */
@@ -112,26 +113,66 @@ class SwingTimingTest {
     }
 
     @Test
-    fun trimsABeatThatRunsPastTheEndOfTheSource() {
+    fun keepsFullSwingTimingWhenABeatRunsPastTheEnd() {
+        // 0.8-1.1 s on a 1 s source: the first half (15 -> 20 frames) ends
+        // exactly at the end, so the second half is pushed out entirely.
         val segments = swingFrameSegments(
             beats = listOf(SwingBeat(start = 0.8, duration = 0.3)),
             sampleRate = 100,
             sourceFrames = 100
         )
 
-        assertEquals(listOf(10, 10), segments.map { it.inputFrameCount })
-        assertEquals(listOf(13, 7), segments.map { it.outputFrameCount })
+        assertEquals(listOf(15, 0), segments.map { it.inputFrameCount })
+        assertEquals(listOf(20, 0), segments.map { it.outputFrameCount })
+        assertEquals(listOf(80, 100), segments.map { it.outputStartFrame })
     }
 
     @Test
-    fun trimsABeatThatStartsBeforeTheSource() {
+    fun clipsAStretchedHalfAtTheEndAtItsOwnRatio() {
+        // 0.85-1.1 s: the first half stretches 12 -> 17 frames from frame 85,
+        // so only 15 output frames fit; 11 input frames keep that ratio.
         val segments = swingFrameSegments(
-            beats = listOf(SwingBeat(start = -0.1, duration = 0.3)),
+            beats = listOf(SwingBeat(start = 0.85, duration = 0.25)),
             sampleRate = 100,
             sourceFrames = 100
         )
 
-        assertEquals(listOf(0, 10), segments.map { it.inputStartFrame })
-        assertEquals(listOf(13, 7), segments.map { it.outputFrameCount })
+        assertEquals(listOf(11, 0), segments.map { it.inputFrameCount })
+        assertEquals(listOf(15, 0), segments.map { it.outputFrameCount })
+    }
+
+    @Test
+    fun pinsASecondHalfThatWouldStartPastTheEnd() {
+        val segments = swingFrameSegments(
+            beats = listOf(SwingBeat(start = 0.9, duration = 0.4)),
+            sampleRate = 100,
+            sourceFrames = 100
+        )
+
+        assertEquals(listOf(7, 0), segments.map { it.inputFrameCount })
+        assertEquals(listOf(10, 0), segments.map { it.outputFrameCount })
+        assertEquals(listOf(90, 100), segments.map { it.outputStartFrame })
+        assertEquals(listOf(90, 100), segments.map { it.inputStartFrame })
+    }
+
+    @Test
+    fun clipsBySpaceForOutputSoNegativeSwingReadsSilencePastTheEnd() {
+        // Negative swing slows the second half: its output reaches the end
+        // before its input does, so the input runs past the source end.
+        val (first, second) = swingFrameSegmentsForBeat(
+            SwingBeat(start = 0.8, duration = 0.3),
+            sampleRate = 100,
+            sourceFrames = 100,
+            swingAmount = -0.5
+        )!!
+
+        assertEquals(100, second.outputStartFrame + second.outputFrameCount)
+        assertEquals(first.inputStartFrame + first.inputFrameCount, second.inputStartFrame)
+        assertTrue(second.inputStartFrame + second.inputFrameCount > 100)
+    }
+
+    @Test
+    fun skipsABeatThatStartsBeforeTheSource() {
+        assertNull(swingFrameSegmentsForBeat(SwingBeat(-0.1, 0.3), sampleRate = 100, sourceFrames = 100))
     }
 }

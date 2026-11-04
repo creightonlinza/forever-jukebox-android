@@ -70,9 +70,10 @@ fun swingSegmentsForBeat(
 
 /**
  * Frame-accurate halves for [beat], or null when its timing is not finite and
- * positive or what lies inside the source is too short to split. A beat
- * running past either end of the source is trimmed to it and swung over what
- * remains.
+ * positive, it starts before the source, or too little of it lies inside the
+ * source to split. A beat running past the end keeps its full swing timing,
+ * clipped to the source: audio pushed past the end is cut off, as the rest of
+ * a longer track would be.
  */
 fun swingFrameSegmentsForBeat(
     beat: SwingBeat,
@@ -83,27 +84,16 @@ fun swingFrameSegmentsForBeat(
     if (!beat.start.isFinite() || !beat.duration.isFinite() || beat.duration <= 0.0) {
         return null
     }
-    val rawStartFrame = Math.round(beat.start * sampleRate)
-    val rawEndFrame = Math.round((beat.start + beat.duration) * sampleRate)
-    val beatStartFrame = rawStartFrame.coerceAtLeast(0L)
-    val beatEndFrame = rawEndFrame.coerceAtMost(sourceFrames.toLong())
-    if (beatEndFrame - beatStartFrame < 2) {
+    val beatStartFrame = Math.round(beat.start * sampleRate)
+    val beatEndFrame = Math.round((beat.start + beat.duration) * sampleRate)
+    if (beatStartFrame < 0 || beatEndFrame - beatStartFrame < 2 || sourceFrames - beatStartFrame < 2) {
         return null
     }
 
     val beatFrameCount = (beatEndFrame - beatStartFrame).toInt()
     val inputAFrameCount = beatFrameCount / 2
-    val trimmed = beatStartFrame != rawStartFrame || beatEndFrame != rawEndFrame
-    val splitBeat = if (trimmed) {
-        SwingBeat(
-            start = beatStartFrame.toDouble() / sampleRate,
-            duration = beatFrameCount.toDouble() / sampleRate
-        )
-    } else {
-        beat
-    }
     val outputAFrameCount = Math.round(
-        swingSegmentsForBeat(splitBeat, swingAmount).first.outputDuration * sampleRate
+        swingSegmentsForBeat(beat, swingAmount).first.outputDuration * sampleRate
     ).coerceIn(1L, beatFrameCount - 1L).toInt()
     val startFrame = beatStartFrame.toInt()
     return SwingFrameSegment(
@@ -111,11 +101,28 @@ fun swingFrameSegmentsForBeat(
         inputFrameCount = inputAFrameCount,
         outputStartFrame = startFrame,
         outputFrameCount = outputAFrameCount
-    ) to SwingFrameSegment(
+    ).clippedTo(sourceFrames) to SwingFrameSegment(
         inputStartFrame = startFrame + inputAFrameCount,
         inputFrameCount = beatFrameCount - inputAFrameCount,
         outputStartFrame = startFrame + outputAFrameCount,
         outputFrameCount = beatFrameCount - outputAFrameCount
+    ).clippedTo(sourceFrames)
+}
+
+/**
+ * The leading part of this half-beat whose output fits the source, at the same
+ * stretch ratio; input it needs from past the end reads as silence in the
+ * native render. A half wholly past the end keeps nothing and is pinned there.
+ */
+private fun SwingFrameSegment.clippedTo(sourceFrames: Int): SwingFrameSegment {
+    val outputRoom = (sourceFrames - outputStartFrame).coerceAtLeast(0)
+    val kept = minOf(1.0, outputRoom.toDouble() / outputFrameCount)
+    if (kept >= 1.0) return this
+    return SwingFrameSegment(
+        inputStartFrame = inputStartFrame.coerceAtMost(sourceFrames),
+        inputFrameCount = Math.round(inputFrameCount * kept).toInt(),
+        outputStartFrame = outputStartFrame.coerceAtMost(sourceFrames),
+        outputFrameCount = minOf(outputRoom, Math.round(outputFrameCount * kept).toInt())
     )
 }
 
