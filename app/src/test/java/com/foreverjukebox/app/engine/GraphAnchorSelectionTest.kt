@@ -102,11 +102,27 @@ class GraphAnchorSelectionTest {
     }
 
     @Test
-    fun doesNotInsertAboveThresholdAnchorsWhenBranchTypeFiltersAreActive() {
+    fun insertsAboveThresholdAnchorWhenBranchTypeFiltersAreActive() {
         val analysis = makeInsertionWithoutExistingAnchorScenario()
         val graph = buildJumpGraph(
             analysis,
-            testConfig().copy(justBackwards = true)
+            testConfig(minLongBranch = 7).copy(justBackwards = true, justLongBranches = true)
+        )
+
+        assertTrue(
+            analysis.beats.flatMap { it.neighbors }.any { edge ->
+                edge.src.which == 8 && edge.dest.which == 1
+            }
+        )
+        assertEquals(8, graph.lastBranchPoint)
+    }
+
+    @Test
+    fun doesNotInsertAnchorShorterThanLongBranchMinimum() {
+        val analysis = makeInsertionWithoutExistingAnchorScenario()
+        val graph = buildJumpGraph(
+            analysis,
+            testConfig(minLongBranch = 8).copy(justLongBranches = true)
         )
 
         assertFalse(

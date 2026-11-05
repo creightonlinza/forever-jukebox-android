@@ -500,7 +500,8 @@ private fun insertBestBackwardBranch(
     threshold: Int,
     maxThreshold: Int,
     minSourceIndex: Int = floor(quanta.size * 0.66).toInt(),
-    context: AnchorDecisionContext? = null
+    context: AnchorDecisionContext? = null,
+    minJump: Int = 1
 ): Int? {
     val decisionContext = context ?: buildAnchorDecisionContext(quanta)
     val branches = mutableListOf<BranchCandidate>()
@@ -514,7 +515,7 @@ private fun insertBestBackwardBranch(
                 continue
             }
             val delta = i - neighbor.dest.which
-            if (delta > 0 && neighbor.distance < maxThreshold) {
+            if (delta >= minJump && neighbor.distance < maxThreshold) {
                 if (neighbor.distance <= threshold) {
                     continue
                 }
@@ -820,15 +821,15 @@ private fun addAnchorBranch(
         // Existing end-of-track branch already reaches the early target zone.
         return existingAnchorSource
     }
-    if (config.justBackwards || config.justLongBranches) {
-        return existingAnchorSource
-    }
+    // Inserted anchors always jump backward; long-only mode also holds them to the min length.
+    val minInsertedJump = if (config.justLongBranches) maxOf(1, config.minLongBranch) else 1
     val lateInsertedSource = insertBestBackwardBranch(
         quanta,
         threshold,
         maxAnchorThreshold,
         preferredLateStart,
-        decisionContext
+        decisionContext,
+        minInsertedJump
     )
     if (lateInsertedSource != null) {
         return lateInsertedSource
@@ -841,7 +842,8 @@ private fun addAnchorBranch(
         threshold,
         maxAnchorThreshold,
         floor(quanta.size * 0.66).toInt(),
-        decisionContext
+        decisionContext,
+        minInsertedJump
     )
 }
 
