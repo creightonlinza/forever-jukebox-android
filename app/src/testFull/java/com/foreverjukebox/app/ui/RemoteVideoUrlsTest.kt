@@ -12,7 +12,7 @@ class RemoteVideoUrlsTest {
             youtubeThumbnailUrl("dQw4w9WgXcQ")
         )
         assertEquals(
-            "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg",
+            "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
             youtubeRowThumbnailUrl("dQw4w9WgXcQ")
         )
         assertEquals(

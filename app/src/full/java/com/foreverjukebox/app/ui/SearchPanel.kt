@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AudioFile
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.runtime.Composable
@@ -217,9 +218,11 @@ private fun SearchSection(
         Text("Searching Spotify…", style = MaterialTheme.typography.bodySmall)
     } else if (searchState.spotifyResults.isNotEmpty()) {
         Text("Step 1: Find a Spotify track.", style = MaterialTheme.typography.bodySmall)
+        // Rows keep an art slot whenever any result has art, so titles line up.
+        val showArt = searchState.spotifyResults.any { !it.image.isNullOrBlank() }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(searchState.spotifyResults) { item ->
-                SpotifyRow(item = item, onSelect = onSpotifySelect)
+                SpotifyRow(item = item, showArt = showArt, onSelect = onSpotifySelect)
             }
         }
     }
@@ -310,7 +313,11 @@ private fun AddYourOwnSection(
 }
 
 @Composable
-private fun SpotifyRow(item: RemoteMusicSearchItem, onSelect: (RemoteMusicSearchItem) -> Unit) {
+private fun SpotifyRow(
+    item: RemoteMusicSearchItem,
+    showArt: Boolean,
+    onSelect: (RemoteMusicSearchItem) -> Unit
+) {
     val name = item.name ?: "Untitled"
     val artist = item.artist ?: ""
     val duration = item.duration
@@ -321,7 +328,9 @@ private fun SpotifyRow(item: RemoteMusicSearchItem, onSelect: (RemoteMusicSearch
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AlbumArt(url = item.image)
+        if (showArt) {
+            AlbumArt(url = item.image)
+        }
         Text(
             text = if (artist.isNotBlank()) "$name — $artist" else name,
             modifier = Modifier.weight(1f),
@@ -378,21 +387,35 @@ private fun YoutubeRow(
 private val RowThumbnailHeight = 36.dp
 private val RowVideoThumbnailWidth = 64.dp
 
-// Album art for a Spotify result row; nothing when there is none or it fails to load.
+// Album art for a Spotify result row, or a note icon when there is none or it fails to load.
 @Composable
 private fun AlbumArt(url: String?) {
     var failed by remember(url) { mutableStateOf(false) }
-    if (url.isNullOrBlank() || failed) return
-    AsyncImage(
-        model = url,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        onError = { failed = true },
+    Box(
         modifier = Modifier
             .padding(end = 8.dp)
             .size(RowThumbnailHeight)
             .clip(SurfaceShape)
-    )
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        if (url.isNullOrBlank() || failed) {
+            Icon(
+                imageVector = Icons.Outlined.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        } else {
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onError = { failed = true },
+                modifier = Modifier.matchParentSize()
+            )
+        }
+    }
 }
 
 // Opens the preview: the thumbnail with a corner popup icon, or the icon alone if the thumbnail fails to load.

@@ -6,8 +6,8 @@ package com.foreverjukebox.app.ui
 // 480x360 for the preview dialog.
 internal fun youtubeThumbnailUrl(videoId: String): String = youtubeImageUrl(videoId, "hqdefault")
 
-// 120x90 for search result rows; the 16:9 crop trims its letterbox bars.
-internal fun youtubeRowThumbnailUrl(videoId: String): String = youtubeImageUrl(videoId, "default")
+// 320x180 for search result rows: natively 16:9, so the row crop needs no upscaling.
+internal fun youtubeRowThumbnailUrl(videoId: String): String = youtubeImageUrl(videoId, "mqdefault")
 
 private fun youtubeImageUrl(videoId: String, file: String): String {
     val normalizedVideoId = videoId.trim()

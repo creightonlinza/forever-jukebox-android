@@ -663,6 +663,40 @@ class PlaylistTest {
     }
 
     @Test
+    fun playlistMoveForMapsTheDraggedKeyBetweenOrders() {
+        val playlistKeys = listOf("a", "b", "c", "d")
+
+        assertEquals(0 to 2, playlistMoveFor(playlistKeys, listOf("b", "c", "a", "d"), "a"))
+        assertEquals(3 to 1, playlistMoveFor(playlistKeys, listOf("a", "d", "b", "c"), "d"))
+    }
+
+    @Test
+    fun playlistMoveForIgnoresUnmovedAndMissingKeys() {
+        val playlistKeys = listOf("a", "b", "c")
+
+        assertNull(playlistMoveFor(playlistKeys, playlistKeys, "b"))
+        assertNull(playlistMoveFor(playlistKeys, listOf("b", "a", "c"), "z"))
+        assertNull(playlistMoveFor(playlistKeys, listOf("b", "c"), "a"))
+        assertNull(playlistMoveFor(listOf("b", "c"), listOf("b", "a", "c"), "a"))
+    }
+
+    @Test
+    fun playlistMoveForAppliedWithMoveTrackReproducesTheDraggedOrder() {
+        val playlist = JukeboxPlaylistState(
+            tracks = listOf(track("one"), track("two"), track("three")),
+            currentIndex = 1
+        )
+        val playlistKeys = playlist.tracks.map { it.playlistKey }
+        val orderedKeys = listOf(playlistKeys[1], playlistKeys[2], playlistKeys[0])
+
+        val (from, to) = checkNotNull(playlistMoveFor(playlistKeys, orderedKeys, playlistKeys[0]))
+        val updated = playlist.moveTrack(from, to)
+
+        assertEquals(orderedKeys, updated.tracks.map { it.playlistKey })
+        assertEquals(track("two"), updated.currentTrack())
+    }
+
+    @Test
     fun withoutDuplicateTracksKeepsTheCurrentEntry() {
         val playlist = JukeboxPlaylistState(
             tracks = listOf(track("one"), track("two"), track("one", title = "Migrated")),

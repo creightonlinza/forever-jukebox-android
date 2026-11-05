@@ -278,6 +278,20 @@ internal fun JukeboxPlaylistState.moveTrack(from: Int, to: Int): JukeboxPlaylist
     )
 }
 
+/**
+ * The [moveTrack] arguments that carry the entry keyed [key] from its slot in [playlistKeys]
+ * to its slot in [orderedKeys], or null when it is missing from either or has not moved.
+ */
+internal fun playlistMoveFor(
+    playlistKeys: List<String>,
+    orderedKeys: List<String>,
+    key: String
+): Pair<Int, Int>? {
+    val from = playlistKeys.indexOf(key)
+    val to = orderedKeys.indexOf(key)
+    return if (from < 0 || to < 0 || from == to) null else from to to
+}
+
 private fun indexAfterMove(index: Int, from: Int, to: Int): Int = when {
     index == from -> to
     index in (from + 1)..to -> index - 1

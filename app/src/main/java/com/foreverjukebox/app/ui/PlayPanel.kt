@@ -5,6 +5,7 @@ import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -48,6 +52,7 @@ import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.DragGestureDetector
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -435,6 +440,34 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     }
 }
 
+/**
+ * Press-to-drag that reports how a drag ended, as it happens: [onDrop] when the finger lifts,
+ * [onCancel] when the gesture is cancelled. The handle's onDragStopped cannot tell these
+ * apart, and also fires when the dialog closes mid-drag, which reports neither.
+ */
+private fun playlistDropDetector(onDrop: () -> Unit, onCancel: () -> Unit) =
+    object : DragGestureDetector {
+        override suspend fun PointerInputScope.detect(
+            onDragStart: (Offset) -> Unit,
+            onDragEnd: () -> Unit,
+            onDragCancel: () -> Unit,
+            onDrag: (change: PointerInputChange, dragAmount: Offset) -> Unit
+        ) {
+            detectDragGestures(
+                onDragStart = onDragStart,
+                onDragEnd = {
+                    onDragEnd()
+                    onDrop()
+                },
+                onDragCancel = {
+                    onDragCancel()
+                    onCancel()
+                },
+                onDrag = onDrag
+            )
+        }
+    }
+
 /** TalkBack stand-ins for dragging, which accessibility services cannot perform. */
 private fun playlistMoveActions(
     index: Int,
@@ -463,22 +496,24 @@ private fun PlaylistDialog(
     // Drags reorder this local copy of the order every frame; the view model only sees the
     // finished move, so a drag persists once instead of on every slot it passes. Keyed on the
     // order alone, so a metadata update landing mid-drag leaves the drag in place.
-    var orderedKeys by remember(playlistKeys) { mutableStateOf(playlistKeys) }
+    val orderedKeysState = remember(playlistKeys) { mutableStateOf(playlistKeys) }
+    var orderedKeys by orderedKeysState
     val lazyListState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
         orderedKeys = orderedKeys.toMutableList().apply { add(to.index, removeAt(from.index)) }
     }
-    // The drag handle keeps the callback from its first composition, so it reads both orders
-    // through updated state rather than capturing them.
+    // The drag handle keeps its gesture callbacks from its first composition, so they read
+    // through updated state rather than capturing these values. The local order is read from
+    // its state object, which a swap updates before the next recomposition does.
     val latestPlaylistKeys by rememberUpdatedState(playlistKeys)
-    val latestOrderedKeys by rememberUpdatedState(orderedKeys)
+    val latestOrderedKeysState by rememberUpdatedState(orderedKeysState)
+    val latestOnMove by rememberUpdatedState(onMove)
     val commitMove: (String) -> Unit = { key ->
-        val from = latestPlaylistKeys.indexOf(key)
-        val to = latestOrderedKeys.indexOf(key)
-        if (from >= 0 && to >= 0) {
-            onMove(from, to)
+        playlistMoveFor(latestPlaylistKeys, latestOrderedKeysState.value, key)?.let { (from, to) ->
+            latestOnMove(from, to)
         }
     }
+    val revertMove: () -> Unit = { latestOrderedKeysState.value = latestPlaylistKeys }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Playlist") },
@@ -495,6 +530,9 @@ private fun PlaylistDialog(
                     // on-screen position while a drag is in flight.
                     val index = playlistIndexByKey[key] ?: return@itemsIndexed
                     val track = playlist.tracks[index]
+                    val dropDetector = remember {
+                        playlistDropDetector(onDrop = { commitMove(key) }, onCancel = revertMove)
+                    }
                     ReorderableItem(reorderState, key = key) { isDragging ->
                         val selected = index == playlist.currentIndex
                         val displayTitle = track.title?.takeIf { it.isNotBlank() } ?: "Untitled"
@@ -521,7 +559,7 @@ private fun PlaylistDialog(
                                 modifier = Modifier
                                     .padding(start = 8.dp)
                                     .size(24.dp)
-                                    .draggableHandle(onDragStopped = { commitMove(key) })
+                                    .draggableHandle(dragGestureDetector = dropDetector)
                                     .semantics {
                                         customActions = playlistMoveActions(
                                             index = index,
