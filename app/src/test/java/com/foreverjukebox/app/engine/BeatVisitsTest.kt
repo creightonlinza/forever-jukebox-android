@@ -119,9 +119,13 @@ class BeatVisitsTest {
         assertFirstBeatWaitsOutLeadIn(leadIn = 0.5)
     }
 
+    // startJukebox launches the real tick loop on Dispatchers.Default, which can tick
+    // before stopJukebox. The player sits on the start beat, as the controller's seek
+    // leaves it, so a racing tick's playback resync finds no mismatch to record.
     @Test
     fun startAtBeatFromStoppedCountsOnlyThatBeat() {
         engine.seekToBeat(1)
+        player.trackTime = 2.0
         engine.startJukebox(resetState = true, startBeat = 2)
         engine.stopJukebox()
         assertEquals(listOf(0, 0, 1), engine.getBeatVisits())
@@ -130,6 +134,7 @@ class BeatVisitsTest {
     @Test
     fun startAtBeatFromPausedAddsOneVisit() {
         engine.seekToBeat(1)
+        player.trackTime = 2.0
         engine.startJukebox(resetState = false, startBeat = 2)
         engine.stopJukebox()
         assertEquals(listOf(0, 1, 1), engine.getBeatVisits())
