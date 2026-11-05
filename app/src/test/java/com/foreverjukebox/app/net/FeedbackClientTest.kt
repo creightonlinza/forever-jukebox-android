@@ -6,6 +6,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -57,6 +58,40 @@ class FeedbackClientTest {
                 "&${FeedbackClient.ENTRY_DEVICE_INFO}=Acme+Phone%2C+Android+14+%28SDK+34%29",
             request.body.readUtf8()
         )
+    }
+
+    @Test
+    fun submitIncludesHostWhenProvided() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        assertTrue(client.submit(feedback, appVersion, deviceInfo, host = "https://jb.example"))
+
+        assertTrue(
+            server.takeRequest().body.readUtf8()
+                .endsWith("&${FeedbackClient.ENTRY_HOST}=https%3A%2F%2Fjb.example")
+        )
+    }
+
+    @Test
+    fun submitOmitsBlankHost() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        assertTrue(client.submit(feedback, appVersion, deviceInfo, host = ""))
+
+        assertFalse(server.takeRequest().body.readUtf8().contains(FeedbackClient.ENTRY_HOST))
+    }
+
+    @Test
+    fun hostSummaryKeepsOnlyOrigin() {
+        assertEquals(
+            "https://jb.example",
+            FeedbackClient.hostSummary(" https://user:pw@jb.example/api/?q=1#f ")
+        )
+        assertEquals("http://10.0.2.2:8000", FeedbackClient.hostSummary("http://10.0.2.2:8000/"))
+        assertEquals("http://[::1]:8000", FeedbackClient.hostSummary("http://[::1]:8000"))
+        assertEquals("https://jb.example", FeedbackClient.hostSummary("https://jb.example:443"))
+        assertNull(FeedbackClient.hostSummary(""))
+        assertNull(FeedbackClient.hostSummary("ftp://jb.example"))
     }
 
     @Test

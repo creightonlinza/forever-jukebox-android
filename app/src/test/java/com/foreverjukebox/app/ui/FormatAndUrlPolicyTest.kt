@@ -1,7 +1,9 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AppMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -87,5 +89,14 @@ class FormatAndUrlPolicyTest {
                 "https://example.com/other"
             )
         )
+    }
+
+    @Test
+    fun feedbackHostReportsServerOriginOnlyInServerMode() {
+        val baseUrl = "https://jb.example/api"
+        assertEquals("https://jb.example", feedbackHost(AppMode.Server, baseUrl))
+        assertNull(feedbackHost(AppMode.Local, baseUrl))
+        assertNull(feedbackHost(null, baseUrl))
+        assertNull(feedbackHost(AppMode.Server, ""))
     }
 }

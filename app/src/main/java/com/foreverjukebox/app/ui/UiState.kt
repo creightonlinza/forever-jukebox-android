@@ -11,6 +11,7 @@ import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.parseTrackId
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.net.CleartextPolicy
+import com.foreverjukebox.app.net.FeedbackClient
 import com.foreverjukebox.app.visualization.JumpLine
 import com.foreverjukebox.app.visualization.defaultVisualizationIndex
 import com.foreverjukebox.app.wubmachine.WubRenderedPart
@@ -495,6 +496,13 @@ fun shouldShowBaseUrlPrompt(mode: AppMode?, baseUrl: String): Boolean {
     if (!BuildConfig.SERVER_MODE_AVAILABLE) return false
     return mode == AppMode.Server && !isValidBaseUrl(baseUrl)
 }
+
+/**
+ * The host a feedback report carries: the [baseUrl] origin in Server mode, null otherwise
+ * (Local mode talks to no server, and Play builds are always in Local mode).
+ */
+fun feedbackHost(mode: AppMode?, baseUrl: String): String? =
+    if (mode == AppMode.Server) FeedbackClient.hostSummary(baseUrl) else null
 
 fun shouldShowServerListenActions(mode: AppMode?): Boolean {
     return BuildConfig.SERVER_MODE_AVAILABLE && mode == AppMode.Server

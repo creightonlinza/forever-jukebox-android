@@ -4607,16 +4607,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * In Server mode the report carries the configured server's origin so reports can be
+     * traced to the deployment that served the user.
+     *
      * Fire-and-forget: runs in [viewModelScope] so the submission and its result toast
      * survive the feedback dialog closing and activity recreation. A failed send is
      * reported by toast only; the text is not retained.
      */
     fun submitFeedback(feedback: String) {
+        val current = _state.value
+        val host = feedbackHost(current.appMode, current.baseUrl)
         viewModelScope.launch {
             val sent = feedbackClient.submit(
                 feedback = feedback,
                 appVersion = FeedbackClient.appVersionSummary(),
-                deviceInfo = FeedbackClient.deviceSummary()
+                deviceInfo = FeedbackClient.deviceSummary(),
+                host = host
             )
             showToast(if (sent) FEEDBACK_SENT_MESSAGE else FEEDBACK_FAILURE_MESSAGE)
         }
