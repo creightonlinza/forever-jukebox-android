@@ -138,7 +138,8 @@ private fun SpotifySearchItem.toRemoteMusicSearchItem(): RemoteMusicSearchItem {
         id = id,
         name = name,
         artist = artist,
-        duration = duration
+        duration = duration,
+        image = image
     )
 }
 

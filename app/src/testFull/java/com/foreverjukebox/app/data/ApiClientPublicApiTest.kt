@@ -46,7 +46,8 @@ class ApiClientPublicApiTest {
                           "id": "sp1",
                           "name": "Around the World",
                           "artist": "Daft Punk",
-                          "duration": 431.0
+                          "duration": 431.0,
+                          "image": "https://i.scdn.co/image/sp1-64"
                         }
                       ]
                     }
@@ -63,6 +64,7 @@ class ApiClientPublicApiTest {
         assertEquals(1, result.size)
         assertEquals("sp1", result.first().id)
         assertEquals("Around the World", result.first().name)
+        assertEquals("https://i.scdn.co/image/sp1-64", result.first().image)
     }
 
     @Test

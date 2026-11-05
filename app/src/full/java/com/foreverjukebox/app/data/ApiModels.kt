@@ -9,7 +9,8 @@ data class SpotifySearchItem(
     val id: String? = null,
     val name: String? = null,
     val artist: String? = null,
-    val duration: Double? = null
+    val duration: Double? = null,
+    val image: String? = null
 )
 
 @Serializable

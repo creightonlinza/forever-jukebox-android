@@ -3,9 +3,10 @@ package com.foreverjukebox.app.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,10 +25,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Search
@@ -37,11 +40,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -310,8 +318,10 @@ private fun SpotifyRow(item: RemoteMusicSearchItem, onSelect: (RemoteMusicSearch
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onSelect(item) },
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        AlbumArt(url = item.image)
         Text(
             text = if (artist.isNotBlank()) "$name — $artist" else name,
             modifier = Modifier.weight(1f),
@@ -337,26 +347,105 @@ private fun YoutubeRow(
     val videoId = item.id?.trim().orEmpty()
     if (videoId.isEmpty()) return
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = { onSelect(item) },
-                onLongClick = { onPreview(item) }
-            ),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = formatTrackDuration(item.duration),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        VideoThumbnail(videoId = videoId, onClick = { onPreview(item) })
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onSelect(item) }
+                .padding(start = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = formatTrackDuration(item.duration),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private val RowThumbnailHeight = 36.dp
+private val RowVideoThumbnailWidth = 64.dp
+
+// Album art for a Spotify result row; nothing when there is none or it fails to load.
+@Composable
+private fun AlbumArt(url: String?) {
+    var failed by remember(url) { mutableStateOf(false) }
+    if (url.isNullOrBlank() || failed) return
+    AsyncImage(
+        model = url,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        onError = { failed = true },
+        modifier = Modifier
+            .padding(end = 8.dp)
+            .size(RowThumbnailHeight)
+            .clip(SurfaceShape)
+    )
+}
+
+// Opens the preview: the thumbnail with a corner popup icon, or the icon alone if the thumbnail fails to load.
+@Composable
+private fun VideoThumbnail(videoId: String, onClick: () -> Unit) {
+    var failed by remember(videoId) { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .size(width = RowVideoThumbnailWidth, height = RowThumbnailHeight)
+            .clip(SurfaceShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .semantics { contentDescription = "YouTube thumbnail" }
+            .clickable(
+                onClickLabel = "open YouTube preview",
+                role = Role.Button,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (failed) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        } else {
+            AsyncImage(
+                model = youtubeRowThumbnailUrl(videoId),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onError = { failed = true },
+                modifier = Modifier.matchParentSize()
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(2.dp)
+                    .size(14.dp)
+                    .clip(SurfaceShape)
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                // White on the scrim, whatever the theme, since it sits over a photo.
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(10.dp)
+                )
+            }
+        }
     }
 }
 
