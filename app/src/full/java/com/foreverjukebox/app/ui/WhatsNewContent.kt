@@ -1,12 +1,12 @@
 package com.foreverjukebox.app.ui
 
 internal val currentWhatsNewBullets = listOf(
-    "Updated Classic visualization: colored tiles now grow as beats replay",
+    "3x faster analysis for new tracks",
+    "Updated Classic visualization: beats are tiles colored by their timbre that grow as they replay",
+    "Search results now show album art and video thumbnails",
+    "Drag to reorder tracks in your playlist",
     "Added Wub Machine play mode: a dubstep remix of any track, built on your device",
-    "Added Swing audio mode: gives any track a swing feel (Tuning)",
-    "Local mode: Added audio export for tuned jukebox audio",
-    "Added new Upload tab; add your own files & links (when server-enabled)",
+    "Added Swing audio mode: gives any track a swing feel",
     "Favorites now flag when a track's tuning has changed from what you saved",
-    "Fixed loading issue when skipping tracks with the screen off",
     "Send feedback or report bugs from the Settings menu"
 )
