@@ -11,6 +11,7 @@ import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.isNotFound
 import com.foreverjukebox.app.data.sourceProviderFromRaw
+import com.foreverjukebox.app.engine.DEFAULT_JUKEBOX_CONFIG
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
@@ -156,7 +157,6 @@ class PlaybackCoordinator(
     private val controller: PlaybackController,
     private val engine: JukeboxEngine,
     private val json: Json,
-    private val defaultConfig: JukeboxConfig,
     private val getState: () -> UiState,
     private val updateState: ((UiState) -> UiState) -> Unit,
     private val updatePlaybackState: ((PlaybackState) -> PlaybackState) -> Unit,
@@ -815,7 +815,7 @@ class PlaybackCoordinator(
         controller.stopExternalPlayback()
         controller.setJukeboxAudioMode(JukeboxAudioMode.Off)
         controller.setCowbellSectionStartBeatIndices(emptyList())
-        engine.updateConfig(defaultConfig)
+        engine.updateConfig(DEFAULT_JUKEBOX_CONFIG)
         controller.stopPlayback()
         controller.resetTimers()
         controller.setTrackMeta(null, null)
@@ -1260,46 +1260,13 @@ class PlaybackCoordinator(
 
     private fun parseTuningParams(raw: String?): ResolvedTuningParams? {
         val parsed = TuningParamsCodec.parse(raw) ?: return null
-        var config = defaultConfig
-        parsed.justBackwards?.let { value ->
-            config = config.copy(justBackwards = value)
-        }
-        parsed.minJumpDistancePercent?.let { percent ->
-            config = config.withMinimumJumpDistancePercent(percent)
-        }
-        parsed.removeSequentialBranches?.let { value ->
-            config = config.copy(removeSequentialBranches = value)
-        }
-        parsed.threshold?.let { value ->
-            config = config.copy(currentThreshold = value)
-        }
-        parsed.minProbPercent?.let { value ->
-            config = config.copy(
-                minRandomBranchChance = mapPercentToRange(value, 1.0)
-            )
-        }
-        parsed.maxProbPercent?.let { value ->
-            config = config.copy(
-                maxRandomBranchChance = mapPercentToRange(value, 1.0)
-            )
-        }
-        parsed.rampPercent?.let { value ->
-            config = config.copy(
-                randomBranchChanceDelta = mapPercentToRange(value, MAX_RANDOM_BRANCH_DELTA)
-            )
-        }
         return ResolvedTuningParams(
-            config = config,
+            config = trackTuningConfig(parsed),
             deletedEdgeIds = parsed.deletedEdgeIds,
             anchorBranchId = parsed.anchorBranchId,
             audioMode = parsed.audioMode,
             audioModeIntensity = parsed.audioModeIntensity
         )
-    }
-
-    private fun mapPercentToRange(percent: Int, max: Double): Double {
-        val safe = percent.coerceIn(0, 100)
-        return (max * safe) / 100.0
     }
 
     fun hasDeletedEdges(): Boolean = getDeletedEdgeIds().isNotEmpty()
@@ -1332,7 +1299,7 @@ class PlaybackCoordinator(
                 engine.deleteEdge(edge)
             }
         }
-        val configChanged = parsed.config != defaultConfig
+        val configChanged = parsed.config != DEFAULT_JUKEBOX_CONFIG
         val shouldRebuild = configChanged || parsed.deletedEdgeIds.isNotEmpty()
         if (configChanged) {
             engine.updateConfig(parsed.config)
@@ -1367,6 +1334,45 @@ class PlaybackCoordinator(
 private fun String?.takeIfNotBlank(): String? = this?.trim()?.takeIf { it.isNotBlank() }
 
 private const val MAX_RANDOM_BRANCH_DELTA = 0.2
+
+/**
+ * The engine config a track plays with: [DEFAULT_JUKEBOX_CONFIG] with the track's own saved
+ * params laid over it. Every param the track does not carry stays at its default, so nothing a
+ * previous track was tuned to can reach this one.
+ */
+internal fun trackTuningConfig(parsed: ParsedTuningParams?): JukeboxConfig {
+    if (parsed == null) return DEFAULT_JUKEBOX_CONFIG
+    var config = DEFAULT_JUKEBOX_CONFIG
+    parsed.justBackwards?.let { value ->
+        config = config.copy(justBackwards = value)
+    }
+    parsed.minJumpDistancePercent?.let { percent ->
+        config = config.withMinimumJumpDistancePercent(percent)
+    }
+    parsed.removeSequentialBranches?.let { value ->
+        config = config.copy(removeSequentialBranches = value)
+    }
+    parsed.threshold?.let { value ->
+        config = config.copy(currentThreshold = value)
+    }
+    parsed.minProbPercent?.let { value ->
+        config = config.copy(minRandomBranchChance = mapPercentToRange(value, 1.0))
+    }
+    parsed.maxProbPercent?.let { value ->
+        config = config.copy(maxRandomBranchChance = mapPercentToRange(value, 1.0))
+    }
+    parsed.rampPercent?.let { value ->
+        config = config.copy(
+            randomBranchChanceDelta = mapPercentToRange(value, MAX_RANDOM_BRANCH_DELTA)
+        )
+    }
+    return config
+}
+
+private fun mapPercentToRange(percent: Int, max: Double): Double {
+    val safe = percent.coerceIn(0, 100)
+    return (max * safe) / 100.0
+}
 
 /**
  * Snapshot of the engine's live tuning as a [TuningState], so on-device capture flows

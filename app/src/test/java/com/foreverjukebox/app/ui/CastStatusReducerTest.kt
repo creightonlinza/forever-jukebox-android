@@ -190,6 +190,24 @@ class CastStatusReducerTest {
     }
 
     @Test
+    fun parseCastStatusMessageIgnoresBranchPercentWhileLongBranchesAreOff() {
+        val parsed = parseCastStatusMessage(
+            """
+            {
+              "type":"status",
+              "tuning":{
+                "justLongBranches":false,
+                "minLongBranchPercent":5,
+                "branchProbability":{}
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertEquals(0, parsed?.tuning?.minLongBranchPercent)
+    }
+
+    @Test
     fun parseCastStatusMessageRejectsInvalidBranchPercentBeforeLegacyFallback() {
         val parsed = parseCastStatusMessage(
             """

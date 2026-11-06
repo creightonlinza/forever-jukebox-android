@@ -142,9 +142,15 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
         JukeboxAudioMode.fromWireValue(audioModeWireValue)
     )
     val justLongBranches = json.booleanValue("justLongBranches")
-    val minLongBranchPercent = json.intValue("minLongBranchPercent")
-        ?.takeIf { it == 0 || it in ALLOWED_BRANCH_LENGTHS }
-        ?: if (justLongBranches) DEFAULT_MIN_LONG_BRANCH_PERCENT else 0
+    // The percent applies only while the long-branch filter is on; with it off the receiver's
+    // distance setting is "any", whatever percent it still carries.
+    val minLongBranchPercent = if (justLongBranches) {
+        json.intValue("minLongBranchPercent")
+            ?.takeIf { it == 0 || it in ALLOWED_BRANCH_LENGTHS }
+            ?: DEFAULT_MIN_LONG_BRANCH_PERCENT
+    } else {
+        0
+    }
     return CastTuningStatus(
         justBackwards = json.booleanValue("justBackwards"),
         justLongBranches = justLongBranches,

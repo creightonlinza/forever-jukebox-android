@@ -44,6 +44,11 @@ internal fun minJumpDistancePercentForIndex(index: Int): Int {
     return MIN_JUMP_DISTANCE_OPTIONS[index.coerceIn(MIN_JUMP_DISTANCE_OPTIONS.indices)]
 }
 
+/** Rounded, not truncated: a slider stop that lands a hair under its index still reads as it. */
+internal fun minJumpDistancePercentForSliderValue(value: Float): Int {
+    return minJumpDistancePercentForIndex(value.roundToInt())
+}
+
 internal fun minJumpDistanceIndexForPercent(percent: Int): Int {
     return MIN_JUMP_DISTANCE_OPTIONS.indexOf(percent).coerceAtLeast(0)
 }
@@ -150,7 +155,7 @@ internal fun editedBranchTuningForm(
         maxProb = probRange.endInclusive.roundToInt(),
         ramp = ramp.roundToInt(),
         justBackwards = justBackwards,
-        minJumpDistancePercent = minJumpDistancePercentForIndex(minJumpIndex.toInt()),
+        minJumpDistancePercent = minJumpDistancePercentForSliderValue(minJumpIndex),
         removeSequential = removeSequential
     )
 }
@@ -224,7 +229,7 @@ fun TuningDialog(
         mutableFloatStateOf(AudioModeIntensity.clamp(initialAudioModeIntensity).toFloat())
     }
     val selectedMinJumpDistancePercent =
-        minJumpDistancePercentForIndex(minJumpIndex.toInt())
+        minJumpDistancePercentForSliderValue(minJumpIndex)
     val openedForm = openedBranchTuningForm(
         initialThreshold = initialThreshold,
         initialMinProb = initialMinProb,

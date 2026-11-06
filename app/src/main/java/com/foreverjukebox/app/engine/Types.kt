@@ -126,6 +126,14 @@ fun JukeboxConfig.toUpdate(): JukeboxConfigUpdate {
     )
 }
 
+/**
+ * The tuning every track starts from and every reset returns to. It is a constant rather than a
+ * snapshot of a live engine: the engine belongs to the process-lived playback controller and keeps
+ * the last track's tuning after the UI that tuned it is gone, so a snapshot taken from it can hold
+ * another track's settings.
+ */
+val DEFAULT_JUKEBOX_CONFIG = JukeboxConfig()
+
 fun JukeboxConfig.withMinimumJumpDistancePercent(percent: Int): JukeboxConfig {
     return copy(
         justLongBranches = percent > 0,

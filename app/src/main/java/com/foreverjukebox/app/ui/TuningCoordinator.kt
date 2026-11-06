@@ -3,6 +3,7 @@ package com.foreverjukebox.app.ui
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.AppPreferences
 import com.foreverjukebox.app.data.LOCAL_TRACK_ID_PREFIX
+import com.foreverjukebox.app.engine.DEFAULT_JUKEBOX_CONFIG
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
 import com.foreverjukebox.app.engine.MAX_THRESHOLD
@@ -24,7 +25,7 @@ internal data class CastTuningUpdate(
 internal const val AUTO_THRESHOLD_WIRE_VALUE = 0
 
 internal fun buildCastTuningResetParams(
-    defaultConfig: JukeboxConfig,
+    defaultConfig: JukeboxConfig = DEFAULT_JUKEBOX_CONFIG,
     randomBranchDeltaPercentScale: Double,
     preservedAudioModeWireValue: String = JukeboxAudioMode.Off.wireValue,
     preservedAudioModeIntensity: Int = AudioModeIntensity.DEFAULT
@@ -193,7 +194,6 @@ private fun TuningState.branchProbabilityFields(): CastBranchProbabilityFields {
 
 class TuningCoordinator(
     private val engine: JukeboxEngine,
-    private val defaultConfig: JukeboxConfig,
     private val preferences: AppPreferences,
     private val playbackCoordinator: PlaybackCoordinator,
     private val castPlaybackCoordinator: CastPlaybackCoordinator,
@@ -378,7 +378,6 @@ class TuningCoordinator(
         val currentState = getState()
         castPlaybackCoordinator.sendCastTuningParams(
             buildCastTuningResetParams(
-                defaultConfig = defaultConfig,
                 randomBranchDeltaPercentScale = randomBranchDeltaPercentScale,
                 preservedAudioModeWireValue = currentState.playback.castAudioModeWireValue,
                 preservedAudioModeIntensity = currentState.playback.castAudioModeIntensity
@@ -400,7 +399,7 @@ class TuningCoordinator(
         val preservedHighlight = getState().tuning.highlightAnchorBranch
         val vizData = withContext(Dispatchers.Default) {
             engine.clearDeletedEdges()
-            engine.updateConfig(defaultConfig.copy(currentThreshold = 0))
+            engine.updateConfig(DEFAULT_JUKEBOX_CONFIG)
             engine.rebuildGraph()
             engine.getVisualizationData()
         }

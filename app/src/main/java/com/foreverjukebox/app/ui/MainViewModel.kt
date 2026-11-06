@@ -309,7 +309,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         it.attachOwner(controllerOwnerToken)
     }
     private val engine = controller.engine
-    private val defaultConfig = engine.getConfig()
     private val json = Json { ignoreUnknownKeys = true }
     private val localAnalysisService = LocalAnalysisService.create(application)
     private val loadingAudioFeedbackController = LoadingAudioFeedbackController(
@@ -380,7 +379,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         controller = controller,
         engine = engine,
         json = json,
-        defaultConfig = defaultConfig,
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
         updatePlaybackState = ::updatePlaybackState,
@@ -468,7 +466,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     private val tuningCoordinator = TuningCoordinator(
         engine = engine,
-        defaultConfig = defaultConfig,
         preferences = preferences,
         playbackCoordinator = playbackCoordinator,
         castPlaybackCoordinator = castPlaybackCoordinator,
