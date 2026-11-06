@@ -449,10 +449,11 @@ class PlaybackController {
     /** True while a ViewModel owns the loaded audio and the playback service session. */
     fun hasOwner(): Boolean = owner != null
 
-    // The controller outlives any single ViewModel (see PlaybackControllerHolder), so a
-    // ViewModel going away must only drop what that ViewModel owned: audio focus, any
-    // parked play, scheduled overlay hits, and the decoded audio. Everything released
-    // here is rebuilt lazily on the next load; nothing is latched shut.
+    // The controller outlives any single ViewModel (see PlaybackControllerHolder). A ViewModel
+    // goes away only when its activity closes for good (exit, swipe from Recents), and
+    // playback ends with it, so the next ViewModel must find the controller as a cold start
+    // would: no track, default tuning, transport stopped. Everything released here is rebuilt
+    // lazily on the next load; nothing is latched shut.
     fun detachOwner(token: Any) {
         if (owner !== token) return
         owner = null
@@ -461,7 +462,13 @@ class PlaybackController {
         cowbellOverlay.cancelScheduledHits()
         autocanonizer.release()
         wubMachine.release()
-        player.release()
+        engine.reset()
+        setJukeboxAudioMode(JukeboxAudioMode.Off)
+        cowbellOverlay.setSectionStartBeatIndices(emptyList())
+        setTrackMeta(null, null)
+        markTransportStopped()
+        resetTimers()
+        player.clear()
     }
 
     private companion object {

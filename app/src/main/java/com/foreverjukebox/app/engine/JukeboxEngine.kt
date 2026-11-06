@@ -66,6 +66,9 @@ class JukeboxEngine(
         options.config?.let { updateConfig(it) }
     }
 
+    // The config this engine was built with, which reset() returns to.
+    private val initialConfig = config
+
     fun onUpdate(callback: (JukeboxState) -> Unit) {
         listeners.add(callback)
     }
@@ -103,6 +106,17 @@ class JukeboxEngine(
         beatColors = emptyList()
         resetState()
         syncAnchorJump()
+    }
+
+    /**
+     * Returns the engine to the state it was built in: stopped, no track, the config it started
+     * with. The engine can outlive the UI that drove it, and this is what keeps one session's
+     * track and tuning from reaching the next.
+     */
+    fun reset() {
+        stopJukebox()
+        clearAnalysis()
+        config = initialConfig
     }
 
     fun getGraphState(): JukeboxGraphState? = graph
