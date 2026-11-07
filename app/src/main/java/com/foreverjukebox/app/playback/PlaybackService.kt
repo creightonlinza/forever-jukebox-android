@@ -85,14 +85,15 @@ internal enum class MediaButtonStartAction {
 }
 
 /**
- * Covers the media-button starts that arrive as startForegroundService before API 33,
- * where Media3 only promotes once playback engages. The notification's play button is one:
- * a press that cannot start playback (audio focus denied, a retry, nothing loaded) would
- * leave the start unmet. Before API 31 the session's stored media-button target is this
- * service, so a key after process death starts it with no session to show. On API 31 and
- * 32 a paused notification that outlived its process (Media3 leaves the foreground after
- * a long pause, so the system no longer removes it with the process) starts it the same
- * way from its play button.
+ * Covers the media-button starts that arrive as startForegroundService, where Media3 only
+ * promotes once playback engages. The notification's play button is one: a press that
+ * cannot start playback (audio focus denied, a retry, nothing loaded) would leave the start
+ * unmet. Before API 31 the session's stored media-button target is this service, so a key
+ * after process death starts it with no session to show. From API 31 a paused notification
+ * that outlived its process (Media3 leaves the foreground after a long pause, so the system
+ * no longer removes it with the process) starts it the same way from its play button. From
+ * API 33 the system media controls drive the session directly, but that play button is
+ * still a foreground start for anything else that fires the notification's actions.
  */
 internal fun resolveMediaButtonStart(
     sdkInt: Int,
@@ -101,7 +102,7 @@ internal fun resolveMediaButtonStart(
 ): MediaButtonStartAction {
     // Not gated on the service already being in the foreground: Media3 can leave it
     // without notifying the service, and re-promoting a foreground service is harmless.
-    if (keyCode == null || sdkInt >= Build.VERSION_CODES.TIRAMISU) {
+    if (keyCode == null) {
         return MediaButtonStartAction.None
     }
     val isPlayKey = keyCode == KeyEvent.KEYCODE_MEDIA_PLAY ||

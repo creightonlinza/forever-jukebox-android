@@ -14,14 +14,13 @@ class MediaButtonForegroundPolicyTest {
     ) = resolveMediaButtonStart(sdkInt, sessionVisible, keyCode)
 
     @Test
-    fun notificationPlayPressBeforeApi33PromotesTheSession() {
+    fun notificationPlayPressPromotesTheSession() {
         listOf(KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE).forEach { keyCode ->
             assertEquals(MediaButtonStartAction.PromoteSession, resolve(keyCode = keyCode))
         }
-        assertEquals(
-            MediaButtonStartAction.PromoteSession,
-            resolve(sdkInt = Build.VERSION_CODES.S_V2)
-        )
+        listOf(Build.VERSION_CODES.S_V2, Build.VERSION_CODES.TIRAMISU).forEach { sdkInt ->
+            assertEquals(MediaButtonStartAction.PromoteSession, resolve(sdkInt = sdkInt))
+        }
     }
 
     @Test
@@ -30,15 +29,6 @@ class MediaButtonForegroundPolicyTest {
         // trusts a cached foreground flag.
         assertEquals(MediaButtonStartAction.PromoteSession, resolve())
         assertEquals(MediaButtonStartAction.ShutDown, resolve(sessionVisible = false))
-    }
-
-    @Test
-    fun api33AndLaterDrivesNotificationButtonsThroughTheSession() {
-        assertEquals(MediaButtonStartAction.None, resolve(sdkInt = Build.VERSION_CODES.TIRAMISU))
-        assertEquals(
-            MediaButtonStartAction.None,
-            resolve(sdkInt = Build.VERSION_CODES.TIRAMISU, sessionVisible = false)
-        )
     }
 
     @Test
@@ -64,8 +54,13 @@ class MediaButtonForegroundPolicyTest {
     }
 
     @Test
-    fun api31And32PlayPressOnANotificationThatOutlivedItsProcessShutsTheServiceDown() {
-        listOf(Build.VERSION_CODES.S, Build.VERSION_CODES.S_V2).forEach { sdkInt ->
+    fun api31AndLaterPlayPressOnANotificationThatOutlivedItsProcessShutsTheServiceDown() {
+        listOf(
+            Build.VERSION_CODES.S,
+            Build.VERSION_CODES.S_V2,
+            Build.VERSION_CODES.TIRAMISU,
+            Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+        ).forEach { sdkInt ->
             assertEquals(
                 MediaButtonStartAction.ShutDown,
                 resolve(sdkInt = sdkInt, sessionVisible = false)
@@ -74,12 +69,14 @@ class MediaButtonForegroundPolicyTest {
     }
 
     @Test
-    fun api31And32OtherKeysOnAnEmptySessionNeedNothing() {
-        listOf(KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS).forEach { keyCode ->
-            assertEquals(
-                MediaButtonStartAction.None,
-                resolve(sdkInt = Build.VERSION_CODES.S, sessionVisible = false, keyCode = keyCode)
-            )
+    fun api31AndLaterOtherKeysOnAnEmptySessionNeedNothing() {
+        listOf(Build.VERSION_CODES.S, Build.VERSION_CODES.TIRAMISU).forEach { sdkInt ->
+            listOf(KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS).forEach { keyCode ->
+                assertEquals(
+                    MediaButtonStartAction.None,
+                    resolve(sdkInt = sdkInt, sessionVisible = false, keyCode = keyCode)
+                )
+            }
         }
     }
 
