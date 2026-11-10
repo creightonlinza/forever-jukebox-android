@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -210,22 +211,26 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 }
                 else -> viewModel::cancelLocalAnalysis.takeIf { shouldShowLocalLoadingCancel(state.appMode, playback) }
             }
-            LoadingStatus(
-                loading = shown,
-                onFinished = presented.onFinished,
-                trackTitle = loadingTrackMetadata?.title,
-                trackArtist = loadingTrackMetadata?.artist,
-                playAfterLoaded = playback.playAfterLoaded,
-                // The option stays while a finished load plays out its steps. A loaded track decoding
-                // its audio again already has a play request waiting.
-                showPlayAfterLoaded = !shown.task.mode && (
-                    shown.finished ||
-                        (!playback.analysisLoaded && shouldShowPlayAfterLoadedOption(state.appMode, playback))
-                    ),
-                onPlayAfterLoadedChange = viewModel::setPlayAfterLoaded,
-                showCancel = onCancel != null,
-                onCancel = onCancel ?: {}
-            )
+            // Auto-play may already have taken the play request while a finished load plays out.
+            val playStarted = shown.finished && playback.isRunning
+            key(presented.presentation) {
+                LoadingStatus(
+                    loading = shown,
+                    onFinished = presented.onFinished,
+                    trackTitle = loadingTrackMetadata?.title,
+                    trackArtist = loadingTrackMetadata?.artist,
+                    playAfterLoaded = playback.playAfterLoaded || playStarted,
+                    // The option stays while a finished load plays out its steps. A loaded track decoding
+                    // its audio again already has a play request waiting.
+                    showPlayAfterLoaded = !shown.task.mode && (
+                        shown.finished ||
+                            (!playback.analysisLoaded && shouldShowPlayAfterLoadedOption(state.appMode, playback))
+                        ),
+                    onPlayAfterLoadedChange = viewModel::setPlayAfterLoaded.takeIf { !playStarted },
+                    showCancel = onCancel != null,
+                    onCancel = onCancel ?: {}
+                )
+            }
         }
 
         val showSavedPlaylist = shouldShowSavedPlaylistButton(state)

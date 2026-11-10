@@ -289,15 +289,17 @@ class PlaybackCoordinator(
         updatePlaybackState { it.copy(loadingStep = step) }
     }
 
-    // A job id is known: the analysis steps while the server reports work, else the single cached-track step.
+    // A job id is known: the analysis steps while the server reports work, else the single cached-track
+    // step. An analysis already on screen ends on its own last step.
     fun setJobLoadingStep(status: String?, progress: Double?, message: String?) {
-        setLoadingStep(
-            if (status != null && isAnalysisInProgressStatus(status)) {
-                serverJobLoadingStep(status, progress, message)
-            } else {
-                LoadingStep(LoadingTask.Track, LoadingStepId.Track)
+        updatePlaybackState { playback ->
+            val step = when {
+                status != null && isAnalysisInProgressStatus(status) -> serverJobLoadingStep(status, progress, message)
+                playback.loadingStep?.task == LoadingTask.ServerAnalysis -> playback.loadingStep.toTrackStep()
+                else -> LoadingStep(LoadingTask.Track, LoadingStepId.Track)
             }
-        )
+            playback.copy(loadingStep = step)
+        }
     }
 
     // The job is done; what is left is loading the audio and the branch graph, shown on the last step.

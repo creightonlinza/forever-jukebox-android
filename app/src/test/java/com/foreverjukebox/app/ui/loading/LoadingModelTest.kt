@@ -39,6 +39,13 @@ class LoadingModelTest {
         assertEquals(ShownLoading(LoadingTask.Track, "a"), presentNext(analysis, live(LoadingTask.Track)))
         assertEquals(ShownLoading(LoadingTask.Track, "b"), presentNext(analysis, live(LoadingTask.Track, "b")))
         assertNull(presentNext(analysis, null))
+        // A mode render replaces another mode render at once, as on the web.
+        val remix = ShownLoading(LoadingTask.WubMachine, "a")
+        assertEquals(
+            ShownLoading(LoadingTask.WubMachineWithSamples, "a"),
+            presentNext(remix, live(LoadingTask.WubMachineWithSamples))
+        )
+        assertEquals(ShownLoading(LoadingTask.Swing, "a"), presentNext(remix, live(LoadingTask.Swing)))
         assertEquals(ShownLoading(LoadingTask.Swing, "a"), afterPresentation(live(LoadingTask.Swing)))
         assertNull(afterPresentation(live(LoadingTask.Swing, finished = true)))
     }

@@ -1106,7 +1106,8 @@ internal fun LoadingStatus(
     trackArtist: String? = null,
     playAfterLoaded: Boolean = false,
     showPlayAfterLoaded: Boolean = false,
-    onPlayAfterLoadedChange: (Boolean) -> Unit = {},
+    // Null shows the option without letting it change.
+    onPlayAfterLoadedChange: ((Boolean) -> Unit)? = {},
     showCancel: Boolean = false,
     onCancel: () -> Unit = {}
 ) {

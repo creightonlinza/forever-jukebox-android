@@ -129,12 +129,14 @@ fun advanceView(view: PacedView, real: RealStep, count: Int, nowMs: Long, dtMs: 
 data class ShownLoading(val task: LoadingTask, val key: String)
 
 // Plays out one task at a time: a finished load stays on screen until its steps have played out, a mode
-// render for the same track waits behind it, and any other new task or track replaces it. Null live hides.
+// render for the same track waits behind a track load, and any other new task or track replaces it.
+// Null live hides.
 fun presentNext(shown: ShownLoading?, live: LiveLoading?): ShownLoading? {
     if (live == null) {
         return null
     }
-    val replaces = shown == null || shown.key != live.key || (shown.task != live.task && !live.task.mode)
+    val waits = live.task.mode && shown?.task?.mode != true
+    val replaces = shown == null || shown.key != live.key || (shown.task != live.task && !waits)
     if (!replaces) {
         return shown
     }

@@ -52,10 +52,8 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -67,7 +65,8 @@ import com.foreverjukebox.app.ui.LocalThemeTokens
 import com.foreverjukebox.app.ui.neonFontFamily
 import kotlinx.coroutines.delay
 
-data class PresentedLoading(val shown: LiveLoading?, val onFinished: () -> Unit)
+// `presentation` changes each time a shown task plays out, so the same task shown again starts fresh.
+data class PresentedLoading(val shown: LiveLoading?, val onFinished: () -> Unit, val presentation: Int)
 
 // Plays out one task at a time (see presentNext); the shown load keeps its last state once replaced.
 @Composable
@@ -81,14 +80,20 @@ fun rememberPresentedLoading(live: LiveLoading?): PresentedLoading {
     if (showingLive) {
         lastShown[0] = live
     }
-    val onFinished = remember { { shown = afterPresentation(latest) } }
+    var presentation by remember { mutableIntStateOf(0) }
+    val onFinished = remember {
+        {
+            presentation += 1
+            shown = afterPresentation(latest)
+        }
+    }
     val snapshot = lastShown[0]
     val result = when {
         next == null || snapshot == null -> null
         showingLive -> snapshot
         else -> snapshot.copy(finished = true)
     }
-    return PresentedLoading(result, onFinished)
+    return PresentedLoading(result, onFinished, presentation)
 }
 
 private class StepTimes {
@@ -184,9 +189,7 @@ fun LoadingProgress(
             .semantics {
                 contentDescription = loading.task.title
                 progressBarRangeInfo = ProgressBarRangeInfo(percent / 100f, 0f..1f)
-                // Screen readers announce the step change, not every percent.
                 stateDescription = activeLabel
-                liveRegion = LiveRegionMode.Polite
             },
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
