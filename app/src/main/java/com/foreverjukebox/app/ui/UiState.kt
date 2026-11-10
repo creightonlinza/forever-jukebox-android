@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.ui.loading.LoadingStep
 import com.foreverjukebox.app.autocanonizer.AutocanonizerData
 import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
@@ -297,6 +298,12 @@ data class PlaybackState(
     val analysisInFlight: Boolean = false,
     val analysisCalculating: Boolean = false,
     val audioLoading: Boolean = false,
+    // The active step of the track load in progress; null before the load has a job id or after it ends.
+    val loadingStep: LoadingStep? = null,
+    // True while the loading screen plays out its steps; playback stays hidden until then.
+    val loadingShown: Boolean = false,
+    // Bumped for every new track, so the loading screen can tell one track's load from the next.
+    val loadSerial: Int = 0,
     val playTitle: String = "",
     val audioLoaded: Boolean = false,
     val analysisLoaded: Boolean = false,
@@ -310,6 +317,8 @@ data class PlaybackState(
     val wubProgress: Int? = null,
     // True while that render is decoding its samples, before any of the remix is built.
     val wubLoadingSamples: Boolean = false,
+    // True once the render in flight has loaded samples, so the loading screen keeps that step.
+    val wubRenderLoadedSamples: Boolean = false,
     // Set when the last remix render failed; the next play request clears it and retries.
     val wubRenderFailed: Boolean = false,
     val wubMachine: WubMachineUiState = WubMachineUiState(),

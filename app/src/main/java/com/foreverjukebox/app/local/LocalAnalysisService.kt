@@ -166,11 +166,13 @@ class LocalAnalysisService(
         val localId = "$LOCAL_TRACK_ID_PREFIX$cacheKey"
         val analysisFile = cacheDir.resolve("$cacheKey.analysis.json")
         logInfo("Local analysis start: localId=$localId")
-        fun emitProgress(percent: Int, status: String) {
+        fun emitProgress(percent: Int, status: String, stage: LocalAnalysisStage, stageProgress: Float? = null) {
             trySend(
                 LocalAnalysisUpdate.Progress(
                     percent = percent.coerceIn(0, 100),
-                    status = status
+                    status = status,
+                    stage = stage,
+                    stageProgress = stageProgress
                 )
             )
         }
@@ -178,7 +180,7 @@ class LocalAnalysisService(
         try {
             runExclusively(runCancelled) {
                 if (analysisFile.exists()) {
-                    emitProgress(95, "Wrapping up")
+                    emitProgress(95, "Wrapping up", LocalAnalysisStage.Cached)
                     val cachedText = analysisFile.readText()
                     val cachedJson = json.parseToJsonElement(cachedText)
                     val cachedTitle = extractTrackField(cachedJson, "title") ?: fallbackTitle
@@ -192,7 +194,7 @@ class LocalAnalysisService(
                             updatedAtEpochMs = System.currentTimeMillis()
                         )
                     )
-                    emitProgress(100, "Wrapping up")
+                    emitProgress(100, "Wrapping up", LocalAnalysisStage.Cached)
                     trySend(
                         LocalAnalysisUpdate.Completed(
                             LocalAnalysisArtifact(
@@ -209,22 +211,22 @@ class LocalAnalysisService(
                     return@runExclusively
                 }
 
-                emitProgress(1, "Processing audio")
+                emitProgress(1, "Processing audio", LocalAnalysisStage.Decode)
                 logInfo("Stage Decoding start")
                 val decoded = decoder.decodeToMono(uriString) { decodePercent ->
                     val mapped = 1 + (decodePercent * 0.19).toInt()
-                    emitProgress(mapped, "Processing audio")
+                    emitProgress(mapped, "Processing audio", LocalAnalysisStage.Decode)
                 }
                 logInfo(
                     "Stage Decoding complete: samples=${decoded.monoSamples.size}, sampleRate=${decoded.sampleRate}, heap=${heapSummary()}"
                 )
                 ensureNotCancelled(runCancelled)
 
-                emitProgress(22, "Processing audio")
+                emitProgress(22, "Processing audio", LocalAnalysisStage.Decode)
                 var monoSource: FloatArray? = decoded.monoSamples
                 ensureNotCancelled(runCancelled)
 
-                emitProgress(30, "Processing audio")
+                emitProgress(30, "Processing audio", LocalAnalysisStage.Decode)
                 logInfo("Stage Resample 22050 start: sourceSamples=${monoSource!!.size}, heap=${heapSummary()}")
                 val mono22050 = resampler.resample(monoSource!!, decoded.sampleRate, 22_050)
                 logInfo("Stage Resample 22050 complete: samples=${mono22050.size}, heap=${heapSummary()}")
@@ -235,10 +237,7 @@ class LocalAnalysisService(
                 decoded.monoSamples = FloatArray(0)
                 ensureNotCancelled(runCancelled)
 
-                emitProgress(45, "Processing features")
-                ensureNotCancelled(runCancelled)
-
-                emitProgress(62, "Processing audio")
+                emitProgress(40, "Processing audio", LocalAnalysisStage.Decode)
                 logInfo("Stage Upsample 44100 start: sourceSamples=${mono22050.size}, heap=${heapSummary()}")
                 val mono44100From22050 = resampler.resample(mono22050, 22_050, 44_100)
                 logInfo("Stage Upsample 44100 complete: samples=${mono44100From22050.size}, heap=${heapSummary()}")
@@ -264,24 +263,18 @@ class LocalAnalysisService(
                     artist = resolvedArtist,
                     madmomBeatsPortModels = madmomBeatsPortModels
                 ) { stage, stagePercent ->
-                    val mapped = when (stage) {
-                        "Essentia features" -> 45 + (stagePercent * 0.24).toInt()
-                        "madmom beats" -> 70 + (stagePercent * 0.20).toInt()
-                        else -> null
-                    }
-                    if (mapped != null) {
-                        val status = when (stage) {
-                            "Essentia features" -> "Processing features"
-                            "madmom beats" -> "Processing beats"
-                            else -> "Processing audio"
-                        }
-                        emitProgress(mapped, status)
+                    val fraction = stagePercent / 100f
+                    when (stage) {
+                        "madmom beats" ->
+                            emitProgress(45 + (stagePercent * 0.24).toInt(), "Processing beats", LocalAnalysisStage.Beats, fraction)
+                        "Essentia features" ->
+                            emitProgress(70 + (stagePercent * 0.20).toInt(), "Processing features", LocalAnalysisStage.Features, fraction)
                     }
                 }
                 logInfo("Stage Analyzer complete: heap=${heapSummary()}")
                 ensureNotCancelled(runCancelled)
 
-                emitProgress(95, "Wrapping up")
+                emitProgress(95, "Wrapping up", LocalAnalysisStage.WrapUp)
                 // The cache directory can disappear between the start of a long
                 // analysis and this write: the OS trims app caches under storage
                 // pressure, and Settings' "Clear cache" removes the whole tree.
@@ -297,7 +290,7 @@ class LocalAnalysisService(
                     )
                 )
 
-                emitProgress(100, "Wrapping up")
+                emitProgress(100, "Wrapping up", LocalAnalysisStage.WrapUp)
                 trySend(
                     LocalAnalysisUpdate.Completed(
                         LocalAnalysisArtifact(

@@ -39,13 +39,14 @@ class LocalAnalysisServiceTest {
         val updates = service.analyze("file:///tmp/test.mp3", "Fixture Track").toList()
         val stageOrder = updates
             .filterIsInstance<LocalAnalysisUpdate.Progress>()
-            .map { it.status }
+            .map { it.stage }
             .distinct()
 
-        assertTrue(stageOrder.contains("Processing audio"))
-        assertTrue(stageOrder.contains("Processing features"))
-        assertTrue(stageOrder.contains("Processing beats"))
-        assertTrue(stageOrder.contains("Wrapping up"))
+        // Beats run before features, as in the web app.
+        assertEquals(
+            listOf(LocalAnalysisStage.Decode, LocalAnalysisStage.Beats, LocalAnalysisStage.Features, LocalAnalysisStage.WrapUp),
+            stageOrder
+        )
         assertTrue(updates.any { it is LocalAnalysisUpdate.Completed })
     }
 
@@ -493,6 +494,8 @@ private class FakeAnalyzer : LocalAnalyzer {
     ) = buildJsonObject {
         onStageProgress("madmom beats", 50)
         onStageProgress("madmom beats", 100)
+        onStageProgress("Essentia features", 50)
+        onStageProgress("Essentia features", 100)
         put("engine_version", JsonPrimitive(1))
         put("engine_origin", JsonPrimitive("forever-jukebox-android"))
         put(

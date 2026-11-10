@@ -1,5 +1,8 @@
 package com.foreverjukebox.app.ui
 
+import androidx.compose.runtime.key
+import com.foreverjukebox.app.ui.loading.LiveLoading
+import com.foreverjukebox.app.ui.loading.LoadingProgress
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -1032,6 +1035,8 @@ internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMod
         playback.isCasting -> ListenContentMode.Cast
         // A render's progress (swing copy or Wub Machine remix) takes over the screen until it finishes.
         playback.isPreparingRenderedAudio() -> ListenContentMode.None
+        // The loading screen plays out its steps before playback appears.
+        playback.loadingShown -> ListenContentMode.None
         playback.audioLoaded && playback.analysisLoaded -> ListenContentMode.LocalReady
         !playback.analysisInFlight &&
             !playback.analysisCalculating &&
@@ -1041,8 +1046,7 @@ internal fun resolveListenContentMode(playback: PlaybackState): ListenContentMod
     }
 }
 
-// The shared spinner + percentage + message block, used by both the full-screen LoadingStatus and
-// the cast screen's status area.
+// The spinner + percentage + message block of the cast screen's status area.
 @Composable
 internal fun LoadingProgressIndicator(
     progress: Int?,
@@ -1096,13 +1100,14 @@ internal fun LoadingProgressIndicator(
 
 @Composable
 internal fun LoadingStatus(
-    progress: Int?,
-    label: String?,
+    loading: LiveLoading,
+    onFinished: () -> Unit,
     trackTitle: String? = null,
     trackArtist: String? = null,
     playAfterLoaded: Boolean = false,
     showPlayAfterLoaded: Boolean = false,
-    onPlayAfterLoadedChange: (Boolean) -> Unit = {},
+    // Null shows the option without letting it change.
+    onPlayAfterLoadedChange: ((Boolean) -> Unit)? = {},
     showCancel: Boolean = false,
     onCancel: () -> Unit = {}
 ) {
@@ -1116,50 +1121,40 @@ internal fun LoadingStatus(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        LoadingProgressIndicator(
-            progress = progress,
-            label = label,
-            showCancel = showCancel,
-            onCancel = onCancel
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (trackLine != null) {
+        // A new task or track starts its own pacing.
+        key(loading.task, loading.key) {
+            LoadingProgress(loading = loading, onFinished = onFinished, heading = trackLine)
+        }
+        if (showPlayAfterLoaded) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = playAfterLoaded,
+                    onCheckedChange = onPlayAfterLoadedChange
+                )
                 Text(
-                    text = trackLine,
+                    text = "Play when ready",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (showPlayAfterLoaded) {
-                Row(
-                    modifier = Modifier.padding(top = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = playAfterLoaded,
-                        onCheckedChange = onPlayAfterLoadedChange
-                    )
-                    Text(
-                        text = "Play when ready",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+        }
+        if (showCancel) {
+            OutlinedButton(
+                onClick = onCancel,
+                colors = pillOutlinedButtonColors(),
+                border = pillButtonBorder(),
+                shape = PillShape,
+                contentPadding = SmallButtonPadding,
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .height(SmallButtonHeight)
+            ) {
+                Text("Cancel", style = MaterialTheme.typography.labelSmall)
             }
         }
-        Spacer(modifier = Modifier.weight(1f))
     }
 }

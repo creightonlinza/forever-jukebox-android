@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.ui.loading.LoadingTask
+import com.foreverjukebox.app.ui.loading.rememberPresentedLoading
 import android.content.Intent
 import android.os.Build
 import android.widget.Toast
@@ -29,8 +31,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -173,6 +177,16 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         viewModel.consumeExportResult()
     }
 
+    val presented = rememberPresentedLoading(liveLoading(playback))
+    val loadingShown = presented.shown != null
+    LaunchedEffect(loadingShown) {
+        viewModel.setLoadingShown(loadingShown)
+    }
+    // Leaving the Play tab drops the screen, so playback is not hidden on the other tabs.
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.setLoadingShown(false) }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -186,41 +200,37 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     null
                 }
             )
-        } else if (!playback.isCasting && (playback.analysisInFlight || playback.analysisCalculating || playback.audioLoading)) {
-            LoadingStatus(
-                progress = playback.analysisProgress,
-                label = when {
-                    playback.analysisCalculating -> "Calculating pathways"
-                    playback.analysisInFlight -> playback.analysisMessage ?: "Fetching audio"
-                    else -> "Fetching audio"
-                },
-                trackTitle = loadingTrackMetadata?.title,
-                trackArtist = loadingTrackMetadata?.artist,
-                playAfterLoaded = playback.playAfterLoaded,
-                showPlayAfterLoaded = shouldShowPlayAfterLoadedOption(state.appMode, playback),
-                onPlayAfterLoadedChange = viewModel::setPlayAfterLoaded,
-                showCancel = shouldShowLocalLoadingCancel(state.appMode, playback),
-                onCancel = viewModel::cancelLocalAnalysis
-            )
-        } else if (playback.isPreparingSwing()) {
-            LoadingStatus(
-                progress = playback.swingProgress,
-                label = "Adding swing to the track...",
-                trackTitle = loadingTrackMetadata?.title,
-                trackArtist = loadingTrackMetadata?.artist,
-                showCancel = true,
-                onCancel = viewModel::resetAudioModeDefaults
-            )
-        } else if (playback.isPreparingWubMachine()) {
-            // Cancelling the render leaves the mode, as the web app does when the remix is abandoned.
-            LoadingStatus(
-                progress = playback.wubProgress,
-                label = "${preparingWubMachineLabel(playback)}...",
-                trackTitle = loadingTrackMetadata?.title,
-                trackArtist = loadingTrackMetadata?.artist,
-                showCancel = true,
-                onCancel = { viewModel.selectPlaybackMode(PlaybackMode.Jukebox) }
-            )
+        } else if (presented.shown != null) {
+            val shown = presented.shown
+            // Finished work plays out its last step with nothing left to cancel.
+            val onCancel: (() -> Unit)? = if (shown.finished) null else when (shown.task) {
+                LoadingTask.Swing -> viewModel::resetAudioModeDefaults
+                // Cancelling the render leaves the mode, as the web app does when the remix is abandoned.
+                LoadingTask.WubMachine, LoadingTask.WubMachineWithSamples -> {
+                    { viewModel.selectPlaybackMode(PlaybackMode.Jukebox) }
+                }
+                else -> viewModel::cancelLocalAnalysis.takeIf { shouldShowLocalLoadingCancel(state.appMode, playback) }
+            }
+            // Auto-play may already have taken the play request while a finished load plays out.
+            val playStarted = shown.finished && playback.isRunning
+            key(presented.presentation) {
+                LoadingStatus(
+                    loading = shown,
+                    onFinished = presented.onFinished,
+                    trackTitle = loadingTrackMetadata?.title,
+                    trackArtist = loadingTrackMetadata?.artist,
+                    playAfterLoaded = playback.playAfterLoaded || playStarted,
+                    // The option stays while a finished load plays out its steps. A loaded track decoding
+                    // its audio again already has a play request waiting.
+                    showPlayAfterLoaded = !shown.task.mode && (
+                        shown.finished ||
+                            (!playback.analysisLoaded && shouldShowPlayAfterLoadedOption(state.appMode, playback))
+                        ),
+                    onPlayAfterLoadedChange = viewModel::setPlayAfterLoaded.takeIf { !playStarted },
+                    showCancel = onCancel != null,
+                    onCancel = onCancel ?: {}
+                )
+            }
         }
 
         val showSavedPlaylist = shouldShowSavedPlaylistButton(state)

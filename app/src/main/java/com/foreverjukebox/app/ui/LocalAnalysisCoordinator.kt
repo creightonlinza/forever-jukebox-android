@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.ui.loading.localLoadingStep
 import android.app.Application
 import android.net.Uri
 import androidx.core.net.toUri
@@ -89,6 +90,7 @@ class LocalAnalysisCoordinator(
                         when (update) {
                             is LocalAnalysisUpdate.Progress -> {
                                 playbackCoordinator.setAnalysisProgress(update.percent, update.status)
+                                playbackCoordinator.setLoadingStep(localLoadingStep(update.stage, update.stageProgress))
                             }
                             is LocalAnalysisUpdate.Completed -> {
                                 diagnostics.logAnalysisCompleted(source)
