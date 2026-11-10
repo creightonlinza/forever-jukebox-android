@@ -31,10 +31,16 @@ data class CachedLocalAnalysis(
     val lastUpdatedEpochMs: Long
 )
 
+// Pipeline stages in run order; Cached marks a stored analysis that skips them.
+enum class LocalAnalysisStage { Decode, Beats, Features, WrapUp, Cached }
+
 sealed interface LocalAnalysisUpdate {
     data class Progress(
         val percent: Int,
-        val status: String
+        val status: String,
+        val stage: LocalAnalysisStage,
+        // 0..1 within the stage; null when the stage reports no progress.
+        val stageProgress: Float? = null
     ) : LocalAnalysisUpdate
 
     data class Completed(

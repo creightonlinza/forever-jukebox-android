@@ -34,6 +34,7 @@ class RemoteTrackLoadCoordinator(
     suspend fun loadOrPoll(response: TrackAnalysisResult, fallbackJobId: String? = null): Boolean {
         val jobId = canonicalJobId(response.id) ?: canonicalJobId(fallbackJobId) ?: return false
         playbackCoordinator.setLastJobId(jobId)
+        playbackCoordinator.setJobLoadingStep(response.status, response.progress, response.message)
         playbackCoordinator.updateDeleteEligibility(response)
         if (!getState().playback.audioLoaded && playbackCoordinator.tryLoadCachedTrack(jobId)) {
             return true

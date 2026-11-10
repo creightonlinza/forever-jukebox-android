@@ -1,5 +1,8 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.ui.loading.LoadingStep
+import com.foreverjukebox.app.ui.loading.LoadingStepId
+import com.foreverjukebox.app.ui.loading.LoadingTask
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.ContentResolver
@@ -1493,6 +1496,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPlayAfterLoaded(checked: Boolean) {
         updatePlaybackState { it.copy(playAfterLoaded = checked) }
+        // Checked after the load ended, while its screen plays out.
+        maybeStartPlayAfterLoaded()
+    }
+
+    fun setLoadingShown(shown: Boolean) {
+        updatePlaybackState { if (it.loadingShown == shown) it else it.copy(loadingShown = shown) }
     }
 
     private fun maybeStartPlayAfterLoaded() {
@@ -2081,6 +2090,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playlistTrackForServerTrack(responseId, resolvedTitle, resolvedArtist, null)
             )
             playbackCoordinator.setAnalysisQueued(response.progress?.roundToInt(), response.message)
+            playbackCoordinator.setJobLoadingStep(response.status, response.progress, response.message)
             playbackCoordinator.setLastJobId(responseId)
             playbackCoordinator.startPoll(responseId)
             true
@@ -2305,6 +2315,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     viewModelScope.launch {
                         if (requestJob?.isActive != false) {
                             playbackCoordinator.setAnalysisProgress(percent, "Uploading...")
+                            playbackCoordinator.setLoadingStep(
+                                LoadingStep(LoadingTask.ServerAnalysis, LoadingStepId.Fetch, percent / 100f)
+                            )
                         }
                     }
                 }
@@ -2767,6 +2780,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playlistTrackForServerTrack(responseId, resolvedTitle, resolvedArtist, tuningParams)
             )
             playbackCoordinator.setAnalysisQueued(started.progress?.roundToInt(), started.message)
+            playbackCoordinator.setJobLoadingStep(started.status, started.progress, started.message)
             playbackCoordinator.setLastJobId(responseId)
             playbackCoordinator.startPoll(responseId)
             true

@@ -120,7 +120,7 @@ internal class WubMachineCoordinator(
         resumeWhenReady = playback.isRunning
         setPlaybackBlocked(true)
         pausePlayback()
-        updatePlayback { it.copy(wubProgress = 0, wubLoadingSamples = false) }
+        updatePlayback { it.copy(wubProgress = 0, wubLoadingSamples = false, wubRenderLoadedSamples = false) }
         renderKey = key
         renderGeneration += 1
         val generation = renderGeneration
@@ -150,7 +150,11 @@ internal class WubMachineCoordinator(
             ) {
                 it
             } else {
-                it.copy(wubProgress = percent, wubLoadingSamples = loadingSamples)
+                it.copy(
+                    wubProgress = percent,
+                    wubLoadingSamples = loadingSamples,
+                    wubRenderLoadedSamples = it.wubRenderLoadedSamples || loadingSamples
+                )
             }
         }
     }

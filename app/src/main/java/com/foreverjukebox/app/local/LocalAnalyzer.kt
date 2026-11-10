@@ -103,33 +103,7 @@ class NativeLocalAnalyzer(
         onStageProgress: (stage: String, percent: Int) -> Unit
     ): JsonElement {
         currentCoroutineContext().ensureActive()
-        var essentiaProgressPercent = -1
-        onStageProgress("Essentia features", 0)
-
-        val essentiaJson = NativeAnalysisBridge.essentiaExtractFeaturesJson(
-            samples = essentiaSamples,
-            sampleRate = essentiaSampleRate,
-            frameSize = ESSENTIA_FRAME_SIZE,
-            hopSize = ESSENTIA_HOP_SIZE,
-            profile = essentiaProfile,
-            progressCallback = { progress ->
-                val mapped = (progress.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 100)
-                if (mapped > essentiaProgressPercent) {
-                    essentiaProgressPercent = mapped
-                    onStageProgress("Essentia features", mapped)
-                }
-            }
-        ) ?: throw NativeLocalAnalysisNotReadyException(
-            NativeAnalysisBridge.essentiaLastErrorMessage()
-                ?: "Essentia feature extraction failed"
-        )
-
-        val features = json.decodeFromString<EssentiaFeaturePayload>(essentiaJson)
-        if (essentiaProgressPercent < 100) {
-            onStageProgress("Essentia features", 100)
-        }
-        currentCoroutineContext().ensureActive()
-
+        // Beats run before features, as on the web; the two passes meet only at segmentation.
         val madmomBeatsPortConfigJson = buildMadmomBeatsPortConfigJson(madmomBeatsPortModels)
         var madmomProgressPercent = -1
         onStageProgress("madmom beats", 0)
@@ -157,6 +131,33 @@ class NativeLocalAnalyzer(
         }
         if (madmomProgressPercent < 100) {
             onStageProgress("madmom beats", 100)
+        }
+        currentCoroutineContext().ensureActive()
+
+        var essentiaProgressPercent = -1
+        onStageProgress("Essentia features", 0)
+
+        val essentiaJson = NativeAnalysisBridge.essentiaExtractFeaturesJson(
+            samples = essentiaSamples,
+            sampleRate = essentiaSampleRate,
+            frameSize = ESSENTIA_FRAME_SIZE,
+            hopSize = ESSENTIA_HOP_SIZE,
+            profile = essentiaProfile,
+            progressCallback = { progress ->
+                val mapped = (progress.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 100)
+                if (mapped > essentiaProgressPercent) {
+                    essentiaProgressPercent = mapped
+                    onStageProgress("Essentia features", mapped)
+                }
+            }
+        ) ?: throw NativeLocalAnalysisNotReadyException(
+            NativeAnalysisBridge.essentiaLastErrorMessage()
+                ?: "Essentia feature extraction failed"
+        )
+
+        val features = json.decodeFromString<EssentiaFeaturePayload>(essentiaJson)
+        if (essentiaProgressPercent < 100) {
+            onStageProgress("Essentia features", 100)
         }
 
         val beatTimes = madmomBeatsPort.beatTimes.ifEmpty { listOf(0.0) }

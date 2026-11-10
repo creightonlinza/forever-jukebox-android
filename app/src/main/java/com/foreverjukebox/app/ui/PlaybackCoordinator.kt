@@ -19,6 +19,10 @@ import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.playback.PlaybackController
 import com.foreverjukebox.app.playback.PlaybackSessionHost
 import com.foreverjukebox.app.playback.PlaybackSessionSurface
+import com.foreverjukebox.app.ui.loading.LoadingStep
+import com.foreverjukebox.app.ui.loading.LoadingStepId
+import com.foreverjukebox.app.ui.loading.LoadingTask
+import com.foreverjukebox.app.ui.loading.serverJobLoadingStep
 import java.io.File
 import java.io.IOException
 import java.time.Duration
@@ -35,6 +39,32 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+
+// Matches the web app's poll interval.
+private const val ANALYSIS_POLL_INTERVAL_MS = 1000L
+
+internal const val AUDIO_LOADING_MESSAGE = "Loading audio"
+
+private fun LoadingStep.toTrackStep(): LoadingStep {
+    return if (activeId == LoadingStepId.Track) this else copy(activeId = LoadingStepId.Track, progress = null, message = null)
+}
+
+// Audio decode percent drives the last step, where loading the audio is most of the wait.
+private fun LoadingStep.withAudioLoadProgress(progress: Int?, message: String?): LoadingStep {
+    if (activeId != LoadingStepId.Track || message != AUDIO_LOADING_MESSAGE || progress == null) {
+        return this
+    }
+    return copy(progress = progress / 100f)
+}
+
+// Audio decoded again for a track whose analysis is in hand: that ends the load the decode raised.
+internal fun PlaybackState.withAudioReloaded(): PlaybackState {
+    val loaded = copy(audioLoaded = true, audioLoading = false)
+    if (!analysisLoaded) {
+        return loaded
+    }
+    return loaded.copy(analysisProgress = null, analysisMessage = null, analysisInFlight = false)
+}
 
 internal fun isAnalysisInProgressStatus(status: String?): Boolean {
     return status == "downloading" || status == "queued" || status == "processing"
@@ -110,6 +140,7 @@ internal fun PlaybackState.resetForNewTrack(keepLoadVisible: Boolean): PlaybackS
         wubReady = false,
         wubProgress = null,
         wubLoadingSamples = false,
+        wubRenderLoadedSamples = false,
         wubRenderFailed = false,
         wubMachine = WubMachineUiState(loop = wubMachine.loop),
         playAfterLoaded = false,
@@ -145,6 +176,8 @@ internal fun PlaybackState.resetForNewTrack(keepLoadVisible: Boolean): PlaybackS
         analysisInFlight = keepLoadVisible,
         analysisCalculating = false,
         audioLoading = false,
+        loadingStep = null,
+        loadSerial = loadSerial + 1,
         isCasting = isCasting,
         castDeviceName = castDeviceName
     )
@@ -250,6 +283,37 @@ class PlaybackCoordinator(
             return
         }
         setAnalysisProgress(percent, "Loading audio")
+    }
+
+    fun setLoadingStep(step: LoadingStep?) {
+        updatePlaybackState { it.copy(loadingStep = step) }
+    }
+
+    // A job id is known: the analysis steps while the server reports work, else the single cached-track step.
+    fun setJobLoadingStep(status: String?, progress: Double?, message: String?) {
+        setLoadingStep(
+            if (status != null && isAnalysisInProgressStatus(status)) {
+                serverJobLoadingStep(status, progress, message)
+            } else {
+                LoadingStep(LoadingTask.Track, LoadingStepId.Track)
+            }
+        )
+    }
+
+    // The job is done; what is left is loading the audio and the branch graph, shown on the last step.
+    // The audio message lets the decode percent through, which a server status would otherwise hold back.
+    private fun enterTrackStep() {
+        updatePlaybackState { playback ->
+            val step = playback.loadingStep
+            if (step == null || step.activeId == LoadingStepId.Track) {
+                playback
+            } else {
+                playback.copy(
+                    loadingStep = step.toTrackStep(),
+                    analysisMessage = if (playback.audioLoaded) playback.analysisMessage else AUDIO_LOADING_MESSAGE
+                )
+            }
+        }
     }
 
     fun setAnalysisCalculating() {
@@ -425,6 +489,9 @@ class PlaybackCoordinator(
         val (response, audioPath) = cached
         if (!isActiveJobId(jobId)) {
             return false
+        }
+        if (getState().playback.loadingStep == null) {
+            setLoadingStep(LoadingStep(LoadingTask.Track, LoadingStepId.Track))
         }
         setAnalysisProgress(0, "Loading audio")
         val decoded = try {
@@ -1004,13 +1071,15 @@ class PlaybackCoordinator(
                 syncPlaybackServiceSession()
                 return false
             }
-            updatePlaybackState { it.copy(audioLoaded = true, audioLoading = false) }
+            updatePlaybackState { it.withAudioReloaded() }
             syncPlaybackServiceSession()
             return true
         }
         val jobId = playback.lastJobId ?: return false
         return try {
-            loadAudioFromJob(jobId)
+            loadAudioFromJob(jobId).also { loaded ->
+                if (loaded) updatePlaybackState { it.withAudioReloaded() }
+            }
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (error: IOException) {
@@ -1083,14 +1152,17 @@ class PlaybackCoordinator(
                         analysisMessage = event.message,
                         analysisErrorMessage = null,
                         analysisInFlight = true,
-                        analysisCalculating = false
+                        analysisCalculating = false,
+                        loadingStep = playback.loadingStep?.withAudioLoadProgress(event.progress, event.message)
                     )
                     LoadingEvent.AnalysisCalculating -> playback.copy(
                         analysisProgress = null,
                         analysisMessage = null,
                         analysisErrorMessage = null,
                         analysisInFlight = false,
-                        analysisCalculating = true
+                        analysisCalculating = true,
+                        // An analysis ends on its "spinning up" step; a step already there keeps its progress.
+                        loadingStep = playback.loadingStep?.toTrackStep()
                     )
                     is LoadingEvent.AnalysisError -> playback.copy(
                         analysisProgress = null,
@@ -1099,7 +1171,8 @@ class PlaybackCoordinator(
                         analysisErrorRetryBlocked = event.retryBlocked,
                         analysisInFlight = false,
                         analysisCalculating = false,
-                        audioLoading = false
+                        audioLoading = false,
+                        loadingStep = null
                     )
                     is LoadingEvent.AudioLoading -> playback.copy(audioLoading = event.loading)
                     LoadingEvent.AnalysisIdle -> playback.copy(
@@ -1107,7 +1180,8 @@ class PlaybackCoordinator(
                         analysisMessage = null,
                         analysisInFlight = false,
                         analysisCalculating = false,
-                        audioLoading = false
+                        audioLoading = false,
+                        loadingStep = null
                     )
                 }
             )
@@ -1125,7 +1199,7 @@ class PlaybackCoordinator(
 
     private suspend fun pollAnalysis(jobId: String) {
         val baseUrl = getState().baseUrl
-        val intervalMs = 3000L
+        val intervalMs = ANALYSIS_POLL_INTERVAL_MS
         while (currentCoroutineContext().isActive) {
             if (!isActiveJobId(jobId)) {
                 return
@@ -1150,6 +1224,7 @@ class PlaybackCoordinator(
                 isAnalysisInProgressStatus(response.status) -> {
                     val progress = response.progress?.roundToInt()
                     setAnalysisProgress(progress, response.message)
+                    setLoadingStep(serverJobLoadingStep(response.status.orEmpty(), response.progress, response.message))
                     if (response.status != "downloading" &&
                         !getState().playback.audioLoaded &&
                         !audioLoadInFlight
@@ -1178,6 +1253,7 @@ class PlaybackCoordinator(
                     }
                 }
                 response.status == "complete" -> {
+                    enterTrackStep()
                     if (!getState().playback.audioLoaded) {
                         if (audioLoadInFlight) {
                             delay(intervalMs)
