@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -406,7 +407,8 @@ private fun BeatRing(
                 color = tokens.muted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(96.dp)
+                // As on the web, the label may run past the hub but stays inside the dots.
+                modifier = Modifier.widthIn(max = 160.dp)
             )
         }
     }
