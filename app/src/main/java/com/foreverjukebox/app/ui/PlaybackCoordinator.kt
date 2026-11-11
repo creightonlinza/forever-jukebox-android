@@ -1094,8 +1094,13 @@ class PlaybackCoordinator(
     }
 
     fun syncTuningState() {
-        val config = engine.getConfig()
-        val graph = engine.getGraphState()
+        // Read through the same conversion the capture path uses, so a tuning string built
+        // from this state and one built from the engine describe the engine identically.
+        val engineTuning = engineTuningState(
+            config = engine.getConfig(),
+            computedThreshold = engine.getGraphState()?.computedThreshold,
+            anchor = engine.getAnchorParam()
+        )
         updateState { state ->
             // The receiver owns tuning while casting and reports all of it with every status.
             // The local engine is not the one playing, so none of its values may be written over
@@ -1103,25 +1108,7 @@ class PlaybackCoordinator(
             if (state.playback.isCasting) {
                 return@updateState state
             }
-            // Read through the same conversion the capture path uses, so a tuning string built
-            // from this state and one built from the engine describe the engine identically.
-            // Branch edits are left alone: they reach tuning only from applied params.
-            val engineTuning = engineTuningState(
-                config = config,
-                computedThreshold = graph?.computedThreshold
-            )
-            state.copy(
-                tuning = state.tuning.copy(
-                    threshold = engineTuning.threshold,
-                    computedThreshold = engineTuning.computedThreshold,
-                    minProb = engineTuning.minProb,
-                    maxProb = engineTuning.maxProb,
-                    ramp = engineTuning.ramp,
-                    justBackwards = engineTuning.justBackwards,
-                    minJumpDistancePercent = engineTuning.minJumpDistancePercent,
-                    removeSequential = engineTuning.removeSequential
-                )
-            )
+            state.copy(tuning = tuningMirroringEngine(state.tuning, engineTuning))
         }
     }
 
@@ -1441,6 +1428,24 @@ internal fun trackTuningConfig(parsed: ParsedTuningParams?): JukeboxConfig {
 private fun mapPercentToRange(percent: Int, max: Double): Double {
     val safe = percent.coerceIn(0, 100)
     return (max * safe) / 100.0
+}
+
+/**
+ * [current] with the engine-owned fields of [engineTuning] written over it. Deleted branches and
+ * the highlight preference are kept; the anchor is mirrored so favorite drift can see it.
+ */
+internal fun tuningMirroringEngine(current: TuningState, engineTuning: TuningState): TuningState {
+    return current.copy(
+        threshold = engineTuning.threshold,
+        computedThreshold = engineTuning.computedThreshold,
+        minProb = engineTuning.minProb,
+        maxProb = engineTuning.maxProb,
+        ramp = engineTuning.ramp,
+        justBackwards = engineTuning.justBackwards,
+        minJumpDistancePercent = engineTuning.minJumpDistancePercent,
+        removeSequential = engineTuning.removeSequential,
+        anchor = engineTuning.anchor
+    )
 }
 
 /**

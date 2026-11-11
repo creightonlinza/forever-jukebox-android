@@ -2,6 +2,8 @@ package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.engine.AnchorParam
+import com.foreverjukebox.app.engine.CustomAnchor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -50,6 +52,23 @@ class FavoriteTuningDriftPolicyTest {
             favorites = listOf(favorite(tuningParams = "jb=1&am=lofi")),
             tuning = TuningState(justBackwards = true)
         )
+
+        assertTrue(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
+    }
+
+    @Test
+    fun reportsNoDriftWhileTheSavedCustomAnchorIsInForce() {
+        val state = stateFor(
+            favorites = listOf(favorite(tuningParams = "ab=289-23")),
+            tuning = TuningState(anchor = AnchorParam.Custom(CustomAnchor(289, 23)))
+        )
+
+        assertFalse(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
+    }
+
+    @Test
+    fun reportsDriftWhenAResetClearsTheSavedCustomAnchor() {
+        val state = stateFor(favorites = listOf(favorite(tuningParams = "ab=289-23")))
 
         assertTrue(hasFavoriteTuningDrift(state, favoriteForCurrentTrack(state)))
     }

@@ -50,7 +50,7 @@ class ThresholdWireContractTest {
     fun aThresholdTravelsIndependentlyOfTheControlsAroundIt() {
         assertTrue(equivalent("bl=10&thresh=45&jb=1", "jb=1&thresh=45&bl=10"))
         assertTrue(equivalent("thresh=45", "thresh=45&ah=1"))
-        assertTrue(equivalent("thresh=45", "thresh=45&d=4,9&ab=12"))
+        assertTrue(equivalent("thresh=45", "thresh=45&d=4,9"))
         assertFalse(equivalent("thresh=45&jb=1", "thresh=45"))
         assertFalse(equivalent("thresh=45&am=daycore", "thresh=45"))
     }

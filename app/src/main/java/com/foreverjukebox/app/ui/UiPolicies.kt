@@ -148,7 +148,7 @@ internal fun autoFavoriteForUserSuppliedTrack(
 
 // Tuning as it stands right now, from whichever source is live. Unlike the capture path this
 // reads no engine state, so it can be recomputed on every frame; the engine's deleted branches
-// and anchor branch are left out, and the comparison ignores them to match.
+// are left out, and the comparison ignores them to match.
 internal fun liveTuningParams(state: UiState): String? {
     val playback = state.playback
     if (playback.playMode != PlaybackMode.Jukebox) {

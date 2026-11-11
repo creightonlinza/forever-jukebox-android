@@ -426,9 +426,8 @@ data class TuningState(
     val justBackwards: Boolean = false,
     val minJumpDistancePercent: Int = 0,
     val removeSequential: Boolean = false,
-    // Receiver-reported track state while casting; when playing on-device the engine
-    // owns deleted edges and the anchor, and these stay empty/null. The anchor is the
-    // `ab` wire-param value: a branch id or a custom beat pair.
+    // Receiver-reported while casting. On device, deleted edges stay empty and the anchor
+    // mirrors the engine's. The anchor is the `ab` value: a branch id or a custom beat pair.
     val deletedEdgeIds: List<Int> = emptyList(),
     val anchor: AnchorParam? = null
 )

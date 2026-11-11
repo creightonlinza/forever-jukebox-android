@@ -1,10 +1,13 @@
 package com.foreverjukebox.app.ui
 
 import com.foreverjukebox.app.engine.AnchorParam
+import com.foreverjukebox.app.engine.CustomAnchor
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EngineTuningStateTest {
@@ -103,5 +106,52 @@ class EngineTuningStateTest {
         )
 
         assertNull(raw)
+    }
+
+    @Test
+    fun mirroringTheEngineCopiesItsAnchorAndKeepsDeletedBranchesAndHighlight() {
+        val custom = AnchorParam.Custom(CustomAnchor(289, 23))
+        val current = TuningState(highlightAnchorBranch = true, deletedEdgeIds = listOf(4, 9))
+
+        val mirrored = tuningMirroringEngine(
+            current,
+            engineTuningState(config = JukeboxConfig(), computedThreshold = 31, anchor = custom)
+        )
+
+        assertEquals(custom, mirrored.anchor)
+        assertEquals(31, mirrored.computedThreshold)
+        assertEquals(listOf(4, 9), mirrored.deletedEdgeIds)
+        assertTrue(mirrored.highlightAnchorBranch)
+    }
+
+    @Test
+    fun mirroringAResetEngineClearsTheAnchorSoTheSavedOneReadsAsChanged() {
+        val saved = "ab=289-23"
+        val loaded = tuningMirroringEngine(
+            TuningState(),
+            engineTuningState(
+                config = JukeboxConfig(),
+                computedThreshold = null,
+                anchor = AnchorParam.Custom(CustomAnchor(289, 23))
+            )
+        )
+        val reset = tuningMirroringEngine(
+            loaded,
+            engineTuningState(config = JukeboxConfig(), computedThreshold = null)
+        )
+
+        assertNull(reset.anchor)
+        assertTrue(
+            TuningParamsCodec.savedTuningParamsEquivalent(
+                TuningParamsCodec.buildSavedTuningParams(loaded),
+                saved
+            )
+        )
+        assertFalse(
+            TuningParamsCodec.savedTuningParamsEquivalent(
+                TuningParamsCodec.buildSavedTuningParams(reset),
+                saved
+            )
+        )
     }
 }

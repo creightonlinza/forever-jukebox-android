@@ -216,8 +216,8 @@ object TuningParamsCodec {
      * app as well as from here, so key order, legacy spellings (`lg`, `jb=true`, `am=off`), and
      * explicitly written defaults all have to read as a match against a locally built string.
      *
-     * Deleted branches (`d`) and the anchor branch (`ab`) are excluded, and `ah` never survives the
-     * builder because persisted tuning does not carry it.
+     * Deleted branches (`d`) are excluded, and `ah` never survives the builder because persisted
+     * tuning does not carry it.
      */
     fun savedTuningParamsEquivalent(left: String?, right: String?): Boolean {
         return canonicalSavedTuningParams(left) == canonicalSavedTuningParams(right)
@@ -235,11 +235,9 @@ object TuningParamsCodec {
             base = TuningState(),
             parsed = parsed
         ).copy(
-            // Dropped rather than compared: no on-device control touches them, they enter tuning
-            // only when saved params are applied at load, and edge ids are positional in the
-            // rebuilt graph, so a restored list can differ numerically from the saved one.
-            deletedEdgeIds = emptyList(),
-            anchor = null
+            // Dropped rather than compared: edge ids are positional in the rebuilt graph, so a
+            // restored list can differ numerically from the saved one.
+            deletedEdgeIds = emptyList()
         )
         return buildSavedTuningParams(
             tuning = tuning,
@@ -295,7 +293,8 @@ object TuningParamsCodec {
             justBackwards = parsed.justBackwards ?: base.justBackwards,
             minJumpDistancePercent =
                 parsed.minJumpDistancePercent ?: base.minJumpDistancePercent,
-            removeSequential = parsed.removeSequentialBranches ?: base.removeSequential
+            removeSequential = parsed.removeSequentialBranches ?: base.removeSequential,
+            anchor = parsed.anchor ?: base.anchor
         )
     }
 

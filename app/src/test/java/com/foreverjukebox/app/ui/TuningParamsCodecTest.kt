@@ -708,12 +708,22 @@ class TuningParamsCodecTest {
     }
 
     @Test
-    fun savedTuningParamsEquivalentIgnoresBranchEditsAndHighlightAnchor() {
+    fun savedTuningParamsEquivalentIgnoresDeletedBranchesAndHighlightAnchor() {
         // Edge ids are positional in the rebuilt graph, so a restored list can differ
         // numerically from the saved one; ah is never part of persisted tuning.
-        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("jb=1&d=4,9&ab=12", "jb=1"))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("jb=1&d=4,9", "jb=1"))
         assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("d=4,9", "d=9,4"))
         assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("jb=1&ah=1", "jb=1"))
+    }
+
+    @Test
+    fun savedTuningParamsEquivalentComparesTheAnchor() {
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("ab=289-23&jb=1", "jb=1&ab=289-23"))
+        assertTrue(TuningParamsCodec.savedTuningParamsEquivalent("ab=12", "ab=12"))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("ab=289-23", null))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("ab=12", null))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("ab=289-23", "ab=289-24"))
+        assertFalse(TuningParamsCodec.savedTuningParamsEquivalent("ab=12", "ab=13"))
     }
 
     @Test
