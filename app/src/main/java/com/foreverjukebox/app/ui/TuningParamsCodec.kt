@@ -1,8 +1,11 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
 import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
 import com.foreverjukebox.app.engine.MAX_THRESHOLD
 import com.foreverjukebox.app.engine.MIN_THRESHOLD
+import com.foreverjukebox.app.engine.formatAnchorParam
+import com.foreverjukebox.app.engine.parseAnchorParam
 import com.foreverjukebox.app.engine.parsePinnedThreshold
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -20,7 +23,7 @@ data class ParsedTuningParams(
     val minJumpDistancePercent: Int?,
     val removeSequentialBranches: Boolean?,
     val deletedEdgeIds: List<Int>,
-    val anchorBranchId: Int?,
+    val anchor: AnchorParam?,
     val audioMode: JukeboxAudioMode?,
     val audioModeIntensity: Int = AudioModeIntensity.DEFAULT
 )
@@ -59,9 +62,7 @@ object TuningParamsCodec {
             ?.split(",")
             ?.mapNotNull { it.toIntOrNull()?.takeIf { id -> id >= 0 } }
             ?: emptyList()
-        val anchorBranchId = params.firstValue("ab")
-            ?.toIntOrNull()
-            ?.takeIf { it >= 0 }
+        val anchor = parseAnchorParam(params.firstValue("ab"))
         val branchLength = params.firstValue("bl")
             ?.toIntOrNull()
             ?.takeIf { it == 0 || it in ALLOWED_BRANCH_LENGTHS }
@@ -83,7 +84,7 @@ object TuningParamsCodec {
             minJumpDistancePercent = minJumpDistancePercent,
             removeSequentialBranches = parseRemoveSequential(params.firstValue("sq")),
             deletedEdgeIds = deletedEdgeIds,
-            anchorBranchId = anchorBranchId,
+            anchor = anchor,
             audioMode = audioMode,
             audioModeIntensity = audioModeIntensity
         )
@@ -138,9 +139,7 @@ object TuningParamsCodec {
                 "d" -> sanitizeIdList(value)?.let {
                     sanitized[name] = it
                 }
-                "ab" -> value.toIntOrNull()
-                    ?.takeIf { it >= 0 }
-                    ?.let { sanitized[name] = it.toString() }
+                "ab" -> parseAnchorParam(value)?.let { sanitized[name] = formatAnchorParam(it) }
                 "am" -> JukeboxAudioMode.fromWireValue(value)?.let {
                     sanitized[name] = it.wireValue
                 }
@@ -198,8 +197,8 @@ object TuningParamsCodec {
         if (tuning.deletedEdgeIds.isNotEmpty()) {
             params.add("d=${tuning.deletedEdgeIds.joinToString(",")}")
         }
-        tuning.anchorBranchId?.takeIf { it >= 0 }?.let { anchorBranchId ->
-            params.add("ab=$anchorBranchId")
+        tuning.anchor?.let { anchor ->
+            params.add("ab=${formatAnchorParam(anchor)}")
         }
         val normalizedAudioMode = audioModeWireValue?.trim().orEmpty()
         if (!isAudioModeOff(normalizedAudioMode)) {
@@ -240,7 +239,7 @@ object TuningParamsCodec {
             // only when saved params are applied at load, and edge ids are positional in the
             // rebuilt graph, so a restored list can differ numerically from the saved one.
             deletedEdgeIds = emptyList(),
-            anchorBranchId = null
+            anchor = null
         )
         return buildSavedTuningParams(
             tuning = tuning,

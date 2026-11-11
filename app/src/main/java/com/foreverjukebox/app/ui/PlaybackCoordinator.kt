@@ -11,6 +11,7 @@ import com.foreverjukebox.app.data.SOURCE_PROVIDER_YOUTUBE
 import com.foreverjukebox.app.data.canonicalJobId
 import com.foreverjukebox.app.data.isNotFound
 import com.foreverjukebox.app.data.sourceProviderFromRaw
+import com.foreverjukebox.app.engine.AnchorParam
 import com.foreverjukebox.app.engine.DEFAULT_JUKEBOX_CONFIG
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxEngine
@@ -257,7 +258,7 @@ class PlaybackCoordinator(
                 config = engine.getConfig(),
                 computedThreshold = engine.getGraphState()?.computedThreshold,
                 deletedEdgeIds = getDeletedEdgeIds(),
-                anchorBranchId = engine.getUserAnchorEdgeId()
+                anchor = engine.getAnchorParam()
             ),
             audioModeWireValue = audioModeWireValue,
             audioModeIntensity = audioModeIntensity
@@ -1324,7 +1325,7 @@ class PlaybackCoordinator(
     private data class ResolvedTuningParams(
         val config: JukeboxConfig,
         val deletedEdgeIds: List<Int>,
-        val anchorBranchId: Int?,
+        val anchor: AnchorParam?,
         val audioMode: JukeboxAudioMode?,
         val audioModeIntensity: Int
     )
@@ -1341,7 +1342,7 @@ class PlaybackCoordinator(
         return ResolvedTuningParams(
             config = trackTuningConfig(parsed),
             deletedEdgeIds = parsed.deletedEdgeIds,
-            anchorBranchId = parsed.anchorBranchId,
+            anchor = parsed.anchor,
             audioMode = parsed.audioMode,
             audioModeIntensity = parsed.audioModeIntensity
         )
@@ -1352,17 +1353,6 @@ class PlaybackCoordinator(
     private fun getDeletedEdgeIds(): List<Int> {
         val graph = engine.getGraphState() ?: return emptyList()
         return graph.allEdges.filter { it.deleted }.map { it.id }
-    }
-
-    // Mirrors the web's applyAnchorBranchFromUrl: `ab` is an anchor edge id, valid only
-    // when the edge still exists, isn't deleted, and jumps backwards.
-    private fun applyAnchorBranchFromParams(anchorBranchId: Int) {
-        val graph = engine.getGraphState() ?: return
-        val edge = graph.allEdges.firstOrNull { it.id == anchorBranchId } ?: return
-        if (edge.deleted || edge.dest.which >= edge.src.which) {
-            return
-        }
-        engine.setUserAnchorEdge(edge)
     }
 
     private fun applyPendingTuningParams() {
@@ -1385,7 +1375,8 @@ class PlaybackCoordinator(
         if (shouldRebuild) {
             engine.rebuildGraph()
         }
-        parsed.anchorBranchId?.let(::applyAnchorBranchFromParams)
+        // A branch id or a custom pair that does not fit this track is ignored, as on the web.
+        engine.applyAnchorParam(parsed.anchor)
         if (parsed.audioMode != null) {
             // State records the selection either way, but the shared player is armed only
             // while jukebox owns playback; a later switch to jukebox re-arms it from state.
@@ -1463,7 +1454,7 @@ internal fun engineTuningState(
     config: JukeboxConfig,
     computedThreshold: Int?,
     deletedEdgeIds: List<Int> = emptyList(),
-    anchorBranchId: Int? = null
+    anchor: AnchorParam? = null
 ): TuningState {
     return TuningState(
         threshold = config.currentThreshold.takeIf { it != 0 },
@@ -1475,7 +1466,7 @@ internal fun engineTuningState(
         minJumpDistancePercent = if (config.justLongBranches) config.minLongBranchPercent else 0,
         removeSequential = config.removeSequentialBranches,
         deletedEdgeIds = deletedEdgeIds,
-        anchorBranchId = anchorBranchId
+        anchor = anchor
     )
 }
 

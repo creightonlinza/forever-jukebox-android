@@ -42,7 +42,9 @@ internal fun buildCastTuningResetParams(
         // Reset means auto, the same as it does on device.
         "thresh=$AUTO_THRESHOLD_WIRE_VALUE",
         "bp=$minProb,$maxProb,$ramp",
-        "d="
+        "d=",
+        // An empty `ab` clears the anchor; without the key the receiver keeps the one in force.
+        "ab="
     )
     // A branch-only reset must not disturb the receiver's audio mode, so the current
     // mode is re-sent. `ai` must accompany it: `am` without `ai` resets intensity.

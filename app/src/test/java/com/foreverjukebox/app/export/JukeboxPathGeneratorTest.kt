@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.export
 
+import com.foreverjukebox.app.engine.AnchorEndpoints
 import com.foreverjukebox.app.engine.Edge
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.QuantumBase
@@ -71,7 +72,7 @@ class JukeboxPathGeneratorTest {
     @Test
     fun userAnchorForcesItsBranchAndCapsPlayback() {
         val steps = collectSteps(
-            makeGenerator(seed = 99, userAnchorPair = 5 to 1),
+            makeGenerator(seed = 99, userAnchor = AnchorEndpoints(5, 1, custom = false)),
             STEP_COUNT
         )
         assertTrue("playback must never pass the anchor source", steps.all { it.beatIndex <= 5 })
@@ -80,6 +81,34 @@ class JukeboxPathGeneratorTest {
         assertTrue(
             "every branch from the anchor source must take the anchor edge",
             anchorSeedJumps.all { it.jump?.targetIndex == 1 }
+        )
+    }
+
+    @Test
+    fun customAnchorPairWithoutARealEdgeIsForced() {
+        val steps = collectSteps(
+            makeGenerator(seed = 99, userAnchor = AnchorEndpoints(6, 1, custom = true)),
+            STEP_COUNT
+        )
+        assertTrue("playback must never pass the anchor source", steps.all { it.beatIndex <= 6 })
+        val anchorSeedJumps = steps.filter { jumpSourceSeed(it) == 6 }
+        assertTrue("anchor source should be reached", anchorSeedJumps.isNotEmpty())
+        assertTrue(
+            "every branch from the anchor source must take the custom pair",
+            anchorSeedJumps.all { it.jump?.targetIndex == 1 }
+        )
+    }
+
+    @Test
+    fun customAnchorThatIsNotABackwardLoopIsIgnored() {
+        val baseline = collectSteps(makeGenerator(seed = 7), STEP_COUNT)
+        val forward = collectSteps(
+            makeGenerator(seed = 7, userAnchor = AnchorEndpoints(1, 6, custom = true)),
+            STEP_COUNT
+        )
+        assertEquals(
+            baseline.map { it.beatIndex to it.jump?.targetIndex },
+            forward.map { it.beatIndex to it.jump?.targetIndex }
         )
     }
 
@@ -100,7 +129,7 @@ class JukeboxPathGeneratorTest {
     private fun makeGenerator(
         seed: Int,
         deletedEdgePairs: Set<Pair<Int, Int>> = emptySet(),
-        userAnchorPair: Pair<Int, Int>? = null
+        userAnchor: AnchorEndpoints? = null
     ): JukeboxPathGenerator {
         val analysis = makeAnalysis()
         var edgeId = 0
@@ -119,7 +148,7 @@ class JukeboxPathGeneratorTest {
             analysis = analysis,
             config = makeConfig(),
             deletedEdgePairs = deletedEdgePairs,
-            userAnchorPair = userAnchorPair,
+            userAnchor = userAnchor,
             rng = createRng(RandomMode.Seeded, seed)
         )
     }

@@ -121,7 +121,7 @@ class TrackTuningDefaultsTest {
     fun castResetSendsTheConstantDefaults() {
         val params = buildCastTuningResetParams(randomBranchDeltaPercentScale = 500.0)
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=off", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&ab=&am=off", params)
     }
 
     private fun tunedConfig(minJumpDistancePercent: Int, threshold: Int): JukeboxConfig {

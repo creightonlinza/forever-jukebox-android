@@ -15,7 +15,7 @@ class TuningCoordinatorCastPolicyTest {
             randomBranchDeltaPercentScale = 500.0
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=off", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&ab=&am=off", params)
     }
 
     @Test
@@ -27,7 +27,7 @@ class TuningCoordinatorCastPolicyTest {
             preservedAudioModeIntensity = 150
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=nightcore&ai=150", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&ab=&am=nightcore&ai=150", params)
     }
 
     @Test
@@ -39,7 +39,7 @@ class TuningCoordinatorCastPolicyTest {
             preservedAudioModeIntensity = 100
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=lofi", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&ab=&am=lofi", params)
     }
 
     @Test
@@ -51,7 +51,7 @@ class TuningCoordinatorCastPolicyTest {
             preservedAudioModeIntensity = 100
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=future_mode", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&ab=&am=future_mode", params)
     }
 
     @Test
@@ -63,7 +63,7 @@ class TuningCoordinatorCastPolicyTest {
             preservedAudioModeIntensity = 150
         )
 
-        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&am=off", params)
+        assertEquals("jb=0&bl=0&sq=1&thresh=0&bp=18,50,10&d=&ab=&am=off", params)
     }
 
     @Test

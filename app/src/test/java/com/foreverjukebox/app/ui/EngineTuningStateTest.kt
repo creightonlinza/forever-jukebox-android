@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.withMinimumJumpDistancePercent
 import org.junit.Assert.assertEquals
@@ -46,7 +47,7 @@ class EngineTuningStateTest {
                 config = config,
                 computedThreshold = 31,
                 deletedEdgeIds = listOf(3, 9),
-                anchorBranchId = 7
+                anchor = AnchorParam.EdgeId(7)
             ),
             audioModeWireValue = "lofi"
         )

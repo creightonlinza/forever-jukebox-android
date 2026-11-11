@@ -10,6 +10,7 @@ import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.parseTrackId
+import com.foreverjukebox.app.engine.AnchorParam
 import com.foreverjukebox.app.engine.VisualizationData
 import com.foreverjukebox.app.net.CleartextPolicy
 import com.foreverjukebox.app.net.FeedbackClient
@@ -426,10 +427,10 @@ data class TuningState(
     val minJumpDistancePercent: Int = 0,
     val removeSequential: Boolean = false,
     // Receiver-reported track state while casting; when playing on-device the engine
-    // owns deleted edges and the anchor branch, and these stay empty/null. The anchor
-    // branch id is the `ab` wire-param value (an edge id on the web/receiver engine).
+    // owns deleted edges and the anchor, and these stay empty/null. The anchor is the
+    // `ab` wire-param value: a branch id or a custom beat pair.
     val deletedEdgeIds: List<Int> = emptyList(),
-    val anchorBranchId: Int? = null
+    val anchor: AnchorParam? = null
 )
 
 @Serializable

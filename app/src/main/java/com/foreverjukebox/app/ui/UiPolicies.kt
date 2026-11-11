@@ -83,7 +83,7 @@ internal fun hasBranchTuningToReset(
         hasNonDefaultBranchTuning(
             tuning = tuning,
             hasDeletedBranches = tuning.deletedEdgeIds.isNotEmpty(),
-            hasNonDefaultAnchor = tuning.anchorBranchId != null
+            hasNonDefaultAnchor = tuning.anchor != null
         )
     } else {
         hasNonDefaultBranchTuning(

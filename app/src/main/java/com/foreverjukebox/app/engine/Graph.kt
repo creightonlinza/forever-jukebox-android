@@ -46,6 +46,41 @@ private fun segmentDistance(seg1: Segment, seg2: Segment): Double {
         confidence * CONFIDENCE_WEIGHT
 }
 
+/**
+ * The branch distance between two beats: segment likeness plus [MAX_DISTANCE] when their
+ * positions in the bar differ. Infinite for a beat with no overlapping segments.
+ */
+fun beatPairDistance(q1: QuantumBase, q2: QuantumBase): Double {
+    if (q1.overlappingSegments.isEmpty()) {
+        return Double.POSITIVE_INFINITY
+    }
+    var sum = 0.0
+    for (j in q1.overlappingSegments.indices) {
+        val seg1 = q1.overlappingSegments[j]
+        val distance = if (j < q2.overlappingSegments.size) {
+            val seg2 = q2.overlappingSegments[j]
+            if (seg1.which == seg2.which) {
+                MAX_DISTANCE
+            } else {
+                segmentDistance(seg1, seg2)
+            }
+        } else {
+            MAX_DISTANCE
+        }
+        sum += distance
+    }
+    val pdistance = if (
+        q1.indexInParent != null &&
+        q2.indexInParent != null &&
+        q1.indexInParent == q2.indexInParent
+    ) {
+        FULL_MATCH_DISTANCE
+    } else {
+        MAX_DISTANCE
+    }
+    return sum / q1.overlappingSegments.size + pdistance
+}
+
 private fun calculateNearestNeighborsForQuantum(
     quanta: List<QuantumBase>,
     maxNeighbors: Int,
@@ -62,33 +97,7 @@ private fun calculateNearestNeighborsForQuantum(
     for (i in quanta.indices) {
         if (i == q1.which) continue
         val q2 = quanta[i]
-        var sum = 0.0
-        for (j in q1.overlappingSegments.indices) {
-            val seg1 = q1.overlappingSegments[j]
-            val distance = if (j < q2.overlappingSegments.size) {
-                val seg2 = q2.overlappingSegments[j]
-                if (seg1.which == seg2.which) {
-                    MAX_DISTANCE
-                } else {
-                    segmentDistance(seg1, seg2)
-                }
-            } else {
-                MAX_DISTANCE
-            }
-            sum += distance
-        }
-
-        val pdistance = if (
-            q1.indexInParent != null &&
-            q2.indexInParent != null &&
-            q1.indexInParent == q2.indexInParent
-        ) {
-            FULL_MATCH_DISTANCE
-        } else {
-            MAX_DISTANCE
-        }
-
-        val totalDistance = sum / q1.overlappingSegments.size + pdistance
+        val totalDistance = beatPairDistance(q1, q2)
         if (totalDistance < maxThreshold) {
             edges.add(
                 Edge(
