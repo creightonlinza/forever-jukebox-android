@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -96,7 +97,7 @@ class TuningAnalyticsTest {
         val next = previous.copy(
             computedThreshold = 12,
             deletedEdgeIds = listOf(1, 2, 3),
-            anchorBranchId = 9
+            anchor = AnchorParam.EdgeId(9)
         )
         assertEquals(emptyList<String>(), analyticsChangedTuneControls(previous, next))
     }
@@ -106,7 +107,7 @@ class TuningAnalyticsTest {
         val previous = TuningState(
             computedThreshold = 12,
             deletedEdgeIds = listOf(4),
-            anchorBranchId = 2
+            anchor = AnchorParam.EdgeId(2)
         )
         val next = previous.withAppliedTuning(
             threshold = 1,
@@ -126,7 +127,7 @@ class TuningAnalyticsTest {
         assertEquals(30, next.ramp)
         assertEquals(12, next.computedThreshold)
         assertEquals(listOf(4), next.deletedEdgeIds)
-        assertEquals(2, next.anchorBranchId)
+        assertEquals(AnchorParam.EdgeId(2), next.anchor)
     }
 
     @Test

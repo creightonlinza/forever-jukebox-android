@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
+import com.foreverjukebox.app.engine.CustomAnchor
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -16,6 +18,20 @@ class CastStatusReducerTest {
     fun parseCastStatusMessageRejectsInvalidPayloads() {
         assertNull(parseCastStatusMessage("not-json"))
         assertNull(parseCastStatusMessage("""{"type":"ping"}"""))
+    }
+
+    @Test
+    fun parseCastStatusMessageReadsTheFullAnchorBeforeTheLegacyBranchId() {
+        fun anchorOf(tuningJson: String) = parseCastStatusMessage(
+            """{"type":"status","jobId":"0123456789abcdef0123456789abcdef","tuning":{"branchProbability":{},$tuningJson}}"""
+        )?.tuning?.anchor
+        assertEquals(
+            AnchorParam.Custom(CustomAnchor(289, 23)),
+            anchorOf(""""anchorBranchId":null,"anchor":"289-23"""")
+        )
+        assertEquals(AnchorParam.EdgeId(12), anchorOf(""""anchorBranchId":12,"anchor":"12""""))
+        assertEquals(AnchorParam.EdgeId(7), anchorOf(""""anchorBranchId":7"""))
+        assertNull(anchorOf(""""anchorBranchId":null,"anchor":null"""))
     }
 
     @Test
@@ -95,7 +111,7 @@ class CastStatusReducerTest {
         assertEquals(45, parsed?.tuning?.branchProbability?.maxPercent)
         assertEquals(20, parsed?.tuning?.branchProbability?.deltaPercent)
         assertEquals(listOf(2, 5), parsed?.tuning?.deletedEdgeIds)
-        assertEquals(128, parsed?.tuning?.anchorBranchId)
+        assertEquals(AnchorParam.EdgeId(128), parsed?.tuning?.anchor)
         assertTrue(parsed?.tuning?.justBackwards == true)
         assertEquals(30, parsed?.tuning?.minLongBranchPercent)
         assertTrue(parsed?.tuning?.highlightAnchorBranch == true)
@@ -437,7 +453,7 @@ class CastStatusReducerTest {
                 maxPercent = 45,
                 deltaPercent = 20,
                 deletedEdgeIds = listOf(4, 9),
-                anchorBranchId = 128,
+                anchor = AnchorParam.EdgeId(128),
                 highlightAnchorBranch = true,
                 audioMode = JukeboxAudioMode.Daycore
             )
@@ -459,7 +475,7 @@ class CastStatusReducerTest {
         assertTrue(next.tuning.removeSequential)
         assertTrue(next.tuning.highlightAnchorBranch)
         assertEquals(listOf(4, 9), next.tuning.deletedEdgeIds)
-        assertEquals(128, next.tuning.anchorBranchId)
+        assertEquals(AnchorParam.EdgeId(128), next.tuning.anchor)
     }
 
     @Test
@@ -1255,7 +1271,7 @@ class CastStatusReducerTest {
         maxPercent: Int = 50,
         deltaPercent: Int = 10,
         deletedEdgeIds: List<Int> = emptyList(),
-        anchorBranchId: Int? = null,
+        anchor: AnchorParam? = null,
         highlightAnchorBranch: Boolean = false,
         audioMode: JukeboxAudioMode = JukeboxAudioMode.Off,
         audioModeWireValue: String = audioMode.wireValue,
@@ -1274,7 +1290,7 @@ class CastStatusReducerTest {
                 deltaPercent = deltaPercent
             ),
             deletedEdgeIds = deletedEdgeIds,
-            anchorBranchId = anchorBranchId,
+            anchor = anchor,
             highlightAnchorBranch = highlightAnchorBranch,
             audioModeWireValue = audioModeWireValue,
             audioModeIntensity = audioModeIntensity

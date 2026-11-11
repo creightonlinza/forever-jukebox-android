@@ -1,6 +1,8 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
 import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
+import com.foreverjukebox.app.engine.parseAnchorParam
 import com.foreverjukebox.app.engine.parsePinnedThreshold
 import com.foreverjukebox.app.visualization.visualizationCount
 import java.time.OffsetDateTime
@@ -29,7 +31,7 @@ data class CastTuningStatus(
     val computedThreshold: Int?,
     val branchProbability: CastBranchProbabilityStatus,
     val deletedEdgeIds: List<Int>,
-    val anchorBranchId: Int?,
+    val anchor: AnchorParam?,
     val highlightAnchorBranch: Boolean,
     val audioModeWireValue: String,
     val audioModeIntensity: Int = AudioModeIntensity.DEFAULT
@@ -169,7 +171,9 @@ private fun parseCastTuningStatus(json: JsonObject?): CastTuningStatus? {
             ?.jsonArray
             ?.mapNotNull { it.jsonPrimitive.intOrNull?.takeIf { id -> id >= 0 } }
             ?: emptyList(),
-        anchorBranchId = json.intValue("anchorBranchId")?.takeIf { it >= 0 },
+        // `anchor` carries the full `ab` value; receivers that predate it report only a branch id.
+        anchor = parseAnchorParam(json.stringValue("anchor"))
+            ?: json.intValue("anchorBranchId")?.takeIf { it >= 0 }?.let { AnchorParam.EdgeId(it) },
         highlightAnchorBranch = json.booleanValue("highlightAnchorBranch"),
         audioModeWireValue = audioModeWireValue,
         audioModeIntensity = audioModeIntensity
@@ -361,7 +365,7 @@ private fun resolveCastTuningState(
         minJumpDistancePercent = tuning.minLongBranchPercent,
         removeSequential = tuning.removeSequentialBranches,
         deletedEdgeIds = tuning.deletedEdgeIds,
-        anchorBranchId = tuning.anchorBranchId
+        anchor = tuning.anchor
     )
 }
 

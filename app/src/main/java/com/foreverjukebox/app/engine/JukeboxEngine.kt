@@ -53,6 +53,8 @@ class JukeboxEngine(
     private var pendingAdvance: PendingAdvance? = null
     private val deletedEdgeKeys = mutableSetOf<String>()
     private var userAnchorEdgeId: Int? = null
+    // Lives only in its source beat's neighbors, never in allEdges, so deletion keys skip it.
+    private var customAnchorEdge: Edge? = null
     private val rng = createRng(options.randomMode, options.seed)
     private val listeners = CopyOnWriteArraySet<(JukeboxState) -> Unit>()
     private val branchState = BranchState(0.0)
@@ -79,6 +81,7 @@ class JukeboxEngine(
     fun loadAnalysis(data: JsonElement) {
         deletedEdgeKeys.clear()
         userAnchorEdgeId = null
+        customAnchorEdge = null
         analysis = normalizeAnalysis(data)
         val beatsCount = analysis?.beats?.size ?: 0
         config = config.copy(
@@ -100,6 +103,7 @@ class JukeboxEngine(
     fun clearAnalysis() {
         deletedEdgeKeys.clear()
         userAnchorEdgeId = null
+        customAnchorEdge = null
         analysis = null
         graph = null
         beats = mutableListOf()
@@ -128,9 +132,57 @@ class JukeboxEngine(
     }
 
     fun setUserAnchorEdge(edge: Edge?) {
+        removeCustomAnchorEdge()
         userAnchorEdgeId = edge?.id
         clearPendingAdvance(cancelScheduledJump = true)
         syncAnchorJump()
+    }
+
+    /** Returns false and changes nothing when the pair is not a valid backward loop. */
+    fun setCustomAnchor(src: Int, dest: Int): Boolean {
+        if (graph == null) return false
+        val edge = createCustomAnchorEdge(beats, CustomAnchor(src, dest)) ?: return false
+        removeCustomAnchorEdge()
+        userAnchorEdgeId = null
+        customAnchorEdge = edge
+        injectCustomAnchorEdge()
+        clearPendingAdvance(cancelScheduledJump = true)
+        syncAnchorJump()
+        return true
+    }
+
+    fun clearCustomAnchor() {
+        if (customAnchorEdge == null) return
+        removeCustomAnchorEdge()
+        clearPendingAdvance(cancelScheduledJump = true)
+        syncAnchorJump()
+    }
+
+    fun getCustomAnchor(): CustomAnchor? =
+        customAnchorEdge?.let { CustomAnchor(it.src.which, it.dest.which) }
+
+    /** The user's anchor as an `ab` value, or null when the track default is in force. */
+    fun getAnchorParam(): AnchorParam? {
+        getCustomAnchor()?.let { return AnchorParam.Custom(it) }
+        return getUserAnchorEdgeId()?.let { AnchorParam.EdgeId(it) }
+    }
+
+    /** Applies a stored `ab` value; one that does not fit this track changes nothing. */
+    fun applyAnchorParam(param: AnchorParam?): Boolean {
+        val currentGraph = graph ?: return false
+        return when (param) {
+            null -> false
+            is AnchorParam.Custom -> setCustomAnchor(param.anchor.src, param.anchor.dest)
+            is AnchorParam.EdgeId -> {
+                val edge = currentGraph.allEdges.firstOrNull { it.id == param.id }
+                if (edge == null || edge.deleted || edge.dest.which >= edge.src.which) {
+                    false
+                } else {
+                    setUserAnchorEdge(edge)
+                    true
+                }
+            }
+        }
     }
 
     fun getUserAnchorEdgeId(): Int? = getUserAnchorEdge()?.id
@@ -142,12 +194,13 @@ class JukeboxEngine(
      * loop mutates, so it is safe to call from any thread while the jukebox
      * runs. Callers that rebuild a fresh graph re-validate playability there.
      */
-    fun getUserAnchorEdgeEndpoints(): Pair<Int, Int>? {
+    fun getUserAnchorEdgeEndpoints(): AnchorEndpoints? {
+        customAnchorEdge?.let { return AnchorEndpoints(it.src.which, it.dest.which, custom = true) }
         val currentGraph = graph ?: return null
         val anchorId = userAnchorEdgeId ?: return null
         val edge = currentGraph.allEdges.firstOrNull { it.id == anchorId } ?: return null
         if (edge.deleted) return null
-        return edge.src.which to edge.dest.which
+        return AnchorEndpoints(edge.src.which, edge.dest.which, custom = false)
     }
 
     fun updateConfig(partial: JukeboxConfigUpdate) {
@@ -172,6 +225,7 @@ class JukeboxEngine(
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
         applyDeletedEdges()
+        injectCustomAnchorEdge()
         syncAnchorJump()
     }
 
@@ -179,17 +233,20 @@ class JukeboxEngine(
         val current = analysis ?: return null
         val currentGraph = graph ?: return null
         val edgeMap = linkedMapOf<String, Edge>()
+        // The custom edge goes first so it wins the src-dest key over a real twin.
+        customAnchorEdge?.let { edgeMap[edgeKey(it.src.which, it.dest.which)] = it }
         for (beat in current.beats) {
             for (edge in beat.neighbors) {
                 if (edge.deleted) continue
-                val key = "${edge.src.which}-${edge.dest.which}"
-                edgeMap.putIfAbsent(key, edge)
+                edgeMap.putIfAbsent(edgeKey(edge.src.which, edge.dest.which), edge)
             }
         }
         val userAnchorEdge = getUserAnchorEdge()
         val defaultAnchorEdge = getDefaultAnchorEdge()
         val anchorEdgeId = userAnchorEdge?.id ?: defaultAnchorEdge?.id
-        val userAnchorEdgeId = userAnchorEdge?.id?.takeIf { it != defaultAnchorEdge?.id }
+        val userAnchorEdgeId = userAnchorEdge?.id?.takeIf {
+            userAnchorEdge === customAnchorEdge || it != defaultAnchorEdge?.id
+        }
         return VisualizationData(
             beats = current.beats,
             beatColors = beatColors,
@@ -261,12 +318,18 @@ class JukeboxEngine(
 
     fun clearDeletedEdges() {
         deletedEdgeKeys.clear()
+        userAnchorEdgeId = null
+        removeCustomAnchorEdge()
         clearPendingAdvance(cancelScheduledJump = true)
         clearEdgeDeletionFlags()
         syncAnchorJump()
     }
 
     fun deleteEdge(edge: Edge) {
+        if (edge === customAnchorEdge) {
+            clearCustomAnchor()
+            return
+        }
         deletedEdgeKeys.add(edgeKey(edge.src.which, edge.dest.which))
         clearPendingAdvance(cancelScheduledJump = true)
         applyDeletedEdges()
@@ -717,6 +780,21 @@ class JukeboxEngine(
         ensureAnchorSourceHasNeighbors()
     }
 
+    // Graph rebuilds replace every neighbors list, so the custom edge goes back after each one.
+    private fun injectCustomAnchorEdge() {
+        val edge = customAnchorEdge ?: return
+        val source = edge.src
+        source.neighbors = source.neighbors.filterNot { it.id == CUSTOM_ANCHOR_EDGE_ID }
+            .toMutableList()
+            .apply { add(edge) }
+    }
+
+    private fun removeCustomAnchorEdge() {
+        val edge = customAnchorEdge ?: return
+        edge.src.neighbors = edge.src.neighbors.filterNot { it === edge }.toMutableList()
+        customAnchorEdge = null
+    }
+
     private fun ensureAnchorSourceHasNeighbors() {
         val current = graph ?: return
         val currentAnalysis = analysis ?: return
@@ -731,6 +809,7 @@ class JukeboxEngine(
     }
 
     private fun getUserAnchorEdge(): Edge? {
+        customAnchorEdge?.let { return it }
         val currentGraph = graph ?: return null
         val anchorId = userAnchorEdgeId ?: return null
         val edge = currentGraph.allEdges.firstOrNull { it.id == anchorId } ?: return null

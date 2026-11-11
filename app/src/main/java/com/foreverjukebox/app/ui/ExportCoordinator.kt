@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.annotation.RequiresApi
 import com.foreverjukebox.app.audio.BufferedAudioPlayer
+import com.foreverjukebox.app.engine.AnchorEndpoints
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.RandomMode
 import com.foreverjukebox.app.engine.createRng
@@ -144,7 +145,7 @@ class ExportCoordinator(
             durationSeconds = durationSeconds,
             config = engine.getConfig(),
             deletedEdgePairs = deletedPairs,
-            userAnchorPair = engine.getUserAnchorEdgeEndpoints(),
+            userAnchor = engine.getUserAnchorEdgeEndpoints(),
             sectionStartBeatIndices = engine.getSectionStartBeatIndices(),
             displayName = ExportedAudioStore.buildDisplayName(
                 state.playback.trackTitle?.takeIf { it.isNotBlank() }
@@ -266,7 +267,7 @@ class ExportCoordinator(
             analysis = analysis,
             config = request.config,
             deletedEdgePairs = request.deletedEdgePairs,
-            userAnchorPair = request.userAnchorPair,
+            userAnchor = request.userAnchor,
             rng = createRng(RandomMode.Seeded, kotlin.random.Random.nextInt())
         )
         val offline = BufferedAudioPlayer(offline = true)
@@ -339,7 +340,7 @@ class ExportCoordinator(
             val durationSeconds: Int,
             val config: JukeboxConfig,
             val deletedEdgePairs: Set<Pair<Int, Int>>,
-            val userAnchorPair: Pair<Int, Int>?,
+            val userAnchor: AnchorEndpoints?,
             val sectionStartBeatIndices: List<Int>,
             override val displayName: String,
             override val title: String?,

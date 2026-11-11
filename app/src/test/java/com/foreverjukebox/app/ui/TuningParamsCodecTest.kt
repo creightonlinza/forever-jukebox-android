@@ -1,5 +1,7 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
+import com.foreverjukebox.app.engine.CustomAnchor
 import com.foreverjukebox.app.engine.DEFAULT_MIN_LONG_BRANCH_PERCENT
 import com.foreverjukebox.app.engine.MAX_THRESHOLD
 import org.junit.Assert.assertEquals
@@ -25,7 +27,36 @@ class TuningParamsCodecTest {
         assertEquals(0, parsed?.minJumpDistancePercent)
         assertTrue(parsed?.removeSequentialBranches == true)
         assertEquals(listOf(3, 8), parsed?.deletedEdgeIds)
-        assertEquals(22, parsed?.anchorBranchId)
+        assertEquals(AnchorParam.EdgeId(22), parsed?.anchor)
+    }
+
+    @Test
+    fun parseReadsACustomAnchorPairAndRejectsAMalformedAb() {
+        assertEquals(
+            AnchorParam.Custom(CustomAnchor(289, 23)),
+            TuningParamsCodec.parse("ab=289-23")?.anchor
+        )
+        assertNull(TuningParamsCodec.parse("ab=23-289")?.anchor)
+        assertNull(TuningParamsCodec.parse("ab=12abc")?.anchor)
+    }
+
+    @Test
+    fun savedTuningKeepsACustomAnchorPair() {
+        val raw = TuningParamsCodec.buildSavedTuningParams(
+            TuningState(anchor = AnchorParam.Custom(CustomAnchor(289, 23)))
+        )
+        assertEquals("ab=289-23", raw)
+        assertEquals(AnchorParam.Custom(CustomAnchor(289, 23)), TuningParamsCodec.parse(raw)?.anchor)
+    }
+
+    @Test
+    fun castPayloadKeepsBothAbFormsAndDropsAMalformedOne() {
+        assertEquals("ab=12", TuningParamsCodec.buildCastLoadPayload("ab=12", highlightAnchorBranch = false))
+        assertEquals(
+            "jb=1&ab=289-23",
+            TuningParamsCodec.buildCastLoadPayload("jb=1&ab=289-23", highlightAnchorBranch = false)
+        )
+        assertEquals("jb=1", TuningParamsCodec.buildCastLoadPayload("jb=1&ab=23-289", highlightAnchorBranch = false))
     }
 
     @Test
@@ -413,7 +444,7 @@ class TuningParamsCodecTest {
                 minJumpDistancePercent = 30,
                 removeSequential = true,
                 deletedEdgeIds = listOf(4, 9),
-                anchorBranchId = 128
+                anchor = AnchorParam.EdgeId(128)
             ),
             audioModeWireValue = "daycore"
         )
@@ -537,7 +568,7 @@ class TuningParamsCodecTest {
                 ramp = 20,
                 minJumpDistancePercent = 20,
                 deletedEdgeIds = listOf(4, 9),
-                anchorBranchId = 128
+                anchor = AnchorParam.EdgeId(128)
             ),
             audioModeWireValue = "daycore"
         )
@@ -549,7 +580,7 @@ class TuningParamsCodecTest {
         assertEquals(20, parsed?.rampPercent)
         assertEquals(20, parsed?.minJumpDistancePercent)
         assertEquals(listOf(4, 9), parsed?.deletedEdgeIds)
-        assertEquals(128, parsed?.anchorBranchId)
+        assertEquals(AnchorParam.EdgeId(128), parsed?.anchor)
         assertEquals(JukeboxAudioMode.Daycore, parsed?.audioMode)
     }
 

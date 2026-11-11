@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.engine.isCustomAnchorEdge
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -336,7 +337,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         val totalBranches = if (playback.isCasting) {
             playback.castTotalBranches ?: 0
         } else {
-            playback.vizData?.edges?.size ?: playback.castTotalBranches ?: 0
+            // The custom anchor's synthetic edge is drawn with the branches but is not one.
+            playback.vizData?.edges?.count { !isCustomAnchorEdge(it) } ?: playback.castTotalBranches ?: 0
         }
         TrackInfoDialog(
             durationSeconds = playback.trackDurationSeconds,

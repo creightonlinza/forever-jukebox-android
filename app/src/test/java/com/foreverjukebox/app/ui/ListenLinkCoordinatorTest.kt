@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -134,7 +135,7 @@ class ListenLinkCoordinatorTest {
                     ramp = 12,
                     justBackwards = true,
                     deletedEdgeIds = listOf(4, 9),
-                    anchorBranchId = 12
+                    anchor = AnchorParam.EdgeId(12)
                 )
             ),
             tuningParams = "thresh=99"

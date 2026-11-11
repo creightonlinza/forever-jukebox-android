@@ -109,7 +109,7 @@ fun analyticsThemeValue(mode: ThemeMode): String = when (mode) {
  * `branch_probability` because the web app treats them as one conceptual control.
  *
  * Only the seven user-facing controls are compared — never the whole TuningState, whose
- * computedThreshold/deletedEdgeIds/anchorBranchId fields are receiver- and engine-derived.
+ * computedThreshold/deletedEdgeIds/anchor fields are receiver- and engine-derived.
  */
 fun analyticsChangedTuneControls(previous: TuningState, next: TuningState): List<String> =
     buildList {

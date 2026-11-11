@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -53,7 +54,7 @@ class TuningCapturePolicyTest {
                 computedThreshold = 29,
                 justBackwards = true,
                 deletedEdgeIds = listOf(4, 9),
-                anchorBranchId = 12
+                anchor = AnchorParam.EdgeId(12)
             )
         )
         var engineCalls = 0

@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.engine.AnchorParam
 import com.foreverjukebox.app.engine.MIN_THRESHOLD
 import com.foreverjukebox.app.engine.VisualizationData
 import org.junit.Assert.assertEquals
@@ -82,7 +83,7 @@ class TuningResetVisibilityTest {
     @Test
     fun localPlaybackIgnoresTheCastMirrorFields() {
         val state = localState().copy(
-            tuning = TuningState(deletedEdgeIds = listOf(3), anchorBranchId = 7)
+            tuning = TuningState(deletedEdgeIds = listOf(3), anchor = AnchorParam.EdgeId(7))
         )
 
         assertFalse(hasBranchTuningToReset(state) { false })
@@ -92,7 +93,7 @@ class TuningResetVisibilityTest {
     fun castingReadsTheReceiverMirroredState() {
         assertFalse(hasBranchTuningToReset(castState(TuningState())) { true })
         assertTrue(hasBranchTuningToReset(castState(TuningState(deletedEdgeIds = listOf(3)))) { false })
-        assertTrue(hasBranchTuningToReset(castState(TuningState(anchorBranchId = 7))) { false })
+        assertTrue(hasBranchTuningToReset(castState(TuningState(anchor = AnchorParam.EdgeId(7)))) { false })
         assertTrue(hasBranchTuningToReset(castState(TuningState(justBackwards = true))) { false })
     }
 

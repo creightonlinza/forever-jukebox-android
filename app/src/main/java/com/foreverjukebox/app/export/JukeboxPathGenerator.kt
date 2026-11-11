@@ -1,12 +1,15 @@
 package com.foreverjukebox.app.export
 
+import com.foreverjukebox.app.engine.AnchorEndpoints
 import com.foreverjukebox.app.engine.BranchState
+import com.foreverjukebox.app.engine.CustomAnchor
 import com.foreverjukebox.app.engine.JukeboxConfig
 import com.foreverjukebox.app.engine.JukeboxGraphState
 import com.foreverjukebox.app.engine.QuantumBase
 import com.foreverjukebox.app.engine.TrackAnalysis
 import com.foreverjukebox.app.engine.UserAnchorSelection
 import com.foreverjukebox.app.engine.buildJumpGraph
+import com.foreverjukebox.app.engine.createCustomAnchorEdge
 import com.foreverjukebox.app.engine.selectExistingAnchorSource
 import com.foreverjukebox.app.engine.selectNextBeatIndex
 
@@ -23,7 +26,7 @@ class JukeboxPathGenerator(
     analysis: TrackAnalysis,
     private val config: JukeboxConfig,
     deletedEdgePairs: Set<Pair<Int, Int>>,
-    userAnchorPair: Pair<Int, Int>?,
+    userAnchor: AnchorEndpoints?,
     private val rng: () -> Double
 ) {
     data class PlannedJump(
@@ -49,12 +52,12 @@ class JukeboxPathGenerator(
     private val beats: List<QuantumBase> = analysis.beats
     private var graph: JukeboxGraphState = buildJumpGraph(analysis, config)
     private val branchState = BranchState(config.minRandomBranchChance)
-    private val userAnchor: UserAnchorSelection?
+    private val userAnchorSelection: UserAnchorSelection?
     private var currentIndex = -1
 
     init {
         applyDeletions(analysis, deletedEdgePairs)
-        userAnchor = resolveUserAnchor(userAnchorPair)
+        userAnchorSelection = resolveUserAnchor(userAnchor)
     }
 
     /** The beat the path starts on; the wrap target when playback passes the last beat. */
@@ -109,7 +112,7 @@ class JukeboxPathGenerator(
             rng = rng,
             state = branchState,
             forceBranch = false,
-            userAnchor = userAnchor
+            userAnchor = userAnchorSelection
         )
         val branched = selection.second
         val chosenIndex = if (branched) selection.first else wrappedIndex
@@ -143,12 +146,19 @@ class JukeboxPathGenerator(
         }
     }
 
-    // Mirrors JukeboxEngine.getUserAnchorEdge: the anchor must exist in the fresh
+    // Mirrors JukeboxEngine.getUserAnchorEdge: a real-edge anchor must exist in the fresh
     // graph, not be deleted, and have survived branch filtering.
-    private fun resolveUserAnchor(pair: Pair<Int, Int>?): UserAnchorSelection? {
-        if (pair == null) return null
+    private fun resolveUserAnchor(anchor: AnchorEndpoints?): UserAnchorSelection? {
+        if (anchor == null) return null
+        if (anchor.custom) {
+            // A custom pair has no edge in the graph; add the engine's synthetic one.
+            val custom = createCustomAnchorEdge(beats, CustomAnchor(anchor.src, anchor.dest))
+                ?: return null
+            custom.src.neighbors.add(custom)
+            return UserAnchorSelection(edgeId = custom.id, sourceIndex = custom.src.which)
+        }
         val edge = graph.allEdges.firstOrNull {
-            !it.deleted && it.src.which == pair.first && it.dest.which == pair.second
+            !it.deleted && it.src.which == anchor.src && it.dest.which == anchor.dest
         } ?: return null
         if (edge.src.neighbors.none { it.id == edge.id }) return null
         return UserAnchorSelection(edgeId = edge.id, sourceIndex = edge.src.which)
