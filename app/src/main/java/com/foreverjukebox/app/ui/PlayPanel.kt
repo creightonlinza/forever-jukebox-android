@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.engine.isCustomAnchorEdge
+import com.foreverjukebox.app.ui.onboarding.OnboardingPlaybackReadyEffect
 import com.foreverjukebox.app.visualization.visualizationLabels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -187,6 +188,11 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     DisposableEffect(viewModel) {
         onDispose { viewModel.setLoadingShown(false) }
     }
+    OnboardingPlaybackReadyEffect(
+        ready = !loadingShown &&
+            playback.analysisErrorMessage.isNullOrBlank() &&
+            resolveListenContentMode(playback) == ListenContentMode.LocalReady
+    )
 
     Column(
         modifier = Modifier.fillMaxSize(),

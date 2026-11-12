@@ -59,9 +59,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.ui.onboarding.OnboardingTarget
+import com.foreverjukebox.app.ui.onboarding.onboardingTarget
 import com.foreverjukebox.app.visualization.AutocanonizerVisualization
 import com.foreverjukebox.app.visualization.EdgeRouting
 import com.foreverjukebox.app.visualization.JukeboxVisualization
@@ -71,6 +74,10 @@ import com.foreverjukebox.app.visualization.beatTilesForVisualization
 import com.foreverjukebox.app.visualization.edgeRoutingForVisualization
 import com.foreverjukebox.app.visualization.positioners
 import com.foreverjukebox.app.visualization.prefersWideAspectForVisualization
+
+// Material pads small buttons to a 48dp touch area; tour highlights hug what the button draws.
+private val SmallSquareVisualSize = DpSize(SmallButtonHeight, SmallButtonHeight)
+private val SmallPillVisualSize = DpSize(Dp.Unspecified, SmallButtonHeight)
 
 // Track title/artist and listen-time data live in the persistent playback
 // bar; this row is action icons only.
@@ -102,7 +109,13 @@ private fun PlaybackHeaderRow(
     ) {
         Spacer(modifier = Modifier.weight(1f, fill = true))
         if (showControls) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.onboardingTarget(
+                    OnboardingTarget.ToolRow,
+                    SmallPillVisualSize
+                )
+            ) {
                 if (showDeleteTrackAction) {
                     SquareIconButton(
                         onClick = {
@@ -144,7 +157,9 @@ private fun PlaybackHeaderRow(
                 if (playback.playMode == PlaybackMode.Jukebox && showTuningAndInfo) {
                     SquareIconButton(
                         onClick = onOpenTuning,
-                        modifier = Modifier.size(SmallButtonHeight)
+                        modifier = Modifier
+                            .size(SmallButtonHeight)
+                            .onboardingTarget(OnboardingTarget.Tuning, SmallSquareVisualSize)
                     ) {
                         Icon(
                             Icons.Outlined.Tune,
@@ -155,7 +170,9 @@ private fun PlaybackHeaderRow(
                     }
                     SquareIconButton(
                         onClick = onOpenInfo,
-                        modifier = Modifier.size(SmallButtonHeight)
+                        modifier = Modifier
+                            .size(SmallButtonHeight)
+                            .onboardingTarget(OnboardingTarget.TrackInfo, SmallSquareVisualSize)
                     ) {
                         Icon(
                             Icons.Outlined.Info,
@@ -168,7 +185,9 @@ private fun PlaybackHeaderRow(
                 if (showExportAction) {
                     SquareIconButton(
                         onClick = onOpenExport,
-                        modifier = Modifier.size(SmallButtonHeight)
+                        modifier = Modifier
+                            .size(SmallButtonHeight)
+                            .onboardingTarget(OnboardingTarget.Export, SmallSquareVisualSize)
                     ) {
                         Icon(
                             Icons.Outlined.FileDownload,
@@ -798,7 +817,9 @@ private fun BoxScope.LocalPlaybackModeMenu(
                 border = pillButtonBorder(),
                 shape = PillShape,
                 contentPadding = SmallButtonPadding,
-                modifier = Modifier.height(SmallButtonHeight)
+                modifier = Modifier
+                    .height(SmallButtonHeight)
+                    .onboardingTarget(OnboardingTarget.PlaybackMode, SmallPillVisualSize)
             ) {
                 Text(
                     text = playMode.label,
@@ -874,7 +895,9 @@ private fun BoxScope.LocalVisualizationTopEndControls(
             border = pillButtonBorder(),
             shape = PillShape,
             contentPadding = SmallButtonPadding,
-            modifier = Modifier.height(SmallButtonHeight)
+            modifier = Modifier
+                .height(SmallButtonHeight)
+                .onboardingTarget(OnboardingTarget.VisualizationPicker, SmallPillVisualSize)
         ) {
             Text(
                 vizLabels.getOrNull(playback.activeVizIndex) ?: "Select",

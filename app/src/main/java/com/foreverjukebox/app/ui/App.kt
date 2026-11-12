@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import com.foreverjukebox.app.ui.onboarding.OnboardingHost
 
 @Composable
 fun ForeverJukeboxApp(viewModel: MainViewModel) {
@@ -40,145 +41,147 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                 viewModel.closeFullscreenVisualization()
             }
         }
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-            ) {
-                if (state.showAppModeGate) {
-                    TitleOnlyHeaderBar()
-                } else {
-                    HeaderBar(
-                        state = state,
-                        onEditBaseUrl = { viewModel.setBaseUrl(it) },
-                        onEditAdminKey = { viewModel.setAdminKey(it) },
-                        onThemeChange = viewModel::setThemeMode,
-                        onLoadingAudioFeedbackChange = viewModel::setLoadingAudioFeedbackEnabled,
-                        onAppModeChange = viewModel::setAppMode,
-                        onRefreshCacheSize = viewModel::refreshCacheSize,
-                        onClearCache = viewModel::clearCache,
-                        onCastSessionStarted = {},
-                        onOpenSleepTimer = { showSleepTimer = true },
-                        onOpenWhatsNew = viewModel::showWhatsNewFromSettings,
-                        onOpenFeedback = { showFeedback = true }
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
+        OnboardingHost(activeTab = state.activeTab, suppressed = state.fullscreenVisualizationVisible) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
+                    if (state.showAppModeGate) {
+                        TitleOnlyHeaderBar()
+                    } else {
+                        HeaderBar(
+                            state = state,
+                            onEditBaseUrl = { viewModel.setBaseUrl(it) },
+                            onEditAdminKey = { viewModel.setAdminKey(it) },
+                            onThemeChange = viewModel::setThemeMode,
+                            onLoadingAudioFeedbackChange = viewModel::setLoadingAudioFeedbackEnabled,
+                            onAppModeChange = viewModel::setAppMode,
+                            onRefreshCacheSize = viewModel::refreshCacheSize,
+                            onClearCache = viewModel::clearCache,
+                            onCastSessionStarted = {},
+                            onOpenSleepTimer = { showSleepTimer = true },
+                            onOpenWhatsNew = viewModel::showWhatsNewFromSettings,
+                            onOpenFeedback = { showFeedback = true }
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    Box(modifier = Modifier.weight(1f, fill = true)) {
-                        // Per-tab saveable state (list scroll positions, search queries) is kept
-                        // while another tab is shown, so returning to a tab restores where it was.
-                        tabStateHolder.SaveableStateProvider(state.activeTab) {
-                            when (state.activeTab) {
-                                TabId.Input -> InputPanel(
-                                    state = state,
-                                    onOpenFile = viewModel::startLocalAnalysis,
-                                    onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
-                                    onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
-                                    onDeleteCachedTrack = viewModel::deleteCachedLocalTrack,
-                                    onSortChange = viewModel::setLocalAnalysisSort
-                                )
-                                TabId.Top,
-                                TabId.Search -> ServerTabContent(
-                                    tabId = state.activeTab,
-                                    state = state,
-                                    viewModel = viewModel
-                                )
-                                TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
-                                TabId.Faq -> FaqPanel()
+                        Box(modifier = Modifier.weight(1f, fill = true)) {
+                            // Per-tab saveable state (list scroll positions, search queries) is kept
+                            // while another tab is shown, so returning to a tab restores where it was.
+                            tabStateHolder.SaveableStateProvider(state.activeTab) {
+                                when (state.activeTab) {
+                                    TabId.Input -> InputPanel(
+                                        state = state,
+                                        onOpenFile = viewModel::startLocalAnalysis,
+                                        onOpenCachedTrack = viewModel::selectLocalCachedPlaylistTrack,
+                                        onAddCachedTrackToPlaylist = viewModel::addLocalCachedTrackToPlaylist,
+                                        onDeleteCachedTrack = viewModel::deleteCachedLocalTrack,
+                                        onSortChange = viewModel::setLocalAnalysisSort
+                                    )
+                                    TabId.Top,
+                                    TabId.Search -> ServerTabContent(
+                                        tabId = state.activeTab,
+                                        state = state,
+                                        viewModel = viewModel
+                                    )
+                                    TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
+                                    TabId.Faq -> FaqPanel()
+                                }
                             }
                         }
-                    }
-                    if (shouldShowPlaybackBar(state.playback)) {
+                        if (shouldShowPlaybackBar(state.playback)) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            PlaybackBar(
+                                state = state,
+                                onTogglePlayback = viewModel::togglePlayback,
+                                onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
+                                onSkipNext = viewModel::skipToNextPlaylistTrack,
+                                onOpenPlayTab = { viewModel.setActiveTab(TabId.Play) }
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
-                        PlaybackBar(
+                        BottomNavBar(
                             state = state,
-                            onTogglePlayback = viewModel::togglePlayback,
-                            onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
-                            onSkipNext = viewModel::skipToNextPlaylistTrack,
-                            onOpenPlayTab = { viewModel.setActiveTab(TabId.Play) }
+                            onTabSelected = viewModel::setActiveTab
                         )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    BottomNavBar(
+                }
+
+                if (state.showAppModeGate) {
+                    AppModeDialog(
+                        initialMode = defaultOnboardingMode,
+                        initialValue = state.baseUrl,
+                        onConfirm = viewModel::completeAppModeOnboarding
+                    )
+                }
+
+                if (!state.showAppModeGate) {
+                    state.versionUpdatePrompt?.let { prompt ->
+                        VersionUpdateDialog(
+                            latestVersion = prompt.latestVersion,
+                            onDownload = {
+                                runCatching {
+                                    val intent = Intent(Intent.ACTION_VIEW, prompt.downloadUrl.toUri())
+                                    context.startActivity(intent)
+                                }
+                            },
+                            onClose = viewModel::dismissVersionUpdatePrompt
+                        )
+                    }
+                    state.whatsNewPrompt?.let { prompt ->
+                        WhatsNewDialog(
+                            prompt = prompt,
+                            onClose = viewModel::dismissWhatsNew
+                        )
+                    }
+                    state.trackLengthLimitErrorMessage?.let { message ->
+                        ErrorMessageDialog(
+                            message = message,
+                            onClose = viewModel::dismissTrackLengthLimitErrorDialog
+                        )
+                    }
+                    state.localCachedTrackErrorMessage?.let { message ->
+                        ErrorMessageDialog(
+                            message = message,
+                            onClose = viewModel::dismissLocalCachedTrackErrorDialog
+                        )
+                    }
+                    if (showSleepTimer) {
+                        SleepTimerDialog(
+                            selectedOption = state.sleepTimer.selectedOption,
+                            remainingMs = state.sleepTimer.remainingMs,
+                            onDismiss = { showSleepTimer = false },
+                            onSelectOption = viewModel::setSleepTimer
+                        )
+                    }
+                    if (showFeedback) {
+                        FeedbackDialog(
+                            onSubmit = viewModel::submitFeedback,
+                            onDismiss = { showFeedback = false }
+                        )
+                    }
+                }
+
+                if (
+                    state.fullscreenVisualizationVisible &&
+                    fullscreenVisualizationAllowed
+                ) {
+                    FullscreenVisualizationScreen(
                         state = state,
-                        onTabSelected = viewModel::setActiveTab
+                        onClose = viewModel::closeFullscreenVisualization,
+                        onTogglePlayback = viewModel::togglePlayback,
+                        onSetPlaybackMode = viewModel::selectPlaybackMode,
+                        onSetVisualization = viewModel::setActiveVisualization,
+                        onSelectBeat = viewModel::selectBeat,
+                        onSelectWubMachinePosition = viewModel::selectWubMachinePosition,
+                        onSetWubMachineLoop = viewModel::setWubMachineLoop,
+                        onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
+                        onSkipNext = viewModel::skipToNextPlaylistTrack
                     )
                 }
-            }
-
-            if (state.showAppModeGate) {
-                AppModeDialog(
-                    initialMode = defaultOnboardingMode,
-                    initialValue = state.baseUrl,
-                    onConfirm = viewModel::completeAppModeOnboarding
-                )
-            }
-
-            if (!state.showAppModeGate) {
-                state.versionUpdatePrompt?.let { prompt ->
-                    VersionUpdateDialog(
-                        latestVersion = prompt.latestVersion,
-                        onDownload = {
-                            runCatching {
-                                val intent = Intent(Intent.ACTION_VIEW, prompt.downloadUrl.toUri())
-                                context.startActivity(intent)
-                            }
-                        },
-                        onClose = viewModel::dismissVersionUpdatePrompt
-                    )
-                }
-                state.whatsNewPrompt?.let { prompt ->
-                    WhatsNewDialog(
-                        prompt = prompt,
-                        onClose = viewModel::dismissWhatsNew
-                    )
-                }
-                state.trackLengthLimitErrorMessage?.let { message ->
-                    ErrorMessageDialog(
-                        message = message,
-                        onClose = viewModel::dismissTrackLengthLimitErrorDialog
-                    )
-                }
-                state.localCachedTrackErrorMessage?.let { message ->
-                    ErrorMessageDialog(
-                        message = message,
-                        onClose = viewModel::dismissLocalCachedTrackErrorDialog
-                    )
-                }
-                if (showSleepTimer) {
-                    SleepTimerDialog(
-                        selectedOption = state.sleepTimer.selectedOption,
-                        remainingMs = state.sleepTimer.remainingMs,
-                        onDismiss = { showSleepTimer = false },
-                        onSelectOption = viewModel::setSleepTimer
-                    )
-                }
-                if (showFeedback) {
-                    FeedbackDialog(
-                        onSubmit = viewModel::submitFeedback,
-                        onDismiss = { showFeedback = false }
-                    )
-                }
-            }
-
-            if (
-                state.fullscreenVisualizationVisible &&
-                fullscreenVisualizationAllowed
-            ) {
-                FullscreenVisualizationScreen(
-                    state = state,
-                    onClose = viewModel::closeFullscreenVisualization,
-                    onTogglePlayback = viewModel::togglePlayback,
-                    onSetPlaybackMode = viewModel::selectPlaybackMode,
-                    onSetVisualization = viewModel::setActiveVisualization,
-                    onSelectBeat = viewModel::selectBeat,
-                    onSelectWubMachinePosition = viewModel::selectWubMachinePosition,
-                    onSetWubMachineLoop = viewModel::setWubMachineLoop,
-                    onSkipPrevious = viewModel::skipToPreviousPlaylistTrack,
-                    onSkipNext = viewModel::skipToNextPlaylistTrack
-                )
             }
         }
     }
