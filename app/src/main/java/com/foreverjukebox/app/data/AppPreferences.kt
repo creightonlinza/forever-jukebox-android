@@ -26,6 +26,13 @@ enum class ThemeMode {
     Dark
 }
 
+/** Theme used when no theme is saved; matches the web app's default. */
+val DefaultThemeMode = ThemeMode.Dark
+
+/** Resolves a stored theme name; a missing or unknown value gives [DefaultThemeMode]. */
+fun themeModeFromStored(raw: String?): ThemeMode =
+    ThemeMode.entries.firstOrNull { it.name == raw } ?: DefaultThemeMode
+
 @Serializable
 enum class SavedPlaylistTrackType {
     Server,
@@ -138,7 +145,7 @@ class AppPreferences(private val context: Context) {
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
-        themeFromString(prefs[KEY_THEME])
+        themeModeFromStored(prefs[KEY_THEME])
     }
 
     val activeVizIndex: Flow<Int> = context.dataStore.data.map { prefs ->
@@ -315,15 +322,6 @@ class AppPreferences(private val context: Context) {
     suspend fun setWhatsNewVersionCode(versionCode: Int) {
         context.dataStore.edit { prefs ->
             prefs[KEY_WHATS_NEW_VERSION_CODE] = versionCode
-        }
-    }
-
-    private fun themeFromString(raw: String?): ThemeMode {
-        return when (raw) {
-            ThemeMode.System.name -> ThemeMode.System
-            ThemeMode.Light.name -> ThemeMode.Light
-            ThemeMode.Dark.name -> ThemeMode.Dark
-            else -> ThemeMode.System
         }
     }
 

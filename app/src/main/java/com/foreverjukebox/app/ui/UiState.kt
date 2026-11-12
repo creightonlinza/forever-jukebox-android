@@ -7,6 +7,7 @@ import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.DEFAULT_MAX_FAVORITES
 import com.foreverjukebox.app.data.FavoritePlayMode
 import com.foreverjukebox.app.data.FavoriteTrack
+import com.foreverjukebox.app.data.DefaultThemeMode
 import com.foreverjukebox.app.data.ThemeMode
 import com.foreverjukebox.app.data.canonicalTrackId
 import com.foreverjukebox.app.data.parseTrackId
@@ -173,7 +174,7 @@ data class UiState(
     val localCachedTrackErrorMessage: String? = null,
     val localAnalysisSortKey: FavoriteSortKey = FavoriteSortKey.Title,
     val localAnalysisSortDirection: FavoriteSortDirection = FavoriteSortDirection.Ascending,
-    val themeMode: ThemeMode = ThemeMode.System,
+    val themeMode: ThemeMode = DefaultThemeMode,
     val activeTab: TabId = TabId.Top,
     val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,
     val searchPanelTab: SearchPanelTab = SearchPanelTab.Search,
