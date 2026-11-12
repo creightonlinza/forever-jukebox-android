@@ -34,8 +34,9 @@ This non-commercial nature is relevant to the madmom terms noted below.
   model files (`app/src/main/assets/madmom_beats_port_models/downbeats_blstm.json`
   and `downbeats_blstm_weights.npz`).
 - **Port code/runtime (the `.so`):** BSD 2-Clause. Source:
-  <https://github.com/creightonlinza/madmom-beats-port> (v4.2.0). The runtime
-  includes portions derived from upstream `madmom`, also under BSD 2-Clause.
+  <https://github.com/creightonlinza/madmom-beats-port> (v5.0.0). The runtime
+  includes portions derived from upstream `madmom`, also under BSD 2-Clause,
+  NumPy's float32 `tanh` (BSD 3-Clause), and the `libm` Rust crate (MIT).
   License map and notices:
   [`third_party/madmom_beats_port_ffi/LICENSE`](third_party/madmom_beats_port_ffi/LICENSE),
   [`third_party/madmom_beats_port_ffi/NOTICE`](third_party/madmom_beats_port_ffi/NOTICE),

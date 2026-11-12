@@ -206,7 +206,8 @@ fun FaqPanel() {
                 BulletListItem("Essentia — on-device audio analysis (AGPLv3).")
                 BulletListItem(
                     "madmom-beats-port — beat and downbeat detection " +
-                        "(code BSD 2-Clause; bundled models CC BY-NC-SA 4.0, " +
+                        "(code BSD 2-Clause, with NumPy BSD 3-Clause and libm MIT parts; " +
+                        "bundled models CC BY-NC-SA 4.0, " +
                         "non-commercial — this app is non-commercial, with no ads or purchases)."
                 )
                 BulletListItem("SpeexDSP — audio resampling (BSD 3-Clause).")
