@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,6 +47,11 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.foreverjukebox.app.ui.onboarding.OnboardingTarget
+import com.foreverjukebox.app.ui.onboarding.onboardingTarget
+
+/** How much of the Completed Analysis area the tour highlights: the label, search and first rows. */
+private val CompletedAnalysisTourHeight = 220.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -101,149 +108,165 @@ fun InputPanel(
                     icon = Icons.Outlined.AudioFile,
                     iconTint = LocalThemeTokens.current.titleAccent,
                     onClick = { filePicker.launch(localAnalysisMimeTypesForPicker()) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onboardingTarget(OnboardingTarget.AddAudio)
                 )
-                Text("Completed Analysis", style = MaterialTheme.typography.labelLarge)
-                if (state.localCachedTracks.isEmpty()) {
-                    Text(
-                        text = "No completed analyses yet.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    var query by rememberSaveable { mutableStateOf("") }
-                    val sortKey = state.localAnalysisSortKey
-                    val sortDirection = state.localAnalysisSortDirection
-                    val trimmedQuery = query.trim()
-                    val filtered = filterLocalCachedTracks(state.localCachedTracks, query)
-                    val sorted = sortLocalCachedTracksForDisplay(filtered, sortKey, sortDirection)
-                    val focusRequester = remember { FocusRequester() }
-                    val keyboardController = LocalSoftwareKeyboardController.current
-                    val onSortSelected: (FavoriteSortKey) -> Unit = { selectedKey ->
-                        if (sortKey == selectedKey) {
-                            onSortChange(sortKey, sortDirection.toggled())
+                // The tour highlights the label and the top of the list, empty or not.
+                Box(modifier = Modifier.fillMaxWidth().weight(1f, fill = true)) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Completed Analysis", style = MaterialTheme.typography.labelLarge)
+                        if (state.localCachedTracks.isEmpty()) {
+                            Text(
+                                text = "No completed analyses yet.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         } else {
-                            onSortChange(selectedKey, FavoriteSortDirection.Ascending)
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        label = { Text("Search completed analysis") },
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        trailingIcon = {
-                            if (trimmedQuery.isNotEmpty()) {
-                                SquareIconButton(
-                                    onClick = {
-                                        query = ""
-                                        focusRequester.requestFocus()
-                                        keyboardController?.show()
-                                    }
-                                ) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = "Clear completed analysis search"
-                                    )
+                            var query by rememberSaveable { mutableStateOf("") }
+                            val sortKey = state.localAnalysisSortKey
+                            val sortDirection = state.localAnalysisSortDirection
+                            val trimmedQuery = query.trim()
+                            val filtered = filterLocalCachedTracks(state.localCachedTracks, query)
+                            val sorted = sortLocalCachedTracksForDisplay(filtered, sortKey, sortDirection)
+                            val focusRequester = remember { FocusRequester() }
+                            val keyboardController = LocalSoftwareKeyboardController.current
+                            val onSortSelected: (FavoriteSortKey) -> Unit = { selectedKey ->
+                                if (sortKey == selectedKey) {
+                                    onSortChange(sortKey, sortDirection.toggled())
+                                } else {
+                                    onSortChange(selectedKey, FavoriteSortDirection.Ascending)
                                 }
                             }
-                        },
-                        shape = SurfaceShape,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                    )
-                    if (sorted.isEmpty()) {
-                        Text(
-                            text = "No completed analyses match \"$trimmedQuery\".",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CompletedAnalysisSortHeaderCell(
-                                text = "Title",
-                                column = FavoriteSortKey.Title,
-                                sortKey = sortKey,
-                                sortDirection = sortDirection,
-                                onSortSelected = onSortSelected,
-                                modifier = Modifier.weight(1f, fill = true)
+
+                            OutlinedTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                label = { Text("Search completed analysis") },
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                trailingIcon = {
+                                    if (trimmedQuery.isNotEmpty()) {
+                                        SquareIconButton(
+                                            onClick = {
+                                                query = ""
+                                                focusRequester.requestFocus()
+                                                keyboardController?.show()
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Clear completed analysis search"
+                                            )
+                                        }
+                                    }
+                                },
+                                shape = SurfaceShape,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester)
                             )
-                            CompletedAnalysisSortHeaderCell(
-                                text = "Artist",
-                                column = FavoriteSortKey.Artist,
-                                sortKey = sortKey,
-                                sortDirection = sortDirection,
-                                onSortSelected = onSortSelected,
-                                modifier = Modifier.weight(0.8f, fill = true)
-                            )
-                            Spacer(modifier = Modifier.width(24.dp))
-                        }
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f, fill = true),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(sorted, key = { it.localId }) { track ->
-                                val displayTitle = track.title.ifBlank { "Untitled" }
-                                val displayArtist = favoriteDisplayArtist(track.artist)
+                            if (sorted.isEmpty()) {
+                                Text(
+                                    text = "No completed analyses match \"$trimmedQuery\".",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            } else {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .combinedClickable(
-                                            onClick = { onOpenCachedTrack(track.localId) },
-                                            onLongClick = { onAddCachedTrackToPlaylist(track.localId) }
-                                        ),
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(1f, fill = true)) {
-                                        Text(
-                                            text = displayTitle,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                        track.durationSeconds?.let { seconds ->
-                                            Text(
-                                                text = formatTrackDuration(seconds),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        if (track.sourceUri.isNullOrBlank()) {
-                                            Text(
-                                                text = "Not linked to a source file. Use Add Audio to re-link.",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        text = displayArtist,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodyMedium,
+                                    CompletedAnalysisSortHeaderCell(
+                                        text = "Title",
+                                        column = FavoriteSortKey.Title,
+                                        sortKey = sortKey,
+                                        sortDirection = sortDirection,
+                                        onSortSelected = onSortSelected,
+                                        modifier = Modifier.weight(1f, fill = true)
+                                    )
+                                    CompletedAnalysisSortHeaderCell(
+                                        text = "Artist",
+                                        column = FavoriteSortKey.Artist,
+                                        sortKey = sortKey,
+                                        sortDirection = sortDirection,
+                                        onSortSelected = onSortSelected,
                                         modifier = Modifier.weight(0.8f, fill = true)
                                     )
-                                    SquareIconButton(
-                                        onClick = { pendingDeleteLocalId = track.localId },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = "Delete completed analysis",
-                                            tint = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(12.dp)
-                                        )
+                                    Spacer(modifier = Modifier.width(24.dp))
+                                }
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f, fill = true),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(sorted, key = { it.localId }) { track ->
+                                        val displayTitle = track.title.ifBlank { "Untitled" }
+                                        val displayArtist = favoriteDisplayArtist(track.artist)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .combinedClickable(
+                                                    onClick = { onOpenCachedTrack(track.localId) },
+                                                    onLongClick = { onAddCachedTrackToPlaylist(track.localId) }
+                                                ),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f, fill = true)) {
+                                                Text(
+                                                    text = displayTitle,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                                track.durationSeconds?.let { seconds ->
+                                                    Text(
+                                                        text = formatTrackDuration(seconds),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                if (track.sourceUri.isNullOrBlank()) {
+                                                    Text(
+                                                        text = "Not linked to a source file. Use Add Audio to re-link.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = displayArtist,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.weight(0.8f, fill = true)
+                                            )
+                                            SquareIconButton(
+                                                onClick = { pendingDeleteLocalId = track.localId },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    contentDescription = "Delete completed analysis",
+                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(CompletedAnalysisTourHeight)
+                            .onboardingTarget(OnboardingTarget.CompletedAnalysis)
+                    )
                 }
             }
         }

@@ -73,6 +73,7 @@ import android.widget.Toast
 import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.ThemeMode
+import com.foreverjukebox.app.ui.onboarding.OnboardingDebugSettingsSection
 import kotlin.math.max
 
 @Composable
@@ -517,6 +518,7 @@ private fun SettingsDialog(
                         Text("Clear $cacheLabel", style = MaterialTheme.typography.labelSmall)
                     }
                 }
+                OnboardingDebugSettingsSection()
             }
         }
     )

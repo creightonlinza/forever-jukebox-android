@@ -34,8 +34,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.foreverjukebox.app.engine.MIN_THRESHOLD
+import com.foreverjukebox.app.ui.onboarding.OnboardingDialog
+import com.foreverjukebox.app.ui.onboarding.OnboardingTarget
+import com.foreverjukebox.app.ui.onboarding.OnboardingTourId
+import com.foreverjukebox.app.ui.onboarding.onboardingTarget
 import kotlin.math.roundToInt
 
 internal val MIN_JUMP_DISTANCE_OPTIONS = listOf(0, 5, 10, 20, 30)
@@ -259,7 +262,7 @@ fun TuningDialog(
             audioModeResetVisible(initialAudioModeWireValue, audioModeWireValue)
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    OnboardingDialog(OnboardingTourId.Tuning, onDismissRequest = onDismiss) {
         Surface(
             shape = SurfaceShape,
             color = AlertDialogDefaults.containerColor,
@@ -278,6 +281,11 @@ fun TuningDialog(
                         Tab(
                             selected = tab == selectedTab,
                             onClick = { selectedTab = tab },
+                            modifier = if (tab == TuningDialogTab.AudioMode) {
+                                Modifier.onboardingTarget(OnboardingTarget.TuningAudioModeTab)
+                            } else {
+                                Modifier
+                            },
                             text = { Text(tab.title, style = MaterialTheme.typography.labelSmall) }
                         )
                     }
@@ -434,33 +442,39 @@ private fun TuningTabContent(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SliderLabelRow("Branch Similarity Threshold", "${threshold.toInt()}")
-        Slider(
-            value = threshold,
-            onValueChange = onThresholdChange,
-            valueRange = 2f..80f,
-            steps = 77
-        )
-        SliderLabelRow(
-            "Min Jump Distance",
-            minimumJumpDistanceLabel(selectedMinJumpDistancePercent)
-        )
-        Slider(
-            value = minJumpIndex,
-            onValueChange = onMinJumpIndexChange,
-            valueRange = 0f..4f,
-            steps = 3
-        )
-        SliderLabelRow(
-            "Branch Probability",
-            "${probRange.start.toInt()}–${probRange.endInclusive.toInt()}%"
-        )
-        RangeSlider(
-            value = probRange,
-            onValueChange = onProbRangeChange,
-            valueRange = 0f..100f,
-            steps = 49
-        )
+        TuningControlGroup(OnboardingTarget.TuningThreshold) {
+            SliderLabelRow("Branch Similarity Threshold", "${threshold.toInt()}")
+            Slider(
+                value = threshold,
+                onValueChange = onThresholdChange,
+                valueRange = 2f..80f,
+                steps = 77
+            )
+        }
+        TuningControlGroup(OnboardingTarget.TuningMinJumpDistance) {
+            SliderLabelRow(
+                "Min Jump Distance",
+                minimumJumpDistanceLabel(selectedMinJumpDistancePercent)
+            )
+            Slider(
+                value = minJumpIndex,
+                onValueChange = onMinJumpIndexChange,
+                valueRange = 0f..4f,
+                steps = 3
+            )
+        }
+        TuningControlGroup(OnboardingTarget.TuningBranchProbability) {
+            SliderLabelRow(
+                "Branch Probability",
+                "${probRange.start.toInt()}–${probRange.endInclusive.toInt()}%"
+            )
+            RangeSlider(
+                value = probRange,
+                onValueChange = onProbRangeChange,
+                valueRange = 0f..100f,
+                steps = 49
+            )
+        }
         SliderLabelRow("Branch Ramp Speed", "${ramp.toInt()}%")
         Slider(
             value = ramp,
@@ -534,6 +548,17 @@ private fun AudioModeTabContent(
                 steps = AudioModeIntensity.MAX - AudioModeIntensity.MIN - 1
             )
         }
+    }
+}
+
+/** A label and its slider, kept as one tour target with the tab's usual spacing between them. */
+@Composable
+private fun TuningControlGroup(target: OnboardingTarget, content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier.onboardingTarget(target),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        content()
     }
 }
 
