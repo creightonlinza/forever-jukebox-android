@@ -79,7 +79,7 @@ private data class OnboardingTargetElement(
 
     override fun update(node: OnboardingTargetNode) {
         if (node.target == target && node.visualSize == visualSize) return
-        node.registry?.remove(node.target)
+        node.withdraw()
         node.target = target
         node.visualSize = visualSize
         node.placeAgain()
@@ -102,11 +102,8 @@ private class OnboardingTargetNode(
     var target: OnboardingTarget,
     var visualSize: DpSize
 ) : Modifier.Node(), GlobalPositionAwareModifierNode, CompositionLocalConsumerModifierNode {
-    var registry: OnboardingRegistry? = null
-
-    override fun onAttach() {
-        registry = currentValueOf(LocalOnboardingRegistry)
-    }
+    // The registry this node last reported to, so detaching or retargeting can withdraw the entry.
+    private var placedIn: OnboardingRegistry? = null
 
     // Kept so a changed target or size is placed at once; layout may not move to report it again.
     private var lastCoordinates: LayoutCoordinates? = null
@@ -116,15 +113,24 @@ private class OnboardingTargetNode(
         placeAgain()
     }
 
+    /** Reads the registry at time of use; where no flavor hosts a tour it is null and nothing happens. */
     fun placeAgain() {
+        if (!isAttached) return
         val coordinates = lastCoordinates?.takeIf { it.isAttached } ?: return
-        val density = currentValueOf(LocalDensity)
-        registry?.place(target, coordinates.boundsInWindow().shrinkTo(visualSize, density))
+        val registry = currentValueOf(LocalOnboardingRegistry)
+        if (registry !== placedIn) withdraw()
+        if (registry == null) return
+        placedIn = registry
+        registry.place(target, coordinates.boundsInWindow().shrinkTo(visualSize, currentValueOf(LocalDensity)))
+    }
+
+    fun withdraw() {
+        placedIn?.remove(target)
+        placedIn = null
     }
 
     override fun onDetach() {
-        registry?.remove(target)
-        registry = null
+        withdraw()
         lastCoordinates = null
     }
 }
