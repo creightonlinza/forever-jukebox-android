@@ -85,6 +85,25 @@ class JukeboxPathGeneratorTest {
     }
 
     @Test
+    fun pinnedEdgeTheThresholdFiltersOutIsStillForced() {
+        // Edge 5 -> 1 has distance 20, above this threshold.
+        val steps = collectSteps(
+            makeGenerator(
+                seed = 99,
+                userAnchor = AnchorEndpoints(5, 1, custom = false),
+                currentThreshold = 15
+            ),
+            STEP_COUNT
+        )
+        val anchorSeedJumps = steps.filter { jumpSourceSeed(it) == 5 }
+        assertTrue("anchor source should be reached", anchorSeedJumps.isNotEmpty())
+        assertTrue(
+            "every branch from the anchor source must take the pinned edge",
+            anchorSeedJumps.all { it.jump?.targetIndex == 1 }
+        )
+    }
+
+    @Test
     fun customAnchorPairWithoutARealEdgeIsForced() {
         val steps = collectSteps(
             makeGenerator(seed = 99, userAnchor = AnchorEndpoints(6, 1, custom = true)),
@@ -129,7 +148,8 @@ class JukeboxPathGeneratorTest {
     private fun makeGenerator(
         seed: Int,
         deletedEdgePairs: Set<Pair<Int, Int>> = emptySet(),
-        userAnchor: AnchorEndpoints? = null
+        userAnchor: AnchorEndpoints? = null,
+        currentThreshold: Int = 60
     ): JukeboxPathGenerator {
         val analysis = makeAnalysis()
         var edgeId = 0
@@ -146,7 +166,7 @@ class JukeboxPathGeneratorTest {
         }
         return JukeboxPathGenerator(
             analysis = analysis,
-            config = makeConfig(),
+            config = makeConfig().copy(currentThreshold = currentThreshold),
             deletedEdgePairs = deletedEdgePairs,
             userAnchor = userAnchor,
             rng = createRng(RandomMode.Seeded, seed)

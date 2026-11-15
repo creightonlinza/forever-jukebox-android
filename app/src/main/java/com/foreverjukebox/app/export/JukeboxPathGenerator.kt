@@ -10,6 +10,7 @@ import com.foreverjukebox.app.engine.TrackAnalysis
 import com.foreverjukebox.app.engine.UserAnchorSelection
 import com.foreverjukebox.app.engine.buildJumpGraph
 import com.foreverjukebox.app.engine.createCustomAnchorEdge
+import com.foreverjukebox.app.engine.putBackPinnedEdge
 import com.foreverjukebox.app.engine.selectExistingAnchorSource
 import com.foreverjukebox.app.engine.selectNextBeatIndex
 
@@ -146,8 +147,8 @@ class JukeboxPathGenerator(
         }
     }
 
-    // Mirrors JukeboxEngine.getUserAnchorEdge: a real-edge anchor must exist in the fresh
-    // graph, not be deleted, and have survived branch filtering.
+    // Mirrors JukeboxEngine: a real-edge anchor must exist in the fresh graph and not be deleted;
+    // a pin that a tuning filter dropped is put back.
     private fun resolveUserAnchor(anchor: AnchorEndpoints?): UserAnchorSelection? {
         if (anchor == null) return null
         if (anchor.custom) {
@@ -160,7 +161,7 @@ class JukeboxPathGenerator(
         val edge = graph.allEdges.firstOrNull {
             !it.deleted && it.src.which == anchor.src && it.dest.which == anchor.dest
         } ?: return null
-        if (edge.src.neighbors.none { it.id == edge.id }) return null
+        putBackPinnedEdge(edge)
         return UserAnchorSelection(edgeId = edge.id, sourceIndex = edge.src.which)
     }
 }

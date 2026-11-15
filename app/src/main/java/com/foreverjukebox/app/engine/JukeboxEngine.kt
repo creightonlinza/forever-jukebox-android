@@ -53,6 +53,8 @@ class JukeboxEngine(
     private var pendingAdvance: PendingAdvance? = null
     private val deletedEdgeKeys = mutableSetOf<String>()
     private var userAnchorEdgeId: Int? = null
+    // The pinned edge when a tuning filter dropped it and the engine put it back.
+    private var insertedUserAnchorEdge: Edge? = null
     // Lives only in its source beat's neighbors, never in allEdges, so deletion keys skip it.
     private var customAnchorEdge: Edge? = null
     private val rng = createRng(options.randomMode, options.seed)
@@ -81,6 +83,7 @@ class JukeboxEngine(
     fun loadAnalysis(data: JsonElement) {
         deletedEdgeKeys.clear()
         userAnchorEdgeId = null
+        insertedUserAnchorEdge = null
         customAnchorEdge = null
         analysis = normalizeAnalysis(data)
         val beatsCount = analysis?.beats?.size ?: 0
@@ -103,6 +106,7 @@ class JukeboxEngine(
     fun clearAnalysis() {
         deletedEdgeKeys.clear()
         userAnchorEdgeId = null
+        insertedUserAnchorEdge = null
         customAnchorEdge = null
         analysis = null
         graph = null
@@ -133,7 +137,9 @@ class JukeboxEngine(
 
     fun setUserAnchorEdge(edge: Edge?) {
         removeCustomAnchorEdge()
+        removeInsertedUserAnchorEdge()
         userAnchorEdgeId = edge?.id
+        insertUserAnchorEdge()
         clearPendingAdvance(cancelScheduledJump = true)
         syncAnchorJump()
     }
@@ -143,6 +149,7 @@ class JukeboxEngine(
         if (graph == null) return false
         val edge = createCustomAnchorEdge(beats, CustomAnchor(src, dest)) ?: return false
         removeCustomAnchorEdge()
+        removeInsertedUserAnchorEdge()
         userAnchorEdgeId = null
         customAnchorEdge = edge
         injectCustomAnchorEdge()
@@ -222,10 +229,12 @@ class JukeboxEngine(
             )
         )
         graph = graphBuilder(current, config)
+        insertedUserAnchorEdge = null
         curRandomBranchChance = config.minRandomBranchChance
         branchState.curRandomBranchChance = curRandomBranchChance
         applyDeletedEdges()
         injectCustomAnchorEdge()
+        insertUserAnchorEdge()
         syncAnchorJump()
     }
 
@@ -318,6 +327,7 @@ class JukeboxEngine(
 
     fun clearDeletedEdges() {
         deletedEdgeKeys.clear()
+        removeInsertedUserAnchorEdge()
         userAnchorEdgeId = null
         removeCustomAnchorEdge()
         clearPendingAdvance(cancelScheduledJump = true)
@@ -789,9 +799,25 @@ class JukeboxEngine(
             .apply { add(edge) }
     }
 
+    // A pin stays offered by its source beat whatever the tuning filters drop; deletion still unpins.
+    private fun insertUserAnchorEdge() {
+        val currentGraph = graph ?: return
+        val anchorId = userAnchorEdgeId ?: return
+        val edge = currentGraph.allEdges.firstOrNull { it.id == anchorId } ?: return
+        if (putBackPinnedEdge(edge)) {
+            insertedUserAnchorEdge = edge
+        }
+    }
+
+    private fun removeInsertedUserAnchorEdge() {
+        val edge = insertedUserAnchorEdge ?: return
+        detachFromSource(edge)
+        insertedUserAnchorEdge = null
+    }
+
     private fun removeCustomAnchorEdge() {
         val edge = customAnchorEdge ?: return
-        edge.src.neighbors = edge.src.neighbors.filterNot { it === edge }.toMutableList()
+        detachFromSource(edge)
         customAnchorEdge = null
     }
 
@@ -816,7 +842,7 @@ class JukeboxEngine(
         if (edge.deleted) {
             return null
         }
-        // The anchor must have survived branch filtering to be playable.
+        // The source beat must offer the edge; the engine puts back a pin that branch filtering dropped.
         return edge.takeIf { candidate ->
             candidate.src.neighbors.any { it.id == candidate.id }
         }
@@ -923,3 +949,7 @@ private const val MIN_JUMP_SCHEDULE_LEAD_SECONDS = 0.08
 private const val SYNC_TOLERANCE_SECONDS = 0.075
 private const val BOUNDARY_TIE_TOLERANCE_SECONDS = 1e-6
 private const val TICK_INTERVAL_MS = 50L
+
+private fun detachFromSource(edge: Edge) {
+    edge.src.neighbors = edge.src.neighbors.filterNot { it === edge }.toMutableList()
+}

@@ -62,14 +62,7 @@ class CustomAnchorParityFixtureTest {
                 replay.sameBarPosition
             )
             assertEquals("$id: jump count", expected["jumpCount"]!!.jsonPrimitive.int, replay.jumps.size)
-            assertEquals(
-                "$id: jumps",
-                expected["jumps"]!!.jsonArray.map { jump ->
-                    val values = jump.jsonArray
-                    Triple(values[0].jsonPrimitive.int, values[1].jsonPrimitive.int, values[2].jsonPrimitive.int)
-                },
-                replay.jumps
-            )
+            assertEquals("$id: jumps", expectedJumps(expected), replay.jumps)
             assertEquals(
                 "$id: beat sequence",
                 expected["beatSequence"]!!.jsonArray.map { it.jsonPrimitive.int },
@@ -78,6 +71,46 @@ class CustomAnchorParityFixtureTest {
             assertTrue(
                 "$id: the anchor jump is taken",
                 replay.jumps.any { (_, from, to) -> "$from-$to" == anchorRaw }
+            )
+        }
+    }
+
+    @Test
+    fun replaysTheSeededSequenceWithAPinnedEdgeATuningFilterDrops() {
+        val root = loadEngineParityFixture(FIXTURE)
+        val analysisRoot = loadEngineParityFixture(root["analysis_source"]!!.jsonPrimitive.content)
+        for (element in root["pinned_sequence_cases"]!!.jsonArray) {
+            val testCase = element.jsonObject
+            val id = testCase["id"]!!.jsonPrimitive.content
+            val expected = testCase["expected"]!!.jsonObject
+            val config = config(testCase["config"]!!.jsonObject)
+            val param = parseAnchorParam(testCase["anchor"]!!.jsonPrimitive.content)
+            assertTrue("$id: anchor parses as a branch id", param is AnchorParam.EdgeId)
+            val edgeId = (param as AnchorParam.EdgeId).id
+            val plain = buildJumpGraph(normalizeAnalysis(analysisRoot["analysis"]!!), config)
+            val plainEdge = plain.allEdges.first { it.id == edgeId }
+            val filteredOut = plainEdge.src.neighbors.none { it.id == edgeId }
+
+            // JukeboxEngine puts back a pinned edge that a tuning filter dropped.
+            val engine = JukeboxEngine(SilentPlayer())
+            engine.loadAnalysis(analysisRoot["analysis"]!!)
+            engine.updateConfig(config)
+            engine.rebuildGraph()
+            assertEquals("$id: minLongBranch", config.minLongBranch, engine.getConfig().minLongBranch)
+            assertTrue("$id: pin applies", engine.applyAnchorParam(param))
+            val graph = engine.getGraphState()!!
+            val edge = graph.allEdges.first { it.id == edgeId }
+            val beats = engine.getAnalysis()!!.beats
+            val (jumps, beatSequence) = replaySequence(beats, graph, config, testCase, edge)
+
+            assertEquals("$id: filtered out", expected["filteredOut"]!!.jsonPrimitive.boolean, filteredOut)
+            assertTrue("$id: the filter drops the pin", filteredOut)
+            assertEquals("$id: jump count", expected["jumpCount"]!!.jsonPrimitive.int, jumps.size)
+            assertEquals("$id: jumps", expectedJumps(expected), jumps)
+            assertEquals(
+                "$id: beat sequence",
+                expected["beatSequence"]!!.jsonArray.map { it.jsonPrimitive.int },
+                beatSequence
             )
         }
     }
@@ -93,11 +126,26 @@ class CustomAnchorParityFixtureTest {
         val edge = createCustomAnchorEdge(analysis.beats, (param as AnchorParam.Custom).anchor)
         assertNotNull("$id: anchor fits the track", edge)
         edge!!.src.neighbors.add(edge)
+        val (jumps, beatSequence) = replaySequence(analysis.beats, graph, config, testCase, edge)
+        return Replay(
+            pairDistance = Math.round(beatPairDistance(edge.src, edge.dest) * ROUNDING) / ROUNDING,
+            sameBarPosition = edge.src.indexInParent == edge.dest.indexInParent,
+            jumps = jumps,
+            beatSequence = beatSequence
+        )
+    }
+
+    private fun replaySequence(
+        beats: List<QuantumBase>,
+        graph: JukeboxGraphState,
+        config: JukeboxConfig,
+        testCase: JsonObject,
+        edge: Edge
+    ): Pair<List<Triple<Int, Int, Int>>, List<Int>> {
         val userAnchor = UserAnchorSelection(edgeId = edge.id, sourceIndex = edge.src.which)
         val rng = createRng(RandomMode.Seeded, testCase["seed"]!!.jsonPrimitive.int)
         val state = BranchState(curRandomBranchChance = config.minRandomBranchChance)
 
-        val beats = analysis.beats
         val beatSequence = mutableListOf<Int>()
         val jumps = mutableListOf<Triple<Int, Int, Int>>()
         var current = 0
@@ -120,12 +168,14 @@ class CustomAnchorParityFixtureTest {
             }
             beatSequence += current
         }
-        return Replay(
-            pairDistance = Math.round(beatPairDistance(edge.src, edge.dest) * ROUNDING) / ROUNDING,
-            sameBarPosition = edge.src.indexInParent == edge.dest.indexInParent,
-            jumps = jumps,
-            beatSequence = beatSequence
-        )
+        return jumps to beatSequence
+    }
+
+    private fun expectedJumps(expected: JsonObject): List<Triple<Int, Int, Int>> {
+        return expected["jumps"]!!.jsonArray.map { jump ->
+            val values = jump.jsonArray
+            Triple(values[0].jsonPrimitive.int, values[1].jsonPrimitive.int, values[2].jsonPrimitive.int)
+        }
     }
 
     private fun config(config: JsonObject): JukeboxConfig {
@@ -139,8 +189,24 @@ class CustomAnchorParityFixtureTest {
             minRandomBranchChance = config["minRandomBranchChance"]!!.jsonPrimitive.double,
             maxRandomBranchChance = config["maxRandomBranchChance"]!!.jsonPrimitive.double,
             randomBranchChanceDelta = config["randomBranchChanceDelta"]!!.jsonPrimitive.double,
-            minLongBranch = config["minLongBranch"]!!.jsonPrimitive.int
+            minLongBranch = config["minLongBranch"]!!.jsonPrimitive.int,
+            minLongBranchPercent = config["minLongBranchPercent"]?.jsonPrimitive?.int
+                ?: DEFAULT_MIN_LONG_BRANCH_PERCENT
         )
+    }
+
+    private class SilentPlayer : JukeboxPlayer {
+        override fun play() = Unit
+        override fun pause() = Unit
+        override fun stop() = Unit
+        override fun seek(time: Double) = Unit
+        override fun scheduleJump(targetTime: Double, sourceStartTime: Double): Boolean = true
+        override fun cancelScheduledJump() = Unit
+        override fun setAnchorJump(targetTime: Double, sourceStartTime: Double): Boolean = true
+        override fun getCurrentTime(): Double = 0.0
+        override fun getAudioTime(): Double = 0.0
+        override fun getPlaybackRate(): Double = 1.0
+        override fun isPlaying(): Boolean = false
     }
 
     private data class Replay(

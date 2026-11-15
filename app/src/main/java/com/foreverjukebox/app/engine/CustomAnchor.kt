@@ -47,6 +47,16 @@ fun formatAnchorParam(param: AnchorParam): String = when (param) {
     is AnchorParam.Custom -> "${param.anchor.src}-${param.anchor.dest}"
 }
 
+/**
+ * Puts a pinned edge back into its source beat's neighbors when a tuning filter dropped it.
+ * Returns whether it was added; a deleted edge is never offered.
+ */
+fun putBackPinnedEdge(edge: Edge): Boolean {
+    if (edge.deleted || edge.src.neighbors.any { it.id == edge.id }) return false
+    edge.src.neighbors = edge.src.neighbors.toMutableList().apply { add(edge) }
+    return true
+}
+
 /** The synthetic edge for a custom pair; it lives only in its source beat's neighbors. */
 fun createCustomAnchorEdge(beats: List<QuantumBase>, anchor: CustomAnchor): Edge? {
     if (!isValidCustomAnchor(beats.size, anchor.src, anchor.dest)) {
