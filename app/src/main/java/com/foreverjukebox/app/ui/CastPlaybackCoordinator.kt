@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.BuildConfig
 import com.foreverjukebox.app.playback.CAST_COMMAND_NAMESPACE
 import com.foreverjukebox.app.cast.CastRelayClient
 import com.google.android.gms.cast.framework.CastSession
@@ -39,6 +40,9 @@ class CastPlaybackCoordinator(
         lastCastRequest = null
         castRetryUsed = false
     }
+
+    private fun castDebugFlag(): Boolean =
+        shouldSendCastDebugFlag(BuildConfig.DEBUG, getState().castDebugOverlayEnabled)
 
     fun requestCastStatus() {
         if (!getState().castEnabled) {
@@ -141,7 +145,8 @@ class CastPlaybackCoordinator(
                     title = title,
                     artist = artist,
                     tuningParams = resolvedCastTuningParams,
-                    vizIndex = currentState.playback.activeVizIndex
+                    vizIndex = currentState.playback.activeVizIndex,
+                    debug = castDebugFlag()
                 )
                 CastRelayClient.PullResult.Forbidden -> postCastError(CAST_PULL_FORBIDDEN_MESSAGE)
                 CastRelayClient.PullResult.Guard -> postCastError(CAST_RELAY_GUARD_MESSAGE)
@@ -302,7 +307,8 @@ class CastPlaybackCoordinator(
                     title = title,
                     artist = artist,
                     tuningParams = castTuningParams,
-                    vizIndex = vizIndex
+                    vizIndex = vizIndex,
+                    debug = castDebugFlag()
                 )
             }
             CastRelayClient.UploadResult.TooLarge -> postCastError(CAST_FILE_TOO_LARGE_MESSAGE)

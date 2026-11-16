@@ -84,6 +84,7 @@ fun HeaderBar(
     onEditAdminKey: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onLoadingAudioFeedbackChange: (Boolean) -> Unit,
+    onCastDebugOverlayChange: (Boolean) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onRefreshCacheSize: () -> Unit,
     onClearCache: () -> Unit,
@@ -159,6 +160,7 @@ fun HeaderBar(
             },
             onThemeChange = onThemeChange,
             onLoadingAudioFeedbackChange = onLoadingAudioFeedbackChange,
+            onCastDebugOverlayChange = onCastDebugOverlayChange,
             onAppModeChange = onAppModeChange,
             onEditBaseUrl = onEditBaseUrl,
             onEditAdminKey = onEditAdminKey,
@@ -356,6 +358,7 @@ private fun SettingsDialog(
     onOpenFeedback: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onLoadingAudioFeedbackChange: (Boolean) -> Unit,
+    onCastDebugOverlayChange: (Boolean) -> Unit,
     onAppModeChange: (AppMode) -> Unit,
     onEditBaseUrl: (String) -> Unit,
     onEditAdminKey: (String) -> Unit,
@@ -501,6 +504,19 @@ private fun SettingsDialog(
                         checked = state.loadingAudioFeedbackEnabled,
                         onCheckedChange = onLoadingAudioFeedbackChange
                     )
+                }
+                if (BuildConfig.DEBUG) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Cast debug overlay (debug)")
+                        Switch(
+                            checked = state.castDebugOverlayEnabled,
+                            onCheckedChange = onCastDebugOverlayChange
+                        )
+                    }
                 }
                 // Clearing the cache only applies to server-mode downloads. In local
                 // mode, stored analyses are removed individually from the Input screen.

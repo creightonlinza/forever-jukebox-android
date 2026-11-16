@@ -11,6 +11,10 @@ import com.foreverjukebox.app.data.AppMode
 fun resolveCastEnabled(mode: AppMode?, relayConfigured: Boolean): Boolean =
     mode != null && relayConfigured
 
+/** The receiver's diagnostic overlay is requested only by a debug build with the setting on. */
+fun shouldSendCastDebugFlag(isDebugBuild: Boolean, overlayEnabled: Boolean): Boolean =
+    isDebugBuild && overlayEnabled
+
 /**
  * A local audio file that exceeds the relay's audio cap cannot be cast (it would be rejected with
  * `413`), so the sender pre-checks and blocks it before uploading. Unknown size (`null`) is allowed

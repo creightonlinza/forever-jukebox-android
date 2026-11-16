@@ -24,6 +24,14 @@ class LocalCastPolicyTest {
     }
 
     @Test
+    fun debugFlagRequiresDebugBuildAndSettingOn() {
+        assertTrue(shouldSendCastDebugFlag(isDebugBuild = true, overlayEnabled = true))
+        assertFalse(shouldSendCastDebugFlag(isDebugBuild = true, overlayEnabled = false))
+        assertFalse(shouldSendCastDebugFlag(isDebugBuild = false, overlayEnabled = true))
+        assertFalse(shouldSendCastDebugFlag(isDebugBuild = false, overlayEnabled = false))
+    }
+
+    @Test
     fun fileTooLargeOnlyWhenSizeKnownAndOverCap() {
         assertFalse(isLocalCastFileTooLarge(null))
         assertFalse(isLocalCastFileTooLarge(0))

@@ -192,6 +192,7 @@ data class UiState(
     val maxUploadSizeBytes: Long? = null,
     val allowedUploadExts: List<String> = emptyList(),
     val loadingAudioFeedbackEnabled: Boolean = false,
+    val castDebugOverlayEnabled: Boolean = false,
     val trackLengthLimitErrorMessage: String? = null,
     val favoritesSyncLoading: Boolean = false,
     val listenFavoriteToggleInFlight: Boolean = false,

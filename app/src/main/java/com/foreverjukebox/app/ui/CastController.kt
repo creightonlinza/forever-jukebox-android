@@ -96,7 +96,8 @@ class CastController(private val application: Application) {
         title: String?,
         artist: String?,
         tuningParams: String?,
-        vizIndex: Int?
+        vizIndex: Int?,
+        debug: Boolean
     ) {
         val customData = JSONObject().apply {
             put("fingerprint", fingerprint)
@@ -105,6 +106,10 @@ class CastController(private val application: Application) {
             }
             if (vizIndex != null) {
                 put("vizIndex", vizIndex)
+            }
+            // The key is absent unless set; the receiver checks `debug === true`.
+            if (debug) {
+                put("debug", true)
             }
         }
         val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {

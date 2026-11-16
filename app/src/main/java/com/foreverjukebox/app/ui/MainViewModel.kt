@@ -761,6 +761,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            preferences.castDebugOverlay.collect { enabled ->
+                _state.update { it.copy(castDebugOverlayEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
             state.collect { current ->
                 loadingAudioFeedbackController.update(
                     enabled = current.loadingAudioFeedbackEnabled,
@@ -1055,6 +1060,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setLoadingAudioFeedbackEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferences.setLoadingAudioFeedback(enabled)
+        }
+    }
+
+    fun setCastDebugOverlayEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferences.setCastDebugOverlay(enabled)
         }
     }
 

@@ -58,6 +58,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                             onEditAdminKey = { viewModel.setAdminKey(it) },
                             onThemeChange = viewModel::setThemeMode,
                             onLoadingAudioFeedbackChange = viewModel::setLoadingAudioFeedbackEnabled,
+                            onCastDebugOverlayChange = viewModel::setCastDebugOverlayEnabled,
                             onAppModeChange = viewModel::setAppMode,
                             onRefreshCacheSize = viewModel::refreshCacheSize,
                             onClearCache = viewModel::clearCache,
