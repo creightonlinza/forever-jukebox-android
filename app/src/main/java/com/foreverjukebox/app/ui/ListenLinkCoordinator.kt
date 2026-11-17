@@ -16,10 +16,21 @@ class ListenLinkCoordinator(
         tuningParams: String?
     ) -> Unit
 ) {
-    fun buildShareUrl(): String? {
+    fun buildShareUrl(): String? = buildListenUrl(getState().baseUrl)
+
+    /**
+     * The host a feedback report carries in Server mode: the listen link of the current
+     * track on the server's origin, or the bare origin with no track. Null in Local mode.
+     */
+    fun buildFeedbackHost(): String? {
+        val origin = feedbackHost(getState().appMode, getState().baseUrl) ?: return null
+        return buildListenUrl(origin) ?: origin
+    }
+
+    private fun buildListenUrl(rawBaseUrl: String): String? {
         val playback = getState().playback
         val trackId = playback.shareTrackIdOrNull() ?: return null
-        val baseUrl = getState().baseUrl.trim().trimEnd('/')
+        val baseUrl = rawBaseUrl.trim().trimEnd('/')
         if (baseUrl.isBlank()) return null
         val encodedId = encodeUriComponent(trackId)
         val query = when (playback.playMode) {

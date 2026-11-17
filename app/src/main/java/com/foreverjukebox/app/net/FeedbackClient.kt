@@ -15,9 +15,10 @@ import okhttp3.Request
  * Submits in-app feedback and bug reports to a Google Form via its public `formResponse`
  * endpoint (form-urlencoded POST, no auth). A submission carries only the user's feedback
  * text, the app version, a basic device summary, and, in Server mode, the configured
- * server's origin. PRIVACY.md covers the Play build, which has no Server mode, so it lists
- * only the first three; keep it in sync with what a Play build sends. The form is shared
- * with the web app, whose host field carries the page origin.
+ * server's origin or the listen link of the current track on it. PRIVACY.md covers the
+ * Play build, which has no Server mode, so it lists only the first three; keep it in sync
+ * with what a Play build sends. The form is shared with the web app, whose host field
+ * carries the page origin or listen link.
  *
  * Google answers a successful submission with the confirmation page (following a redirect,
  * which OkHttp does by default) but also answers rejected submissions with HTTP 200 by

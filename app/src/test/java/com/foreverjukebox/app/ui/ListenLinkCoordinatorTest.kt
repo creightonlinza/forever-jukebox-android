@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.engine.AnchorParam
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -20,6 +21,48 @@ class ListenLinkCoordinatorTest {
         val shareUrl = coordinator.buildShareUrl()
 
         assertNull(shareUrl)
+    }
+
+    @Test
+    fun buildFeedbackHostIsListenLinkOnServerOriginWhenTrackLoaded() {
+        val coordinator = createCoordinator(
+            state = UiState(
+                appMode = AppMode.Server,
+                baseUrl = "https://user:pw@example.com/api/",
+                playback = PlaybackState(
+                    playMode = PlaybackMode.Jukebox,
+                    lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2"
+                )
+            ),
+            tuningParams = "thresh=7&jb=1"
+        )
+
+        assertEquals(
+            "https://example.com/listen/a3f3c0dc73c6476c9db95c227f9206f2?thresh=7&jb=1",
+            coordinator.buildFeedbackHost()
+        )
+    }
+
+    @Test
+    fun buildFeedbackHostIsServerOriginWhenNoTrackLoaded() {
+        val coordinator = createCoordinator(
+            state = UiState(appMode = AppMode.Server, baseUrl = "https://example.com/")
+        )
+
+        assertEquals("https://example.com", coordinator.buildFeedbackHost())
+    }
+
+    @Test
+    fun buildFeedbackHostIsNullInLocalMode() {
+        val coordinator = createCoordinator(
+            state = UiState(
+                appMode = AppMode.Local,
+                baseUrl = "https://example.com/",
+                playback = PlaybackState(lastJobId = "a3f3c0dc73c6476c9db95c227f9206f2")
+            )
+        )
+
+        assertNull(coordinator.buildFeedbackHost())
     }
 
     @Test

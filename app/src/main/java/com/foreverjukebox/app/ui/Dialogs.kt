@@ -44,6 +44,7 @@ import com.foreverjukebox.app.data.AppMode
 
 @Composable
 fun FeedbackDialog(
+    serverMode: Boolean,
     onSubmit: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -85,7 +86,12 @@ fun FeedbackDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "Tell us what's broken, what's confusing, or what you'd like to see. " +
-                        "Your app version and device model are included automatically.",
+                        if (serverMode) {
+                            "Your app version, device model, server address, and a link to " +
+                                "the current track are included automatically."
+                        } else {
+                            "Your app version and device model are included automatically."
+                        },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )

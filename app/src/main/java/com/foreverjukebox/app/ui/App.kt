@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.ui.onboarding.OnboardingHost
 
 @Composable
@@ -160,6 +161,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                     }
                     if (showFeedback) {
                         FeedbackDialog(
+                            serverMode = state.appMode == AppMode.Server,
                             onSubmit = viewModel::submitFeedback,
                             onDismiss = { showFeedback = false }
                         )
