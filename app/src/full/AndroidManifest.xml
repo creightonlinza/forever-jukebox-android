@@ -5,6 +5,10 @@
       play flavor is local-only (SERVER_MODE_AVAILABLE=false) and ships without
       App Links or share targets.
     -->
+    <!-- Server mode can point at a server on the local network, which API 37+ gates
+         behind this runtime permission. The play flavor has no server mode. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
     <application>
         <activity
             android:name=".MainActivity"

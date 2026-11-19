@@ -324,7 +324,7 @@ class LocalAnalysisServiceTest {
             .filterIsInstance<LocalAnalysisUpdate.Completed>()
             .single()
 
-        assertEquals("File Name.mp3", completed.artifact.title)
+        assertEquals("File Name", completed.artifact.title)
         assertEquals(null, completed.artifact.artist)
     }
 

@@ -14,8 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -32,7 +32,7 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val fullscreenVisualizationAllowed = shouldShowFullscreenVisualization(state.playback)
-    var showSleepTimer by remember { mutableStateOf(false) }
+    var showSleepTimer by rememberSaveable { mutableStateOf(false) }
     // Saveable so an open feedback dialog and its typed text survive activity recreation.
     var showFeedback by rememberSaveable { mutableStateOf(false) }
     val tabStateHolder = rememberSaveableStateHolder()
@@ -89,7 +89,11 @@ fun ForeverJukeboxApp(viewModel: MainViewModel) {
                                         state = state,
                                         viewModel = viewModel
                                     )
-                                    TabId.Play -> PlayPanel(state = state, viewModel = viewModel)
+                                    // Dialog flags saved before process death would open over
+                                    // the next track; the fresh view model has none loaded.
+                                    TabId.Play -> key(viewModel.instanceId) {
+                                        PlayPanel(state = state, viewModel = viewModel)
+                                    }
                                     TabId.Faq -> FaqPanel()
                                 }
                             }

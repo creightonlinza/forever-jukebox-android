@@ -151,13 +151,15 @@ val prepareMadmomBeatsPortFfiJniLibs by tasks.registering {
 
 extensions.configure<ApplicationExtension>("android") {
     namespace = "com.foreverjukebox.app"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) { minorApiLevel = 0 }
+    }
     ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.foreverjukebox.app"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = ciVersionCode
         versionName = ciVersionName
 

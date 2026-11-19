@@ -64,7 +64,7 @@ fun InputPanel(
     onSortChange: (FavoriteSortKey, FavoriteSortDirection) -> Unit
 ) {
     val context = LocalContext.current
-    var pendingDeleteLocalId by remember { mutableStateOf<String?>(null) }
+    var pendingDeleteLocalId by rememberSaveable { mutableStateOf<String?>(null) }
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->

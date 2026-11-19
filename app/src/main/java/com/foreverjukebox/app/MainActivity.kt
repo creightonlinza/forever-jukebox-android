@@ -1,9 +1,12 @@
 package com.foreverjukebox.app
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
+import android.view.KeyEvent
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Bundle
@@ -15,27 +18,52 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.foreverjukebox.app.data.AppMode
+import com.foreverjukebox.app.net.CleartextPolicy
 import com.foreverjukebox.app.ui.ForeverJukeboxApp
 import com.foreverjukebox.app.ui.MainViewModel
 import com.foreverjukebox.app.ui.sharedTextCarriesLink
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
+import java.net.InetAddress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : FragmentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private var lastBackPressMs: Long = 0
+    private val permissionPromptOpen = MutableStateFlow(false)
     private val requestNotifications = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _ -> }
+    ) { _ -> permissionPromptOpen.value = false }
+
+    // An empty result means the system dropped the request, so the next check asks again.
+    private val requestLocalNetwork = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        permissionPromptOpen.value = false
+        if (result.isEmpty()) localNetworkAskedFor = null
+    }
+    private var localNetworkAskedFor: String? = null
     private var sessionListener: SessionManagerListener<CastSession>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ProcessExitDiagnostics.logPreviousExitOnce(this)
+        localNetworkAskedFor = savedInstanceState?.getString(STATE_LOCAL_NETWORK_ASKED_FOR)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.state.map { it.appMode to it.baseUrl }.distinctUntilChanged()
+                        .collectLatest { (mode, url) -> requestLocalNetworkIfNeeded(mode, url) }
+                }
                 viewModel.state.collect { state ->
                     // Register the Cast session listener whenever the current mode can cast — Server
                     // with a resolved receiver, or Local with the relay configured. (Previously this
@@ -54,7 +82,9 @@ class MainActivity : FragmentActivity() {
             }
             handleShareIntent(intent)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        // Asked once per launch; a recreated activity receives the pending answer.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && savedInstanceState == null) {
+            permissionPromptOpen.value = true
             requestNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
         onBackPressedDispatcher.addCallback(
@@ -81,6 +111,43 @@ class MainActivity : FragmentActivity() {
         setContent {
             ForeverJukeboxApp(viewModel)
         }
+    }
+
+    // Space toggles playback unless a text field takes it. Handled ahead of the view tree,
+    // where the control with keyboard focus would consume the key as a click.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val space = event.keyCode == KeyEvent.KEYCODE_SPACE
+        if (!space || getSystemService(InputMethodManager::class.java).isAcceptingText) {
+            return super.dispatchKeyEvent(event)
+        }
+        val released = event.action == KeyEvent.ACTION_UP && !event.isCanceled
+        if (released && event.hasNoModifiers()) viewModel.togglePlayback()
+        return true
+    }
+
+    // On API 37+ a server on the local network is unreachable until the user grants this.
+    private suspend fun requestLocalNetworkIfNeeded(mode: AppMode?, url: String) {
+        if (Build.VERSION.SDK_INT < LOCAL_NETWORK_API || mode != AppMode.Server) return
+        val permission = android.Manifest.permission.ACCESS_LOCAL_NETWORK
+        val granted = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+        if (granted || url == localNetworkAskedFor) return
+        val host = runCatching { java.net.URI(url.trim()).host }.getOrNull() ?: return
+        // A public-looking name can resolve to a LAN address. DNS needs no permission.
+        val local = CleartextPolicy.isKnownLocalHost(host) || withContext(Dispatchers.IO) {
+            runCatching { InetAddress.getAllByName(host).any(CleartextPolicy::isPrivateAddress) }
+                .getOrDefault(false)
+        }
+        if (!local) return
+        // The system drops a request made while another prompt is open.
+        permissionPromptOpen.first { !it }
+        permissionPromptOpen.value = true
+        localNetworkAskedFor = url
+        requestLocalNetwork.launch(arrayOf(permission))
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_LOCAL_NETWORK_ASKED_FOR, localNetworkAskedFor)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -187,5 +254,7 @@ class MainActivity : FragmentActivity() {
     companion object {
         const val EXTRA_OPEN_LISTEN_TAB = "com.foreverjukebox.app.open_listen_tab"
         private const val EXIT_CONFIRM_WINDOW_MS = 2000L
+        private const val LOCAL_NETWORK_API = 37
+        private const val STATE_LOCAL_NETWORK_ASKED_FOR = "localNetworkAskedFor"
     }
 }

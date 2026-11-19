@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -94,13 +95,15 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         hasFavoriteTuningDrift(state, currentFavorite)
     }
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
-    var showTuning by remember { mutableStateOf(false) }
-    var showInfo by remember { mutableStateOf(false) }
-    var showPlaylist by remember { mutableStateOf(false) }
-    var showDeleteTrackConfirm by remember { mutableStateOf(false) }
-    var reportJobId by remember { mutableStateOf<String?>(null) }
+    // Track dialogs are keyed by track, so saved state is never restored over another track.
+    val trackId = playback.lastJobId
+    var showTuning by key(trackId) { rememberSaveable { mutableStateOf(false) } }
+    var showInfo by key(trackId) { rememberSaveable { mutableStateOf(false) } }
+    var showPlaylist by rememberSaveable { mutableStateOf(false) }
+    var showDeleteTrackConfirm by key(trackId) { rememberSaveable { mutableStateOf(false) } }
+    var reportJobId by key(trackId) { rememberSaveable { mutableStateOf<String?>(null) } }
     var reportSending by remember { mutableStateOf(false) }
-    var showExport by remember { mutableStateOf(false) }
+    var showExport by key(trackId) { rememberSaveable { mutableStateOf(false) } }
     val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
@@ -354,7 +357,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    if (showTuning && playback.playMode == PlaybackMode.Jukebox && canOpenCastReceiverDetails) {
+    if (showTuning && playback.playMode == PlaybackMode.Jukebox && canOpenCastReceiverDetails) key(trackId) {
         val audioModeOptions = if (playback.isCasting) {
             playback.castSupportedAudioModes
         } else {
@@ -416,7 +419,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             state.export.isExporting,
             Build.VERSION.SDK_INT
         )
-    ) {
+    ) key(trackId) {
         ExportDialog(
             export = state.export,
             trackDurationSeconds = if (playback.playMode == PlaybackMode.WubMachine) {
@@ -433,7 +436,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    reportJobId?.let { jobId ->
+    val jobId = reportJobId
+    if (jobId != null) key(trackId) {
         ReportTrackDialog(
             sending = reportSending,
             onDismiss = { reportJobId = null },

@@ -53,6 +53,12 @@ private data class AnalyzerInputs(
     val essentiaProfile: String?
 )
 
+private val AUDIO_EXTENSION =
+    Regex("\\.(mp3|m4a|aac|flac|wav|ogg|oga|opus|webm|mp4|wma|aiff?)$", RegexOption.IGNORE_CASE)
+
+/** A file name without its audio extension. Other dotted names, such as "S.O.S", stay whole. */
+fun titleFromFileName(name: String): String = name.replace(AUDIO_EXTENSION, "").ifBlank { name }
+
 class LocalAnalysisService(
     private val decoder: LocalAudioDecoderPort,
     private val resampler: AudioResampler,
@@ -249,7 +255,7 @@ class LocalAnalysisService(
                 val madmomBeatsPortModels = modelExtractor.ensureExtracted()
                 logInfo("madmom_beats_port models ready: count=${madmomBeatsPortModels.size}")
 
-                val resolvedTitle = decoded.tagTitle ?: decoded.displayName ?: fallbackTitle
+                val resolvedTitle = decoded.tagTitle ?: decoded.displayName?.let(::titleFromFileName) ?: fallbackTitle
                 val resolvedArtist = decoded.tagArtist
 
                 val analysisJson = analyzer.analyze(

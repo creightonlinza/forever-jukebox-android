@@ -140,7 +140,7 @@ fun SleepTimerDialog(
     onDismiss: () -> Unit,
     onSelectOption: (SleepTimerOption) -> Unit
 ) {
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberSaveable { mutableStateOf(false) }
     var selectionState by remember(selectedOption) {
         mutableStateOf(
             SleepTimerDialogSelectionState(
@@ -402,7 +402,7 @@ fun ReportTrackDialog(
     onReport: (TrackReportReason) -> Unit
 ) {
     val dangerColor = LocalThemeTokens.current.danger
-    var selectedReason by remember { mutableStateOf<TrackReportReason?>(null) }
+    var selectedReason by rememberSaveable { mutableStateOf<TrackReportReason?>(null) }
     val canReport = selectedReason != null && !sending
     AlertDialog(
         onDismissRequest = {
@@ -480,8 +480,8 @@ fun AppModeDialog(
     initialValue: String = "",
     onConfirm: (AppMode, String) -> Unit
 ) {
-    var selectedMode by remember(initialMode) { mutableStateOf(initialMode) }
-    var urlInput by remember(initialValue) { mutableStateOf(initialValue) }
+    var selectedMode by rememberSaveable(initialMode) { mutableStateOf(initialMode) }
+    var urlInput by rememberSaveable(initialValue) { mutableStateOf(initialValue) }
     val trimmedUrl = urlInput.trim()
     val requiresServerUrl = com.foreverjukebox.app.BuildConfig.SERVER_MODE_AVAILABLE &&
         selectedMode == AppMode.Server

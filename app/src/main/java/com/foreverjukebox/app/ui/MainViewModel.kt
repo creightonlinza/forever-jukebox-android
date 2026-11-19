@@ -44,6 +44,7 @@ import com.foreverjukebox.app.wubmachine.WubMachineRemixRenderer
 import com.foreverjukebox.app.wubmachine.WubRenderStage
 import com.foreverjukebox.app.wubmachine.WubRemix
 import com.foreverjukebox.app.local.LocalAnalysisService
+import com.foreverjukebox.app.local.titleFromFileName
 import com.foreverjukebox.app.net.FeedbackClient
 import com.foreverjukebox.app.playback.PlaybackBroadcasts
 import com.foreverjukebox.app.playback.PlaybackControllerHolder
@@ -320,6 +321,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
+
+    /** Differs after process death, so screen state saved by an earlier instance is not restored. */
+    val instanceId: Long = System.nanoTime()
 
     private var foregroundRecoveryInFlight = false
     private var castSelectionJob: Job? = null
@@ -1073,7 +1077,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (blockPlaybackChangeWhileLoading()) return
         analytics.logUpload("file")
         beginOutsideSelection()
-        localAnalysisCoordinator.startLocalAnalysis(uri, displayName)
+        localAnalysisCoordinator.startLocalAnalysis(uri, displayName?.let(::titleFromFileName))
     }
 
     fun openCachedLocalTrack(localId: String) {

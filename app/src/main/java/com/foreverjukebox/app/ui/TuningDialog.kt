@@ -28,7 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -200,35 +201,39 @@ fun TuningDialog(
         audioModeIntensity: Int
     ) -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(TuningDialogTab.Tuning) }
+    var selectedTab by rememberSaveable { mutableStateOf(TuningDialogTab.Tuning) }
     // The slider always shows a number, so an unset threshold displays what the track resolved to.
-    var threshold by remember(initialThreshold, computedThreshold) {
+    var threshold by rememberSaveable(initialThreshold, computedThreshold) {
         mutableFloatStateOf((initialThreshold ?: computedThreshold ?: MIN_THRESHOLD).toFloat())
     }
     // Moving the control is the choice; until then the threshold stays the track's own.
-    var thresholdChosen by remember(initialThreshold) { mutableStateOf(initialThreshold != null) }
-    var thresholdMoved by remember(initialThreshold, computedThreshold) { mutableStateOf(false) }
-    var probRange by remember(initialMinProb, initialMaxProb) {
+    var thresholdChosen by rememberSaveable(initialThreshold) { mutableStateOf(initialThreshold != null) }
+    var thresholdMoved by rememberSaveable(initialThreshold, computedThreshold) { mutableStateOf(false) }
+    var probRange by rememberSaveable(
+        initialMinProb,
+        initialMaxProb,
+        stateSaver = listSaver({ listOf(it.start, it.endInclusive) }, { it[0]..it[1] })
+    ) {
         mutableStateOf(
             initialMinProb.toFloat().coerceAtMost(initialMaxProb.toFloat())..
                 initialMaxProb.toFloat().coerceAtLeast(initialMinProb.toFloat())
         )
     }
-    var ramp by remember(initialRamp) { mutableFloatStateOf(initialRamp.toFloat()) }
-    var highlightAnchorBranch by remember(initialHighlightAnchorBranch) {
+    var ramp by rememberSaveable(initialRamp) { mutableFloatStateOf(initialRamp.toFloat()) }
+    var highlightAnchorBranch by rememberSaveable(initialHighlightAnchorBranch) {
         mutableStateOf(initialHighlightAnchorBranch)
     }
-    var justBackwards by remember(initialJustBackwards) { mutableStateOf(initialJustBackwards) }
-    var minJumpIndex by remember(initialMinJumpDistancePercent) {
+    var justBackwards by rememberSaveable(initialJustBackwards) { mutableStateOf(initialJustBackwards) }
+    var minJumpIndex by rememberSaveable(initialMinJumpDistancePercent) {
         mutableFloatStateOf(
             minJumpDistanceIndexForPercent(initialMinJumpDistancePercent).toFloat()
         )
     }
-    var removeSequential by remember(initialRemoveSequential) { mutableStateOf(initialRemoveSequential) }
-    var audioModeWireValue by remember(initialAudioModeWireValue) {
+    var removeSequential by rememberSaveable(initialRemoveSequential) { mutableStateOf(initialRemoveSequential) }
+    var audioModeWireValue by rememberSaveable(initialAudioModeWireValue) {
         mutableStateOf(initialAudioModeWireValue)
     }
-    var audioModeIntensity by remember(initialAudioModeIntensity) {
+    var audioModeIntensity by rememberSaveable(initialAudioModeIntensity) {
         mutableFloatStateOf(AudioModeIntensity.clamp(initialAudioModeIntensity).toFloat())
     }
     val selectedMinJumpDistancePercent =
