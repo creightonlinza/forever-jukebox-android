@@ -1,5 +1,6 @@
 package com.foreverjukebox.app.ui
 
+import com.foreverjukebox.app.data.AppMode
 import com.foreverjukebox.app.data.FavoriteSourceType
 import com.foreverjukebox.app.data.FavoriteTrack
 import com.foreverjukebox.app.data.canonicalTrackId
@@ -294,4 +295,39 @@ internal fun shouldShowPlaybackBar(playback: PlaybackState): Boolean {
         ListenContentMode.Cast -> playback.hasCastTrack()
         ListenContentMode.Empty, ListenContentMode.None -> false
     }
+}
+
+internal const val TWO_PANE_MIN_WIDTH_DP = 840f
+internal const val TWO_PANE_MIN_HEIGHT_DP = 480f
+internal const val TWO_PANE_LEFT_MAX_WIDTH_DP = 480f
+
+internal fun isTwoPaneWindow(widthDp: Float, heightDp: Float): Boolean =
+    widthDp >= TWO_PANE_MIN_WIDTH_DP && heightDp >= TWO_PANE_MIN_HEIGHT_DP
+
+internal fun leftPaneWidthDp(widthDp: Float): Float = minOf(widthDp / 2f, TWO_PANE_LEFT_MAX_WIDTH_DP)
+
+// The right pane always shows Listen, so in two-pane mode a request for Play keeps the current tab.
+internal fun tabForLayout(tab: TabId, current: UiState): TabId =
+    if (current.twoPane && tab == TabId.Play) current.activeTab else tab
+
+// An emptied Listen screen sends one column to a browse tab; two panes keep the tab on the left.
+internal fun tabAfterListenReset(current: UiState, fallback: TabId): TabId =
+    if (current.twoPane) current.activeTab else fallback
+
+// The left pane shows the last browse tab visited before Play, or Home when there is none.
+internal fun tabForTwoPaneEntry(mode: AppMode?, activeTab: TabId, history: List<TabId>): TabId {
+    if (activeTab != TabId.Play) return activeTab
+    return history.lastOrNull { it != TabId.Play } ?: defaultTabForMode(mode)
+}
+
+// One column opens Listen whenever the Listen screen is not idle.
+internal fun tabForNarrowEntry(current: UiState): TabId =
+    if (isListenScreenIdle(current)) current.activeTab else TabId.Play
+
+// Removes and returns the Back target; in two-pane mode Back skips Play and the tab already shown.
+internal fun popBackTab(history: ArrayDeque<TabId>, activeTab: TabId, twoPane: Boolean): TabId? {
+    while (history.lastOrNull().let { it == activeTab || (twoPane && it == TabId.Play) }) {
+        history.removeLast()
+    }
+    return history.removeLastOrNull()
 }

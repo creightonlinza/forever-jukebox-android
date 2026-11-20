@@ -455,7 +455,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update(updater)
             hydrateSavedPlaylistIfInactive()
         },
-        applyActiveTab = ::applyActiveTab,
+        applyActiveTab = { tab, record -> applyActiveTab(tabAfterListenReset(state.value, tab), record) },
         // warn (not error): these failures also reach
         // PlaybackCoordinator.setAnalysisError, which records the non-fatal.
         logError = { message, error -> AppLog.warn(TAG, message, error) },
@@ -500,7 +500,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isLocalAnalysisRunning = { localAnalysisCoordinator.isAnalysisRunning() },
         getState = { state.value },
         updateState = { updater -> _state.update(updater) },
-        applyActiveTab = ::applyActiveTab,
+        applyActiveTab = { tab, record -> applyActiveTab(tabAfterListenReset(state.value, tab), record) },
         syncCastNotification = ::syncCastNotification
     )
     private val listenLinkCoordinator = ListenLinkCoordinator(
@@ -1159,10 +1159,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun navigateBack(): Boolean {
-        if (tabHistory.isEmpty()) return false
-        val previous = tabHistory.removeLast()
+        val current = state.value
+        val previous = popBackTab(tabHistory, current.activeTab, current.twoPane) ?: return false
         applyActiveTab(previous, recordHistory = false)
         return true
+    }
+
+    fun setTwoPane(twoPane: Boolean) {
+        val current = state.value
+        if (current.twoPane == twoPane) return
+        if (twoPane) {
+            // The tab changes while twoPane is still false, so no state shows Play in two-pane mode.
+            applyActiveTab(
+                tabForTwoPaneEntry(current.appMode, current.activeTab, tabHistory),
+                recordHistory = false
+            )
+            _state.update { it.copy(twoPane = true) }
+            return
+        }
+        _state.update { it.copy(twoPane = false) }
+        applyActiveTab(tabForNarrowEntry(state.value), recordHistory = true)
     }
 
     fun setTopSongsTab(tab: TopSongsTab) {
@@ -1199,7 +1215,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun applyActiveTab(tabId: TabId, recordHistory: Boolean) {
-        val resolvedTab = coerceTabForMode(state.value.appMode, tabId)
+        val resolvedTab = tabForLayout(coerceTabForMode(state.value.appMode, tabId), state.value)
         if (shouldCancelLocalAnalysisOnTabChange(
                 mode = state.value.appMode,
                 isLocalAnalysisRunning = localAnalysisCoordinator.isAnalysisRunning(),
@@ -3736,7 +3752,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             playbackCoordinator.resetForNewTrack()
-            _state.update {
+            if (!state.value.twoPane) _state.update {
                 val nextTab = defaultTabForMode(it.appMode)
                 it.copy(
                     activeTab = nextTab,

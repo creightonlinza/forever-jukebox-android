@@ -164,21 +164,29 @@ object OnboardingTours {
     }
 }
 
-/** True when the app tab a tour belongs to is on screen and interactive. Dialog tours are false. */
-fun isTourScreenActive(tour: OnboardingTourId, activeTab: TabId, playbackReady: Boolean): Boolean =
+/** True when the screen a tour belongs to is on screen and interactive. Dialog tours are false. */
+fun isTourScreenActive(
+    tour: OnboardingTourId,
+    activeTab: TabId,
+    twoPane: Boolean,
+    playbackReady: Boolean
+): Boolean =
     when (tour.screen) {
         OnboardingScreen.Home -> activeTab == TabId.Input
-        OnboardingScreen.Jukebox -> activeTab == TabId.Play && playbackReady
+        OnboardingScreen.Jukebox -> (twoPane || activeTab == TabId.Play) && playbackReady
         OnboardingScreen.Dialog -> false
     }
 
-/** The first of [candidates] to start automatically, or null when none applies. */
+/** The first of [candidates] to start automatically; null when none applies or [running] is one of them. */
 fun resolveTourToStart(
     candidates: Collection<OnboardingTourId>,
     record: OnboardingRecord,
-    placed: Set<OnboardingTarget>
-): OnboardingTourId? = candidates.firstOrNull { tour ->
-    !record.isDone(tour) && firstPlacedStep(tour, 0, placed) != null
+    placed: Set<OnboardingTarget>,
+    running: OnboardingTourId? = null
+): OnboardingTourId? = if (running in candidates) {
+    null
+} else {
+    candidates.firstOrNull { tour -> !record.isDone(tour) && firstPlacedStep(tour, 0, placed) != null }
 }
 
 /** The first step at or after [from] whose target is on screen. */

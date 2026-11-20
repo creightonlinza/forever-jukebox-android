@@ -17,13 +17,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.foreverjukebox.app.data.AppMode
 
 val BottomNavBarHeight = 68.dp
 
 @Composable
-fun BottomNavBar(state: UiState, onTabSelected: (TabId) -> Unit) {
+fun BottomNavBar(state: UiState, onTabSelected: (TabId) -> Unit, twoPane: Boolean = false) {
     val tokens = LocalThemeTokens.current
-    val tabs = tabsForMode(state.appMode)
+    val tabs = navBarTabs(state.appMode, twoPane)
     NavigationBar(
         containerColor = tokens.background,
         contentColor = tokens.onBackground,
@@ -58,6 +59,10 @@ fun BottomNavBar(state: UiState, onTabSelected: (TabId) -> Unit) {
         }
     }
 }
+
+// Two-pane mode shows the Jukebox in its own pane, so the bar leaves it out.
+internal fun navBarTabs(mode: AppMode?, twoPane: Boolean): List<TabId> =
+    if (twoPane) tabsForMode(mode) - TabId.Play else tabsForMode(mode)
 
 internal fun navLabelForTab(tabId: TabId): String {
     return when (tabId) {

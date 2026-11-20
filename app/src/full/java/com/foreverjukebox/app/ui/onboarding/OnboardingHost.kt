@@ -9,6 +9,7 @@ import com.foreverjukebox.app.ui.TabId
 @Suppress("UnusedParameter")
 fun OnboardingHost(
     activeTab: TabId,
+    twoPane: Boolean,
     suppressed: Boolean,
     content: @Composable () -> Unit
 ) = content()

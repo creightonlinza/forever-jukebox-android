@@ -42,7 +42,7 @@ fun PlaybackBar(
     val playlist = state.playlist
     val showTransport = shouldShowPlaybackTransport(playback)
     val showPlaylistControls = shouldShowPlaylistControls(playlist)
-    val textModifier = if (state.activeTab != TabId.Play) {
+    val textModifier = if (state.activeTab != TabId.Play && !state.twoPane) {
         Modifier.clickable(onClick = onOpenPlayTab)
     } else {
         Modifier

@@ -1,13 +1,22 @@
 package com.foreverjukebox.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.os.Build
 import android.view.View
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +52,29 @@ fun CastRouteButton(
                 contentDescription = "Cast unavailable",
                 tint = disabledTint
             )
+        }
+        return
+    }
+    // On API 37+ no Cast device is found until the user grants local network access.
+    val localNetwork = Manifest.permission.ACCESS_LOCAL_NETWORK
+    var canDiscover by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN ||
+                context.checkSelfPermission(localNetwork) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var openChooser by remember { mutableStateOf(false) }
+    val requestLocalNetwork = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        canDiscover = granted
+        openChooser = granted
+        if (!granted) {
+            val message = "To cast, allow Nearby devices in the app's system settings."
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+    if (!canDiscover) {
+        SquareIconButton(onClick = { requestLocalNetwork.launch(localNetwork) }, modifier = modifier) {
+            Icon(imageVector = Icons.Outlined.Cast, contentDescription = "Cast", tint = enabledTint)
         }
         return
     }
@@ -97,6 +129,10 @@ fun CastRouteButton(
         modifier = modifier,
         update = { button ->
             button.isEnabled = enabled
+            if (openChooser) {
+                openChooser = false
+                button.post { button.showDialog() }
+            }
             button.setLayerType(View.LAYER_TYPE_HARDWARE, tintPaint)
         }
     )

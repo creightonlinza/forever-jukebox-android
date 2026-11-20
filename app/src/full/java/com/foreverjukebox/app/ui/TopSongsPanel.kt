@@ -110,16 +110,16 @@ fun TopSongsPanel(
     val scope = rememberCoroutineScope()
     val hasSyncCode = allowFavoritesSync && !favoritesSyncCode.isNullOrBlank()
     var showSyncMenu by remember { mutableStateOf(false) }
-    var showEnterDialog by remember { mutableStateOf(false) }
-    var showCreateDialog by remember { mutableStateOf(false) }
+    var showEnterDialog by rememberSaveable { mutableStateOf(false) }
+    var showCreateDialog by rememberSaveable { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var hasAttemptedTopSongsLoad by remember { mutableStateOf(false) }
     var hasAttemptedTrendingLoad by remember { mutableStateOf(false) }
     var hasAttemptedRecentLoad by remember { mutableStateOf(false) }
-    var syncInput by remember { mutableStateOf("") }
+    var syncInput by rememberSaveable { mutableStateOf("") }
     var pendingFavorites by remember { mutableStateOf<List<FavoriteTrack>>(emptyList()) }
     var pendingCode by remember { mutableStateOf("") }
-    var showCreateButton by remember { mutableStateOf(true) }
+    var showCreateButton by rememberSaveable { mutableStateOf(true) }
     var favoritesQuery by rememberSaveable { mutableStateOf("") }
     // Hoisted above the sub-tab switch so each list keeps its scroll position while another
     // sub-tab is shown and when the favorites list moves in or out of PullToRefreshBox.

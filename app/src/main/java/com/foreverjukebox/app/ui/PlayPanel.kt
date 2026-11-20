@@ -65,7 +65,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 @Suppress("AssignedValueIsNeverRead")
-fun PlayPanel(state: UiState, viewModel: MainViewModel) {
+fun PlayPanel(state: UiState, viewModel: MainViewModel, onOpenPlaylist: () -> Unit) {
     val context = LocalContext.current
     val playback = state.playback
     val tuning = state.tuning
@@ -99,7 +99,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
     val trackId = playback.lastJobId
     var showTuning by key(trackId) { rememberSaveable { mutableStateOf(false) } }
     var showInfo by key(trackId) { rememberSaveable { mutableStateOf(false) } }
-    var showPlaylist by rememberSaveable { mutableStateOf(false) }
     var showDeleteTrackConfirm by key(trackId) { rememberSaveable { mutableStateOf(false) } }
     var reportJobId by key(trackId) { rememberSaveable { mutableStateOf<String?>(null) } }
     var reportSending by remember { mutableStateOf(false) }
@@ -160,12 +159,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         delay(1100)
         if (jumpLine?.startedAt == current.startedAt) {
             jumpLine = null
-        }
-    }
-
-    LaunchedEffect(showPlaylist, state.playlist) {
-        if (showPlaylist && !shouldShowPlaylistControls(state.playlist)) {
-            showPlaylist = false
         }
     }
 
@@ -271,7 +264,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 isExporting = state.export.isExporting,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 playlist = state.playlist,
-                onOpenPlaylist = { showPlaylist = true },
+                onOpenPlaylist = onOpenPlaylist,
                 showSavedPlaylist = showSavedPlaylist,
                 resumeTitle = resumeTitle,
                 onContinueListening = viewModel::continueListening,
@@ -307,7 +300,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onSelectBeat = viewModel::selectBeat,
                 onSelectWubMachinePosition = viewModel::selectWubMachinePosition,
                 playlist = state.playlist,
-                onOpenPlaylist = { showPlaylist = true },
+                onOpenPlaylist = onOpenPlaylist,
                 onOpenFullscreen = viewModel::openFullscreenVisualization
             )
             }
@@ -327,7 +320,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     ResumeShortcutsRow(
                         showSavedPlaylist = showSavedPlaylist,
                         resumeTitle = resumeTitle,
-                        onOpenPlaylist = { showPlaylist = true },
+                        onOpenPlaylist = onOpenPlaylist,
                         onContinueListening = viewModel::continueListening
                     )
                 }
@@ -398,19 +391,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    if (showPlaylist && shouldShowPlaylistControls(state.playlist)) {
-        PlaylistDialog(
-            playlist = state.playlist,
-            onSelect = { index ->
-                showPlaylist = false
-                viewModel.selectPlaylistDialogTrack(index)
-            },
-            onRemove = viewModel::removePlaylistTrack,
-            onMove = viewModel::movePlaylistTrack,
-            onClear = viewModel::clearPlaylist,
-            onClose = { showPlaylist = false }
-        )
-    }
 
     if (showExport &&
         shouldShowExportControls(
@@ -505,7 +485,7 @@ private fun playlistMoveActions(
 }
 
 @Composable
-private fun PlaylistDialog(
+internal fun PlaylistDialog(
     playlist: JukeboxPlaylistState,
     onSelect: (Int) -> Unit,
     onRemove: (Int) -> Unit,

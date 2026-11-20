@@ -11,8 +11,8 @@ import org.junit.Test
 class OnboardingTourTest {
     private val fresh = OnboardingRecord(emptySet(), skipped = false, baselineVersion = ONBOARDING_VERSION)
 
-    private fun candidates(tab: TabId, playbackReady: Boolean) =
-        OnboardingTourId.entries.filter { isTourScreenActive(it, tab, playbackReady) }
+    private fun candidates(tab: TabId, playbackReady: Boolean, twoPane: Boolean = false) =
+        OnboardingTourId.entries.filter { isTourScreenActive(it, tab, twoPane, playbackReady) }
 
     private val allPlayback = setOf(
         OnboardingTarget.PlaybackMode,
@@ -97,6 +97,49 @@ class OnboardingTourTest {
     @Test
     fun noPlacedStepAfterTheLastOneEndsTheTour() {
         assertNull(firstPlacedStep(OnboardingTourId.Playback, 1, setOf(OnboardingTarget.PlaybackMode)))
+    }
+
+    @Test
+    fun twoPaneShowsThePlaybackTourBesideEveryBrowseTab() {
+        listOf(TabId.Input, TabId.Top, TabId.Search, TabId.Faq).forEach { tab ->
+            assertTrue(OnboardingTourId.Playback in candidates(tab, playbackReady = true, twoPane = true))
+            assertFalse(OnboardingTourId.Playback in candidates(tab, playbackReady = false, twoPane = true))
+            assertFalse(OnboardingTourId.Playback in candidates(tab, playbackReady = true))
+        }
+    }
+
+    @Test
+    fun twoPaneKeepsTheHomeTourOnTheInputTab() {
+        assertTrue(OnboardingTourId.Entry in candidates(TabId.Input, playbackReady = true, twoPane = true))
+        listOf(TabId.Top, TabId.Search, TabId.Faq).forEach { tab ->
+            assertFalse(OnboardingTourId.Entry in candidates(tab, playbackReady = true, twoPane = true))
+        }
+    }
+
+    @Test
+    fun twoPaneRunsTheHomeTourBeforeThePlaybackTour() {
+        val both = candidates(TabId.Input, playbackReady = true, twoPane = true)
+        val placed = allPlayback + OnboardingTarget.AddAudio
+        assertEquals(OnboardingTourId.Entry, resolveTourToStart(both, fresh, placed))
+        val entryDone = fresh.copy(completed = setOf(OnboardingTourId.Entry))
+        assertEquals(OnboardingTourId.Playback, resolveTourToStart(both, entryDone, placed))
+    }
+
+    @Test
+    fun noTourStartsOverOneRunningOnAScreenInView() {
+        val both = candidates(TabId.Input, playbackReady = true, twoPane = true)
+        val placed = allPlayback + OnboardingTarget.AddAudio
+        assertNull(resolveTourToStart(both, fresh, placed, running = OnboardingTourId.Entry))
+        assertNull(resolveTourToStart(both, fresh, placed, running = OnboardingTourId.Playback))
+    }
+
+    @Test
+    fun aTourLeftOnAScreenOutOfViewDoesNotHoldBackThisOne() {
+        val playOnly = candidates(TabId.Play, playbackReady = true)
+        assertEquals(
+            OnboardingTourId.Playback,
+            resolveTourToStart(playOnly, fresh, allPlayback, running = OnboardingTourId.Entry)
+        )
     }
 
     @Test
