@@ -1,5 +1,6 @@
 package com.foreverjukebox.app
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -115,6 +116,8 @@ class MainActivity : FragmentActivity() {
 
     // Space toggles playback unless a text field takes it. Handled ahead of the view tree,
     // where the control with keyboard focus would consume the key as a click.
+    // androidx.core marks its own override as restricted; an Activity may still override it.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val space = event.keyCode == KeyEvent.KEYCODE_SPACE
         if (!space || getSystemService(InputMethodManager::class.java).isAcceptingText) {
