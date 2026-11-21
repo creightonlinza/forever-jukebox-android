@@ -131,6 +131,7 @@ internal val LocalOnboardingController = staticCompositionLocalOf<OnboardingCont
 @Composable
 fun OnboardingHost(
     activeTab: TabId,
+    twoPane: Boolean,
     suppressed: Boolean,
     content: @Composable () -> Unit
 ) {
@@ -150,7 +151,9 @@ fun OnboardingHost(
         OnboardingSurface(
             controller = controller,
             registry = registry,
-            tours = OnboardingTourId.entries.filter { isTourScreenActive(it, activeTab, registry.playbackReady) },
+            tours = OnboardingTourId.entries.filter {
+                isTourScreenActive(it, activeTab, twoPane, registry.playbackReady)
+            },
             suppressed = suppressed,
             modifier = Modifier.fillMaxSize(),
             content = content
@@ -216,12 +219,10 @@ private fun OnboardingSurface(
     LaunchedEffect(controller, registry) {
         snapshotFlow {
             val record = controller.record
-            // A tour left part-way on another screen does not hold back the tours on this one.
-            val busy = controller.progress?.tour in currentTours
-            if (record == null || busy || currentHidden) {
+            if (record == null || currentHidden) {
                 null
             } else {
-                resolveTourToStart(currentTours, record, registry.placedTargets)
+                resolveTourToStart(currentTours, record, registry.placedTargets, controller.progress?.tour)
             }
         }.collectLatest { tour ->
             if (tour != null) {

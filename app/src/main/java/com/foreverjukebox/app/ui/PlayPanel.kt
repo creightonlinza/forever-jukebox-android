@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -64,7 +65,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 @Suppress("AssignedValueIsNeverRead")
-fun PlayPanel(state: UiState, viewModel: MainViewModel) {
+fun PlayPanel(state: UiState, viewModel: MainViewModel, onOpenPlaylist: () -> Unit) {
     val context = LocalContext.current
     val playback = state.playback
     val tuning = state.tuning
@@ -94,13 +95,14 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         hasFavoriteTuningDrift(state, currentFavorite)
     }
     val favoriteToggleInFlight = shouldShowListenFavoriteSpinner(state)
-    var showTuning by remember { mutableStateOf(false) }
-    var showInfo by remember { mutableStateOf(false) }
-    var showPlaylist by remember { mutableStateOf(false) }
-    var showDeleteTrackConfirm by remember { mutableStateOf(false) }
-    var reportJobId by remember { mutableStateOf<String?>(null) }
+    // Track dialogs are keyed by track, so saved state is never restored over another track.
+    val trackId = playback.lastJobId
+    var showTuning by key(trackId) { rememberSaveable { mutableStateOf(false) } }
+    var showInfo by key(trackId) { rememberSaveable { mutableStateOf(false) } }
+    var showDeleteTrackConfirm by key(trackId) { rememberSaveable { mutableStateOf(false) } }
+    var reportJobId by key(trackId) { rememberSaveable { mutableStateOf<String?>(null) } }
     var reportSending by remember { mutableStateOf(false) }
-    var showExport by remember { mutableStateOf(false) }
+    var showExport by key(trackId) { rememberSaveable { mutableStateOf(false) } }
     val coroutineScope = rememberCoroutineScope()
     val vizLabels = visualizationLabels
     var jumpLine by remember { mutableStateOf(playback.jumpLine) }
@@ -157,12 +159,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         delay(1100)
         if (jumpLine?.startedAt == current.startedAt) {
             jumpLine = null
-        }
-    }
-
-    LaunchedEffect(showPlaylist, state.playlist) {
-        if (showPlaylist && !shouldShowPlaylistControls(state.playlist)) {
-            showPlaylist = false
         }
     }
 
@@ -268,7 +264,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 isExporting = state.export.isExporting,
                 favoriteToggleInFlight = favoriteToggleInFlight,
                 playlist = state.playlist,
-                onOpenPlaylist = { showPlaylist = true },
+                onOpenPlaylist = onOpenPlaylist,
                 showSavedPlaylist = showSavedPlaylist,
                 resumeTitle = resumeTitle,
                 onContinueListening = viewModel::continueListening,
@@ -304,7 +300,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                 onSelectBeat = viewModel::selectBeat,
                 onSelectWubMachinePosition = viewModel::selectWubMachinePosition,
                 playlist = state.playlist,
-                onOpenPlaylist = { showPlaylist = true },
+                onOpenPlaylist = onOpenPlaylist,
                 onOpenFullscreen = viewModel::openFullscreenVisualization
             )
             }
@@ -324,7 +320,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
                     ResumeShortcutsRow(
                         showSavedPlaylist = showSavedPlaylist,
                         resumeTitle = resumeTitle,
-                        onOpenPlaylist = { showPlaylist = true },
+                        onOpenPlaylist = onOpenPlaylist,
                         onContinueListening = viewModel::continueListening
                     )
                 }
@@ -354,7 +350,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    if (showTuning && playback.playMode == PlaybackMode.Jukebox && canOpenCastReceiverDetails) {
+    if (showTuning && playback.playMode == PlaybackMode.Jukebox && canOpenCastReceiverDetails) key(trackId) {
         val audioModeOptions = if (playback.isCasting) {
             playback.castSupportedAudioModes
         } else {
@@ -395,19 +391,6 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    if (showPlaylist && shouldShowPlaylistControls(state.playlist)) {
-        PlaylistDialog(
-            playlist = state.playlist,
-            onSelect = { index ->
-                showPlaylist = false
-                viewModel.selectPlaylistDialogTrack(index)
-            },
-            onRemove = viewModel::removePlaylistTrack,
-            onMove = viewModel::movePlaylistTrack,
-            onClear = viewModel::clearPlaylist,
-            onClose = { showPlaylist = false }
-        )
-    }
 
     if (showExport &&
         shouldShowExportControls(
@@ -416,7 +399,7 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
             state.export.isExporting,
             Build.VERSION.SDK_INT
         )
-    ) {
+    ) key(trackId) {
         ExportDialog(
             export = state.export,
             trackDurationSeconds = if (playback.playMode == PlaybackMode.WubMachine) {
@@ -433,7 +416,8 @@ fun PlayPanel(state: UiState, viewModel: MainViewModel) {
         )
     }
 
-    reportJobId?.let { jobId ->
+    val jobId = reportJobId
+    if (jobId != null) key(trackId) {
         ReportTrackDialog(
             sending = reportSending,
             onDismiss = { reportJobId = null },
@@ -501,7 +485,7 @@ private fun playlistMoveActions(
 }
 
 @Composable
-private fun PlaylistDialog(
+internal fun PlaylistDialog(
     playlist: JukeboxPlaylistState,
     onSelect: (Int) -> Unit,
     onRemove: (Int) -> Unit,

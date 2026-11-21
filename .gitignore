@@ -28,3 +28,6 @@ third_party/essentia/src/
 third_party/essentia/.work/
 
 STORE_ASSETS.md
+
+# Local helper scripts (emulator drivers, store screenshot capture)
+/local-tools/

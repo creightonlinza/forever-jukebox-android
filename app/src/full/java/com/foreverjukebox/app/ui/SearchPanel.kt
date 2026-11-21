@@ -39,7 +39,10 @@ import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,8 +76,9 @@ fun SearchPanel(
     val searchState = state.search
     // Hoisted above the sub-tab switch so a typed query and an open preview survive a visit to
     // the Upload tab.
-    var query by remember(searchState.query) { mutableStateOf(searchState.query) }
-    var previewItem by remember { mutableStateOf<RemoteVideoSearchItem?>(null) }
+    // Keyed so text saved before the view model cleared the query is not restored over it.
+    var query by key(searchState.query) { rememberSaveable { mutableStateOf(searchState.query) } }
+    var previewItem by rememberSaveable(stateSaver = PreviewItemSaver) { mutableStateOf(null) }
     var thumbnailFailed by remember { mutableStateOf(false) }
     val uploadTabAvailable = uploadTabAvailable(state.allowUserUrl, state.allowUserUpload)
     Card(
@@ -253,7 +257,7 @@ private fun AddYourOwnSection(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     if (state.allowUserUrl) {
-        var urlInput by remember { mutableStateOf("") }
+        var urlInput by rememberSaveable { mutableStateOf("") }
         val trimmedUrl = urlInput.trim()
         val urlError = state.search.urlErrorMessage
         val submitUrl = {
@@ -536,3 +540,8 @@ private fun YoutubePreviewDialog(
         }
     )
 }
+
+private val PreviewItemSaver = listSaver<RemoteVideoSearchItem?, Any?>(
+    save = { item -> item?.let { listOf(it.id, it.title, it.duration) } ?: emptyList() },
+    restore = { if (it.isEmpty()) null else RemoteVideoSearchItem(it[0] as String?, it[1] as String?, it[2] as Double?) }
+)

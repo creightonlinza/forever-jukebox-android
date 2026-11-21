@@ -176,6 +176,7 @@ data class UiState(
     val localAnalysisSortDirection: FavoriteSortDirection = FavoriteSortDirection.Ascending,
     val themeMode: ThemeMode = DefaultThemeMode,
     val activeTab: TabId = TabId.Top,
+    val twoPane: Boolean = false,
     val topSongsTab: TopSongsTab = TopSongsTab.TopSongs,
     val searchPanelTab: SearchPanelTab = SearchPanelTab.Search,
     val cacheSizeBytes: Long = 0,
@@ -943,7 +944,7 @@ fun stateAfterModeChangeReset(
 
 fun stateAfterLocalAnalysisCancel(current: UiState): UiState {
     return current.copy(
-        activeTab = TabId.Input,
+        activeTab = tabAfterListenReset(current, TabId.Input),
         localSelectedFileName = null,
         localAnalysisJsonPath = null
     )

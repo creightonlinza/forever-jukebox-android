@@ -364,10 +364,10 @@ private fun SettingsDialog(
     onEditAdminKey: (String) -> Unit,
     onClearCache: () -> Unit
 ) {
-    var urlInput by remember(state.baseUrl) { mutableStateOf(state.baseUrl) }
-    var adminKeyInput by remember(state.adminKey) { mutableStateOf(state.adminKey) }
-    var selectedMode by remember(state.appMode) { mutableStateOf(state.appMode ?: defaultOnboardingMode) }
-    var showServerSettings by remember { mutableStateOf(false) }
+    var urlInput by rememberSaveable(state.baseUrl) { mutableStateOf(state.baseUrl) }
+    var adminKeyInput by rememberSaveable(state.adminKey) { mutableStateOf(state.adminKey) }
+    var selectedMode by rememberSaveable(state.appMode) { mutableStateOf(state.appMode ?: defaultOnboardingMode) }
+    var showServerSettings by rememberSaveable { mutableStateOf(false) }
     val trimmedUrl = urlInput.trim()
     val trimmedAdminKey = adminKeyInput.trim()
     val requiresServerUrl = BuildConfig.SERVER_MODE_AVAILABLE && selectedMode == AppMode.Server
